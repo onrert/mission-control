@@ -119,6 +119,29 @@ describe('pruneByDays', () => {
     pruneByDays(dataRoot, now, 0)
     expect(fs.existsSync(path.join(eventsDir, activeFile))).toBe(true)
   })
+
+  it('yalnızca YYYY-MM-DD.jsonl desenine uyan dosyalara dokunulur; .seq ve yabancı dosyalar hiç silinmez (desen çiti, Ö2)', () => {
+    // QA düzeltme turu 1 — Bulgu Ö2: `DAY_FILE_PATTERN` çiti hiçbir testte ölçülmüyordu;
+    // mutasyonla kaldırıldığında `.seq` bile silinebiliyordu ve 133/133 test yine yeşil
+    // kalıyordu. Bu test, deseni hem `listDayFilesAscending` hem `safeDelete` katmanında
+    // ölçer: `.seq` alfabetik olarak her cutoff tarihinden KÜÇÜK olduğu için (`.` < `2`),
+    // desen çiti kaldırılırsa döngü onu da silmeye çalışır.
+    const now = new Date('2026-09-04T12:00:00.000Z')
+    const oldFile = dayFileName(new Date('2026-08-01T00:00:00.000Z'))
+    const activeFile = dayFileName(now)
+    fs.writeFileSync(path.join(eventsDir, oldFile), '{}\n')
+    fs.writeFileSync(path.join(eventsDir, activeFile), '{}\n')
+    fs.writeFileSync(path.join(eventsDir, '.seq'), '42')
+    fs.writeFileSync(path.join(eventsDir, 'notlar.txt'), 'yabanci dosya, gun dosyasi degil')
+
+    const deleted = pruneByDays(dataRoot, now, 30)
+
+    expect(deleted).toEqual([oldFile])
+    expect(fs.existsSync(path.join(eventsDir, oldFile))).toBe(false)
+    expect(fs.existsSync(path.join(eventsDir, '.seq'))).toBe(true)
+    expect(fs.readFileSync(path.join(eventsDir, '.seq'), 'utf8')).toBe('42')
+    expect(fs.existsSync(path.join(eventsDir, 'notlar.txt'))).toBe(true)
+  })
 })
 
 describe('pruneByCount — ring MC_RING_SIZE altında kalsa bile toplam doğru hesaplanır (Bulgu 4)', () => {

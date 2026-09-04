@@ -16,3 +16,5 @@ assets/raw/
 .playwright-mcp/
 .playwright-mcp/
 .claude/launch.json
+.claude/settings.json.bak
+.claude/settings.json.tmp-*

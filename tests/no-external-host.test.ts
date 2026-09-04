@@ -22,11 +22,15 @@ function walk(dir: string, extensions: string[], out: string[] = []): string[] {
 // `.svg` K2 ile kapsama eklendi (favicon işaretlemedir, dış host taşıyabilir).
 // QA düzeltme turu 1 (Ö4): F-002'nin açtığı yeni üretim kökleri (`src/features/**`,
 // `scripts/**`) çite hiç dahil değildi — guard yeni koda kördü. Genişletildi.
+// F-004 CEO kararı A: ağdan konuşan `.claude/hooks/**` (`.cjs`) de bu çitin kapsamına alındı —
+// bu depodaki 8 mevcut `.cjs` dosyasının hiçbirinde `http` alt dizgesi geçmiyor (✓ VERIFIED),
+// yani genişletme mevcut hiçbir testi kırmaz.
 const files = [
   ...walk(path.join(ROOT, 'src', 'web'), ['.ts', '.tsx', '.css', '.html', '.svg']),
   ...walk(path.join(ROOT, 'src', 'server'), ['.ts']),
   ...walk(path.join(ROOT, 'src', 'features'), ['.ts', '.tsx']),
   ...walk(path.join(ROOT, 'scripts'), ['.mjs']),
+  ...walk(path.join(ROOT, '.claude', 'hooks'), ['.cjs']),
 ]
 
 // `xmlns="http://www.w3.org/..."` bir ağ isteği değil, XML ad alanı **tanımlayıcısıdır**;
@@ -48,6 +52,14 @@ const CDN_SUBSTRINGS = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.']
 describe('no-external-host guard (S1)', () => {
   it('taranacak en az bir dosya bulundu (guard kör değil)', () => {
     expect(files.length).toBeGreaterThan(0)
+  })
+
+  // F-004 CEO kararı A / §7 mutasyon 7 — körlük kontrolü: `.claude/hooks` kökünden en az bir
+  // dosya gerçekten taranıyor mu (yalnızca yol yazımı doğru olduğu için değil, gerçekten diskten
+  // okunduğu için).
+  it('taranan dosyalar arasında .claude/hooks kökünden en az biri var', () => {
+    const hooksRoot = path.join(ROOT, '.claude', 'hooks')
+    expect(files.some((f) => f.startsWith(hooksRoot))).toBe(true)
   })
 
   it.each(files)('%s dış host literali içermiyor', (file) => {

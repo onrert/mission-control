@@ -26,25 +26,25 @@
   },
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "node .claude/hooks/session-start.js" } ] }
+      { "hooks": [ { "type": "command", "command": "node .claude/hooks/session-start.cjs" } ] }
     ],
     "PostCompact": [
-      { "hooks": [ { "type": "command", "command": "node .claude/hooks/session-start.js" } ] }
+      { "hooks": [ { "type": "command", "command": "node .claude/hooks/session-start.cjs" } ] }
     ],
     "PreToolUse": [
       { "matcher": "Edit|Write",
-        "hooks": [ { "type": "command", "command": "node .claude/hooks/gate-check.js" } ] },
+        "hooks": [ { "type": "command", "command": "node .claude/hooks/gate-check.cjs" } ] },
       { "matcher": "Bash",
-        "hooks": [ { "type": "command", "command": "node .claude/hooks/block-dangerous.js" } ] },
+        "hooks": [ { "type": "command", "command": "node .claude/hooks/block-dangerous.cjs" } ] },
       { "matcher": "mcp__higgsfield__.*",
-        "hooks": [ { "type": "command", "command": "node .claude/hooks/asset-guard.js" } ] }
+        "hooks": [ { "type": "command", "command": "node .claude/hooks/asset-guard.cjs" } ] }
     ],
     "PostToolUse": [
       { "matcher": "Edit|Write",
-        "hooks": [ { "type": "command", "command": "node .claude/hooks/post-format.js" } ] }
+        "hooks": [ { "type": "command", "command": "node .claude/hooks/post-format.cjs" } ] }
     ],
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "node .claude/hooks/stop-check.js" } ] }
+      { "hooks": [ { "type": "command", "command": "node .claude/hooks/stop-check.cjs" } ] }
     ]
   }
 }

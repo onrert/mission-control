@@ -1,6 +1,6 @@
 // PreToolUse (Edit|Write): G2 onayı yokken kod dizinine yazılamaz.
 const path = require('path');
-const { readInput, exists, block } = require('./_common');
+const { readInput, exists, block } = require('./_common.cjs');
 readInput((j) => {
   const f = (j.tool_input && (j.tool_input.file_path || j.tool_input.path)) || '';
   if (!f) process.exit(0);

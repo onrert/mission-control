@@ -26,8 +26,15 @@ export interface EventRecord {
   raw: unknown
 }
 
-/** F-002'nin ürettiği/tükettiği hata kodları (mimari §6'nın alt kümesi). */
-export type ErrorCode = 'invalid_body' | 'forbidden_origin'
+/**
+ * F-002'nin ürettiği/tükettiği hata kodları (mimari §6'nın alt kümesi).
+ * `storage_unavailable` — QA düzeltme turu 1 (B1): gerçek bir disk I/O hatası (ör. gün
+ * dosyası yolunda beklenmeyen bir dizin, disk dolu) yüzünden olay saklanamadığında döner.
+ * PRD F1/AC5'in "5xx dönmez" kuralı yalnızca payload kaynaklı sorunlar (eksik/bilinmeyen alan)
+ * içindir — gerçek depolama arızası bu kuralın kapsamı dışındadır (bkz. `docs/qa/
+ * F-002-contract.md` "Kod turu notu — B1").
+ */
+export type ErrorCode = 'invalid_body' | 'forbidden_origin' | 'storage_unavailable'
 
 export interface ApiResponse<T> {
   success: boolean

@@ -1,6 +1,6 @@
 // Stop: QA KALDI iken oturum "bitti" diyemez; ESKALE: true ile kullanıcıya soru sorulabilir.
 const fs = require('fs');
-const { readInput, block } = require('./_common');
+const { readInput, block } = require('./_common.cjs');
 readInput((j) => {
   if (j.stop_hook_active) process.exit(0);
   let t = '';

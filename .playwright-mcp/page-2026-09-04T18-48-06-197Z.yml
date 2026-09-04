@@ -1,0 +1,9 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]: MISSION CONTROL
+    - navigation [ref=e6]:
+      - generic [ref=e7]: Zaman Çizelgesi
+      - generic [ref=e8]: Kanban
+      - generic [ref=e9]: Ayarlar
+  - main [ref=e10]:
+    - paragraph [ref=e11]: İskelet hazır. Ekranlar sonraki feature'larda eklenecek.

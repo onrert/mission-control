@@ -1,5 +1,5 @@
 // PreToolUse (mcp__higgsfield__*): kredi harcayan üretimler ASSETS.ok olmadan çalışmaz.
-const { readInput, exists, block } = require('./_common');
+const { readInput, exists, block } = require('./_common.cjs');
 readInput((j) => {
   const t = j.tool_name || '';
   const spends = /^mcp__higgsfield__(generate|create_website|deploy_website|dubbing|upscale|motion_control|shorts_studio_create|outpaint|remove_background|voice_change|personal_clipper_create|reframe)/i;

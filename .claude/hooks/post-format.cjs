@@ -1,6 +1,6 @@
 // PostToolUse (Edit|Write): biçimlendirici varsa çalıştırır; yoksa sessizce geçer.
 const { execSync } = require('child_process');
-const { readInput } = require('./_common');
+const { readInput } = require('./_common.cjs');
 readInput((j) => {
   const f = (j.tool_input && j.tool_input.file_path) || '';
   if (!f || /(^|[\\/])docs[\\/]/.test(f)) process.exit(0);

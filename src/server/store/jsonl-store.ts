@@ -43,6 +43,8 @@ export interface JsonlStore {
   /** Ring buffer'dan (yalnızca bellek) since_seq'ten büyük olayları döner. */
   read(sinceSeq: number, limit: number): ReadResult
   getCorruptLines(): number
+  /** QA düzeltme turu 1 (B1): kalıcı disk yazma hatası sayacı — `corrupt_lines` deseniyle tutarlı. */
+  getWriteErrors(): number
   readonly dataRoot: string
   readonly eventsDir: string
   /**
@@ -84,9 +86,19 @@ export function createJsonlStore(dataDir: string, options: JsonlStoreOptions = {
 
   let nextSeq = 0
   let corruptLines = 0
+  let writeErrors = 0
   let ring: EventRecord[] = []
   let queue: Promise<void> = Promise.resolve()
   const lineCounts = new Map<string, number>()
+
+  /**
+   * QA düzeltme turu 1 (B1): tek dosya bazında bir kez log (satır başına spam yok, `corrupt_lines`
+   * loglama stiliyle tutarlı). Hatayı burada yutarız — kuyruk asla reddedilmiş durumda kalmaz.
+   */
+  function logWriteError(day: string, err: unknown): void {
+    const message = err instanceof Error ? err.message : String(err)
+    process.stderr.write(`Hata: ${day}.jsonl dosyasına yazılamadı: ${message}\n`)
+  }
 
   function listDayFiles(): string[] {
     if (!fs.existsSync(eventsDir)) return []
@@ -136,13 +148,19 @@ export function createJsonlStore(dataDir: string, options: JsonlStoreOptions = {
       }
     }
 
+    // `.seq` dosyasının semantiği: "bir sonraki atanacak seq" (QA düzeltme turu 1 — Ö1).
+    // `append` de aynı semantikle yazar (aşağıya bakınız); okuma tarafı burada iki kaynağın
+    // maksimumunu alır: JSONL'den çözülen `fileSeq + 1` (dosyanın kendi "sonraki"si) ile
+    // `.seq` dosyasının değeri. Böylece olaysız bir yeniden başlatmada `.seq` değişmeden kalır
+    // (önceden `init` "sonraki"yi, `append` "son atanan"ı yazdığı için her açılışta bir
+    // kayıyordu — bkz. `docs/qa/latest.md` Bulgu Ö1).
     let fileFromDotSeq: number | undefined
     if (fs.existsSync(seqFile)) {
       const raw = fs.readFileSync(seqFile, 'utf8').trim()
       const parsed = Number(raw)
       if (Number.isInteger(parsed)) fileFromDotSeq = parsed
     }
-    nextSeq = Math.max(fileSeq, fileFromDotSeq ?? -1) + 1
+    nextSeq = Math.max(fileSeq + 1, fileFromDotSeq ?? 0)
     writeSeqBestEffort(nextSeq)
   }
 
@@ -178,14 +196,34 @@ export function createJsonlStore(dataDir: string, options: JsonlStoreOptions = {
     if (ring.length > ringSize) ring.shift()
 
     const day = dayFileName(new Date())
-    lineCounts.set(day, (lineCounts.get(day) ?? 0) + 1)
-
     const line = `${JSON.stringify(event)}\n`
     const file = path.join(eventsDir, day)
-    queue = queue.then(() => fs.promises.appendFile(file, line))
-    writeSeqBestEffort(seq)
 
-    return queue.then(() => ({ seq, id }))
+    // QA düzeltme turu 1 (B1): bu append'in disk yazması `writeResult`'ta izlenir ve çağırana
+    // (ingest.ts) olduğu gibi (başarı/hata) döner — yanıt dürüst olsun diye (§4.2, storage_unavailable).
+    // `queue` ise HİÇBİR ZAMAN reddedilmiş durumda bırakılmaz: hata burada yutulup loglanır,
+    // böylece bu append başarısız olsa bile SONRAKİ append'ler kuyrukta bekletilmeye devam eder
+    // (zehirlenmiş kuyruk = tüm sonraki isteklerin de düşmesi, eski davranış).
+    const writeResult = queue.then(() => fs.promises.appendFile(file, line))
+    queue = writeResult.then(
+      () => {
+        lineCounts.set(day, (lineCounts.get(day) ?? 0) + 1)
+      },
+      (err: unknown) => {
+        writeErrors += 1
+        logWriteError(day, err)
+      }
+    )
+    // `.seq` best-effort güncellemesi başarı/hatadan bağımsız yapılır (§3 madde 4) — yazma
+    // başarısız olsa bile bu seq bir daha verilmez (kuyrukta sıradaki zaten `nextSeq`'i kullanır).
+    writeSeqBestEffort(nextSeq)
+
+    return writeResult.then(
+      () => ({ seq, id }),
+      (err: unknown) => {
+        throw err
+      }
+    )
   }
 
   function read(sinceSeq: number, limit: number): ReadResult {
@@ -201,6 +239,7 @@ export function createJsonlStore(dataDir: string, options: JsonlStoreOptions = {
     append,
     read,
     getCorruptLines: () => corruptLines,
+    getWriteErrors: () => writeErrors,
     dataRoot,
     eventsDir,
     lineCounts,

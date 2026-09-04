@@ -52,14 +52,30 @@ export function handleIngest(
   req.on('end', () => {
     if (aborted) return
     void (async () => {
-      const rawBody = Buffer.concat(chunks).toString('utf8')
-      const normalized = normalizeEvent(rawBody, new Date(), maxPayload)
-      const { seq, id } = await store.append(normalized)
-      const body: ApiResponse<{ id: string; seq: number; flags: string[] }> = {
-        success: true,
-        data: { id, seq, flags: normalized.flags },
+      try {
+        const rawBody = Buffer.concat(chunks).toString('utf8')
+        const normalized = normalizeEvent(rawBody, new Date(), maxPayload)
+        const { seq, id } = await store.append(normalized)
+        const body: ApiResponse<{ id: string; seq: number; flags: string[] }> = {
+          success: true,
+          data: { id, seq, flags: normalized.flags },
+        }
+        sendJson(res, 202, body)
+      } catch (err) {
+        // QA düzeltme turu 1 (B1): gerçek bir disk yazma hatası (ör. gün dosyası yolunda bir
+        // dizin, disk dolu) — istemci HER ZAMAN bir yanıt alır, süreç çökmez. Bu, PRD F1/AC5'in
+        // "5xx dönmez" kuralını ihlal etmez: o kural yalnızca payload kaynaklı sorunlar
+        // (eksik/bilinmeyen alan → 202 + missing_fields) içindir, gerçek depolama arızası
+        // değil (bkz. `docs/qa/F-002-contract.md` "Kod turu notu — B1"). Olay gerçekten
+        // saklanamadığı için 202 dönüp saklandı numarası yapmıyoruz.
+        const message = err instanceof Error ? err.message : String(err)
+        process.stderr.write(`Hata: olay saklanamadı, istemciye 503 dönülüyor: ${message}\n`)
+        const body: ApiResponse<never> = {
+          success: false,
+          error: { code: 'storage_unavailable', message: 'Olay şu anda saklanamadı.' },
+        }
+        sendJson(res, 503, body)
       }
-      sendJson(res, 202, body)
     })()
   })
 }

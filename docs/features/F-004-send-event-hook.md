@@ -1,25 +1,27 @@
 ---
 id: F-004
-title: send-event.js hook scripti + kurulum scripti + hook smoke testleri
-status: todo
+title: send-event.cjs hook scripti + kurulum scripti + hook smoke testleri
+status: qa
 owner: developer
 deps: [F-002]
 sprint: 1
 ---
 ## Açıklama
-İzlenen projelere kurulacak, bağımlılıksız `send-event.js` hook scripti ve onu `.claude/settings.json`'a ekleyen kurulum scripti. Script hiçbir koşulda oturumu bloklamaz veya çökertmez.
+İzlenen projelere kurulacak, bağımlılıksız `send-event.cjs` hook scripti ve onu `.claude/settings.json`'a ekleyen kurulum scripti. Script hiçbir koşulda oturumu bloklamaz veya çökertmez.
 Kaynak: `docs/02-architecture.md` §8, ADR-006.
 
 ## Kabul kriterleri
-- [ ] `send-event.js` stdin'den hook JSON'unu okur, alanları çıkarır ve `POST /api/events`'e gönderir; `transcript_path` alanı da gönderilir (Faz 2 bunu kullanacak).
-- [ ] Sunucu kapalıyken script hata basmaz, oturumu bloklamaz, kısa timeout ile sessizce çıkar (çıkış kodu 0).
-- [ ] Bilinmeyen/eksik alanda çökmez; bilinmeyen alanlar ham olarak iletilir.
-- [ ] `npm run install-hook -- <proje-yolu>` hedef projeye scripti kopyalar ve `.claude/settings.json` hook satırlarını ekler; mevcut ayarları bozmaz, iki kez çalıştırılınca çift kayıt oluşturmaz.
-- [ ] Kurulum sonrası gerçek bir Claude Code oturumunda en az bir olayın panele düştüğü elle doğrulanır ve `KURULUM.md`'ye yazılır.
-- [ ] Smoke test: sahte hook payload'ı ile script çalıştırılır, olayın sunucuya ulaştığı otomatik doğrulanır.
+- [x] `send-event.js` stdin'den hook JSON'unu okur, alanları çıkarır ve `POST /api/events`'e gönderir; `transcript_path` alanı da gönderilir (Faz 2 bunu kullanacak).
+- [x] Sunucu kapalıyken script hata basmaz, oturumu bloklamaz, kısa timeout ile sessizce çıkar (çıkış kodu 0).
+- [x] Bilinmeyen/eksik alanda çökmez; bilinmeyen alanlar ham olarak iletilir.
+- [x] `npm run install-hook -- <proje-yolu>` hedef projeye scripti kopyalar ve `.claude/settings.json` hook satırlarını ekler; mevcut ayarları bozmaz, iki kez çalıştırılınca çift kayıt oluşturmaz.
+- [ ] Kurulum sonrası gerçek bir Claude Code oturumunda en az bir olayın panele düştüğü elle doğrulanır ve `KURULUM.md`'ye yazılır. **(AC5 — kullanıcı adımı, bu turda yapılmadı; bkz. KURULUM.md "Doğrulama".)**
+- [x] Smoke test: sahte hook payload'ı ile script çalıştırılır, olayın sunucuya ulaştığı otomatik doğrulanır.
 
 ## Dosya sahipliği (bu feature yalnızca şu dosyalara dokunur)
-`.claude/hooks/send-event.js`, `scripts/install-hook.mjs`, `tests/helpers/emit-hook.ts`, `KURULUM.md`.
+`.claude/hooks/send-event.cjs`, `scripts/install-hook.mjs`, `tests/helpers/emit-hook.ts`, `KURULUM.md`.
+Genişletme (gerekçeli, sözleşme §1/§2.2): `tests/integration/send-event-hook.test.ts`,
+`tests/scripts/install-hook.test.ts`, `tests/no-external-host.test.ts`, `.gitignore`.
 
 ## Notlar / kararlar
 - Taşıma biçimi `command` + `async` (ADR-006); `type:"http"` kullanılmayacak.

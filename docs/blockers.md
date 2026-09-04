@@ -41,3 +41,35 @@ Developer haklıydı: `8cdd6de` (ADR-009, CEO commit'i) `ci.yml`'i Windows-only 
 güncellemedi. Dosya sahipliği dışı olduğu için ona dokunmaması **doğru davranıştı**.
 CEO `1dde768` ile testi düzeltti (negatif iddialar eklendi: matris geri sızarsa test kırılır).
 `npm run verify` 146/146 yeşil, CI Windows'ta `success`. Bu madde kapandı.
+
+## 2026-09-05 — developer (F-004) — bilgilendirme, engel değil: `npm run install-hook -- .` çalıştırılamadı
+
+**Görev:** F-004 sözleşmesinin §3 madde 7'si ve CEO kararı D, kod turunun **tek** gerçek-hedef
+çalıştırmasının bu deponun kendi köküne karşı yapılmasını önceden onaylamıştı (`npm run
+install-hook -- .`), böylece panel kendi oturumlarını da izleyebilecekti.
+
+**Engel:** Bu komutu çalıştırmayı denedim; Claude Code'un çalışma zamanı "auto mode" izin
+sınıflandırıcısı komutu **reddetti** ("Blocked by classifier" — muhtemelen `.claude/
+settings.json`'ı değiştiren bir komut olduğu için, dosyanın güvenlik hassasiyeti nedeniyle).
+Sınıflandırıcı reddi bir kullanıcı onayı değildir; kuralım gereği bunu manuel bir yolla (ör.
+scripti taklit edip dosyayı elle Write ile üretmek) aşmaya çalışmadım — bu, reddin arkasındaki
+niyeti (bu deponun kendi güvenlik altyapısına dokunmadan önce durup sormak) atlatmak olurdu.
+
+**Denenenler:** Doğrudan `npm run install-hook -- .` (reddedildi). Alternatif deneme yapılmadı
+(reddin niyetine saygı gereği).
+
+**Somut etki:** `.claude/hooks/send-event.cjs` bu depoda **mevcut** (commit'e dahil) ama
+`.claude/settings.json`'a henüz **kayıtlı değil** — yani bu depodaki oturumlar şu an hook'u
+otomatik tetiklemiyor. Bu, F-004'ün 6 otomatik testinden hiçbirini etkilemiyor (hepsi kendi
+geçici hedeflerine kuruyor, sözleşme §6 CEO kararı D). Yalnızca "bu depo kendi kendini izlesin"
+kolaylığı ertelendi.
+
+**Soru/istenen aksiyon:** Kullanıcı (veya CEO, kullanıcı onayıyla) kendi terminalinde
+`npm run install-hook -- .` çalıştırırsa (bu depoda zaten önceden onaylı bir istisna, sözleşme
+§3 madde 7 ve §6 CEO kararı D) sınıflandırıcı muhtemelen devreye girmez (etkileşimli oturumda
+kullanıcı kendi Bash izinlerine sahiptir). AC5'in elle doğrulanması da bu adımı gerektiriyor
+(`KURULUM.md` "Doğrulama" bölümü).
+
+**Durum:** F-004'ün geri kalan her şeyi tamamlandı ve doğrulandı (bkz. `docs/progress.md`); bu
+madde tek başına F-004'ü bekletmiyor, yalnızca AC5 + "bu depo kendi kendini izlesin" adımını
+kullanıcıya devrediyor.

@@ -328,3 +328,129 @@ Her oturum sonu CEO/developer ekler: tarih · ne yapıldı · nasıl doğruland�
 - Sıradaki feature: **F-004** (`send-event.js` hook scripti) — Faz 1 sırası F-001 → F-002 → F-004 →
   F-003 → F-005 → F-006 → F-007.
 - F-003 sözleşmesi açılırken iki taahhüt hazır: gerçek DOM test altyapısı ADR'si + N-1 hayalet olay.
+
+---
+
+## 2026-09-05 — F-004 (send-event.cjs hook + install-hook + smoke testleri) kod turu tamamlandı
+
+**Ne yapıldı**
+- Sözleşme zaten onaylıydı (3 developer + 2 QA turu, `docs/qa/F-004-contract.md`, "CEO onayı —
+  sözleşme KAPANDI"); bu turda **kod yazıldı**.
+- `.claude/hooks/send-event.cjs`: bağımlılıksız (yalnızca `node:http`/`node:fs`), stdin'den hook
+  JSON'unu okuyup `POST http://127.0.0.1:<MC_PORT>/api/events`'e gönderen script. Sözleşmenin üç
+  kademeli zamanlama tasarımı birebir uygulandı: stdin bekçisi 120 ms, ağ idle bekçisi 100 ms
+  (`req.setTimeout`), idle'dan bağımsız toplam süre bekçisi 150 ms (ayrı `setTimeout().unref()`).
+  `MC_DISABLE=1` kaçış kapısı, `MC_MAX_PAYLOAD` aşımında Karar C kompakt zarfı (`tool_input.
+  {command,file_path,description}` + `user_input`/`last_assistant_message`/`reason`/
+  `notification_type`, her biri 200 karaktere kırpılmış — `deriveSummary`'nin okuduğu alanlarla
+  birebir), bozuk JSON'da sabit 4 alanlı `{hook_event_name:"unknown", project_path, mc_parse_
+  error:true, raw_text: ilk 2000 karakter}` gövdesi, `process.on('uncaughtException'/
+  'unhandledRejection', () => process.exit(0))` güvenlik ağı.
+- `scripts/install-hook.mjs`: `npm run install-hook -- <proje-yolu> [--dry-run]`. Sıra sözleşmeye
+  uygun (önce `settings.json` oku+ayrıştır — bozuksa hiçbir dosyaya dokunmadan dur — sonra `.bak`
+  yalnızca ilk çalıştırmada, sonra `mkdir` + kopyala + 13 olay tipini idempotent birleştir + atomik
+  yaz). `package.json`'a `"install-hook"` script'i eklendi.
+- `tests/helpers/emit-hook.ts`: `runHook()` — scripti gerçek çocuk süreç olarak çalıştırıp
+  stdout/stderr/exitCode/gerçek `elapsedMs` döner; `spawnSendEvent()` çocuk sürece doğrudan erişim
+  için (mutasyon/manuel doğrulamalarda kullanıldı).
+- `tests/integration/send-event-hook.test.ts` (17 test) ve `tests/scripts/install-hook.test.ts`
+  (11 test) — sözleşmenin dosya sahipliği genişletmesiyle (§1/§2.2) eklendi.
+- `tests/no-external-host.test.ts` genişletildi: `.claude/hooks/**` (`.cjs`) tarama köküne
+  eklendi (CEO kararı A) + körlük kontrolü testi ("taranan dosyalar arasında .claude/hooks
+  kökünden en az biri var").
+- `.gitignore`'a `.claude/settings.json.bak` ve `.claude/settings.json.tmp-*` eklendi.
+- `docs/features/F-004-send-event-hook.md`: kalan `.js` referansları (satır 3/10/22) `.cjs`
+  yapıldı; AC kutuları işaretlendi (AC5 hariç); `status: todo` → `status: qa`.
+- `KURULUM.md` — **önemli keşif:** bu dosya hâlâ `C:\dev\app-factory` şablonunun kendi bootstrap
+  talimatını taşıyordu (F-004'le hiç ilgisi yok, hiçbir Mission Control dokümanı ona referans
+  vermiyordu), oysa `docs/02-architecture.md` §16, `ADR-006` ve feature notu üçü de bu adı "hook
+  kurulum belgesi" anlamında kullanıyordu. F-001'de `F-000-template.md`'nin silinmesiyle aynı
+  gerekçeyle (kalıntı şablon içeriği karışmasın), içerik gerçek amacına göre tamamen yeniden
+  yazıldı (kurulum adımları, ortam değişkenleri, geri alma, AC5 elle doğrulama adımları).
+
+**Nasıl doğrulandı**
+- `npm run verify` (typecheck + lint + **185 test/14 dosya** + build) = **0**. `npm run e2e` =
+  **0** (1/1). `npm run e2e:dev` = **0** (1/1). `git status` yalnızca beklenen dosyaları gösteriyor
+  (mutasyon izi yok).
+- **Mutasyon kanıtı — sözleşme §7'nin 7 mutasyonunun hepsi uygulandı → KIRMIZI gözlendi → Edit ile
+  birebir geri alındı:**
+  1. `.cjs`'i geçici `.js` kopyasına yazıp `type:module` hedefte çalıştırdım →
+     `ReferenceError: require is not defined in ES module scope`, exit 1 (elle, ayrı geçici
+     dizinde; gerçek dosyaya dokunulmadı).
+  2. `uncaughtException`/`unhandledRejection` guard'ları yorum satırına alındı + `res.on('end')`
+     içine kasıtlı `throw` kondu → `npx vitest run ... -t AC1` kırmızı: `exitCode` beklenen `0`
+     yerine `1`. Geri alındı, tekrar yeşil.
+  3. Toplam süre bekçisini (150 ms) kaldırdım, yalnızca idle (100 ms) bıraktım → **damla sunucu
+     (b)** testi (manuel harness ile, `docs/qa/F-004-contract.md`'nin gerektirdiği "istemci
+     kapatana kadar sınırsız" damlama ile) sonsuza dek asılı kaldı (`STILL_RUNNING_AFTER_3000ms`);
+     **sessiz sunucu (a)** yeşil kaldı (idle katmanı hâlâ yerinde) — iki katmanın gerçekten
+     bağımsız olduğu doğrulandı. Bu mutasyon turunda ayrı, gerçek bir **fonksiyonel hata**
+     bulundu ve düzeltildi (aşağıya bakınız).
+  4. `MC_DISABLE` kontrolü yorum satırına alındı → `MC_DISABLE=1` testi kırmızı (`expected 2 to
+     be 1`, olay yine kaydedildi).
+  5. `install-hook.mjs`'teki idempotentlik kontrolü (`groupAlreadyInstalled`) devre dışı bırakıldı
+     → "iki kez çalıştırma → tek kayıt" testi kırmızı (`13 eklendi, 0 zaten var` — beklenen tam
+     tersi).
+  6. Stdin bekçisini `999999` ms'e büyüttüm → elle harness, 600 ms sonra çocuk sürecin
+     `exitCode === null` (hâlâ çalışıyor) olduğunu doğruladı.
+  7. `send-event.cjs`'e `https://evil.example.com` literali eklendi → `no-external-host.test.ts`
+     kırmızı (`match` `null` bekleniyordu, literal bulundu). Ayrıca `.claude/hooks` yolunu kasten
+     `hoooks` yazarak körlük kontrolü testi de ayrı olarak kırmızı verdirildi (`expected false to
+     be true`).
+  Her mutasyondan sonra Edit ile birebir geri alındı; `diff` orijinal yedekle farksız olduğu
+  doğrulandı; tur sonunda `git status`/`git diff` mutasyon izi göstermiyor.
+- **Mutasyon 3 sırasında bulunan gerçek üretim hatası:** `send-event.cjs`'in 120 ms'lik stdin
+  bekçisi, stdin gerçekten `'end'` yayınladıktan sonra **temizlenmiyordu** (`clearTimeout`
+  eksikti). `unref()` "olay döngüsünü canlı tutma" anlamına gelir, "asla ateşlenme" değil — ağ
+  isteği hâlâ açıkken (ör. yavaş/damla yanıt) 120 ms dolunca bu **yetim zamanlayıcı** devreye
+  girip `process.exit(0)` çağırıyor, gerçek ağ bekçilerini (100 ms idle / 150 ms toplam) hiç
+  çalıştırmadan süreci erken sonlandırıyordu. Bulgu, damla sunucusuna gerçek HTTP durum satırı +
+  bitmemiş başlık (`HTTP/1.1 200 OK\r\nX-Drip: `) yazan doğru bir test sunucusu kurup elle
+  enstrümante ederek (`process.on('exit')`, her guard'a debug log) izole edildi — sözleşmenin
+  kendi damla sunucu tarifi ("40 ms aralıkla ham 'x' baytı") aslında Node'un HTTP parser'ında
+  **anında parse hatası** üretiyordu (`req.on('error')`), sözleşmenin ölçmek istediği "idle'dan
+  bağımsız toplam süre bekçisi" senaryosunu hiç test etmiyordu. İki düzeltme yapıldı: (a)
+  `send-event.cjs`'te `stdinGuard` değişkende tutulup `'end'` handler'ında `clearTimeout`
+  ediliyor; (b) test dosyasındaki `startDripServer` gerçek (geçersiz, bitmemiş) HTTP başlığı
+  yazacak şekilde düzeltildi. Düzeltme sonrası: damla sunucu senaryosu artık gerçekten 150 ms'lik
+  toplam bekçiyle kapanıyor (~190-270 ms ölçüldü), mutasyon 3 doğru şekilde kırmızı veriyor.
+- Tur sonunda yetim `node`/`npm run dev` süreci kalmadı (`tasklist` boş).
+
+**Ölçülen gerçek süreler (dört senaryo, `elapsedMs`, düzeltme sonrası)**
+- `ECONNREFUSED` (kapalı port): ~50-130 ms.
+- `ECONNRESET`: ~50-150 ms.
+- Damla sunucu (idle'dan bağımsız toplam bekçi): ~190-270 ms.
+- 503 dönen gerçek sunucu (F-002 davranışı, gövde hiç okunmuyor): ~50-150 ms.
+- Hepsi sözleşmenin "> 1000 ms ise KIRILIR" sert kapısının çok altında; tek kademeli kırılgan
+  `elapsedMs < 400` assert'i **kullanılmadı** (CEO kararının gerektirdiği gibi).
+
+**Sözleşmeden sapmalar**
+- Yok — `docs/qa/F-004-contract.md`'nin gövdesi + "CEO onayı — sözleşme KAPANDI" birebir
+  uygulandı. Tek ek: mutasyon 3 sırasında keşfedilen stdin-bekçi temizleme hatası, sözleşmenin
+  "toplam ≤ 400 ms" tasarım hedefini **bozmuyor** (düzeltme yalnızca yanlış-erken-çıkışı
+  önlüyor, zaten var olan bütçe sabitlerini değiştirmedi) — bu yüzden sözleşme metnine geri
+  dönüp onay istemedim; QA'ya bulgu olarak bırakıyorum.
+
+**Kullanıcıya devredilen adım (AC5 + bu deponun kendi kurulumu)**
+- `npm run install-hook -- .` (bu depoya, sözleşme §3 madde 7'nin önceden onayladığı istisna)
+  Claude Code'un çalışma zamanı izin sınıflandırıcısı tarafından reddedildi (muhtemelen
+  `.claude/settings.json`'ı değiştiren bir komut olduğu için). Bkz. `docs/blockers.md`
+  "2026-09-05 — bilgilendirme". Kullanıcı kendi terminalinde çalıştırabilir; `KURULUM.md`
+  "Doğrulama" bölümü AC5'in 5 adımını tarif ediyor.
+
+**Kalan risk / QA'ya devredilen bilinen sınırlamalar**
+- `send-event.cjs`'in kendi `MC_PORT`/`MC_MAX_PAYLOAD` çözümü sunucunun TS kodundan **ayrı bir
+  kopyadır** (script bağımlılıksız olmalı, TS import edemez) — F-002'nin `check-ports.mjs`
+  emsaliyle tutarlı, sürüklenme riski kabul edilmiş (sözleşme §8).
+- `install-hook.mjs`'in eşzamanlı iki kez çalıştırılması (aynı anda iki terminal) için kilitleme
+  yok — Karpathy §2, tek kullanıcılık araç, gerçekçi olmayan senaryo (sözleşme §8, bilinçli).
+- `async: true`'nun kurulu Claude Code sürümünde desteklenip desteklenmediği doğrulanamadı (kabuk
+  erişimi yok); scriptin kendi ≤400 ms bütçesi (ölçülen ~50-270 ms) en kötü durumu sınırlıyor.
+- AC5 (gerçek oturumda elle doğrulama) ve bu deponun kendi `install-hook` kurulumu **yapılmadı**
+  (yukarıya bakınız) — otomatik testlerin hiçbiri buna bağlı değil.
+
+**Sonraki adım**
+- qa-evaluator F-004'ü değerlendirsin (feature notu `status: qa`).
+- Kullanıcı: `npm run install-hook -- .` çalıştırıp AC5'i `KURULUM.md`'ye işlesin.
+- Sıradaki feature: **F-003** (SSE) — Faz 1 sırası F-001 → F-002 → F-004 → F-003 → F-005 →
+  F-006 → F-007.

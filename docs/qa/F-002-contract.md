@@ -981,3 +981,46 @@ değişmeden geçerlidir.
 
 **KARAR: sözleşme ONAYLANDI.** Kod turu başlayabilir; yukarıdaki kural ve QA tur 2'nin
 "Kod turuna devredilen notlar" bölümü bağlayıcıdır.
+
+---
+
+## Kod turu notu — B1 (QA düzeltme turu 1, 2026-09-04)
+
+QA kod turu KALDI verdi (`docs/qa/latest.md`, Bulgu B1): ana yazma yolunda (`jsonl-store.ts`
+`append`, `ingest.ts`) hiç hata yakalama yoktu — tek bir disk yazma hatası (ör. gün dosyası
+adında bir dizin) süreci `unhandledRejection` ile öldürüyor, istemciye hiç yanıt dönmüyor ve
+yazma kuyruğu kalıcı zehirleniyordu. Düzeltme bu bölümü şu şekilde günceller:
+
+- **Yeni durum kodu: `POST /api/events` artık `503` de dönebilir** (`storage_unavailable`,
+  `src/shared/types.ts` `ErrorCode`'a eklendi). §4.2'deki "Durum kodları: 202/400/403, asla
+  5xx" cümlesi şu şekilde daraltılır: **PRD F1/AC5'in "5xx dönmez" kuralı yalnızca payload
+  kaynaklı sorunlar içindir** (eksik/bilinmeyen alan, JSON-olmayan gövde, aşırı derin nesne —
+  hepsi 202 + bayrak olarak kaydedilmeye devam eder, bu davranış **değişmedi**). Gerçek bir
+  disk I/O arızası (dizin çakışması, disk dolu, izin hatası) bu kuralın kapsamı dışındadır:
+  olay gerçekten saklanamadığında 202 dönüp saklandı numarası yapmak, istemciyi (ve olası
+  F-003 SSE tüketicisini) yanıltır. `503` seçildi çünkü RFC 9110 anlamıyla eşleşiyor
+  (`Service Unavailable` — geçici bir sunucu tarafı kapasite/kaynak sorunu, istemci hatası
+  değil) ve mevcut `ErrorCode`/`ApiResponse` zarfıyla uyumlu.
+- **Yazma kuyruğu artık asla reddedilmiş durumda kalmıyor** (`jsonl-store.ts` `append`):
+  `fs.promises.appendFile`'ın sonucu ayrı bir `writeResult` promise'inde izlenir; `queue`
+  buna hem başarı hem hata durumunda (`.then(success, errorHandler)`) bağlanır, hata
+  loglanıp yutulur — böylece bir sonraki `append` çağrısı kuyrukta bekletilmeye devam eder.
+  `ingest.ts` ise `store.append()`'i `try/catch` içine alır; hata durumunda istemciye 503
+  döner, `void (async () => {...})()` içinde yakalanmamış bir reddi bir daha bırakmaz.
+- **Gözlemlenebilirlik:** `getWriteErrors()` (`jsonl-store.ts`) ve `/api/health`'in yeni
+  `write_errors: number` alanı (`corrupt_lines` deseniyle tutarlı).
+- **Güvenlik ağı:** `src/server/index.ts` modül yüklemesinde bir `process.on('unhandledRejection')`
+  dinleyicisi eklendi (yalnızca bir kez, `globalThis` sembol bayrağıyla korunur) — asıl çözüm
+  değildir, yalnızca öngörülemeyen bir sızıntıya karşı sürecin `exit(1)` ile ölmesini önler.
+- **Kanıt:** `tests/integration/events-api.test.ts` › `"B1 (QA düzeltme turu 1)"` (QA'nın
+  ürettiği senaryonun birebir aynısı: gün dosyası adında dizin → POST → 503, engel kalkınca
+  ikinci POST → 202) ve `tests/server/store/jsonl-store.test.ts` › `"append gerçek bir disk
+  yazma hatasında reddeder ama kuyruk zehirlenmez"`. Her ikisi de mutasyonla (eski davranışa
+  dönülerek) kırmızı verdiği doğrulanıp geri alındı.
+
+Ayrıca bu turda Ö1 (`.seq` semantiği: artık her yerde "bir sonraki atanacak seq" — tutarlı
+tek anlam), Ö2 (`DAY_FILE_PATTERN` çitini gerçekten ölçen `retention.test.ts` senaryosu), Ö3
+(`check-ports.test.ts`'in gerçek varsayılan portu meşgul ederek totolojiyi kapatması) ve Ö4
+(`tests/no-external-host.test.ts`'in tarama kökünün `src/features/**` + `scripts/**`'e
+genişletilmesi, `query.ts`'in yardımcı taban URL'sinin `http://127.0.0.1`'e çevrilmesi)
+düzeltildi. Detaylar `docs/progress.md` "2026-09-04 — F-002 düzeltme turu 1" kaydında.

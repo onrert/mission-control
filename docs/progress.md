@@ -179,3 +179,94 @@ Her oturum sonu CEO/developer ekler: tarih · ne yapıldı · nasıl doğruland�
 - qa-evaluator F-002'yi değerlendirsin (feature notu `status: qa`).
 - Sıradaki feature: F-004 (`send-event.js` hook scripti) veya F-003 (SSE) — sıra `docs/
   progress.md`'nin F-001 kaydındaki plana göre F-004.
+
+## 2026-09-04 — F-002 düzeltme turu 1 (kod turu QA'sı KALDI → düzeltildi)
+
+**Ne yapıldı** — `docs/qa/latest.md`'nin 1 bloklayıcı (B1) + 4 önemli (Ö1-Ö4) bulgusu:
+- **B1 (bloklayıcı):** `jsonl-store.ts` `append`'in yazma kuyruğu artık asla reddedilmiş
+  durumda kalmıyor (`writeResult` ayrı izlenir, `queue` hem başarı hem hatada `.then` ile
+  devam eder, hata `getWriteErrors()`/`write_errors` health alanına sayılır ve loglanır).
+  `ingest.ts` `store.append()`'i `try/catch`'e aldı: gerçek bir disk yazma hatasında istemciye
+  **503 `storage_unavailable`** döner (yeni `ErrorCode`, `src/shared/types.ts`) — PRD F1/AC5'in
+  "5xx dönmez" kuralı yalnızca payload sorunları içindir, gerçek I/O arızası değil; gerekçe
+  `docs/qa/F-002-contract.md` "Kod turu notu — B1"e yazıldı. `missing_fields`/`parse_error`
+  202 davranışı **değişmedi** (regresyon testi: `events-api.test.ts` AC-2 hâlâ yeşil). Ayrıca
+  `src/server/index.ts`'e tek seferlik bir `process.on('unhandledRejection')` güvenlik ağı
+  eklendi (asıl çözüm değil, ek katman).
+- **Ö1:** `.seq` dosyasının semantiği tutarsızdı (`init` "sonraki"yi, `append` "son atanan"ı
+  yazıyordu, okuma `max+1` yapıyordu → her olaysız restart'ta seq bir kayıyordu — gerçek
+  `data/events/.seq` 9'a kadar çıkmıştı, hiç `.jsonl` yokken). Tek semantiğe indirgendi: `.seq`
+  artık her yerde "bir sonraki atanacak seq". Kirlenmiş yerel `data/events/.seq` silindi
+  (gitignore'lu, yalnızca gürültüydü).
+- **Ö2:** `retention.test.ts`'e `DAY_FILE_PATTERN` çitini gerçekten ölçen bir senaryo eklendi
+  (events dizinine `.seq` + `notlar.txt` konup `pruneByDays` sonrası ikisinin de sağlam
+  kaldığı doğrulanıyor) — önceki hâliyle bu çit mutasyonla kaldırılınca 133/133 yeşil kalıyordu.
+- **Ö3:** `check-ports.test.ts`'teki "geçersiz port → varsayılana düşer" testi totolojiydi
+  (varsayılan yerine `0` dönse bile aynı sonucu verirdi). İki yeni test gerçek varsayılan
+  portu (7333/7334) meşgul ederek script'in gerçekten o sabit değere düştüğünü kanıtlıyor.
+- **Ö4:** `tests/no-external-host.test.ts`'in tarama kökü F-002'nin açtığı `src/features/**`
+  ve `scripts/**`'i içerecek şekilde genişletildi. `query.ts`'in URL ayrıştırma için kullandığı
+  taban (`http://internal.invalid` → `http://127.0.0.1`) güncellendi ki genişletilmiş çit
+  yanlış pozitif üretmesin (davranış değişmedi, yalnızca hiç fetch edilmeyen bir sabit taban).
+
+**Nasıl doğrulandı**
+- `npm run typecheck` = 0, `npm run lint` = 0, `npm run build` = 0 (ayrı ayrı çalıştırıldı).
+- `npx vitest run` (tüm süit) = **145/146 yeşil, 11/12 dosya**; tek kırmızı `tests/
+  ci-workflow.test.ts` — F-002'nin **dışında**, bu turun konusu değil (aşağıya bakınız).
+- `npm run e2e` = 0 (1/1), `npm run e2e:dev` = 0 (1/1).
+- **Mutasyon kanıtı (uygula → kırmızı gözlemle → geri al):**
+  1. B1 (`jsonl-store.ts` `append`): eski (`.catch`'siz) kuyruk zinciri geri getirildi →
+     `jsonl-store.test.ts` yeni testi ve `events-api.test.ts` B1 testi kırmızı
+     (`expected 0 to be 1`, `write_errors` hiç sayılmadı).
+  2. B1 (`ingest.ts`): `try/catch` kaldırıldı → `events-api.test.ts` B1 testi **timeout**
+     ile kırmızı (`Test timed out in 5000ms`) — istemci hiç yanıt almadı, tam QA'nın
+     tanımladığı asılı kalma senaryosu; `unhandledRejection` güvenlik ağı süreci ÖLDÜRMEDİ
+     (yalnızca logladı), vitest worker'ı çökmedi.
+  3. Ö1 (`jsonl-store.ts` `loadRingAndSeq` formülü): eski `max(fileSeq, dotSeq)+1` formülüne
+     dönüldü → iki test kırmızı (`.seq dosyası ... ileriyse .seq kazanır`: beklenen 9,
+     alınan 10; restart testi: beklenen 3, alınan 8 — QA'nın gözlemlediği `[0,1,2,7]` kayma
+     deseniyle birebir aynı karakterde).
+  4. Ö2 (`retention.ts` `DAY_FILE_PATTERN` çiti hem `listDayFilesAscending`'den hem
+     `safeDelete`'ten kaldırıldı) → yeni desen testi kırmızı: `.seq` silinen dosyalar
+     listesine girdi (`expected [".seq","2026-08-01.jsonl"] to deeply equal
+     ["2026-08-01.jsonl"]`).
+  5. Ö3 (`check-ports.mjs` geçersiz değerde `0` döndürüldü) → iki yeni test kırmızı
+     (`expected +0 not to be +0`, gerçek 7333/7334 meşgulken script yine de 0'a düşüp
+     boş sanıyordu).
+  6. Ö4 (`src/features/events/server/__mutation_probe.ts` içine `http://evil.com/leak`
+     literali kondu, genişletilmiş guard testiyle çalıştırıldı) → kırmızı verdi
+     (`expected [...] to be null`), sonra dosya silindi.
+  Her mutasyon Edit ile birebir geri alındı; `git status`/`git diff` bu turun sonunda
+  yalnızca kalıcı düzeltmeleri gösteriyor, mutasyon izi yok.
+- Tur sonunda yetim `node`/`npm run dev` süreci kalmadı (`tasklist`/`netstat` boş) — ayrıca
+  bu turun başında BAŞKA bir kaynaktan (bu oturumun başlamasından önce) 7333/7334'ü tutan iki
+  yetim `tsx watch`/`vite` süreci bulundu ve kapatıldı (CLAUDE.md'nin kayıtlı dersiyle uyumlu).
+
+**Kalan risk / bilinçli kapsam dışı bırakılanlar**
+- `docs/qa/latest.md`'nin NOT-seviyesi maddelerinden yalnızca ikisi bu turda ele alındı
+  (`.playwright-mcp/` → `.gitignore`; test izolasyonu zaten sağlanmış olduğu doğrulandı, ek
+  işlem gerekmedi). Diğerleri (N-a `::1` beyaz liste ölü girdisi, N-b `eslint.config.js`
+  sözleşme listesine işlenmemiş, N-c `since_seq=-1` boş sonuç `next_seq` sapması, N-d AC-4 test
+  adlandırması, N-e retention `EPERM`/`EBUSY` test edilmemiş) **kasıtlı olarak yapılmadı** —
+  QA bunları BLOKLAYICI/ÖNEMLİ değil NOT olarak işaretledi ve düzeltme turu brifingi yalnızca
+  B1/Ö1-Ö4'ü istedi (Karpathy §3, kapsam genişletmeme).
+- **Kapsam dışı bir gözlem/soru `docs/blockers.md`'ye yazıldı:** bu turda çalışırken bu
+  depoda F-002'nin dışında, paralel ilerleyen iki commit (`9ae23bf`, `8cdd6de` — hook
+  onarımı ve ADR-009) gözlemlendi. `8cdd6de`, CI matrisini yalnızca `windows-latest`'e
+  daralttı ama `tests/ci-workflow.test.ts`'i güncellemedi; bu yüzden `npm run verify`'nin
+  `vitest` adımı F-002'den bağımsız bir nedenle (tek dosya, tek test) kırmızı. Bu dosyalar
+  F-002'nin sahipliği dışında olduğu için dokunulmadı; `docs/blockers.md`'ye tek soru olarak
+  yazıldı (kimin düzelteceği, F-002'nin GEÇTİ kararını etkileyip etkilemeyeceği).
+- B1'in tasarım kararı (503/`storage_unavailable`, "5xx dönmez" kuralının yalnızca payload
+  sorunlarına özgü olduğu yorumu) `docs/qa/F-002-contract.md`'ye not olarak eklendi;
+  qa-evaluator bu yorumu onaylamazsa yeniden değerlendirilmesi gerekir.
+- Yazma başarısız olduğunda tüketilen `seq` numarası **bir daha verilmez** (bilinçli karar —
+  kuyruktaki eşzamanlı diğer isteklerle çakışmayı önlemek için basit tutuldu); bu, JSONL
+  dosyasında seyrek, açıklanabilir bir boşluk (gap) bırakabilir. Ring buffer da yazma
+  başarısız olsa bile olayı içerir (optimistic push, önceki tasarımdan devralınan davranış,
+  bu turun kapsamı dışında bırakıldı) — yalnızca gerçek disk arızası senaryosunda gözlemlenir,
+  hiçbir AC bunu ölçmüyor.
+
+**Sonraki adım**
+- qa-evaluator F-002'yi tekrar değerlendirsin (feature notu `status: qa`, bu düzeltme turu
+  turu 1'in kod turudur).

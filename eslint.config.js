@@ -22,5 +22,13 @@ export default tseslint.config(
         ecmaFeatures: { jsx: true },
       },
     },
+  },
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+      },
+    },
   }
 )

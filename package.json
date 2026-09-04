@@ -7,7 +7,8 @@
     "node": ">=20.11"
   },
   "scripts": {
-    "dev": "concurrently \"npm:dev:server\" \"npm:dev:web\"",
+    "predev": "node scripts/check-ports.mjs",
+    "dev": "concurrently --kill-others-on-fail \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "tsx watch src/server/index.ts",
     "dev:web": "vite",
     "build": "vite build",

@@ -54,7 +54,12 @@ test('kabuk açılır, başlık görünür, konsol hatası yok, tıklanabilir ö
   // rengi Tailwind v4'ün ürettiği `oklch()` biçiminde döndürür (rgb() değil); dizge
   // karşılaştırması yerine bir 1x1 canvas'a çizip `getImageData` ile 8-bit sRGB piksele
   // çeviriyoruz — bu, tarayıcının kendi renk motorunu kullanan, biçimden bağımsız bir kanıttır.
-  const [bg, token, bgRgb, tokenRgb] = await page.evaluate(() => {
+  //
+  // N1 (F-002 borcu) — bu ölçüm yalnızca `document.body`'ye kör kalmasın diye `#root > div`
+  // (App'in kök kabı, `src/web/App.tsx`) için de aynı teknikle tekrarlanır. F-002 kapsamında
+  // yeni bir panel yüzeyi olmadığı için genişletme yalnızca kök kap ile sınırlıdır; F-003
+  // gerçek bir panel yüzeyi getirdiğinde üçüncü bir ölçüm noktası eklenecektir.
+  const [bg, token, bgRgb, tokenRgb, rootBg, rootBgRgb] = await page.evaluate(() => {
     function toRgb(colorStr: string): [number, number, number] {
       const canvas = document.createElement('canvas')
       canvas.width = 1
@@ -70,12 +75,18 @@ test('kabuk açılır, başlık görünür, konsol hatası yok, tıklanabilir ö
     const tokenValue = getComputedStyle(document.documentElement)
       .getPropertyValue('--color-zinc-950')
       .trim()
-    return [bgValue, tokenValue, toRgb(bgValue), toRgb(tokenValue)]
+    const rootEl = document.querySelector('#root > div')
+    if (!rootEl) throw new Error('#root > div bulunamadı')
+    const rootBgValue = getComputedStyle(rootEl).backgroundColor
+    return [bgValue, tokenValue, toRgb(bgValue), toRgb(tokenValue), rootBgValue, toRgb(rootBgValue)]
   })
   expect(bg).not.toBe('')
   expect(token).not.toBe('')
   expect(bgRgb).toEqual(tokenRgb)
   expect(relativeLuminance(bgRgb)).toBeLessThan(0.1)
+  expect(rootBg).not.toBe('')
+  expect(rootBgRgb).toEqual(tokenRgb)
+  expect(relativeLuminance(rootBgRgb)).toBeLessThan(0.1)
 
   // Faz 2 ekranları hiç görünmez
   expect(bodyText).not.toContain('Kapılar')

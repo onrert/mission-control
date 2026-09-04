@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
-import { createJsonlStore, dayFileName, type EventInput } from '../../../src/server/store/jsonl-store'
+import {
+  createJsonlStore,
+  dayFileName,
+  type EventInput,
+} from '../../../src/server/store/jsonl-store'
 import { createTempDataDir, removeTempDataDir } from '../../helpers/temp-data-dir'
 
 function makeEvent(overrides: Partial<EventInput> = {}): EventInput {
@@ -167,13 +171,60 @@ describe('createJsonlStore', () => {
       path.join(eventsDir, dayFileName(new Date())),
       `${JSON.stringify({ seq: 2, id: '2-a', flags: [], raw: {} })}\n`
     )
+    // `.seq` semantiği "bir sonraki atanacak seq"tir (Ö1 düzeltmesi) — JSONL'in son satırı
+    // (seq:2) "sonraki"si 3 olur, ama `.seq` (9) ondan büyük olduğu için o kazanır.
     fs.writeFileSync(path.join(eventsDir, '.seq'), '9')
 
     const store = createJsonlStore(dataDir)
     store.init()
     return store.append(makeEvent()).then((result) => {
-      expect(result.seq).toBe(10)
+      expect(result.seq).toBe(9)
     })
+  })
+
+  it('.seq restart arasında hiç olay eklenmezse ASLA artmaz (QA düzeltme turu 1 — Ö1)', async () => {
+    // Eski hata: `init` ".seq"e "sonraki seq"i, `append` ise "son atanan seq"i yazıyordu;
+    // okuma tarafı ikisine de +1 uyguluyordu — her olaysız yeniden başlatmada seq bir kayıyordu.
+    const first = createJsonlStore(dataDir)
+    first.init()
+    await first.append(makeEvent())
+    await first.append(makeEvent())
+    await first.append(makeEvent())
+
+    // Olay eklemeden 4 kez "yeniden başlat" (yeni store örneği + init).
+    for (let i = 0; i < 4; i++) {
+      createJsonlStore(dataDir).init()
+    }
+
+    const finalStore = createJsonlStore(dataDir)
+    finalStore.init()
+    const result = await finalStore.append(makeEvent())
+    expect(result.seq).toBe(3)
+  })
+
+  it('append gerçek bir disk yazma hatasında reddeder ama kuyruk zehirlenmez (QA düzeltme turu 1 — B1)', async () => {
+    // QA'nın ürettiği senaryonun store seviyesindeki karşılığı: gün dosyası adında bir DİZİN
+    // oluştur (appendFile bunu EISDIR ile reddeder). Eski davranış: kuyruk kalıcı olarak
+    // reddedilmiş kalıyor, SONRAKİ sağlıklı append de aynı hatayla düşüyordu.
+    const store = createJsonlStore(dataDir)
+    store.init()
+    const eventsDir = path.join(dataDir, 'events')
+    const day = dayFileName(new Date())
+    const dayFilePath = path.join(eventsDir, day)
+    fs.mkdirSync(dayFilePath)
+
+    await expect(store.append(makeEvent())).rejects.toThrow()
+    expect(store.getWriteErrors()).toBe(1)
+
+    // Engel kaldırılınca kuyruk hâlâ çalışıyor mu — sonraki append başarılı olmalı.
+    fs.rmdirSync(dayFilePath)
+    const result = await store.append(makeEvent())
+    expect(result.seq).toBe(1) // seq 0, başarısız yazımda "tüketildi", tekrar verilmez
+
+    const content = fs.readFileSync(dayFilePath, 'utf8')
+    const lines = content.split('\n').filter((l) => l.length > 0)
+    expect(lines).toHaveLength(1)
+    expect(() => JSON.parse(lines[0]!)).not.toThrow()
   })
 
   it('200 eşzamanlı append — hepsi geçerli JSON, satır sayısı tam 200 (temel eşzamanlılık sağlığı)', async () => {

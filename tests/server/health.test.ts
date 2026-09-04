@@ -137,7 +137,7 @@ describe('createServer', () => {
     await once(server, 'close')
   })
 
-  it('GET /api/health 200 döner ve sekiz alanı içerir', async () => {
+  it('GET /api/health 200 döner ve dokuz alanı içerir (write_errors — QA düzeltme turu 1, B1 madde e)', async () => {
     const server = createServer(0, dataDir)
     await once(server, 'listening')
     const address = server.address()
@@ -156,6 +156,7 @@ describe('createServer', () => {
       instance_id: string
       service: string
       corrupt_lines: number
+      write_errors: number
     }
     expect(body.ok).toBe(true)
     expect(typeof body.version).toBe('string')
@@ -166,6 +167,9 @@ describe('createServer', () => {
     expect(body.instance_id.length).toBeGreaterThan(0)
     expect(body.service).toBe('mission-control')
     expect(typeof body.corrupt_lines).toBe('number')
+    expect(body.corrupt_lines).toBe(0)
+    expect(typeof body.write_errors).toBe('number')
+    expect(body.write_errors).toBe(0)
     server.close()
     await once(server, 'close')
   })
@@ -206,7 +210,11 @@ describe('createServer', () => {
     if (address === null || typeof address === 'string') {
       throw new Error('beklenmeyen adres türü')
     }
-    const { status } = await requestWithHost(address.port, '/api/health', `127.0.0.1:${address.port}`)
+    const { status } = await requestWithHost(
+      address.port,
+      '/api/health',
+      `127.0.0.1:${address.port}`
+    )
     expect(status).toBe(200)
     server.close()
     await once(server, 'close')

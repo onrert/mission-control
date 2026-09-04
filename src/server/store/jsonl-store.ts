@@ -95,9 +95,9 @@ export function createJsonlStore(dataDir: string, options: JsonlStoreOptions = {
    * QA düzeltme turu 1 (B1): tek dosya bazında bir kez log (satır başına spam yok, `corrupt_lines`
    * loglama stiliyle tutarlı). Hatayı burada yutarız — kuyruk asla reddedilmiş durumda kalmaz.
    */
-  function logWriteError(day: string, err: unknown): void {
+  function logWriteError(dayFile: string, err: unknown): void {
     const message = err instanceof Error ? err.message : String(err)
-    process.stderr.write(`Hata: ${day}.jsonl dosyasına yazılamadı: ${message}\n`)
+    process.stderr.write(`Hata: ${dayFile} dosyasına yazılamadı: ${message}\n`)
   }
 
   function listDayFiles(): string[] {
@@ -199,6 +199,11 @@ export function createJsonlStore(dataDir: string, options: JsonlStoreOptions = {
     const line = `${JSON.stringify(event)}\n`
     const file = path.join(eventsDir, day)
 
+    // QA düzeltme turu 1 (B1): bu append'in disk yazması `writeResult`'ta izlenir ve çağırana
+    // (ingest.ts) olduğu gibi (başarı/hata) döner — yanıt dürüst olsun diye (§4.2, storage_unavailable).
+    // `queue` ise HİÇBİR ZAMAN reddedilmiş durumda bırakılmaz: hata burada yutulup loglanır,
+    // böylece bu append başarısız olsa bile SONRAKİ append'ler kuyrukta bekletilmeye devam eder
+    // (zehirlenmiş kuyruk = tüm sonraki isteklerin de düşmesi, eski davranış).
     // QA düzeltme turu 1 (B1): bu append'in disk yazması `writeResult`'ta izlenir ve çağırana
     // (ingest.ts) olduğu gibi (başarı/hata) döner — yanıt dürüst olsun diye (§4.2, storage_unavailable).
     // `queue` ise HİÇBİR ZAMAN reddedilmiş durumda bırakılmaz: hata burada yutulup loglanır,

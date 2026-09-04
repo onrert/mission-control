@@ -41,7 +41,11 @@ async function stopServer(handle: ServerHandle): Promise<void> {
  */
 const burstAgent = new http.Agent({ keepAlive: true, maxSockets: 50 })
 
-function postJson(baseUrl: string, body: unknown, headers: Record<string, string> = {}): Promise<{ status: number; json: unknown }> {
+function postJson(
+  baseUrl: string,
+  body: unknown,
+  headers: Record<string, string> = {}
+): Promise<{ status: number; json: unknown }> {
   return new Promise((resolve, reject) => {
     const url = new URL('/api/events', baseUrl)
     const payload = typeof body === 'string' ? body : JSON.stringify(body)
@@ -101,7 +105,10 @@ describe('POST/GET /api/events — entegrasyon', () => {
       }),
     })
     expect(res.status).toBe(202)
-    const body = (await res.json()) as { success: boolean; data: { id: string; seq: number; flags: string[] } }
+    const body = (await res.json()) as {
+      success: boolean
+      data: { id: string; seq: number; flags: string[] }
+    }
     expect(body.success).toBe(true)
     expect(body.data.seq).toBe(0)
     expect(body.data.flags).toEqual([])
@@ -117,7 +124,11 @@ describe('POST/GET /api/events — entegrasyon', () => {
 
     const getAll = await fetch(`${handle.baseUrl}/api/events`)
     expect(getAll.status).toBe(200)
-    const allBody = (await getAll.json()) as { success: boolean; data: unknown[]; meta: { total: number } }
+    const allBody = (await getAll.json()) as {
+      success: boolean
+      data: unknown[]
+      meta: { total: number }
+    }
     expect(allBody.success).toBe(true)
     expect(allBody.data).toHaveLength(1)
     expect(allBody.meta.total).toBe(1)
@@ -157,7 +168,8 @@ describe('POST/GET /api/events — entegrasyon', () => {
 
     for (const scenario of bodies) {
       const headers: Record<string, string> = {}
-      if (scenario.contentType !== '') headers['content-type'] = scenario.contentType ?? 'application/json'
+      if (scenario.contentType !== '')
+        headers['content-type'] = scenario.contentType ?? 'application/json'
       const res = await fetch(`${handle.baseUrl}/api/events`, {
         method: 'POST',
         headers,
@@ -210,7 +222,11 @@ describe('POST/GET /api/events — entegrasyon', () => {
     const N = 500
     const responses = await Promise.all(
       Array.from({ length: N }, (_, i) =>
-        postJson(handle.baseUrl, { hook_event_name: 'PreToolUse', project_path: 'C:\\dev\\apps\\demo', i })
+        postJson(handle.baseUrl, {
+          hook_event_name: 'PreToolUse',
+          project_path: 'C:\\dev\\apps\\demo',
+          i,
+        })
       )
     )
     for (const res of responses) {
@@ -228,7 +244,10 @@ describe('POST/GET /api/events — entegrasyon', () => {
     const N = 300
     await Promise.all(
       Array.from({ length: N }, () =>
-        postJson(handle.baseUrl, { hook_event_name: 'PreToolUse', project_path: 'C:\\dev\\apps\\demo' })
+        postJson(handle.baseUrl, {
+          hook_event_name: 'PreToolUse',
+          project_path: 'C:\\dev\\apps\\demo',
+        })
       )
     )
     const lines = readDayFileLines(dataDir)
@@ -278,6 +297,58 @@ describe('POST/GET /api/events — entegrasyon', () => {
   })
 })
 
+describe('B1 (QA düzeltme turu 1): disk yazma hatasında sunucu ölmez, kuyruk zehirlenmez', () => {
+  let dataDir: string
+  let handle: ServerHandle
+
+  beforeEach(async () => {
+    dataDir = createTempDataDir()
+    handle = await startServer(dataDir)
+  })
+
+  afterEach(async () => {
+    await stopServer(handle)
+    removeTempDataDir(dataDir)
+  })
+
+  it('gün dosyası adında bir dizin varken POST 503 döner (timeout yok), engel kalkınca sonraki POST 202 olur', async () => {
+    const eventsDir = path.join(dataDir, 'events')
+    const dayFilePath = path.join(eventsDir, dayFileName(new Date()))
+    // QA'nın ürettiği senaryo birebir: gün dosyası adında bir DİZİN oluştur.
+    fs.mkdirSync(dayFilePath)
+
+    const res1 = await fetch(`${handle.baseUrl}/api/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hook_event_name: 'PreToolUse' }),
+    })
+    // İstemci bir yanıt ALDI (timeout'a düşmedi) ve yanıt dürüst: olay saklanmadı.
+    expect(res1.status).toBe(503)
+    const body1 = (await res1.json()) as { success: boolean; error: { code: string } }
+    expect(body1.success).toBe(false)
+    expect(body1.error.code).toBe('storage_unavailable')
+
+    // Sunucu sürecinin YAŞADIĞININ kanıtı: aynı Node sürecinde koşan bu test dosyasının
+    // geri kalanı hâlâ çalışıyor (eski davranışta unhandledRejection tüm süreci öldürürdü).
+    const healthRes = await fetch(`${handle.baseUrl}/api/health`)
+    expect(healthRes.status).toBe(200)
+    const health = (await healthRes.json()) as { write_errors: number }
+    expect(health.write_errors).toBeGreaterThanOrEqual(1)
+
+    // Engeli kaldır — kuyruk zehirlenmemiş olmalı, sonraki sağlıklı istek çalışmalı.
+    fs.rmdirSync(dayFilePath)
+    const res2 = await fetch(`${handle.baseUrl}/api/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hook_event_name: 'PreToolUse' }),
+    })
+    expect(res2.status).toBe(202)
+
+    const lines = readDayFileLines(dataDir)
+    expect(lines).toHaveLength(1)
+  })
+})
+
 describe('AC-5: sunucu yeniden başlatılınca en az 100 olay geri döner', () => {
   let dataDir: string
 
@@ -289,13 +360,17 @@ describe('AC-5: sunucu yeniden başlatılınca en az 100 olay geri döner', () =
     removeTempDataDir(dataDir)
   })
 
-  it('aynı dataDir üzerinde ikinci sunucu örneği ring buffer\'ı diskten yükler', async () => {
+  it("aynı dataDir üzerinde ikinci sunucu örneği ring buffer'ı diskten yükler", async () => {
     const firstHandle = await startServer(dataDir)
     for (let i = 0; i < 150; i++) {
       const res = await fetch(`${firstHandle.baseUrl}/api/events`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ hook_event_name: 'PreToolUse', project_path: 'C:\\dev\\apps\\demo', i }),
+        body: JSON.stringify({
+          hook_event_name: 'PreToolUse',
+          project_path: 'C:\\dev\\apps\\demo',
+          i,
+        }),
       })
       expect(res.status).toBe(202)
     }
@@ -316,7 +391,10 @@ describe('AC-5: sunucu yeniden başlatılınca en az 100 olay geri döner', () =
       const postRes = await fetch(`${secondHandle.baseUrl}/api/events`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ hook_event_name: 'PreToolUse', project_path: 'C:\\dev\\apps\\demo' }),
+        body: JSON.stringify({
+          hook_event_name: 'PreToolUse',
+          project_path: 'C:\\dev\\apps\\demo',
+        }),
       })
       const postBody = (await postRes.json()) as { data: { seq: number } }
       expect(postBody.data.seq).toBe(150)

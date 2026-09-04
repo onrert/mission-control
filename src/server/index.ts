@@ -8,9 +8,24 @@ import { startRetentionScheduler } from './store/retention'
 import { handleIngest } from '../features/events/server/ingest'
 import { handleQuery } from '../features/events/server/query'
 
+// QA düzeltme turu 1 (B1 madde f) — güvenlik ağı, ASIL çözüm değil: asıl çözüm `jsonl-store.ts`
+// `append`'in kendi hata yakalamasıdır (kuyruk artık asla reddedilmiş kalmaz, `ingest.ts` her
+// zaman bir yanıt döner). Bu yalnızca öngörülemeyen bir reddedilmiş promise sızarsa süreci
+// Node'un varsayılan `exit(1)` davranışından korur. Modül birden çok kez import edilse bile
+// (testler) yalnızca bir kez eklenir.
+const UNHANDLED_REJECTION_GUARD = Symbol.for('mission-control.unhandledRejectionGuard')
+if (!(globalThis as Record<symbol, boolean>)[UNHANDLED_REJECTION_GUARD]) {
+  ;(globalThis as Record<symbol, boolean>)[UNHANDLED_REJECTION_GUARD] = true
+  process.on('unhandledRejection', (reason) => {
+    process.stderr.write(`Beklenmeyen reddedilen promise (güvenlik ağı, B1): ${String(reason)}\n`)
+  })
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const distWebDir = path.join(__dirname, '..', '..', 'dist', 'web')
-const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8')) as {
+const pkg = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8')
+) as {
   version: string
 }
 
@@ -129,7 +144,8 @@ function handleHealth(
   res: http.ServerResponse,
   port: number,
   instanceId: string,
-  getCorruptLines: () => number
+  getCorruptLines: () => number,
+  getWriteErrors: () => number
 ): void {
   const body = JSON.stringify({
     ok: true,
@@ -140,6 +156,8 @@ function handleHealth(
     instance_id: instanceId,
     service: 'mission-control',
     corrupt_lines: getCorruptLines(),
+    // QA düzeltme turu 1 (B1 madde e): kalıcı disk yazma hatası sayacı, gözlemlenebilir olsun.
+    write_errors: getWriteErrors(),
   })
   res.writeHead(200, { 'content-type': 'application/json' })
   res.end(body)
@@ -217,7 +235,13 @@ export function createServer(port: number, dataDir?: string): http.Server {
     }
 
     if (pathname === '/api/health') {
-      handleHealth(res, port, instanceId, () => store.getCorruptLines())
+      handleHealth(
+        res,
+        port,
+        instanceId,
+        () => store.getCorruptLines(),
+        () => store.getWriteErrors()
+      )
       return
     }
     if (pathname === '/api/events' && req.method === 'GET') {
@@ -251,9 +275,7 @@ export function createServer(port: number, dataDir?: string): http.Server {
 
 function main(): void {
   if (!isSupportedNodeVersion(process.version)) {
-    process.stderr.write(
-      `Hata: Node ${process.version} desteklenmiyor. Node >=20.11 gerekli.\n`
-    )
+    process.stderr.write(`Hata: Node ${process.version} desteklenmiyor. Node >=20.11 gerekli.\n`)
     process.exit(1)
   }
   const port = resolvePort(process.env)

@@ -82,7 +82,7 @@ sunucusu bu klasörü hiç okumaz/yazmaz; oluşturulması ileride bir feature'ı
 ## Fontlar (self-host, lisans)
 
 Uygulama Departure Mono ve IBM Plex ailesi fontlarını `src/web/fonts/` altından kendi sunar
-(CDN kullanılmaz). Departure Mono, SIL Open Font License 1.1 ile lisanslıdır; IBM Plex Mono ve
+(CDN kullanılmaz). Departure Mono, SIL Open Font License 1.1 (OFL) ile lisanslıdır; IBM Plex Mono ve
 IBM Plex Sans da SIL Open Font License 1.1 ile lisanslıdır. Lisans metinleri
 `src/web/fonts/LICENSE-DepartureMono.txt` ve `src/web/fonts/LICENSE-IBMPlex.txt` içindedir.
 

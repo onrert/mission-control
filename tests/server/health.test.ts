@@ -1,6 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { once } from 'node:events'
-import { createServer, isSupportedNodeVersion, resolvePort } from '../../src/server/index'
+import http from 'node:http'
+import {
+  createServer,
+  isAllowedHost,
+  isAllowedOrigin,
+  isSupportedNodeVersion,
+  resolveEnvInt,
+  resolvePort,
+} from '../../src/server/index'
+import { createTempDataDir, removeTempDataDir } from '../helpers/temp-data-dir'
 
 describe('isSupportedNodeVersion', () => {
   it('20.11.0 destekleniyor', () => {
@@ -38,17 +47,98 @@ describe('resolvePort', () => {
   })
 })
 
+describe('resolveEnvInt', () => {
+  it('değişken yoksa varsayılanı döner', () => {
+    expect(resolveEnvInt({}, 'MC_RING_SIZE', 2000)).toBe(2000)
+  })
+  it('geçerli değeri döner', () => {
+    expect(resolveEnvInt({ MC_RING_SIZE: '50' }, 'MC_RING_SIZE', 2000)).toBe(50)
+  })
+  it('geçersiz/boş/negatif değerde varsayılana düşer', () => {
+    expect(resolveEnvInt({ MC_RETENTION_DAYS: 'abc' }, 'MC_RETENTION_DAYS', 30)).toBe(30)
+    expect(resolveEnvInt({ MC_RETENTION_DAYS: '' }, 'MC_RETENTION_DAYS', 30)).toBe(30)
+    expect(resolveEnvInt({ MC_RETENTION_DAYS: '-5' }, 'MC_RETENTION_DAYS', 30)).toBe(30)
+  })
+})
+
+describe('isAllowedHost/isAllowedOrigin (CEO kararı R-1 — port yok sayılır)', () => {
+  it.each([
+    ['127.0.0.1:7333', true],
+    ['127.0.0.1:54321', true],
+    ['localhost:7434', true],
+    ['127.0.0.1', true],
+    ['[::1]:7333', true],
+    ['evil.com', false],
+    ['evil.com:7333', false],
+    ['192.168.1.10:7333', false],
+    [undefined, false],
+  ] as const)('isAllowedHost(%s) -> %s', (host, expected) => {
+    expect(isAllowedHost(host)).toBe(expected)
+  })
+
+  it.each([
+    [undefined, true],
+    ['http://localhost:7434', true],
+    ['http://127.0.0.1:5173', true],
+    ['https://evil.com', false],
+    ['null', false],
+    ['not a url', false],
+  ] as const)('isAllowedOrigin(%s) -> %s', (origin, expected) => {
+    expect(isAllowedOrigin(origin)).toBe(expected)
+  })
+})
+
+// `fetch`/undici, Host başlığını istemci tarafında yönetir ve kullanıcı geçersiz kılmasına
+// izin vermez (bağlantı kurulan gerçek adresle değiştirir) — bu yüzden Host başlığını sahte
+// bir değerle göndermek için `node:http.request` kullanılır (ham soket seviyesi).
+function requestWithHost(
+  port: number,
+  targetPath: string,
+  hostHeader: string
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port,
+        path: targetPath,
+        method: 'GET',
+        headers: { Host: hostHeader },
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (c: Buffer) => chunks.push(c))
+        res.on('end', () => {
+          resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') })
+        })
+      }
+    )
+    req.on('error', reject)
+    req.end()
+  })
+}
+
 describe('createServer', () => {
+  let dataDir: string
+
+  beforeEach(() => {
+    dataDir = createTempDataDir()
+  })
+
+  afterEach(() => {
+    removeTempDataDir(dataDir)
+  })
+
   it('yalnızca 127.0.0.1 arabirimine bağlanır (efemeral port)', async () => {
-    const server = createServer(0)
+    const server = createServer(0, dataDir)
     await once(server, 'listening')
     expect(server.address()).toMatchObject({ address: '127.0.0.1', family: 'IPv4' })
     server.close()
     await once(server, 'close')
   })
 
-  it('GET /api/health 200 döner ve beş alanı içerir', async () => {
-    const server = createServer(0)
+  it('GET /api/health 200 döner ve sekiz alanı içerir', async () => {
+    const server = createServer(0, dataDir)
     await once(server, 'listening')
     const address = server.address()
     if (address === null || typeof address === 'string') {
@@ -63,18 +153,25 @@ describe('createServer', () => {
       port: number
       node: string
       uptime_s: number
+      instance_id: string
+      service: string
+      corrupt_lines: number
     }
     expect(body.ok).toBe(true)
     expect(typeof body.version).toBe('string')
     expect(typeof body.port).toBe('number')
     expect(typeof body.node).toBe('string')
     expect(typeof body.uptime_s).toBe('number')
+    expect(typeof body.instance_id).toBe('string')
+    expect(body.instance_id.length).toBeGreaterThan(0)
+    expect(body.service).toBe('mission-control')
+    expect(typeof body.corrupt_lines).toBe('number')
     server.close()
     await once(server, 'close')
   })
 
   it('bilinmeyen /api/ yolu 404 döner', async () => {
-    const server = createServer(0)
+    const server = createServer(0, dataDir)
     await once(server, 'listening')
     const address = server.address()
     if (address === null || typeof address === 'string') {
@@ -82,6 +179,62 @@ describe('createServer', () => {
     }
     const res = await fetch(`http://127.0.0.1:${address.port}/api/nope`)
     expect(res.status).toBe(404)
+    server.close()
+    await once(server, 'close')
+  })
+
+  it('yabancı Host başlığıyla /api/health 403 forbidden_origin döner', async () => {
+    const server = createServer(0, dataDir)
+    await once(server, 'listening')
+    const address = server.address()
+    if (address === null || typeof address === 'string') {
+      throw new Error('beklenmeyen adres türü')
+    }
+    const { status, body: rawBody } = await requestWithHost(address.port, '/api/health', 'evil.com')
+    expect(status).toBe(403)
+    const body = JSON.parse(rawBody) as { success: boolean; error: { code: string } }
+    expect(body.success).toBe(false)
+    expect(body.error.code).toBe('forbidden_origin')
+    server.close()
+    await once(server, 'close')
+  })
+
+  it('geçerli Host başlığıyla /api/health 200 döner (regresyon)', async () => {
+    const server = createServer(0, dataDir)
+    await once(server, 'listening')
+    const address = server.address()
+    if (address === null || typeof address === 'string') {
+      throw new Error('beklenmeyen adres türü')
+    }
+    const { status } = await requestWithHost(address.port, '/api/health', `127.0.0.1:${address.port}`)
+    expect(status).toBe(200)
+    server.close()
+    await once(server, 'close')
+  })
+
+  it('bozuk satır içeren bir gün dosyasıyla açılırsa corrupt_lines uçtan uca doğru sayılır', async () => {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    const { dayFileName } = await import('../../src/server/store/jsonl-store')
+
+    const eventsDir = path.join(dataDir, 'events')
+    fs.mkdirSync(eventsDir, { recursive: true })
+    const file = path.join(eventsDir, dayFileName(new Date()))
+    const validLines = Array.from({ length: 8 }, (_, i) =>
+      JSON.stringify({ seq: i, id: `${i}-a`, ts: new Date().toISOString() })
+    )
+    const lines = [...validLines, 'bozuk satır 1', '{ bozuk json', ''].join('\n')
+    fs.writeFileSync(file, lines)
+
+    const server = createServer(0, dataDir)
+    await once(server, 'listening')
+    const address = server.address()
+    if (address === null || typeof address === 'string') {
+      throw new Error('beklenmeyen adres türü')
+    }
+    const res = await fetch(`http://127.0.0.1:${address.port}/api/health`)
+    const body = (await res.json()) as { corrupt_lines: number }
+    expect(body.corrupt_lines).toBe(2)
     server.close()
     await once(server, 'close')
   })

@@ -1,7 +1,12 @@
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { createJsonlStore } from './store/jsonl-store'
+import { startRetentionScheduler } from './store/retention'
+import { handleIngest } from '../features/events/server/ingest'
+import { handleQuery } from '../features/events/server/query'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const distWebDir = path.join(__dirname, '..', '..', 'dist', 'web')
@@ -45,6 +50,70 @@ export function resolvePort(env: NodeJS.ProcessEnv): number {
   return parsed
 }
 
+/**
+ * Genel amaçlı, negatif olmayan tamsayı ortam değişkeni çözücü (`MC_RING_SIZE`,
+ * `MC_RETENTION_DAYS`, `MC_RETENTION_EVENTS`, `MC_MAX_PAYLOAD`). `resolvePort`'un port'a özgü
+ * üst sınırı (65535) burada yoktur; geçersiz/boş değer sessizce varsayılana düşer.
+ */
+export function resolveEnvInt(env: NodeJS.ProcessEnv, key: string, defaultValue: number): number {
+  const raw = env[key]
+  if (raw === undefined) return defaultValue
+  const trimmed = raw.trim()
+  const parsed = Number(trimmed)
+  if (trimmed === '' || !Number.isInteger(parsed) || parsed < 0) return defaultValue
+  return parsed
+}
+
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
+
+/**
+ * DNS-rebinding koruması (mimari §10, ADR-008 karar 1, CEO kararı R-1). **Port bileşeni
+ * yok sayılır** — yalnızca ana bilgisayar adı beyaz listelenir (CEO kararı, `docs/qa/
+ * F-002-contract.md` "CEO kararı — R-1"). `Host` başlığı yoksa `false`.
+ */
+export function isAllowedHost(hostHeader: string | undefined): boolean {
+  if (!hostHeader) return false
+  const lower = hostHeader.trim().toLowerCase()
+  if (lower.startsWith('[')) {
+    const end = lower.indexOf(']')
+    const bracketed = end === -1 ? lower : lower.slice(0, end + 1)
+    return LOOPBACK_HOSTNAMES.has(bracketed)
+  }
+  const colonIndex = lower.lastIndexOf(':')
+  const hostname = colonIndex === -1 ? lower : lower.slice(0, colonIndex)
+  return LOOPBACK_HOSTNAMES.has(hostname)
+}
+
+const LOOPBACK_ORIGIN_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1'])
+
+/**
+ * Cross-origin CSRF koruması. `Origin` başlığı yoksa `true` (tarayıcı-dışı istemci — `curl`,
+ * gelecekteki `send-event.js`). Varsa yalnızca loopback ana bilgisayar adı kabul edilir; port
+ * yok sayılır (CEO kararı R-1).
+ */
+export function isAllowedOrigin(originHeader: string | undefined): boolean {
+  if (originHeader === undefined) return true
+  let url: URL
+  try {
+    url = new URL(originHeader)
+  } catch {
+    return false
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  return LOOPBACK_ORIGIN_HOSTNAMES.has(hostname)
+}
+
+function sendForbidden(res: http.ServerResponse): void {
+  res.writeHead(403, { 'content-type': 'application/json' })
+  res.end(
+    JSON.stringify({
+      success: false,
+      error: { code: 'forbidden_origin', message: 'İstek kaynağı reddedildi.' },
+    })
+  )
+}
+
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html',
   '.js': 'text/javascript',
@@ -56,13 +125,21 @@ const MIME_TYPES: Record<string, string> = {
   '.png': 'image/png',
 }
 
-function handleHealth(res: http.ServerResponse, port: number): void {
+function handleHealth(
+  res: http.ServerResponse,
+  port: number,
+  instanceId: string,
+  getCorruptLines: () => number
+): void {
   const body = JSON.stringify({
     ok: true,
     version: pkg.version,
     port,
     node: process.version,
     uptime_s: process.uptime(),
+    instance_id: instanceId,
+    service: 'mission-control',
+    corrupt_lines: getCorruptLines(),
   })
   res.writeHead(200, { 'content-type': 'application/json' })
   res.end(body)
@@ -101,12 +178,54 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse): void 
  * HTTP sunucusunu kurar (dinlemeye başlatmaz). `createServer(port).listen` çağıranın
  * sorumluluğundadır — ama bu fabrika fonksiyonu kendisi `listen`'i çağırır, böylece
  * testler `once(server, 'listening')` ile etkin bağlanma adresini ölçebilir.
+ *
+ * `dataDir` verilmezse `MC_DATA_DIR` (veya varsayılan `./data`) kullanılır — bu, F-002'nin
+ * JSONL deposunu ve retention zamanlayıcısını burada başlatabilmesi ve AC-5'in aynı veri
+ * dizinine karşı iki ayrı sunucu örneği kurabilmesi için gereklidir (sözleşme §2.2/§3 madde 9).
  */
-export function createServer(port: number): http.Server {
+export function createServer(port: number, dataDir?: string): http.Server {
+  const resolvedDataDir = dataDir ?? process.env.MC_DATA_DIR ?? path.join(process.cwd(), 'data')
+  const instanceId = crypto.randomUUID()
+
+  const store = createJsonlStore(resolvedDataDir, {
+    ringSize: resolveEnvInt(process.env, 'MC_RING_SIZE', 2000),
+  })
+  store.init()
+
+  const stopRetention = startRetentionScheduler(resolvedDataDir, store, {
+    retentionDays: resolveEnvInt(process.env, 'MC_RETENTION_DAYS', 30),
+    retentionEvents: resolveEnvInt(process.env, 'MC_RETENTION_EVENTS', 20000),
+  })
+
+  const maxPayload = resolveEnvInt(process.env, 'MC_MAX_PAYLOAD', 65536)
+
   const server = http.createServer((req, res) => {
     const pathname = (req.url ?? '/').split('?')[0]
+
+    if (pathname?.startsWith('/api/')) {
+      // Host/Origin koruması route dispatch'ten önce, en başta çalışır (sözleşme §3 madde 11).
+      if (!isAllowedHost(req.headers.host)) {
+        sendForbidden(res)
+        return
+      }
+      if (req.method === 'POST' && pathname === '/api/events') {
+        if (!isAllowedOrigin(req.headers.origin)) {
+          sendForbidden(res)
+          return
+        }
+      }
+    }
+
     if (pathname === '/api/health') {
-      handleHealth(res, port)
+      handleHealth(res, port, instanceId, () => store.getCorruptLines())
+      return
+    }
+    if (pathname === '/api/events' && req.method === 'GET') {
+      handleQuery(req, res, store)
+      return
+    }
+    if (pathname === '/api/events' && req.method === 'POST') {
+      handleIngest(req, res, store, maxPayload)
       return
     }
     if (pathname?.startsWith('/api/')) {
@@ -122,6 +241,9 @@ export function createServer(port: number): http.Server {
       process.exit(1)
     }
     throw err
+  })
+  server.on('close', () => {
+    stopRetention()
   })
   server.listen(port, '127.0.0.1')
   return server

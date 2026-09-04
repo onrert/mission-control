@@ -97,3 +97,85 @@ Her oturum sonu CEO/developer ekler: tarih · ne yapıldı · nasıl doğruland�
 **Sonraki adım**
 - G4-1 kararı (kullanıcı): kilometre taşı onayı şimdi mi verilsin, yoksa Faz 1 bitiminde mi.
 - Sıradaki feature: **F-002** (olay alma uç noktası + JSONL depo + retention). N1 ve N4 notları F-002 brief'ine girecek.
+
+---
+
+## 2026-09-04 — F-002 (olay alma + JSONL depo + retention + N1/N4) kod turu tamamlandı
+
+**Ne yapıldı**
+- Sözleşme turu: 2 tur (developer ↔ qa-evaluator) + CEO kararı R-1. Sözleşme
+  `docs/qa/F-002-contract.md` — ADR-008 karar 1 (Host/Origin koruması F-002'de yazılır) ve
+  karar 2 (50 MB rotasyon ertelenir) işlendi; QA tur 2'nin ürettiği R-1 regresyonu (Host
+  beyaz listesinin efemeral test portlarını kırması) CEO tarafından "port bileşeni yok
+  sayılır, yalnızca ana bilgisayar adı beyaz listelenir" kararıyla kapatıldı.
+- Kod: `src/shared/types.ts` (EventRecord/ApiResponse alt kümesi), `src/server/store/
+  jsonl-store.ts` (fabrika desenli depo: yazma kuyruğu, ring buffer, seq dayanıklılığı,
+  bozuk satır sayacı, `dayFileName` tek fonksiyon), `src/server/store/retention.ts`
+  (`isInsideDataRoot` — `path.relative` tabanlı, `startsWith` tuzağına düşmeyen kapsama
+  kontrolü — gün + adet budama, saatlik zamanlayıcı), `src/features/events/server/{normalize,
+  ingest,query}.ts`, `scripts/check-ports.mjs` (N4 `predev` kilidi). `src/server/index.ts`:
+  `createServer(port, dataDir?)`, `isAllowedHost`/`isAllowedOrigin` (port'suz, CEO kararı
+  R-1), `/api/health`'e `instance_id`/`service`/`corrupt_lines` eklendi.
+- N1: `tests/e2e/shell.spec.ts` artık `#root > div` zeminini de ölçüyor (panel yüzeyi F-002'de
+  yok, yarısı F-003'e devredildi — feature notuna işlendi).
+- N4: `predev` script'i port doluysa `concurrently`/Vite hiç başlamadan `exit(1)` veriyor;
+  `dev-shell.spec.ts` proxy'li/doğrudan `instance_id` eşitliğini doğruluyor.
+
+**Nasıl doğrulandı**
+- `npm run verify` (typecheck + lint + 133 test/12 dosya + build) = **0**. `npm run e2e` = **0**.
+  `npm run e2e:dev` = **0**.
+- N4 gerçek gözlem: 7333'ü tutan sahte bir `net` dinleyicisi başlatıldı, `npm run dev`
+  çalıştırıldı → `predev` adımı Türkçe hatayla `exit 1` verdi, `concurrently`/Vite/`tsx`
+  **hiç başlamadı** (7334'e `curl` bağlantı kuramadı), hiçbir yetim süreç kalmadı
+  (`tasklist` boş). Sahte dinleyici elle kapatıldı.
+- Mutasyon kanıtı — sözleşme §7'nin 8 mutasyonunun hepsi uygulanıp KIRMIZI görüldü, sonra geri
+  alındı (`git diff`'te iz yok, `grep -rn MUTASYON src/` boş):
+  1. `missing_fields` mantığı devre dışı → `normalize.test.ts` 3 test kırmızı.
+  2. Yazma kuyruğu kaldırıldı → **ilk yazdığım fiziksel-satır testi bu makinede yeşil kaldı**
+     (Windows'ta `fs.promises.appendFile` bu boyut/yoğunlukta zaten atomik davranıyor — çıplak
+     bir `http.createServer` ile bile doğrulandı). Bulgu, testin kendisini güçlendirmemi
+     gerektirdi: `fs.promises.appendFile`'ı mock'layıp çağrı/tamamlanma SIRASINI ölçen yeni bir
+     test eklendi (çift `seq`'leri yapay gecikmeli) — bu, OS atomikliğinden bağımsız, doğrudan
+     kuyruk mantığını hedefler ve mutasyon altında kesin kırmızı verdi.
+  3. `isInsideDataRoot`'ta `path.relative` → `startsWith` → kardeş-önek tuzağı testi kırmızı.
+  4. Satır sayısı haritası yalnızca ring'den sayılınca → yeni eklenen "ring altında toplam"
+     testi kırmızı (crash ile, ama kesin kırmızı).
+  5. Seq çözümlemesi yalnızca `.seq`'e bağlanınca → ".seq JSONL'den eskiyse" testi kırmızı.
+  6. `App.tsx` kök rengi `bg-zinc-950`→`bg-zinc-900` yapılıp `body` değiştirilmeden bırakılınca
+     → genişletilmiş N1 E2E testi (`#root > div` ölçümü) kırmızı verdi (gerçek Playwright
+     koşusuyla doğrulandı).
+  7. `isAllowedHost`/`isAllowedOrigin` her zaman `true` dönünce → 9 test (health.test.ts +
+     events-api.test.ts AC-8) kırmızı.
+  8. `project_path`/`cwd` önceliği bozulunca (`cwd` yok sayılınca) → ilgili normalize testi
+     kırmızı.
+- Her mutasyonda: değiştir → ilgili test dosyasını izole çalıştır → kırmızı gözlemi kaydet →
+  Edit ile birebir geri al → tekrar yeşil olduğu doğrulandı.
+- Tur sonunda yetim `node`/`npm run dev` süreci kalmadı (`tasklist` boş).
+
+**Kalan risk / QA'ya devredilen bilinen sınırlamalar**
+- **Mutasyon 2'nin fiziksel-yazma testi bu Windows makinesinde tek başına hiçbir şey
+  ölçmüyor** — `fs.promises.appendFile`'ın bu boyut/yoğunlukta zaten atomik davrandığı
+  ampirik olarak doğrulandı (çıplak `http.createServer` ile bile). Gerçek kanıt artık mock
+  tabanlı sıra testi; fiziksel test yalnızca "büyük N'de satır sayısı/JSON geçerliliği bozulmuyor"
+  temel sağlığını ölçüyor, kuyruğun VARLIĞINI değil. QA bunu ayrı bir bulgu olarak değerlendirmek
+  isteyebilir.
+- `GET /api/events` yalnızca ring buffer'ı sorgular (`MC_RING_SIZE`, vars. 2000); disk-destekli
+  tam geçmiş sorgusu yok — F-002'nin hiçbir AC'si bunu istemiyor, F-003'ün SSE `resync`
+  senaryosunda ele alınacak (sözleşme §4.3'te dokümante edilmiş, bilinen sınırlama).
+  `events_total`/`ring_from`/`ring_to` health alanları da bilinçli olarak eklenmedi (F-003'e
+  devredildi, feature notuna işlendi).
+- CEO kararı R-1 (Host/Origin'de port yok sayılması) kabul edilmiş bir artık risk taşıyor:
+  başka bir yerel sayfa panele olay POST edebilir. F-002'de etkisi yalnızca kendi olay kaydının
+  kirlenmesi; **F-006 (yazma kapısı) bu kararı yeniden değerlendirmek zorunda** (ADR-008 eki).
+  Bu; yeni bir açık değil, kabul kararına zaten yazılmış bir taahhüt.
+- Windows'ta retention silmesi `EPERM`/`EBUSY` alırsa dosya bir sonraki saatlik tura kalır
+  (R4, sözleşmede kabul edilmiş bir davranış, test edilmedi — gerçek antivirüs/kilit senaryosu
+  simüle edilemedi).
+- `data/events/` gerçek repo dizini, `npm run dev`/`npm start`/prod E2E koşularında normal
+  şekilde oluşuyor (gitignore'lu); testler her zaman `MC_DATA_DIR` geçici dizini kullanıyor,
+  gerçek `data/`'ye hiçbir test yazmadı (doğrulandı).
+
+**Sonraki adım**
+- qa-evaluator F-002'yi değerlendirsin (feature notu `status: qa`).
+- Sıradaki feature: F-004 (`send-event.js` hook scripti) veya F-003 (SSE) — sıra `docs/
+  progress.md`'nin F-001 kaydındaki plana göre F-004.

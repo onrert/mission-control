@@ -21,7 +21,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "verify": "npm run typecheck && npm run lint && npm run test && npm run build"
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
+    "install-hook": "node scripts/install-hook.mjs"
   },
   "dependencies": {
     "react": "^19",

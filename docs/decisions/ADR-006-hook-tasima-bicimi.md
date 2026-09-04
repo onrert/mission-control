@@ -4,19 +4,19 @@
 - **Durum:** kabul
 
 - **Bağlam:**
-  `docs/specs/mission-control.md` ve doğrulama raporu, izlenen projeye bir `.claude/hooks/send-event.js` scripti kurulacağını varsayıyordu. Ancak Claude Code hook dokümantasyonu (2026-09-04'te okundu) `type: "command"` dışında **`type: "http"`** adında yerleşik bir handler tipi tanımlıyor:
+  `docs/specs/mission-control.md` ve doğrulama raporu, izlenen projeye bir `.claude/hooks/send-event.cjs` scripti kurulacağını varsayıyordu. Ancak Claude Code hook dokümantasyonu (2026-09-04'te okundu) `type: "command"` dışında **`type: "http"`** adında yerleşik bir handler tipi tanımlıyor:
 
   ```json
   { "type": "http", "url": "http://localhost:8080/hooks/pre-tool-use",
     "headers": { "Authorization": "Bearer $MY_TOKEN" }, "allowedEnvVars": ["MY_TOKEN"] }
   ```
 
-  Yani hook payload'ı, hiçbir script yazmadan doğrudan sunucumuza POST edilebilir. Bu, `send-event.js`'i tamamen ortadan kaldırabilecek bir sadeleştirmedir ve fabrika "önce basitlik" kuralı gereği ciddiye alınmalıdır.
+  Yani hook payload'ı, hiçbir script yazmadan doğrudan sunucumuza POST edilebilir. Bu, `send-event.cjs`'i tamamen ortadan kaldırabilecek bir sadeleştirmedir ve fabrika "önce basitlik" kuralı gereği ciddiye alınmalıdır.
 
   Karar kriterleri: (1) izlenen oturumu **asla bloklamamak** — bu ürünün varlık sebebini yok eder; (2) sunucu kapalıyken zararsız olmak; (3) `docs/02-architecture.md` §5.1'deki olay kaydını üretebilmek; (4) kurulum sürtünmesi.
 
 - **Karar:**
-  **`type: "command"` + `async: true` + `timeout: 5`** ile tek dosyalık, bağımlılıksız `send-event.js` scripti kullanılır. Tam script tasarımı ve `settings.json` metni: `docs/02-architecture.md` §8.
+  **`type: "command"` + `async: true` + `timeout: 5`** ile tek dosyalık, bağımlılıksız `send-event.cjs` scripti kullanılır. Tam script tasarımı ve `settings.json` metni: `docs/02-architecture.md` §8.
 
   Gerekçeler:
 

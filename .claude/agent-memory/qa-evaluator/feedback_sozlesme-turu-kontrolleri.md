@@ -1,6 +1,6 @@
 ---
 name: sozlesme-turu-kontrolleri
-description: Sözleşme turu incelemesinde ilk bakılacak üç şey — ADR uyumu, kanıtın okuma yolu, ve düzeltmenin kendi ürettiği regresyon
+description: Sözleşme turu incelemesinde ilk bakılacak beş şey — ADR uyumu ve ADR'nin verdiği ödevler, kanıtın okuma yolu, düzeltmenin ürettiği regresyon, mutasyon hedefinin belirsizliği, çok katmanlı zaman aşımı bütçesi
 metadata:
   type: feedback
 ---
@@ -26,6 +26,19 @@ Sözleşme turunda (PROCESS §5) şu kontrolleri her zaman en başa al:
    her şey 403. Sözleşme aynı satırda "mevcut testler bozulmadan çalışır" diyordu; iddia
    yanlıştı. Bu tür boşluklar kod turunda "testi geçirmek için kontrolü gevşetme" baskısı
    yaratır — o yüzden sözleşmede kapatılır.
+
+4. **ADR yalnızca karar değil, ödev de verir.** ADR metinlerinde "F-00X bunu ölçer",
+   "ölçüm N'i aşarsa CEO'ya bildirilir" gibi cümleleri ara ve sözleşmede karşılığı var mı
+   diye bak. (F-004 tur 1: ADR-006 "F-004 bunu ölçer; ölçüm 1 s'yi aşarsa CEO'ya bildirilir"
+   diyordu; sözleşmenin kendi tasarımı ~2,5 s'lik en kötü duruma çıkıyordu ve ne ölçüm ne
+   bildirim vardı → bloklayıcı.)
+5. **Çok katmanlı zaman aşımı = fazları ardışık varsay, en kötü toplamı elle hesapla.**
+   Katman tablosu "her katman şunu kapatır" diye yazıldığında toplam hiç hesaplanmıyor;
+   girdi bekçisi ile ağ bekçisi ardışıksa süreler toplanır. Ayrıca **hiç testi/mutasyonu
+   olmayan katmanı** ara — genelde şablondan kopyalanan katman (F-004: 2000 ms stdin bekçisi)
+   testsizdir. Mutasyon hedefi "A **veya** B senaryosu" diye belirsiz bırakılmışsa mutasyon
+   kaçar: A seçilirse alt katman zaten tetiklenir ve mutasyon yeşil kalır — senaryoyu ve
+   sayısal parametrelerini sözleşmede tek seçenek olarak sabitlet.
 
 **Why:** F-001'de yeşil görünen ama hiçbir şey ölçmeyen bir E2E assert'i ilk iki başlıktan
 kaçmıştı; CLAUDE.md'ye "QA'ya mutasyon testi yaptır" kuralı bu yüzden eklendi. Mutasyon planı

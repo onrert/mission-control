@@ -39,7 +39,7 @@ Aşağıdaki sınırlar mimari düzeyde zorlanır, tercih değildir:
  │        │                                                                 │
  │        │ hook tetiklenir (PreToolUse, PostToolUse, SubagentStop, ...)     │
  │        ▼                                                                 │
- │  .claude/hooks/send-event.js   (async, timeout 5s, ASLA bloklamaz)       │
+ │  .claude/hooks/send-event.cjs   (async, timeout 5s, ASLA bloklamaz)       │
  │        │ stdin: hook JSON                                                │
  │        │                                                                 │
  │  docs/features/*.md   docs/approvals/*   docs/qa/*   (diskte dosyalar)    │
@@ -74,7 +74,7 @@ Aşağıdaki sınırlar mimari düzeyde zorlanır, tercih değildir:
 Üç akış ayrı ayrı:
 
 **A. Olay akışı (Faz 1, özellik 1)**
-`hook → send-event.js → POST /api/events → normalize → JSONL append + ring buffer → SSE push → timeline satırı`
+`hook → send-event.cjs → POST /api/events → normalize → JSONL append + ring buffer → SSE push → timeline satırı`
 Uçtan uca hedef gecikme < 2 s (PRD F1/AC2). Gerçekte tek makinede < 100 ms beklenir; 2 s bütçenin tamamı hook async kuyruğu + SSE flush payıdır.
 
 **B. Dosya izleme akışı (Faz 1, özellik 2-3)**
@@ -159,9 +159,9 @@ Bu listeye ekleme yapmak ADR gerektirir. **Yasaklı:** `better-sqlite3` ve node-
 | `MC_RETENTION_DAYS` | `30` | ADR-001 karar 4. |
 | `MC_RETENTION_EVENTS` | `20000` | ADR-001 karar 4; hangisi önce dolarsa. |
 | `MC_RING_SIZE` | `2000` | Bellekteki son-olay tamponu (SSE telafi penceresi). |
-| `MC_MAX_PAYLOAD` | `65536` | `send-event.js` ham payload üst sınırı (bayt). |
+| `MC_MAX_PAYLOAD` | `65536` | `send-event.cjs` ham payload üst sınırı (bayt). |
 | `MC_WATCH_POLLING` | `0` | Ağ sürücüsü/WSL sorununda `1` yapılır (chokidar polling). |
-| `MC_DISABLE` | *(boş)* | `1` ise `send-event.js` hiçbir şey yapmadan çıkar. |
+| `MC_DISABLE` | *(boş)* | `1` ise `send-event.cjs` hiçbir şey yapmadan çıkar. |
 
 **`MC_HOST` diye bir değişken yoktur ve eklenmeyecektir** (G1 kullanıcı kararı 1). Bind adresi kaynakta sabittir.
 
@@ -216,7 +216,7 @@ mission-control/
 │  ├─ fixtures/               # projects/, events/, transcripts/
 │  ├─ helpers/                # geçici proje kurucu, hook simülatörü, dosya manifesti
 │  └─ e2e/                    # Playwright spec'leri
-├─ .claude/hooks/send-event.js  # izlenen projelere kopyalanacak şablon (§8)
+├─ .claude/hooks/send-event.cjs  # izlenen projelere kopyalanacak şablon (§8)
 ├─ scripts/install-hook.mjs     # şablonu bir projeye kuran yardımcı (F-004)
 └─ package.json
 ```
@@ -375,7 +375,7 @@ Hata kodu → HTTP eşlemesi: `invalid_body|invalid_path` 400 · `forbidden_orig
 
 **`POST /api/events`** — hook alımı. *Yazma kapısıyla ilgisi yok: yalnızca `MC_DATA_DIR` altına yazar.*
 
-- İstek: `Content-Type: application/json`, gövde = ham hook payload'ı (+ `send-event.js`'in eklediği `project_path`, `client_ts`, `client_version`).
+- İstek: `Content-Type: application/json`, gövde = ham hook payload'ı (+ `send-event.cjs`'in eklediği `project_path`, `client_ts`, `client_version`).
 - Gövde sınırı 256 KB; aşarsa 400 `invalid_body` (hook zaten `MC_MAX_PAYLOAD` ile kırpar).
 - **Asla 5xx dönmez** (PRD F1/AC5). Eksik/bilinmeyen alan → 202 + `flags`.
 - Yanıt: `202 { success: true, data: { id, seq, flags } }`
@@ -565,7 +565,16 @@ chokidar 'change':    e = selfWrites.get(realpath(file))
 
 ---
 
-## 8. `send-event.js` hook scripti tasarımı
+## 8. `send-event.cjs` hook scripti tasarımı
+
+> **Doküman düzeltmesi (CEO, 2026-09-04):** Bu bölümdeki tüm `send-event.js` referansları
+> `send-event.cjs` olarak güncellendi. Gerekçe: izlenen projenin `package.json`'ında
+> `"type": "module"` varsa düz `.js` ESM sayılır, `require` patlar ve script **sessizce ölür**
+> — panel hiç olay almaz, kimse fark etmez. Bu depoda tam olarak bu yaşandı ve bütün güvenlik
+> hook'ları haftalarca no-op koştu (commit `9ae23bf`). `.cjs` uzantısı `type` alanından bağımsız
+> olarak CommonJS'i garantiler. Karar: `docs/features/F-004-send-event-hook.md` "CEO kararları".
+> Aynı düzeltme `ADR-006`'ya da uygulandı. Tasarımın kendisi değişmedi.
+
 
 Taşıma kararı (`command` + `async` vs `type:"http"`): **ADR-006**.
 
@@ -581,7 +590,7 @@ Taşıma kararı (`command` + `async` vs `type:"http"`): **ADR-006**.
 | **`MC_DISABLE=1` → anında çık** | Kullanıcı paneli kapattığında hook'ları settings'ten sökmek zorunda kalmasın. |
 | **Bağımlılık yok** | Yalnızca `node:http`, `node:path`. İzlenen projede `npm install` gerektirmez — script tek dosya olarak kopyalanır. |
 
-### 8.2 Örnek içerik (şablon — G2 sonrası `.claude/hooks/send-event.js` olarak yazılacak)
+### 8.2 Örnek içerik (şablon — G2 sonrası `.claude/hooks/send-event.cjs` olarak yazılacak)
 
 ```js
 // Mission Control — hook olay göndericisi. Bağımlılıksız, bloklamaz, sessizce başarısız olur.
@@ -671,43 +680,43 @@ function send(text) {
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.js", "async": true, "timeout": 5 } ] }
+      { "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.cjs", "async": true, "timeout": 5 } ] }
     ],
     "SessionEnd": [
-      { "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.js", "async": true, "timeout": 5 } ] }
+      { "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.cjs", "async": true, "timeout": 5 } ] }
     ],
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.js", "async": true, "timeout": 5 } ] }
+      { "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.cjs", "async": true, "timeout": 5 } ] }
     ],
     "PreToolUse": [
-      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.js", "async": true, "timeout": 5 } ] }
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.cjs", "async": true, "timeout": 5 } ] }
     ],
     "PostToolUse": [
-      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.js", "async": true, "timeout": 5 } ] }
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.cjs", "async": true, "timeout": 5 } ] }
     ],
     "PostToolUseFailure": [
-      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.js", "async": true, "timeout": 5 } ] }
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.cjs", "async": true, "timeout": 5 } ] }
     ],
     "SubagentStart": [
-      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.js", "async": true, "timeout": 5 } ] }
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.cjs", "async": true, "timeout": 5 } ] }
     ],
     "SubagentStop": [
-      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.js", "async": true, "timeout": 5 } ] }
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.cjs", "async": true, "timeout": 5 } ] }
     ],
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.js", "async": true, "timeout": 5 } ] }
+      { "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.cjs", "async": true, "timeout": 5 } ] }
     ],
     "StopFailure": [
-      { "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.js", "async": true, "timeout": 5 } ] }
+      { "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.cjs", "async": true, "timeout": 5 } ] }
     ],
     "Notification": [
-      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.js", "async": true, "timeout": 5 } ] }
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.cjs", "async": true, "timeout": 5 } ] }
     ],
     "PreCompact": [
-      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.js", "async": true, "timeout": 5 } ] }
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.cjs", "async": true, "timeout": 5 } ] }
     ],
     "PostCompact": [
-      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.js", "async": true, "timeout": 5 } ] }
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "node .claude/hooks/send-event.cjs", "async": true, "timeout": 5 } ] }
     ]
   }
 }
@@ -826,7 +835,7 @@ Piramit: çok sayıda hızlı birim testi, orta katmanda gerçek dosya sistemi +
 - `approve` mevcut `.deny.md` varken → arşive rename + `.ok` yazılır, `.deny.md` **silinmez**.
 - `deny` boş gerekçeyle → 400, hiçbir dosya oluşmaz.
 - `Host: evil.com` başlığıyla istek → 403.
-- **Hook scriptinin kendisi** `child_process.spawn('node', ['.claude/hooks/send-event.js'])` ile çalıştırılır, fixture JSON stdin'e yazılır → sunucuya olay ulaşır. Ayrıca: sunucu kapalıyken aynı script **exit 0** ile ve **< 1 s** içinde biter, stdout **boştur**.
+- **Hook scriptinin kendisi** `child_process.spawn('node', ['.claude/hooks/send-event.cjs'])` ile çalıştırılır, fixture JSON stdin'e yazılır → sunucuya olay ulaşır. Ayrıca: sunucu kapalıyken aynı script **exit 0** ile ve **< 1 s** içinde biter, stdout **boştur**.
 
 ### 11.3 E2E (Playwright, `npm run build && npm start` üzerinde, geçici veri dizini + geçici fixture projeleri)
 
@@ -903,7 +912,7 @@ tests/fixtures/
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | `eslint .` |
 | `npm run format` | `prettier --write .` |
-| `npm run install-hook -- <proje-yolu>` | `send-event.js`'i kopyalar + `settings.json`'a hook satırlarını birleştirir (F-004) |
+| `npm run install-hook -- <proje-yolu>` | `send-event.cjs`'i kopyalar + `settings.json`'a hook satırlarını birleştirir (F-004) |
 | `npm run verify` | `typecheck && lint && test && build` — feature bitiş kapısı. (CEO düzeltmesi 2026-09-04, QA sözleşme denetimi R1: `build` dahildir; CI yalnızca `verify` koşuyor, aksi hâlde `vite build` hiçbir otomatik kapıdan geçmezdi. `e2e` dahil DEĞİLDİR — Playwright tarayıcı indirmesi CI'ı kırılganlaştırır.) |
 
 İlk kurulum: `npm install` → `npm run install-hook -- C:\dev\apps\<proje>` → `npm run dev`.
@@ -964,7 +973,7 @@ Doğrulama raporundaki (`docs/00-idea-validation.md`) 4 risk + mimariden doğan 
 
 | # | Risk | Mimari cevabı |
 |---|---|---|
-| (a) | **Hook payload şeması garanti değil** — tüm `send-event.js`'ler aynı anda kırılabilir | Sunucu **şemadan bağımsız**: bilinen alanlar opsiyonel, tanınmayan her şey `raw` içinde saklanır (§5.1). Hook scripti hiçbir alanı zorunlu görmez; eksikse `missing_fields` bayrağı. Yeni olay tipi eklemek yalnızca `settings.json` satırıdır. Kırılma **sessiz olmaz**: `/api/health` ve UI, `flags` dağılımını ve son olay zamanını gösterir; olay akışı durursa görünür. |
+| (a) | **Hook payload şeması garanti değil** — tüm `send-event.cjs`'ler aynı anda kırılabilir | Sunucu **şemadan bağımsız**: bilinen alanlar opsiyonel, tanınmayan her şey `raw` içinde saklanır (§5.1). Hook scripti hiçbir alanı zorunlu görmez; eksikse `missing_fields` bayrağı. Yeni olay tipi eklemek yalnızca `settings.json` satırıdır. Kırılma **sessiz olmaz**: `/api/health` ve UI, `flags` dağılımını ve son olay zamanını gösterir; olay akışı durursa görünür. |
 | (b) | **Transkript formatı belgesiz** (en yüksek risk) | Faz 2'nin **iki** kaynağı var: güvenilir `docs/qa/*` dosyaları ve best-effort transkript. Thread ekranı birincisiyle tek başına çalışır. Yol **tahmin edilmez, olaylardan toplanır** (§9.2). Okuyucu satır bazlı hataya dayanıklı; bozulursa yalnızca o bölüm "okunamadı". F-009 spike'ı kod yazmadan önce formatı doğrular ve fixture'lara dondurur. |
 | (c) | **`better-sqlite3` native derleme** | Bağımlılık kapalı listesinde yok ve yasaklı (ADR-003). Depo düz JSONL; `npm install` derleyici gerektirmez. Test (c): bağımlılık beyaz listesi testi (§11.4c). |
 | (ek) | **Port 4000 çakışması** | Varsayılan `7333` (§3.5); env ile değiştirilebilir. Sunucu `EADDRINUSE` alırsa okunabilir Türkçe mesaj basar ve `MC_PORT` önerir. |
@@ -985,7 +994,7 @@ Doğrulama raporundaki (`docs/00-idea-validation.md`) 4 risk + mimariden doğan 
 | **F-001** | **İskelet: repo, TS, Vite/React/Tailwind kabuğu, `node:http` sunucusu, test altyapısı, CI** | — | `git init`, `package.json`, `tsconfig`, `vite.config`, `vitest.config`, `playwright.config`, `eslint`/`prettier`, `src/server/index.ts` (+`/api/health`), `src/web/` boş kabuk, `.github/workflows/ci.yml`, `.gitignore` (`data/`, `dist/`), `npm run verify` | M |
 | **F-002** | Olay alma + JSONL depo + retention | F-001 | `src/features/events/server/**`, `src/server/store/**`, `src/shared/types.ts` | M |
 | **F-003** | SSE akışı + canlı zaman çizelgesi UI + filtreler | F-002 | `src/server/sse/**`, `src/features/events/web/**`, `src/web/lib/useEventStream.ts` | M |
-| **F-004** | `send-event.js` hook scripti + `install-hook` + hook smoke testleri | F-002 | `.claude/hooks/send-event.js`, `scripts/install-hook.mjs`, `tests/helpers/emit-hook.ts`, `KURULUM.md` | S |
+| **F-004** | `send-event.cjs` hook scripti + `install-hook` + hook smoke testleri | F-002 | `.claude/hooks/send-event.cjs`, `scripts/install-hook.mjs`, `tests/helpers/emit-hook.ts`, `KURULUM.md` | S |
 | **F-005** | Proje kayıt defteri + chokidar izleme + ayarlar ekranı (çok projeli izleme) | F-003 | `src/features/projects/**`, `src/server/watch/**`, `src/server/store/projects-registry.ts` | M |
 | **F-006** | **Yazma kapısı + sınır testleri** (kod yazan tek güvenlik bileşeni) | F-001 | `src/server/write-gate.ts`, `tests/helpers/manifest.ts`, §11.4 testleri | M |
 | **F-007** | Kanban panosu + frontmatter `status` yazma + çakışma/echo yönetimi | F-005, F-006 | `src/features/kanban/**` (server + web), frontmatter yamacı | L |

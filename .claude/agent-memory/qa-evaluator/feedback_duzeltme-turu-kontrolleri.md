@@ -16,6 +16,20 @@ Dar "düzeltme turu doğrulaması" briefinde şu üç kontrol her seferinde iş 
    yollar, düzeltmeden sonra ilk kez gözlemlenebilir olur (F-002: 503 dönen olay ring'de kalıp
    `GET /api/events`'te hayalet olarak görünüyor).
 
+4. **Dosyadaki bölüm SIRASINA bak.** Developer düzeltme yanıtı, sonradan eklenen bir CEO
+   kararından ÖNCE geliyorsa o karar sözleşmeye işlenmemiştir — F-004 tur 2'de CEO'nun iki
+   kademeli zamanlama assert'i (sert kapı >1000 ms + scriptin iç ölçümü) hiçbir bölüme
+   girmemişti, sözleşme hâlâ CEO'nun kırılgan bulduğu tek kademeli `elapsedMs < 400`'ü
+   taşıyordu.
+5. **Mutasyon senaryosunu MUTASYONLU hâlde de elle yürüt.** "En az 5 kez damlatan sunucu" gibi
+   ÜST SINIRI olmayan değil, ALT sınırı olan ifadeler mutasyona kaçış yolu bırakır: F-004'te
+   5 damla bitince idle bekçisi devreye girip mutasyonu yeşile döndürüyordu. Sayıları
+   (aralık · eşik · toplam) hem normal hem mutasyonlu yolda yaz.
+6. **İki ayrı düzeltmeyi birbirine karşı sına.** Aynı turda kapatılan iki bulgu çelişebilir:
+   F-004'te parse-hatası gövdesinin `raw_text = MC_MAX_PAYLOAD karakter` tanımı, aynı turda
+   eklenen kırpma zarfını tetikleyip `raw_text`'i düşürüyor ve yeni eklenen testi yapısal
+   olarak kırmızı doğuruyordu.
+
 **Why:** Düzeltme turları dar tutulduğu için yeniden inceleme yapılmaz; kaçan kusur bir daha
 bakılmayan bölgede kalır. **How to apply:** Kapanış tablosunu yazmadan önce bu üç kontrolü
 uygula; kanıtı komut çıktısı + dosya:satır ile ver. Ayrıca arşivleme yaparken önceki raporun

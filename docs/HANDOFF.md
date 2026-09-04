@@ -9,10 +9,10 @@
 
 ## Tek cümle
 F-001 ve F-002 bitti ve push edildi. **F-004 kod turu BİTTİ ve commit'lendi** (`7d721bd`,
-`1627839`, `3c0d5af`, `bcb48dc`) — henüz push edilmedi. Sırada **F-004 QA turu** var.
+`1627839`, `3c0d5af`, `bcb48dc`) **ve push edildi** (`2253c19`). Sırada **F-004 QA turu** var.
 
 ## Güvende olan (git'te, GitHub'da)
-- Depo: `onrert/mission-control` (private). Son push: `83a0f51`.
+- Depo: `onrert/mission-control` (private). Son push: `2253c19` (2026-09-05).
 - **F-001 iskelet** — done. **F-002 olay alma + JSONL depo + retention** — done, QA GEÇTİ (8/8/8/8).
 - CI Windows'ta yeşil. `npm run verify` = 146/146 test.
 - Kapılar G0–G3 onaylı. G4-1 kilometre taşı **Faz 1 sonuna** alındı (kullanıcı itiraz etmedi).
@@ -59,8 +59,13 @@ F-001 ve F-002 bitti ve push edildi. **F-004 kod turu BİTTİ ve commit'lendi** 
 - **Push:** her push öncesi kullanıcıya sorulur; onay verirse CEO `docs/approvals/PUSH.ok` yazar
   (hook kullanınca siler). Kullanıcı kararı: kapı kalıcı açılmayacak.
 
+## Oturum nerede bitti (2026-09-05)
+Kullanıcı limit endişesi nedeniyle **temiz durakta durmayı** seçti: F-004 kodu bitti, test edildi,
+commit'lendi ve push edildi; **QA turu açılmadı**. Hiçbir agent çalışmıyor, çalışma ağacı temiz.
+Yeni oturumda yapılacak ilk iş: **F-004 QA turu** (yukarıdaki "Sıradaki adım" bölümü).
+
 ## Sıradaki
-F-004 → **F-003** (SSE zaman çizelgesi) → F-005 → F-006 → F-007.
+F-004 QA → **F-003** (SSE zaman çizelgesi) → F-005 → F-006 → F-007.
 F-003 sözleşmesi açılırken iki taahhüt hazır: gerçek DOM test altyapısı ADR'si (jsdom +
 @testing-library/react) ve **N-1 hayalet olay** (503 dönen olay ring'de kalıp `GET /api/events`'te
 görünüyor; SSE yayımlarsa kalıcı hayalet satır olur).

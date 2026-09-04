@@ -30,8 +30,15 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
 }
 
 /** `GET /api/events` işleyicisi — yalnızca `since_seq` + `limit`, kaynak ring buffer. */
-export function handleQuery(req: http.IncomingMessage, res: http.ServerResponse, store: JsonlStore): void {
-  const url = new URL(req.url ?? '/', 'http://internal.invalid')
+export function handleQuery(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  store: JsonlStore
+): void {
+  // Yalnızca `pathname`/`searchParams` ayrıştırmak için sabit bir taban — asla fetch edilmez.
+  // Loopback bir literal kullanılır ki F-001'in dış host guard'ı (Ö4 düzeltmesiyle bu dizini de
+  // tarıyor) yanlış pozitif üretmesin.
+  const url = new URL(req.url ?? '/', 'http://127.0.0.1')
   const since = parseSinceSeq(url.searchParams.get('since_seq'))
   if (since === 'invalid') {
     const body: ApiResponse<never> = {

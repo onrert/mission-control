@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+.next/
+coverage/
+data/
+test-results/
+playwright-report/
+.env*
+!.env.example
+*.local
+docs/.obsidian/workspace*.json
+.claude/settings.local.json
+.claude/agent-memory-local/
+assets/raw/

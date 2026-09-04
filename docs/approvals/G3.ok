@@ -1,0 +1,18 @@
+G3 — UX kapısı ONAYLANDI
+Tarih: 2026-09-04
+Onaylayan: Veron (kullanıcı, CEO oturumunda açık onay)
+
+Onaylanan belge: docs/03-ux.md (6 ekran, 7 kritik akış, durum tasarımı, Türkçe metin sözlüğü, erişilebilirlik notları).
+
+Onaylanan kararlar:
+- Gezinme: tek pencerede üstte yatay sekme çubuğu (dar VS Code Simple Browser genişliği için); Ayarlar sağda ayrı dişli ikonu. Faz 2 sekmeleri Faz 1'de hiç görünmez — kilitli/gri placeholder yok.
+- Tema: yalnızca koyu tema. Açık tema gelecek sürüm fikri.
+- Tasarım dili: "sefer tablosu" teması — Departure Mono (başlık) + IBM Plex Mono (veri/arayüz) + IBM Plex Sans (yalnızca uzun metin), amber ana vurgu, semantik durum renkleri, hairline border, minimal gölge. Jenerik "AI panosu" görünümü (mor gradyan, cam kart, Inter) bilinçli olarak reddedildi.
+- Renk körlüğü kuralı: durum yalnızca renkle anlatılmaz; ikon/etiket eşlik eder.
+- Sürükle-bırakın klavye alternatifi zorunlu (kart seçip sütun değiştirme).
+- Sütun başlıkları ADR-001 karar 8 uyarınca "Geliştirme (dev)" biçiminde.
+- İkonlar Lucide; görsel varlık üretimi (Higgsfield) YOK — ASSETS kapısı bu projede kullanılmayacak.
+
+En riskli etkileşim olarak kayda geçirildi: kanban sürüklemesi sırasında dosyanın dışarıdan değişmesi (PRD F2/AC4-AC5) — optimistic UI + disk karşılaştırma + "sessizce üzerine yazma yok".
+
+Kullanıcının kararı (bir cümle): "UX'i onaylıyorum."

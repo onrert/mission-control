@@ -1,0 +1,26 @@
+G2 — Mimari kapısı ONAYLANDI
+Tarih: 2026-09-04
+Onaylayan: Veron (kullanıcı, CEO oturumunda açık onay)
+
+Onaylanan belge: docs/02-architecture.md (17 bölüm) + ADR-002…ADR-007.
+
+Stack ve altyapı:
+- Frontend: Vite + React + TypeScript + Tailwind. Router/state/UI kütüphanesi yok.
+- Sunucu: çıplak node:http + küçük router, tsx ile çalışır. Express/Fastify yok.
+- Depo: düz JSONL, data/events/YYYY-MM-DD.jsonl, append-only; retention 30 gün / 20.000 olay (gün dosyası silinerek). better-sqlite3 ve node:sqlite reddedildi (ADR-003).
+- Gerçek zamanlı: SSE + Last-Event-ID telafisi (ADR-004).
+- Port: MC_PORT, varsayılan 7333. Bind adresi kaynakta 127.0.0.1 olarak sabit; MC_HOST değişkeni YOK. Host/Origin beyaz listesi (DNS rebinding koruması).
+- Hook taşıma: command + async script; type:"http" değil (ADR-006).
+- Yazma kapısı: tek modül, niyet tabanlı API (genel write(path, content) yok), izin verilen yol beyaz listesi, node:path zorunlu (yol regex'i yasak), SİLME İŞLEVİ YOK. İki otomatik testle kanıtlanır: dosya sistemi manifest diff'i + statik fs-yazma-çağrısı taraması (ADR-005).
+- Tahmini aylık maliyet: 0 TL (8 kalemli tabloyla doğrulandı). Ücretli hiçbir servis yok.
+
+ADR-002 kararı onaylandı: olay sunucusu SIFIRDAN yazılacak. Gerekçe: disler/claude-code-hooks-multi-agent-observability deposu lisanssız (türev çalışma üretilemez), felipeelias/hook-lab Elixir+Phoenix+Docker (stack kısıtlarımıza aykırı). Doğrulama raporunun "lisans uygunsa uyarla" koşulu sağlanmadı.
+
+Kullanıcının bu kapıda verdiği 3 karar:
+1. Token kaynağı: KENDİ MİNİMAL OKUYUCUMUZ onaylandı (ADR-007). G0.ok'taki "hazır kaynak öncelikli değerlendirilecek" daralması değerlendirildi ve gerekçeli olarak aşıldı: ccusage aynı belgesiz JSONL'i okuyor, format riskini azaltmıyor, üstüne CLI/ağ bağımlılığı ekliyor. README'de ccusage ile elle çapraz kontrol önerilecek.
+2. Faz 2 sırası: önce F-008 (kapılar paneli), sonra F-009 (transkript spike).
+3. Panel veri deposu repo içinde: mission-control/data/, .gitignore'lu. MC_DATA_DIR ile değiştirilebilir.
+
+Kullanıcının kararı (bir cümle): "Mimariyi onaylıyorum; kendi token okuyucumuz, önce kapılar paneli, veri repo içinde."
+
+Not: Bu onayla kod yazımı serbesttir — ancak yalnızca proje kendi çalışma dizininde (C:/dev/apps/mission-control) açılmış bir oturumda; şablon klasöründen kod yazılmayacak.

@@ -1,0 +1,13 @@
+filters:
+  and:
+    - file.inFolder("features")
+    - file.ext == "md"
+views:
+  - type: table
+    name: Board
+    order:
+      - file.name
+      - title
+      - status
+      - owner
+      - sprint

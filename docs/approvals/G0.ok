@@ -1,0 +1,22 @@
+G0 — Fikir kapısı ONAYLANDI
+Tarih: 2026-09-04
+Onaylayan: Veron (kullanıcı, CEO oturumunda açık onay)
+
+Onaylanan özet:
+- Ürün: Mission Control — tek kullanıcılık, tamamen yerel (giriş/bulut/dış servis yok) agent izleme panosu.
+- Kapsam 2 fazlı:
+  Faz 1 = hook olay sunucusu + canlı zaman çizelgesi, docs/features/*.md frontmatter'ından kanban (sürükleme dosyayı günceller), çok projeli izleme ayarı.
+  Faz 2 = feature thread görünümü (CEO brief → developer → QA → düzeltme turları) + G0–G6/ASSETS kapılar paneli + token kullanımı.
+- Panel TAM YAZMA yetkili: kanban sürüklemesi feature frontmatter'ını, kapı butonları docs/approvals/<G>.ok ve <G>.deny.md dosyalarını yazar. Panelden verilen kapı onayı kullanıcının onayı sayılır. Başka hiçbir dosyaya yazılmaz.
+- Arayüz dili Türkçe; kod/commit/teknik doküman İngilizce.
+- Ücretli servis, kredi, varlık üretimi yok.
+
+Fikir doğrulamasından gelen ve onayla birlikte bağlayıcı olan daraltmalar:
+- Faz 2 "best-effort": ~/.claude/projects transkript formatı resmen belgesiz ve sürümle değişebilir; ayrıştırma satır bazında hataya dayanıklı olacak, bozulursa yalnızca ilgili görünüm devre dışı kalacak, panel çökmeyecek.
+- better-sqlite3 yerine native derleme gerektirmeyen depo (düz JSONL) tercih edilecek — Windows/Mac kurulum sürtünmesi olmayacak.
+- Varsayılan port 4000 en az iki benzer araçla çakışıyor; port env ile yapılandırılabilir olacak ve varsayılanı 4000 olmayacak.
+- Token ekranı için kendi transkript parser'ı yerine hazır kaynak (ccusage çıktısı veya resmi OTel metriği) öncelikli değerlendirilecek.
+
+Kullanıcının kararı (bir cümle): "Daraltılmış kapsamla devam; olay sunucusunu sıfırdan mı yazacağımıza yoksa mevcut açık kaynaktan mı uyarlayacağımıza architect G2'de ADR ile karar versin."
+
+Kaynaklar: docs/00-idea.md, docs/00-idea-validation.md, docs/specs/mission-control.md

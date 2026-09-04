@@ -1,0 +1,19 @@
+G1 — PRD kapısı ONAYLANDI
+Tarih: 2026-09-04
+Onaylayan: Veron (kullanıcı, CEO oturumunda açık onay)
+
+Onaylanan kapsam (docs/01-prd.md):
+- 6 özellik, iki faz. Faz 1 (hepsi P0): (1) hook olay sunucusu + canlı zaman çizelgesi, (2) docs/features/*.md frontmatter kanban'ı (sürükleme yalnızca status alanını yazar), (3) çok projeli izleme ayarı. Faz 1 tek başına kullanılabilir bir ürün olmalı.
+- Faz 2: (4) G0-G6/ASSETS kapılar paneli (P1), (5) feature thread görünümü (P2, best-effort), (6) token kullanımı (P2, best-effort).
+- Kapsam dışı listesi onaylandı: giriş/bulut/dış servis yok, çok kullanıcı yok, telemetri yok, panelden agent tetikleme yok (v2), izlenen projelerin koduna yazma yok, native derleme gerektiren depo yok, varsayılan port 4000 yok, mobil native uygulama yok.
+
+Kullanıcının bu kapıda verdiği 3 karar (kabul kriterlerine işlendi):
+1. Sunucu yalnızca 127.0.0.1 dinler; ağa açma seçeneği MVP'de yok (uzaktan erişim Tailscale/SSH tüneliyle).
+2. Tüm hook olay tipleri kaydedilir ve gösterilir; gürültü yalnızca görünüm filtreleriyle yönetilir.
+3. "Onayla" doğrulama adımı ister ve yazılacak özeti gösterir; "Reddet" zorunlu gerekçe metni alır.
+
+CEO'nun karara bağladığı 5 düşük etkili konu: docs/decisions/ADR-001-mission-control-urun-kararlari.md (olay saklama sınırı, bilinmeyen durum sütunu, izlemeden çıkarılan projenin geçmişi, reddedilen kapının arşivlenmesi, sütun başlıkları).
+
+Kullanıcının kararı (bir cümle): "Onaylıyorum — bu kapsamla ux ve architect paralel başlasın."
+
+Sonraki adım: ux (docs/03-ux.md) + architect (docs/02-architecture.md + ADR'ler) paralel; ardından G3 ve G2 onayları.

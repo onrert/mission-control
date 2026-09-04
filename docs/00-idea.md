@@ -1,0 +1,24 @@
+# 00 — Fikir
+
+- **Uygulama adı (geçici):** Mission Control
+- **Problem:** App Factory hattında aynı anda birden çok agent çalışıyor; ne yaptıkları, hangi feature'ın nerede olduğu, agent'ların birbirine ne söylediği ve ne kadar token harcandığı yalnızca dağınık dosyalardan (docs/features, docs/qa, ~/.claude/projects transkriptleri) ve sohbet akışından takip edilebiliyor. Kullanıcı hattı körlemesine yönetiyor; bir feature takıldığında veya bir kapı beklerken bunu ancak CEO söylerse fark ediyor.
+- **Hedef kullanıcı:** Veron (tek kullanıcı, yerel makine). Windows birincil, Mac de çalışmalı. Tarayıcı sekmesi veya VS Code Simple Browser; Tailscale ile telefondan bakılabilir.
+- **Başarı ölçütü (3 ay sonra "işe yaradı" dedirtecek şey):** Bir sprint sırasında "ne oluyor?" sorusuna sohbete dönmeden, panele bakarak 5 saniyede cevap verilebilmesi. Somut: (a) çalışan agent'ların canlı akışı görünür, (b) her feature'ın durumu panoda doğru, (c) bir feature'ın CEO brief → developer → QA → düzeltme zinciri tek ekranda okunabilir, (d) kapı onayları panelden verilebilir, (e) hangi agent ne kadar token yaktı görünür.
+- **Platform:** web — yalnızca yerel (localhost:4000; giriş yok, bulut yok, dış servis yok)
+- **MVP'de olmazsa olmaz 3 şey (Faz 1):**
+  1. **Hook olay sunucusu + zaman çizelgesi:** izlenen projelere kurulan `.claude/hooks/send-event.js` her olayı `POST http://localhost:4000/events`'e gönderir (session_id, agent_type/agent_id, tool_name, özet, zaman); panel SSE ile canlı gösterir.
+  2. **Kanban panosu:** izlenen proje klasörlerinin `docs/features/*.md` frontmatter'ından `todo/contract/dev/qa/fix/done/blocked` sütunları; sürükleme frontmatter'daki `status` alanını dosyada günceller.
+  3. **Çok projeli izleme:** izlenen klasör listesi (birden fazla) panelden ayarlanır; chokidar ile dosya değişiklikleri canlı yansır.
+- **Faz 2 (aynı ürün, MVP sonrası):**
+  4. **Thread görünümü:** feature başına CEO brief → developer raporu → QA kararı → düzeltme turları; kaynak `docs/qa/<feature>-contract.md`, `docs/qa/*.md`, `~/.claude/projects/<proje>/<session>/subagents/agent-*.jsonl`.
+  5. **Kapılar paneli:** G0–G6 + ASSETS durumu; Onayla → `docs/approvals/<G>.ok`, Reddet → `docs/approvals/<G>.deny.md`.
+  6. **Token kullanımı:** transkriptlerdeki `usage` alanlarından agent/oturum başına toplam.
+- **Kesinlikle olmayacaklar:** dış servis/bulut/hesap/giriş yok · çok kullanıcı yok · telemetri yok · Claude Code'a komut gönderme yok (v2'de Channels ile ayrı ele alınacak) · izlenen projelerin koduna dokunma yok (yalnızca `docs/features/*.md` frontmatter'ı ve `docs/approvals/*` yazılır) · üretim deploy'u yok.
+- **Hız/kapsam tercihi:** Kapsamlı ama 2 fazlı. Faz 1 = olay sunucusu + zaman çizelgesi + kanban (çalışan panel). Faz 2 = thread + kapılar + token.
+- **Ücretli servis / kredi kullanılabilir mi:** Hayır. Yalnızca yerel/açık kaynak bağımlılıklar; ücretli API yok, Higgsfield varlık üretimi yok.
+- **Diller:** Arayüz Türkçe. Kod, dosya adları, commit mesajları, teknik doküman İngilizce.
+- **Yazma yetkisi kararı (kullanıcı, 2026-09-04):** Panel spec'teki gibi tam yazma yetkisine sahip — kanban sürüklemesi feature frontmatter'ını, kapı butonları `.ok`/`.deny.md` dosyalarını yazar. Panelden verilen kapı onayı kullanıcının onayı sayılır. Başka hiçbir dosyaya yazılmaz.
+- **Stack yönü (G2'de architect kesinleştirir):** Vite + React + TypeScript + Tailwind; Node sunucu (chokidar, better-sqlite3, SSE), `localhost:4000`. Ayrıca izlenen her projeye eklenecek `.claude/hooks/send-event.js` scripti ve `settings.json` hook satırları üretilecek.
+- **Kaynak spec:** `docs/specs/mission-control.md`
+- **Fikir doğrulama özeti (idea-validator, 2026-09-04 — tam rapor: `docs/00-idea-validation.md`):** Karar **DARALT**. (1) Kanban + kapı onayı gerçekten özgün — hiçbir mevcut araç `docs/features/*.md` frontmatter'ından pano kurmuyor, hiçbiri `docs/approvals/<G>.ok` yazmıyor. (2) Hook olay akışı ve token raporlama özgün değil; en az 7 benzer araç var (disler/claude-code-hooks-multi-agent-observability, hook-lab, Claude-Code-Agent-Monitor, claude-code-otel, ccusage). (3) En büyük risk pazar değil kırılganlık: `~/.claude/projects/**/*.jsonl` transkript formatı resmen belgesiz ve "sürümle değişebilir" (YÜKSEK risk — Faz 2'nin Thread ve Token ekranlarını tehdit ediyor); hook payload şeması stabilite garantisiz (ORTA); `better-sqlite3` Windows'ta native derleme sürtünmesi (ORTA, gereksiz). (4) Öneriler MVP'ye alındı: SQLite yerine düz JSONL depo · Faz 2 "best-effort, kırılırsa paneli çökertme" · token için kendi parser yerine `ccusage`/OTel · varsayılan port 4000 iki benzer araçla çakışıyor, yapılandırılabilir olmalı.
+- **G0 sonrası kısıtlar (doğrulamadan gelen, G2'de architect'i bağlar):** yerel depo native derleme gerektirmeyecek · port env ile yapılandırılabilir, varsayılan 4000 olmayacak · transkript ayrıştırması satır bazında hataya dayanıklı olacak ve bozulursa yalnızca ilgili görünüm devre dışı kalacak.

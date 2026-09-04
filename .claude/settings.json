@@ -1,0 +1,50 @@
+{
+  "agent": "ceo",
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "0",
+    "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "2",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "sonnet"
+  },
+  "permissions": {
+    "allow": [
+      "Read", "Grep", "Glob", "WebSearch",
+      "Edit(docs/**)", "Write(docs/**)",
+      "Edit(src/**)", "Write(src/**)", "Edit(app/**)", "Write(app/**)",
+      "Edit(tests/**)", "Write(tests/**)", "Edit(e2e/**)", "Write(e2e/**)",
+      "Edit(assets/**)", "Write(assets/**)",
+      "Bash(npm run *)", "Bash(npm test*)", "Bash(npm install*)", "Bash(npm ci*)",
+      "Bash(npx vitest*)", "Bash(npx playwright*)", "Bash(npx tsc*)", "Bash(npx prettier*)",
+      "Bash(npx eslint*)", "Bash(npx expo*)", "Bash(npx create-*)", "Bash(node *)",
+      "Bash(git status*)", "Bash(git diff*)", "Bash(git add *)", "Bash(git commit *)",
+      "Bash(git log*)", "Bash(git checkout -b *)", "Bash(git branch*)",
+      "Bash(python -m pytest*)", "Bash(uv run *)", "Bash(claude plugin *)", "Bash(claude mcp *)"
+    ],
+    "deny": [
+      "Read(.env)", "Read(.env.*)", "Read(**/secrets/**)",
+      "Bash(rm -rf *)", "Bash(git push --force*)", "Bash(git reset --hard*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "node .claude/hooks/session-start.js" } ] }
+    ],
+    "PostCompact": [
+      { "hooks": [ { "type": "command", "command": "node .claude/hooks/session-start.js" } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Edit|Write",
+        "hooks": [ { "type": "command", "command": "node .claude/hooks/gate-check.js" } ] },
+      { "matcher": "Bash",
+        "hooks": [ { "type": "command", "command": "node .claude/hooks/block-dangerous.js" } ] },
+      { "matcher": "mcp__higgsfield__.*",
+        "hooks": [ { "type": "command", "command": "node .claude/hooks/asset-guard.js" } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Edit|Write",
+        "hooks": [ { "type": "command", "command": "node .claude/hooks/post-format.js" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "node .claude/hooks/stop-check.js" } ] }
+    ]
+  }
+}

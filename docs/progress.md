@@ -270,3 +270,61 @@ Her oturum sonu CEO/developer ekler: tarih · ne yapıldı · nasıl doğruland�
 **Sonraki adım**
 - qa-evaluator F-002'yi tekrar değerlendirsin (feature notu `status: qa`, bu düzeltme turu
   turu 1'in kod turudur).
+
+---
+
+## 2026-09-04 — F-002 (olay alma + JSONL depo + retention) GEÇTİ · F-001 borçları kapandı
+
+**Ne yapıldı**
+- Sözleşme turu: 2 QA turu, 13 bulgu + 1 regresyon (R-1) **tek satır kod yazılmadan** kapandı.
+  Sözleşme `docs/qa/F-002-contract.md`.
+- CEO kararları: `ADR-008` (Host/Origin koruması F-002'de yazılır — F-001 sözleşmesi satır 39-41'deki
+  taahhüdün koşulu gerçekleşti; 50 MB dosya rotasyonu ertelendi) + ADR-008 eki (Host/Origin'de
+  **port bileşeni yok sayılır**, yalnızca ana bilgisayar adı beyaz listelenir — R-1'i, `webPort`
+  özel durumunu ve efemeral port testlerini tek kararla çözdü).
+- Kod turu: `POST/GET /api/events`, JSONL depo (seq dayanıklılığı, ring buffer, bozuk satır
+  toleransı), retention (gün + adet, yol kaçış çiti), Host/Origin koruması. 5 commit.
+- QA kod turu: **KALDI** — 1 bloklayıcı (ana yazma yolunda hata yakalama yok: istemci yanıt almıyor,
+  süreç ölüyor, kuyruk zehirlenip sonraki sağlıklı istekleri de düşürüyor) + 4 önemli.
+- Düzeltme turu 1 → QA doğrulama turu 2: **GEÇTİ.** Puanlar: İşlevsellik 8 · Bütünlük 8 ·
+  Görsel/UX 8 · Kod kalitesi 8.
+- **F-001'den taşınan N1 ve N4 kapandı** (tema testinin kök bileşen körlüğü; dev sunucusunun port
+  çakışmasında yabancı sürece proxy'lemesi).
+- Kapsam dışı ama bu turda yapıldı: ölü hook'ların onarımı (`9ae23bf`), push kapısının ayrılması,
+  `ADR-009` tek platform kararı (`8cdd6de`, `1dde768`).
+
+**Nasıl doğrulandı**
+- `npm run verify` = 0 (**146/146 test, 12 dosya**) · `npm run e2e` = 0 · `npm run e2e:dev` = 0 ·
+  `npm audit` = 0 zafiyet.
+- **CI ilk kez gerçekten koştu ve Windows'ta `success`** → F-001'in AC9 borcu kapandı; AC2
+  ADR-009 ile Windows'a daraltıldı ve temiz koşucuda `npm ci` + `verify` ile kanıtlandı.
+- QA 7 bağımsız mutasyon çalıştırdı, **hiçbiri yeşil kalmadı (0/7)** — geçen tur yeşil kalan iki
+  test (retention dosya deseni çiti, `check-ports` varsayılana düşme) artık gerçekten ölçüyor.
+- B1 senaryosu testten bağımsız gözlemlendi: gün dosyası yolunda dizin → 3 POST'un üçü de
+  503 `storage_unavailable` (asılma yok), süreç yaşadı, `write_errors:3`; dizin kalkınca 202 ve
+  diskte 4 satır fiziksel sırayla. Eksik alanlı olay hâlâ 202 + `missing_fields`.
+- Saat dilimi sorusu kapandı: kod **UTC** kullanıyor (`jsonl-store.ts:19`), üç ayrı `TZ` altında
+  süit yeşil. Linux'taki `expected 9 to be 10` POSIX'e özgü bir test varsayımıymış, ürün hatası değil.
+
+**Bu turun en pahalı bulgusu (kapsam dışı)**
+- **Bütün güvenlik hook'ları F-001'den beri ölüymüş.** `package.json`'a `"type": "module"` eklenince
+  `.claude/hooks/*.js` ESM sayıldı, `require` patladı, hook çıkış kodu 1 döndü — Claude Code ise
+  yalnızca **çıkış kodu 2**'yi engelleme sayıyor. G2 kapısı, yıkıcı komut engeli, ASSETS koruması ve
+  stop-check haftalarca no-op koştu. Belirti oturum başında progress.md özetinin gelmemesiydi.
+  Hepsi `.cjs`'e taşındı, self-test 12 → 18 vakaya çıktı, tamamı geçiyor. Ders CLAUDE.md'ye yazıldı.
+
+**Kalan risk / açık borç**
+- **N-1 (F-003'e taşındı):** 503 dönen olay ring'de kalıp `GET /api/events`'te hayalet olarak
+  görünüyor. Veri kaybı değil, restart'ta kayboluyor; ama SSE onu yayımlarsa kalıcı hayalet satır olur.
+- **R-1 artık riski (ADR-008 eki):** aynı makinedeki başka bir yerel sayfa panele olay POST edebilir.
+  **F-006 (yazma kapısı) bu kararı yeniden değerlendirmek zorunda.**
+- `GET /api/events` yalnızca ring buffer'ı sorguluyor; disk destekli tam geçmiş F-003'e ertelendi.
+- Windows'ta retention silmesi `EPERM`/`EBUSY` alırsa dosya bir sonraki saatlik tura kalıyor (test edilmedi).
+- `stop-check` hook'u "KALDI iken bitti diyen oturum" ile "düzeltme turu uçuşta, bekleyen oturum"u
+  ayırt edemiyor; bekleme turlarında yanlış pozitif üretiyor.
+- G4-1 kilometre taşı **Faz 1 sonuna** alındı (CEO kararı, kullanıcı itiraz etmedi).
+
+**Sonraki adım**
+- Sıradaki feature: **F-004** (`send-event.js` hook scripti) — Faz 1 sırası F-001 → F-002 → F-004 →
+  F-003 → F-005 → F-006 → F-007.
+- F-003 sözleşmesi açılırken iki taahhüt hazır: gerçek DOM test altyapısı ADR'si + N-1 hayalet olay.

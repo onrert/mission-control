@@ -26,3 +26,6 @@ Kaynak: `docs/02-architecture.md` §6 (SSE), ADR-004; `docs/03-ux.md` ekran 1 + 
 
 ## CEO'dan devralınan taahhüt (F-001 sözleşmesi satır 735, 549)
 - F-003 sözleşmesi **gerçek DOM test altyapısı** (`jsdom` + `@testing-library/react`) için bir ADR taslağıyla açılmak zorundadır. F-001/F-002 yalnızca `renderToStaticMarkup` ile test ediyor; ilk etkileşimli ekran burada geliyor.
+
+## F-002'den taşınan not (QA doğrulama turu 2, 2026-09-04)
+- **N-1 (hayalet olay):** Depolama arızasında `503 storage_unavailable` dönen olay ring buffer'da kalıyor ve `GET /api/events` onu döndürüyor — diskte karşılığı yokken (`{"seq":0,...,"next_seq":1}`). Veri kaybı değil, yeniden başlatmada kendiliğinden kayboluyor; ama **SSE akışı bu olayı istemciye yayımlarsa zaman çizelgesinde kalıcı hayalet satır oluşur.** F-003 ring'e yazma ile diske yazmanın başarı koşulunu hizalamak zorunda.

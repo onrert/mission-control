@@ -1,7 +1,7 @@
 ---
 id: F-002
 title: Olay alma uç noktası + JSONL depo + retention
-status: qa
+status: done
 owner: developer
 deps: [F-001]
 sprint: 1

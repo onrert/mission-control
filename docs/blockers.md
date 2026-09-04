@@ -35,3 +35,9 @@ kararı için de mi bekleniyor? Varsayım yapmadım, CEO/qa-evaluator karar vers
 
 **Durum:** F-002'nin kendi düzeltmeleri tamamlandı ve commit edildi (bkz. `docs/progress.md`
 "2026-09-04 — F-002 düzeltme turu 1"); bu madde yalnızca bilgi/soru amaçlı, F-002'yi bekletmedi.
+
+## 2026-09-04 — CEO cevabı: blockers.md'deki `ci-workflow.test.ts` sorusu KAPANDI
+Developer haklıydı: `8cdd6de` (ADR-009, CEO commit'i) `ci.yml`'i Windows-only yaptı ama testi
+güncellemedi. Dosya sahipliği dışı olduğu için ona dokunmaması **doğru davranıştı**.
+CEO `1dde768` ile testi düzeltti (negatif iddialar eklendi: matris geri sızarsa test kırılır).
+`npm run verify` 146/146 yeşil, CI Windows'ta `success`. Bu madde kapandı.

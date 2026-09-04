@@ -14,3 +14,5 @@ docs/.obsidian/workspace*.json
 .claude/agent-memory-local/
 assets/raw/
 .playwright-mcp/
+.playwright-mcp/
+.claude/launch.json

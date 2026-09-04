@@ -67,3 +67,33 @@ Her oturum sonu CEO/developer ekler: tarih · ne yapıldı · nasıl doğruland�
 **Sonraki adım**
 1. `C:\dev\apps\mission-control` klasöründe yeni Claude oturumu aç.
 2. CEO'ya "F-001'i başlat" de → developer sözleşmesi (`docs/qa/F-001-contract.md`) → kod → qa-evaluator → G4-1.
+
+---
+
+## 2026-09-04 — F-001 (iskelet) KOŞULLU GEÇTİ
+
+**Ne yapıldı**
+- Sözleşme turu: 3 tur (developer ↔ qa-evaluator), 26 bulgu kod yazılmadan kapatıldı. Sözleşme `docs/qa/F-001-contract.md` (ONAY, tur 3).
+- Kod turu: iskelet yazıldı — Vite/React/TS/Tailwind koyu kabuk, `node:http` sunucusu (`/api/health`), self-host fontlar (4 woff2 + OFL lisansları), Vitest + Playwright (prod ve dev ayrı config), `.github/workflows/ci.yml`, `npm run verify`.
+- QA kod turu: **KALDI** — 1 bloklayıcı (AC10) + bağımsız bulgular.
+- Düzeltme turu 1 → QA doğrulama: **KOŞULLU GEÇTİ**. Puanlar: İşlevsellik 9 · Bütünlük 9 · Görsel/UX 8 · Kod kalitesi 8.
+- Commit'ler: `803e466` scaffold · `658f692` README lisans notu · `bfd907b` düzeltme turu 1.
+
+**Nasıl doğrulandı**
+- `npm run verify` (typecheck + lint + 41 test/6 dosya + build) = 0 · `npm run e2e` = 0 · `npm run e2e:dev` = 0 · temiz `git clone` + `npm ci` + `verify` = 0 · `npm audit` = **0 zafiyet**.
+- QA 4 mutasyon çalıştırdı, 4'ü de kırmızı verdi: başlık geri alınınca E2E `Received: "MİSSİON CONTROL"`, `fsevents.optional=false` → guard kırmızı, `os:[darwin,linux]` → kırmızı, sahte `node-gyp` → kardeş assert kırmızı. Testler gerçekten ölçüyor.
+- Ekran görüntüleriyle gözle doğrulandı: `docs/qa/screens/fix1-desktop-1280.png`, `fix1-mobile-390.png`.
+
+**Yakalanan en önemli hata**
+- Başlık ekranda **"MİSSİON CONTROL"** görünüyordu: sayfa `lang="tr"` + CSS `uppercase` → Türkçe locale'de `i` → `İ` (U+0130). Playwright DOM metnini okuduğu için testler yeşildi, ekran yanlıştı. Düzeltme: literal `MISSION CONTROL`, `uppercase` kaldırıldı; E2E artık `innerText()` ile render edilmiş metni karşılaştırıyor.
+
+**Açık borç**
+- **AC2 (macOS/Linux kurulumu) ve AC9 (CI gerçekten koşuyor):** kullanıcı "şimdilik push yok" dedi; GitHub deposu açılmadı, CI hiç koşmadı. Yerel ayakları kanıtlandı. Tek push ile kapanır. "KOŞULLU"nun tek sebebi budur.
+- **D3:** Sözleşme §5'teki AC10 metni artık var olmayan bir testi tarif ediyor (semantik token katmanı kaldırıldı) — tek satırlık doküman düzeltmesi.
+- **N1:** E2E tema assert'i yalnızca `body`'yi ölçüyor, kök bileşenin zeminine kör → F-002'de panel renkleri gelince yetmez, o feature'da genişletilecek.
+- **N4:** 7333 portu doluyken `npm run dev` ölmüyor; Vite ayakta kalıp `/api`'yi yabancı sürece proxy'liyor → F-002'de port çakışması tespiti eklenecek.
+- **N3:** 390px'te sekmeler kaydırma ipucu olmadan kırpılıyor (kozmetik).
+
+**Sonraki adım**
+- G4-1 kararı (kullanıcı): kilometre taşı onayı şimdi mi verilsin, yoksa Faz 1 bitiminde mi.
+- Sıradaki feature: **F-002** (olay alma uç noktası + JSONL depo + retention). N1 ve N4 notları F-002 brief'ine girecek.

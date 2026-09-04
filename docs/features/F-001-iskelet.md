@@ -1,7 +1,7 @@
 ---
 id: F-001
 title: İskelet — repo, TS, Vite/React/Tailwind kabuğu, node:http sunucusu, test altyapısı, CI
-status: dev
+status: done
 owner: developer
 deps: []
 sprint: 1
@@ -39,3 +39,5 @@ Kaynaklar: `docs/02-architecture.md` §3 (stack), §4 (klasör yapısı), §11 (
 - **B6a:** Health yanıtı `{ ok, version, port, node, uptime_s }` — `uptime` değil `uptime_s`.
 - **B13:** Fontlar **self-host** edilecek (CDN yasak; PRD F6/AC4 "hiçbir ağ isteği" ve mimari S1 sınırı). Developer font dosyalarını indirmekte tıkanırsa DUR ve CEO'ya bildir — sistem mono yığınına düşme kararını CEO verir.
 - **B2/B10/R4 (CI):** Kullanıcı GitHub'da **private repo + gerçek CI matris koşusu** istiyor (ubuntu/windows/macos). Push kullanıcı onayına bağlıdır ve F-001'in QA turundan ÖNCE alınacaktır; developer kendi başına push ETMEZ, remote EKLEMEZ.
+- **Push kararı (kullanıcı, 2026-09-04): ŞİMDİLİK PUSH YOK.** Depo yerel kalıyor; GitHub private repo açılmadı. Sonuç: AC2'nin macOS/Linux ayağı ve AC9'un "CI gerçekten koşuyor" ayağı bu turda KANITLANAMAZ. F-001 en fazla "koşullu GEÇTİ" alabilir; bu iki kriter açık borç olarak `docs/progress.md`'ye yazılır ve push yapıldığı gün kapatılır. qa-evaluator bu iki kriter için KALDI vermeyecek, "ertelendi (kullanıcı kararı)" işaretleyecek.
+- **QA kararı (düzeltme turu 1, 2026-09-04): KOŞULLU GEÇTİ** — kapsamdaki 11 kriterin 11'i geçti; AC2'nin macOS/Linux ayağı ve AC9'un gerçek CI koşusu kullanıcı kararıyla ERTELENDİ ve açık borç olarak `docs/progress.md`'ye yazılacak. Ayrıntı: `docs/qa/F-001.md` son bölüm.

@@ -30,6 +30,12 @@ describe('resolvePort', () => {
   it('MC_PORT "0" ise efemeral port için 0 döner', () => {
     expect(resolvePort({ MC_PORT: '0' })).toBe(0)
   })
+  it('MC_PORT boş dizgeyse (Number("") === 0 tuzağı) varsayılana düşer, sessizce 0 dönmez', () => {
+    expect(resolvePort({ MC_PORT: '' })).toBe(7333)
+  })
+  it('MC_PORT yalnızca boşluktan oluşuyorsa varsayılana düşer', () => {
+    expect(resolvePort({ MC_PORT: '   ' })).toBe(7333)
+  })
 })
 
 describe('createServer', () => {

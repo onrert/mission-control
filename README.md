@@ -55,7 +55,11 @@ npm run build
 npm start
 ```
 
-Panel `http://127.0.0.1:7333` adresinde açılır (varsayılan port).
+Prod modda panel `http://127.0.0.1:7333` adresinde açılır (varsayılan port).
+
+`npm run dev` çalıştırdığınızda panel Vite dev sunucusunun portunda,
+`http://127.0.0.1:7334` adresinde açılır (varsayılan `MC_WEB_PORT`); `/api` istekleri
+arka planda `7333`'teki API sunucusuna proxy'lenir.
 
 ## Test
 

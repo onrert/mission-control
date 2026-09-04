@@ -4,16 +4,13 @@
   --font-display: 'Departure Mono', ui-monospace, monospace;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
   --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
-
-  /* Tasarım dili (docs/03-ux.md "Renk paleti") — zemin/metin/vurgu semantik alanları.
-     Değerler Tailwind v4'ün varsayılan zinc/amber ölçeğine referans verir. */
-  --color-surface: var(--color-zinc-950);
-  --color-panel: var(--color-zinc-900);
-  --color-text-primary: var(--color-zinc-100);
-  --color-text-secondary: var(--color-zinc-400);
-  --color-accent: var(--color-amber-400);
-  --color-accent-strong: var(--color-amber-500);
 }
+
+/* Renk token'ları: docs/03-ux.md "Renk paleti" doğrudan Tailwind'in varsayılan zinc/amber
+   ölçeğini birebir kullanır (bkz. `bg-zinc-950`, `border-zinc-800`, `text-zinc-400` gibi
+   sınıflar `App.tsx`'te). Tailwind v4 bu renkleri `@import 'tailwindcss'` ile zaten sağlar;
+   kullanılmayan bir kısayol/alias katmanı (`--color-surface` vb.) burada kasıtlı olarak
+   tutulmuyor — F-001'in kabuğunda henüz panel/vurgu (amber) rengi taşıyan bir öğe yok. */
 
 @font-face {
   font-family: 'Departure Mono';

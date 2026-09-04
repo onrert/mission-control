@@ -3,17 +3,16 @@ const TABS = ['Zaman Çizelgesi', 'Kanban', 'Ayarlar']
 export default function App() {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <header className="flex h-14 items-center gap-6 border-b border-zinc-800 px-4">
-        <span data-testid="app-title" className="font-display tracking-wide text-lg uppercase">
-          Mission Control
+      <header className="flex h-14 items-center gap-6 overflow-x-auto border-b border-zinc-800 px-4">
+        <span
+          data-testid="app-title"
+          className="shrink-0 whitespace-nowrap font-display tracking-wide text-lg"
+        >
+          MISSION CONTROL
         </span>
-        <nav className="flex gap-4">
+        <nav className="flex shrink-0 gap-4">
           {TABS.map((tab) => (
-            <span
-              key={tab}
-              aria-disabled="true"
-              className="text-sm font-mono text-zinc-400"
-            >
+            <span key={tab} className="whitespace-nowrap text-sm font-mono text-zinc-400">
               {tab}
             </span>
           ))}

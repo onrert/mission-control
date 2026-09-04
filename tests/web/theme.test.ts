@@ -3,20 +3,24 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const cssPath = path.join(__dirname, '..', '..', 'src', 'web', 'index.css')
+const appPath = path.join(__dirname, '..', '..', 'src', 'web', 'App.tsx')
 const css = fs.readFileSync(cssPath, 'utf8')
+const app = fs.readFileSync(appPath, 'utf8')
 
-describe('index.css tasarım token\'ları (AC10/AC11)', () => {
-  it('zemin token\'ları (zinc-950, zinc-900) var', () => {
-    expect(css).toContain('zinc-950')
-    expect(css).toContain('zinc-900')
+// Renk token'ları için proje `index.css`'te ayrı bir alias katmanı tanımlamaz — Tailwind'in
+// varsayılan zinc ölçeğini `App.tsx`'teki utility sınıflarında doğrudan kullanır (bkz.
+// `index.css` üstündeki not). Bu yüzden bu testler kaynağı (App.tsx) tarar, dead-code bir
+// `@theme` alias bloğunu değil (B8 — fix turu 1).
+describe('tasarım token\'ları (AC10/AC11)', () => {
+  it('zemin token\'ı (zinc-950) kabukta kullanılıyor', () => {
+    expect(app).toContain('zinc-950')
   })
-  it('metin token\'ları (zinc-100, zinc-400) var', () => {
-    expect(css).toContain('zinc-100')
-    expect(css).toContain('zinc-400')
+  it('metin token\'ları (zinc-100, zinc-400) kabukta kullanılıyor', () => {
+    expect(app).toContain('zinc-100')
+    expect(app).toContain('zinc-400')
   })
-  it('vurgu token\'ları (amber-400, amber-500) var', () => {
-    expect(css).toContain('amber-400')
-    expect(css).toContain('amber-500')
+  it('kenarlık token\'ı (zinc-800) kabukta kullanılıyor', () => {
+    expect(app).toContain('zinc-800')
   })
   it('üç --font-* token\'ı tanımlı', () => {
     expect(css).toContain('--font-display')

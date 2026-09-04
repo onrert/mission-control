@@ -19,10 +19,14 @@ test('kabuk açılır, başlık görünür, konsol hatası yok, tıklanabilir ö
 
   await page.goto('/')
 
-  // (1) başlık görünür
+  // (1) başlık görünür — render edilen metin (innerText) ölçülür, DOM metin düğümü değil.
+  // Chromium'da innerText CSS `text-transform` uygulanmış hâli döner; `lang="tr"` altında
+  // `uppercase` locale-duyarlı çalışıp `i` -> `İ` (U+0130) üretebilir (AC10 regresyon guard'ı).
+  // toContainText/DOM metni bunu YAKALAMAZ çünkü CSS'i hiç uygulamaz.
   const title = page.locator('[data-testid="app-title"]')
   await expect(title).toBeVisible()
-  await expect(title).toContainText('MISSION CONTROL', { ignoreCase: true })
+  const renderedTitle = await title.innerText()
+  expect(renderedTitle).toBe('MISSION CONTROL')
 
   // (2) body boş değil
   const bodyText = await page.locator('body').innerText()

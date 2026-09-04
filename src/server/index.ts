@@ -25,15 +25,18 @@ export function isSupportedNodeVersion(version: string): boolean {
 }
 
 /**
- * `MC_PORT` ortam değişkeninden port numarasını çözer. Geçersiz bir değer verilirse
- * varsayılana (7333) düşer ve stderr'e Türkçe bir uyarı basar; süreci durdurmaz.
+ * `MC_PORT` ortam değişkeninden port numarasını çözer. Geçersiz (sayı olmayan) veya boş/
+ * yalnızca boşluk içeren bir değer verilirse varsayılana (7333) düşer ve stderr'e Türkçe bir
+ * uyarı basar; süreci durdurmaz. Boş dizge (`Number('') === 0`) özel olarak reddedilir —
+ * aksi halde sessizce efemeral porta (0) düşerdi.
  */
 export function resolvePort(env: NodeJS.ProcessEnv): number {
   const defaultPort = 7333
   const raw = env.MC_PORT
   if (raw === undefined) return defaultPort
-  const parsed = Number(raw)
-  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {
+  const trimmed = raw.trim()
+  const parsed = Number(trimmed)
+  if (trimmed === '' || !Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {
     process.stderr.write(
       `Uyarı: MC_PORT değeri ("${raw}") geçersiz, varsayılan port ${defaultPort} kullanılıyor.\n`
     )
@@ -74,9 +77,8 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse): void 
   const relativeToRoot = path.relative(distWebDir, filePath)
   const isInside =
     relativeToRoot !== '' && !relativeToRoot.startsWith('..') && !path.isAbsolute(relativeToRoot)
-  const isRoot = filePath === path.join(distWebDir, 'index.html')
 
-  if (!isInside && !isRoot) {
+  if (!isInside) {
     res.writeHead(404, { 'content-type': 'text/plain' })
     res.end('Not Found')
     return

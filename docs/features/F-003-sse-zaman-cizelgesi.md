@@ -23,3 +23,6 @@ Kaynak: `docs/02-architecture.md` §6 (SSE), ADR-004; `docs/03-ux.md` ekran 1 + 
 
 ## Notlar / kararlar
 - Yeniden bağlanma ve telafi davranışı ADR-004'te tanımlı.
+
+## CEO'dan devralınan taahhüt (F-001 sözleşmesi satır 735, 549)
+- F-003 sözleşmesi **gerçek DOM test altyapısı** (`jsdom` + `@testing-library/react`) için bir ADR taslağıyla açılmak zorundadır. F-001/F-002 yalnızca `renderToStaticMarkup` ile test ediyor; ilk etkileşimli ekran burada geliyor.

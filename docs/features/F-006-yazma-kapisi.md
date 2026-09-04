@@ -25,3 +25,6 @@ Kaynak: `docs/02-architecture.md` §7, §11.4; ADR-005.
 
 ## Notlar / kararlar
 - Bu feature bir güvenlik sınırıdır; QA KALDI verirse kapsam daraltılarak değil, düzeltilerek geçilir.
+
+## CEO'dan devralınan taahhüt (ADR-008 eki, 2026-09-04)
+- F-002'de Host/Origin kontrolünde **port bileşeni yok sayıldı**; bu, aynı makinedeki başka bir yerel sayfanın API'ye istek atabilmesi demek. F-002'de etkisi sınırlıydı. **F-006 sunucuya kullanıcı adına diske yazdırdığı için bu kararı yeniden değerlendirmek ZORUNDADIR** (etkin porta bağlama, token veya eşdeğeri). Gerekçe: `docs/decisions/ADR-008-f002-kapsam-kararlari.md` "Ek — R-1".

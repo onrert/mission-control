@@ -22,3 +22,22 @@ Ayrıca: G1'de **"onaylıyorum ama önce PRD'yi okuyayım"** dedi. Onay kapılar
 - Pahalı seçeneği seçtiğinde riski ADR'ye yaz ama seçimi tartışma — bilinçli takas yapıyor.
 
 İlgili: [[app-factory-sablon-klasoru]]
+
+## İstisna: güvenlik/geri alınamazlık söz konusuysa kontrolü elinde tutar (2026-09-04, F-002)
+
+"Kapsamlı olanı seçer" kuralı **güvenlik kapılarında geçerli değil.** Push kapısı kararında
+CEO'nun "(Önerilen)" işaretlediği kapsamlı seçeneği (hook'u ikiye ayır, `PUSH.ok` diye kalıcı
+hafif bir kapı ekle) **reddetti**; en el işi olan "depoyu sen hazırla, push'u ben çalıştırırım"
+seçeneğini aldı — her feature sonunda tekrar edeceğini bilerek.
+
+Aynı oturumda GitHub deposu açmayı hemen onayladı (yeni yetenek = evet), ama **push'u kendi
+terminalinde tutmayı** seçti. Ayrım net: *yeni iş yapmak* konusunda cömert, *kendi adına geri
+alınamaz işlem tetikleyen bir otomatizmayı kalıcılaştırmak* konusunda cimri.
+
+**Nasıl uygulanır:**
+- Güvenlik hook'unu gevşetmeyi/otomatikleştirmeyi öneren seçenekleri "(Önerilen)" yapma;
+  manuel seçeneği eşit ağırlıkta sun ve tekrar maliyetini dürüstçe yaz.
+- Geri alınamaz komutları (push, deploy, publish, silme) ona hazır komut bloğu olarak ver,
+  kendin çalıştırmayı teklif etme.
+- Tekrarlayan el işinden şikâyet edene kadar otomatikleştirmeyi tekrar önerme;
+  önerirsen "kaçıncı tekrar" olduğunu belirt.

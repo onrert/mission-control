@@ -4,10 +4,9 @@ on: [push]
 
 jobs:
   verify:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    # Tek platform: yalnızca Windows desteklenir (ADR-009, 2026-09-04).
+    # Matris kasıtlı olarak kaldırıldı; ubuntu/macOS PRD kapsamında değil.
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -6,7 +6,7 @@ Mission Control, App Factory hattında aynı anda çalışan birden çok Claude 
 
 ## Hedef kullanıcı ve problem
 
-**Hedef kullanıcı:** Veron — App Factory hattını tek başına yöneten kullanıcı. Windows birincil platform, macOS de desteklenir. Panel tarayıcı sekmesinde veya VS Code Simple Browser'da açılır.
+**Hedef kullanıcı:** Veron — App Factory hattını tek başına yöneten kullanıcı. Platform: **yalnızca Windows** (kullanıcı kararı 2026-09-04, ADR-009; önceki "macOS de desteklenir" iddiasi düşürüldü). Panel tarayıcı sekmesinde veya VS Code Simple Browser'da açılır.
 
 **Problem:** Bir sprint sırasında birden çok agent (CEO, developer, qa-evaluator, vb.) paralel veya art arda çalışırken, hangi feature'ın hangi aşamada olduğu, bir agent'ın takılıp takılmadığı, bir kapının onay beklediği ve ne kadar token/limit harcandığı yalnızca dağınık dosyalardan (`docs/features/`, `docs/qa/`, `~/.claude/projects/` transkriptleri) veya sohbet geçmişini geri sararak takip edilebiliyor. Kullanıcı hattı büyük ölçüde körlemesine yönetiyor; bir feature takıldığında veya bir kapı onay beklediğinde bunu ancak CEO söylerse fark ediyor.
 

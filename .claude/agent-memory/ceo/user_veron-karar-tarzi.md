@@ -23,21 +23,22 @@ Ayrıca: G1'de **"onaylıyorum ama önce PRD'yi okuyayım"** dedi. Onay kapılar
 
 İlgili: [[app-factory-sablon-klasoru]]
 
-## İstisna: güvenlik/geri alınamazlık söz konusuysa kontrolü elinde tutar (2026-09-04, F-002)
+## Guvenlik/geri alinamazlik: kontrolu elinde tutar, ama isi sana yaptirir (2026-09-04, F-002)
 
-"Kapsamlı olanı seçer" kuralı **güvenlik kapılarında geçerli değil.** Push kapısı kararında
-CEO'nun "(Önerilen)" işaretlediği kapsamlı seçeneği (hook'u ikiye ayır, `PUSH.ok` diye kalıcı
-hafif bir kapı ekle) **reddetti**; en el işi olan "depoyu sen hazırla, push'u ben çalıştırırım"
-seçeneğini aldı — her feature sonunda tekrar edeceğini bilerek.
+Push kapisi karari iki turda netlesti ve **ilk okumam yanlisti**.
+- 1. tur: "Push'u sen yap" secenegini secti. Etiketteki "sen" belirsizdi; ben "kullanici yapacak"
+  diye yorumladim ve ona komut blogu verdim. **Yanlis.** Sonra "nereden push edicem sen
+  edemiyor musun?" diye sordu -- kastettigi bendim.
+- 2. tur (net secenekler): kapiyi kalici acan "(Onerilen)" secenegimi yine reddetti,
+  **"her push'ta bana sor"** dedi. Yani: isi ben yapayim, ama izin her seferinde ondan ciksin.
 
-Aynı oturumda GitHub deposu açmayı hemen onayladı (yeni yetenek = evet), ama **push'u kendi
-terminalinde tutmayı** seçti. Ayrım net: *yeni iş yapmak* konusunda cömert, *kendi adına geri
-alınamaz işlem tetikleyen bir otomatizmayı kalıcılaştırmak* konusunda cimri.
+Sonuc kural: **islemi CEO yapar, yetkiyi kullanici tek seferlik verir.** Kalici otomatik
+yetki istemiyor; el isini de kendisi yapmak istemiyor.
 
-**Nasıl uygulanır:**
-- Güvenlik hook'unu gevşetmeyi/otomatikleştirmeyi öneren seçenekleri "(Önerilen)" yapma;
-  manuel seçeneği eşit ağırlıkta sun ve tekrar maliyetini dürüstçe yaz.
-- Geri alınamaz komutları (push, deploy, publish, silme) ona hazır komut bloğu olarak ver,
-  kendin çalıştırmayı teklif etme.
-- Tekrarlayan el işinden şikâyet edene kadar otomatikleştirmeyi tekrar önerme;
-  önerirsen "kaçıncı tekrar" olduğunu belirt.
+**Nasil uygulanir:**
+- Geri alinamaz komutlarda (push, deploy, publish, silme) "ben mi sen mi" diye sorma --
+  **ben yaparim** varsay; sorulacak tek sey iznin kendisi.
+- Guvenlik kapisini kalici gevsetmeyi onerme; tek kullanimlik onay deseni (DANGER.ok /
+  PUSH.ok gibi, kullanildiginda silinen) onun tercihidir.
+- AskUserQuestion etiketlerinde **"sen"/"ben" zamiri KULLANMA** -- kim yapacagi karisiyor.
+  Bunun yerine "CEO push etsin, izin her seferinde sorulsun" gibi ozne acik yaz.

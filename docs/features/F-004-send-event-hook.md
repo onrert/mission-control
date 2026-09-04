@@ -15,7 +15,7 @@ Kaynak: `docs/02-architecture.md` §8, ADR-006.
 - [x] Sunucu kapalıyken script hata basmaz, oturumu bloklamaz, kısa timeout ile sessizce çıkar (çıkış kodu 0).
 - [x] Bilinmeyen/eksik alanda çökmez; bilinmeyen alanlar ham olarak iletilir.
 - [x] `npm run install-hook -- <proje-yolu>` hedef projeye scripti kopyalar ve `.claude/settings.json` hook satırlarını ekler; mevcut ayarları bozmaz, iki kez çalıştırılınca çift kayıt oluşturmaz.
-- [ ] Kurulum sonrası gerçek bir Claude Code oturumunda en az bir olayın panele düştüğü elle doğrulanır ve `KURULUM.md`'ye yazılır. **(AC5 — kullanıcı adımı, bu turda yapılmadı; bkz. KURULUM.md "Doğrulama".)**
+- [x] Kurulum sonrası gerçek bir Claude Code oturumunda en az bir olayın panele düştüğü elle doğrulanır ve `KURULUM.md`'ye yazılır. **(AC5 — kullanıcı 2026-09-05'te `npm run install-hook -- .` çalıştırdı; CEO doğruladı, kanıt aşağıda.)**
 - [x] Smoke test: sahte hook payload'ı ile script çalıştırılır, olayın sunucuya ulaştığı otomatik doğrulanır.
 
 ## Dosya sahipliği (bu feature yalnızca şu dosyalara dokunur)
@@ -40,3 +40,17 @@ Genişletme (gerekçeli, sözleşme §1/§2.2): `tests/integration/send-event-ho
   istiyor), çünkü koruma katmanlari yeterli: ilk çalıştırmada yedek, yalnızca ekleme, dedupe,
   bozuk JSON'da hiç yazmama. **Ancak:** hiçbir agent bu scripti bu deponun dışındaki bir yola
   karşı CEO/kullanıcı onayı olmadan çalıştıramaz. Gerçek projelere kurulum kullanıcı adımıdır.
+
+## AC5 doğrulama kanıtı (CEO, 2026-09-05)
+Kullanıcı kurulumu kendi terminalinde yaptı. CEO doğruladı:
+- `.claude/hooks/send-event.cjs` yerinde (8246 bayt); `.claude/settings.json` 13 hook olay tipine
+  genişletilmiş, **6 orijinal güvenlik hook'unun altısı da yerinde** (session-start, gate-check,
+  block-dangerous, asset-guard, post-format, stop-check), JSON geçerli, `settings.json.bak` yedeği alınmış.
+- Panel açıldı, gerçek oturumda araç çağrıları yapıldı → olaylar **canlı düştü**: dosya 4 satırdan
+  9 satıra çıktı, `GET /api/events` yeni olayları döndürdü.
+- Örnek gerçek olay: `hook_event_name: PreToolUse` · `tool_name: Bash` ·
+  `session_id: b13e8d3f-…` (bu oturumun gerçek kimliği) · `project_name: mission-control` ·
+  **`transcript_path` dolu** (Faz 2 bunu kullanacak) · `client_version: 1` · `flags: []`.
+- `.seq` = 4 → kayma yok (F-002'nin Ö1 düzeltmesi gerçek kullanımda da tutuyor).
+
+**Uçtan uca hat çalışıyor:** hook → `send-event.cjs` → `POST /api/events` → normalize → JSONL.

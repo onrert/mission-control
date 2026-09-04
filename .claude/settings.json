@@ -7,44 +7,279 @@
   },
   "permissions": {
     "allow": [
-      "Read", "Grep", "Glob", "WebSearch",
-      "Edit(docs/**)", "Write(docs/**)",
-      "Edit(src/**)", "Write(src/**)", "Edit(app/**)", "Write(app/**)",
-      "Edit(tests/**)", "Write(tests/**)", "Edit(e2e/**)", "Write(e2e/**)",
-      "Edit(assets/**)", "Write(assets/**)",
-      "Bash(npm run *)", "Bash(npm test*)", "Bash(npm install*)", "Bash(npm ci*)",
-      "Bash(npx vitest*)", "Bash(npx playwright*)", "Bash(npx tsc*)", "Bash(npx prettier*)",
-      "Bash(npx eslint*)", "Bash(npx expo*)", "Bash(npx create-*)", "Bash(node *)",
-      "Bash(git status*)", "Bash(git diff*)", "Bash(git add *)", "Bash(git commit *)",
-      "Bash(git log*)", "Bash(git checkout -b *)", "Bash(git branch*)",
-      "Bash(python -m pytest*)", "Bash(uv run *)", "Bash(claude plugin *)", "Bash(claude mcp *)"
+      "Read",
+      "Grep",
+      "Glob",
+      "WebSearch",
+      "Edit(docs/**)",
+      "Write(docs/**)",
+      "Edit(src/**)",
+      "Write(src/**)",
+      "Edit(app/**)",
+      "Write(app/**)",
+      "Edit(tests/**)",
+      "Write(tests/**)",
+      "Edit(e2e/**)",
+      "Write(e2e/**)",
+      "Edit(assets/**)",
+      "Write(assets/**)",
+      "Bash(npm run *)",
+      "Bash(npm test*)",
+      "Bash(npm install*)",
+      "Bash(npm ci*)",
+      "Bash(npx vitest*)",
+      "Bash(npx playwright*)",
+      "Bash(npx tsc*)",
+      "Bash(npx prettier*)",
+      "Bash(npx eslint*)",
+      "Bash(npx expo*)",
+      "Bash(npx create-*)",
+      "Bash(node *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git log*)",
+      "Bash(git checkout -b *)",
+      "Bash(git branch*)",
+      "Bash(python -m pytest*)",
+      "Bash(uv run *)",
+      "Bash(claude plugin *)",
+      "Bash(claude mcp *)"
     ],
     "deny": [
-      "Read(.env)", "Read(.env.*)", "Read(**/secrets/**)",
-      "Bash(rm -rf *)", "Bash(git push --force*)", "Bash(git reset --hard*)"
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(**/secrets/**)",
+      "Bash(rm -rf *)",
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)"
     ]
   },
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "node .claude/hooks/session-start.cjs" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/session-start.cjs"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/send-event.cjs",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
     ],
     "PostCompact": [
-      { "hooks": [ { "type": "command", "command": "node .claude/hooks/session-start.cjs" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/session-start.cjs"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/send-event.cjs",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
     ],
     "PreToolUse": [
-      { "matcher": "Edit|Write",
-        "hooks": [ { "type": "command", "command": "node .claude/hooks/gate-check.cjs" } ] },
-      { "matcher": "Bash",
-        "hooks": [ { "type": "command", "command": "node .claude/hooks/block-dangerous.cjs" } ] },
-      { "matcher": "mcp__higgsfield__.*",
-        "hooks": [ { "type": "command", "command": "node .claude/hooks/asset-guard.cjs" } ] }
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/gate-check.cjs"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/block-dangerous.cjs"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__higgsfield__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/asset-guard.cjs"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/send-event.cjs",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
     ],
     "PostToolUse": [
-      { "matcher": "Edit|Write",
-        "hooks": [ { "type": "command", "command": "node .claude/hooks/post-format.cjs" } ] }
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/post-format.cjs"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/send-event.cjs",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
     ],
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "node .claude/hooks/stop-check.cjs" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/stop-check.cjs"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/send-event.cjs",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/send-event.cjs",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/send-event.cjs",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/send-event.cjs",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/send-event.cjs",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/send-event.cjs",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/send-event.cjs",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/send-event.cjs",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/send-event.cjs",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

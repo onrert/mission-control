@@ -37,6 +37,12 @@ F-001 ve F-002 bitti ve push edildi. **F-004 kod turu BİTTİ ve commit'lendi** 
   → sessiz olay kaybı. Test sunucusundaki damla da geçerli-ama-bitmemiş HTTP başlığı yazacak
   şekilde düzeltildi (ham bayt Node'un parse hatasını tetikleyip senaryoyu yanlış ölçüyordu).
 
+### AÇIK HATA: BUG-001 (F-004 QA turunda ele alınacak)
+`docs/qa/BUG-001-summary-200-karakter.md` — `summary` mimari §5.1'in 200 karakter sınırını aşıyor
+(gerçek olaylarda 234-732 karakter). Sahibi F-002 kodu (`normalize.ts` `deriveSummary`), ama
+yalnızca gerçek hook payload'ıyla görünüyor; F-002'nin QA'sı elinde gerçek olay olmadığı için
+göremedi. **F-003 zaman çizelgesi satır düzenini bozar** — F-003'ten önce kapatılmalı.
+
 ### Sıradaki adım: F-004 QA turu
 `qa-evaluator` aç: çalışan uygulamayı test etsin, **kendi bağımsız mutasyonlarını** koşsun
 (developer'ınkileri tekrarlamasın), GEÇTİ/KALDI versin. Ölçü: feature notundaki 6 AC
@@ -54,8 +60,10 @@ F-001 ve F-002 bitti ve push edildi. **F-004 kod turu BİTTİ ve commit'lendi** 
   `.claude/settings.json`'ına veya depo dışına **onaysız asla**.
 
 ## Kullanıcıda bekleyen (CEO soracak)
-- **AC5:** kurulum sonrası **gerçek bir Claude Code oturumunda** en az bir olayın panele düştüğünün
-  elle doğrulanması. Otomatikleştirilemez. Adımlar `KURULUM.md`'ye yazılacak.
+- ~~**AC5**~~ **TAMAMLANDI (2026-09-05).** Kullanıcı `npm run install-hook -- .` çalıştırdı,
+  CEO doğruladı: uçtan uca hat çalışıyor (hook → `send-event.cjs` → `POST /api/events` → JSONL),
+  6 güvenlik hook'u bozulmadı, `transcript_path` dolu geliyor. Kanıt: feature notu "AC5 doğrulama
+  kanıtı". **Bu doğrulama BUG-001'i ortaya çıkardı** (aşağıda).
 - **Push:** her push öncesi kullanıcıya sorulur; onay verirse CEO `docs/approvals/PUSH.ok` yazar
   (hook kullanınca siler). Kullanıcı kararı: kapı kalıcı açılmayacak.
 

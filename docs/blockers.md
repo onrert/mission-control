@@ -114,3 +114,20 @@ sahibi bir agent bu düzeltmeyi yapsın. Düzeltme mekanik ve düşük risk — 
 testi `tests/server/adr-013-write-header.test.ts`) bu maddeden bağımsız ilerliyor ve yeşil.
 `npm run verify` bu tek dosya yüzünden KIRMIZI kalacak — CEO onayı gelene kadar `useProjects.ts`
 geçişini ve geri kalan F-006 işini tamamlayıp bu maddeyi tek blocker olarak bırakıyorum.
+
+**Ek bulgu (aynı kök neden, `useProjects.ts` geçişi sonrası ortaya çıktı):**
+`useProjects.ts`'i `writeFetch`'e geçirdikten sonra (CEO Karar 2, onaylı) F-005'in KENDİ
+`tests/features/projects/web/SettingsScreen.test.tsx` testi de kırılıyor —
+`expect(fetchMock).toHaveBeenCalledWith('/api/projects/p_1', { method: 'DELETE' })` artık
+başarısız çünkü `writeFetch` çağrıya `headers: { 'x-mc-write': '1' }` ekliyor (tam eşitlik
+assert'i, kısmi değil). Bu, sözleşmenin "regresyon kanıtı: F-005'in mevcut testleri (Ekle/Kaldır
+hata yolları dahil) değişmeden geçmeli" (`docs/qa/F-006-contract.md`, "Karar 2") iddiasının
+**yanlış** çıktığı somut bir örnek — hiçbir turda gerçek header eklenip bu test çalıştırılarak
+doğrulanmamış. `tests/features/projects/web/**` da F-005'in dosya sahipliğinde (`docs/features/
+F-005-*.md` "ilgili testler"), F-006'nın §2 listesinde yok; aynı gerekçeyle dokunmadım — yalnızca
+bu tek satırlık assert'i (`toHaveBeenCalledWith` → `expect.objectContaining` veya header'ı da
+bekleyecek şekilde) düzeltmek yeterli, mekanik ve düşük risk.
+
+**İstenen aksiyon (güncellenmiş):** Yukarıdaki (a)/(b) seçeneklerine üçüncü dosya olarak
+`tests/features/projects/web/SettingsScreen.test.tsx`'i de ekleyin — aynı onayla iki dosyanın da
+(bu ve `tests/integration/projects-api.test.ts`) mekanik düzeltmesini tek turda yaparım.

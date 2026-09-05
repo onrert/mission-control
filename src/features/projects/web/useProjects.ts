@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ProjectListItem } from '../../../shared/types'
+import { writeFetch } from '../../../web/lib/write-fetch'
 
 export type ProjectsLoadState = 'loading' | 'ready' | 'error'
 
@@ -70,7 +71,7 @@ export function useProjects(liveUpdate: ProjectListItem[] | null): UseProjectsRe
   const add = useCallback(
     async (path: string, label?: string): Promise<AddProjectSuccess | AddProjectFailure> => {
       try {
-        const res = await fetch('/api/projects', {
+        const res = await writeFetch('/api/projects', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(label ? { path, label } : { path }),
@@ -102,7 +103,7 @@ export function useProjects(liveUpdate: ProjectListItem[] | null): UseProjectsRe
   // döndür, `SettingsScreen`/`ProjectRow` görünür kılsın.
   const remove = useCallback(async (id: string): Promise<AddProjectSuccess | AddProjectFailure> => {
     try {
-      const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' })
+      const res = await writeFetch(`/api/projects/${id}`, { method: 'DELETE' })
       const body = (await res.json()) as
         { success: true; data: { removed: boolean } } | ProjectErrorResponse
       if (!body.success) {

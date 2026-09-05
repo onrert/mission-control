@@ -131,3 +131,20 @@ bekleyecek şekilde) düzeltmek yeterli, mekanik ve düşük risk.
 **İstenen aksiyon (güncellenmiş):** Yukarıdaki (a)/(b) seçeneklerine üçüncü dosya olarak
 `tests/features/projects/web/SettingsScreen.test.tsx`'i de ekleyin — aynı onayla iki dosyanın da
 (bu ve `tests/integration/projects-api.test.ts`) mekanik düzeltmesini tek turda yaparım.
+
+**Üçüncü örnek (statik olarak tespit edildi, henüz Playwright ile çalıştırılmadı):**
+`tests/e2e/settings.spec.ts:109` ve `:119` de aynı sınıf: `page.request.post('/api/projects',
+{data:{path:p}})` ve `page.request.delete(...)` doğrudan HTTP çağrısı (UI tıklaması değil,
+`useProjects.ts`/`writeFetch`'i hiç kullanmıyor) — `expect(res.status()).toBe(201)` artık `403`
+alacak. Bu da F-005'in dosya sahipliğinde (`tests/e2e/settings.spec.ts`), F-006'nın §2 listesinde
+yok. `npm run e2e`'yi henüz bu dosya için izole çalıştırmadım (Playwright tam koşusu pahalı ve
+sonuç zaten statik olarak kesin) — CEO onayı gelirse aynı turda (yalnızca iki satıra
+`{ headers: { 'x-mc-write': '1' } }` eklemek) düzeltirim.
+
+**Özet — dört dosyalık liste (CEO onayı bekleyen, hepsi mekanik "header ekle" düzeltmesi):**
+1. `tests/integration/projects-api.test.ts` (~13 çağrı sitesi)
+2. `tests/features/projects/web/SettingsScreen.test.tsx` (1 assert)
+3. `tests/e2e/settings.spec.ts` (2 çağrı sitesi)
+Üçü de F-005 dosya sahipliğinde, F-006 sözleşmesinin §2 listesinde yok. `npm run verify`/`npm run
+e2e` bu üç dosya yüzünden KIRMIZI kalacak; F-006'nın kendi dosyalarının hepsi (write-gate.ts,
+dağıtıcı, writeFetch, statik tarama, manifest testi) yeşil ve bağımsız doğrulanabilir durumda.

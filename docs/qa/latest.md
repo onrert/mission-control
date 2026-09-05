@@ -1,188 +1,277 @@
-# QA — F-005 (proje kayıt defteri + chokidar izleme + Ayarlar), düzeltme turu 2 doğrulaması
-
-KARAR: GEÇTİ
+KARAR: KALDI
 ESKALE: false
 
-Tarih: 2026-09-05 · Değerlendiren: qa-evaluator · Tur: düzeltme turu 2 (dar doğrulama, F-005'in 3. QA turu)
-Değerlendirilen commit: `b71f3e0` (düzeltmeler: `623a7bb` D25 · `10bb034` D26 · `c0d2c76` D27 · `9c47afc` D28)
-Önceki raporlar: `docs/qa/F-005-2026-09-05.md` (KALDI), `docs/qa/F-005-fix1-2026-09-05.md` (KOŞULLU GEÇTİ)
-Kapsam: yalnızca D25-D28'in kapanışı + düzeltmenin ürettiği regresyon. D20-D24, chokidar ölçümü,
-manifest testi, kapsam/güvenlik denetimi, 375px görsel teyidi ve sekme deseni **yeniden açılmadı**.
+# F-006 — yazma kapısı + sınır testleri · QA kod turu (qa-evaluator, 2026-09-05)
 
-**GEÇTİ ne demek:** Önceki turun iki açık ÖNEMLİ bulgusunun (ÖNEMLİ-1 ölçülmeyen çit, ÖNEMLİ-2
-sessiz "Kaldır") ikisi de kendi mutasyonlarımla kapandığı ölçüldü; açık BLOKLAYICI/ÖNEMLİ yok,
-dört boyutun hiçbiri < 7. Kalan altı madde NOT seviyesindedir ve karar üzerinde etkisi yoktur.
+Kapsam: `docs/features/F-006-yazma-kapisi.md` (8 AC) · `docs/qa/F-006-contract.md`
+(CEO onayı → CEO kararları → D29-D33 → A-G → gövde) · ADR-005 / ADR-013+ek / ADR-008+ek /
+ADR-001 k.4 · `docs/02-architecture.md` §7,§10,§11.1,§11.4.
+Ürün kodu **kalıcı değiştirilmedi**; her mutasyon `git checkout` ile geri alındı (kanıt en altta).
 
 ## Puanlar
 
-| Boyut | Puan (önceki) | Gerekçe |
+| Boyut | Puan | Gerekçe |
 |---|---|---|
-| İşlevsellik | **9** (8) | Önceki turun tek işlevsel kusuru (başarısız DELETE'in istemcide sessizce yutulması) kapandı ve **gerçek tarayıcıda** doğrulandı: 375px'te `role="alert"` ile "Liste kaydedilemedi, tekrar deneyin." göründü, satır yerinde kaldı, düğme yeniden etkinleşti, engel kalkınca aynı düğme başarıyla sildi (§4). Ayrıca D27 ile gerçek chokidar debounce yolundan fırlayan bir `hub.broadcast` artık süreci düşürmüyor — canlı harness ile ölçüldü (§3, M3). |
-| Özellik bütünlüğü | **9** (8) | D25-D28'in dördü de uygulanmış **ve ölçülüyor**; feature notu ile `progress.md` turu doğru anlatıyor, ertelenen maddeler (F-007 375px sekme kriteri) sözleşmeye taşınmış. Kalan yüzeyler (NOT-1/NOT-2) yeni değil, aynı sınıfın kenar dalları. |
-| Görsel/UX | **8** (7) | Hata geri bildirimi artık dar panelde de tam görünür ve sayfa yatay taşmıyor (`scrollWidth 375 = viewport 375`). "Kaldır" düğmesi istek sırasında `kaldırılıyor…` olup devre dışı kalıyor, hata sonrası geri dönüyor. Marka kırpılması (NOT-4) bilinçli borç olarak F-007'ye taşındı. |
-| Kod kalitesi | **8** (7) | 6 bağımsız mutasyonun **5'i KIRMIZI**. Önceki turda yeşil kalan iki mutasyon (sınırın bağlantısı, guard'ın registry istisnası) artık kırmızı; ölü satır ve gerçeğe uymayan yorum gitmiş. Tek yeşil kalan (M5) statik guard'ın dar bir kör noktası ve dinamik manifest testi bunu zaten yakalıyor. Kalan puan kaybı: `safelyNotify` closure granülerliği ve `stopAll`'ın sarılmamış olması (NOT-1/NOT-2). |
+| İşlevsellik | **7** | 28 yol-kaçışı + 28 HTTP denemesinde **tek bir delme başarılı olmadı**; disk üzerinde kök dışında hiçbir bayt değişmedi. Düşüren: `safeYamlValue` satır sonu içeren değeri tırnaklıyor ama **kaçırmıyor** → frontmatter bozulabiliyor (Ö2, ölçüldü). |
+| Özellik bütünlüğü | **5** | AC3, AC5 ve AC7'nin **kanıt olarak gösterdiği çit ya yok ya da iddia ettiği şeyi taramıyor** (B1, B2, Ö3). AC7 adıyla saydığı `fs.write*` ailesini yakalamıyor. |
+| Görsel/UX (doküman + hata mesajları) | **7** | F-006'nın UI'ı yok. Sözleşme/ADR metinleri örnek düzeyde net; hata mesajları Türkçe ve ayırt edici. Düşüren: NOT-2'nin (harf duyarlılığı) kullanıcıya dönen tek mesajı `İşlem, hedef yolla eşleşmiyor.` — teşhis edilemez; `KURULUM`/`docs` tarafında F-006 için hiçbir kullanıcı notu yok. |
+| Kod kalitesi | **6** | Modülün kendisi temiz, fail-closed, atomik, yorumları doğru. Düşüren: yeni bir yazma yolunun **hata dalı çitsiz** (Ö1 — F-002 ve F-005'in bloklayıcısıyla aynı sınıf, ders `CLAUDE.md`'de iki kez yazılı), guard'ın **yorumu ile taradığı** ayrışıyor (B1 — F-005 dersi #6/#19'un birebir tekrarı). |
 
-**Karar kuralı:** açık BLOKLAYICI/ÖNEMLİ yok + tüm puanlar ≥ 7 → **GEÇTİ**.
+**Herhangi bir boyut < 7 → KALDI.** Bu bir güvenlik sınırıdır; kapsam daraltarak kapatılmamalıdır.
 
-## 1. Komutlar ve gerçek çıktılar (hepsi kendim çalıştırdım)
+---
 
-| Komut | Sonuç | Çıkış |
+## 1. Komutlar — kendim çalıştırdım
+
+| Komut | Çıkış kodu | Sonuç |
 |---|---|---|
-| `npm run verify` (temiz ağaç, tur başı) | **Test Files 37 passed (37)** · **Tests 437 passed (437)** · `vite build ✓ built in 955ms` (`dist/web/assets/index-BoXlmb-4.css` 15.34 kB) | 0 |
-| `npm run verify` (temiz ağaç, tüm mutasyonlar geri alındıktan sonra) | **37 passed (37)** · **437 passed (437)** · `✓ built in 951ms` | 0 |
-| `npm run e2e` | **15 passed (15.8s)** | 0 |
-| `npm run e2e:dev` | **1 passed (4.4s)** | 0 |
+| `npm run verify` | **0** | typecheck + lint + `Test Files 41 passed (41)` / `Tests 539 passed (539)` + `vite build ✓ 961ms` |
+| `npm run e2e` | **0** | `15 passed (15.5s)` |
+| `npm run e2e:dev` | **0** | `1 passed (3.5s)` |
+| `npm audit` / `npm audit --omit=dev` | 0 | `found 0 vulnerabilities` |
 
-Developer'ın ve CEO'nun bildirdiği sayılar (**37 dosya / 437 test**, e2e 15, e2e:dev 1) **birebir
-doğrulandı**. Feature notu frontmatter'ı tur başında `status: qa` idi (doğrulandı), rapor sonrası
-`status: done` yapıldı.
+**Sapma:** developer ve `docs/progress.md` **538** test bildiriyor, gerçek sayı **539** (N3).
 
-## 2. D25-D28 kapanış tablosu
+---
 
-| Karar | Durum | Kanıt |
+## 2. AC1-AC8 kanıt tablosu
+
+| AC | Durum | Bağımsız kanıt |
 |---|---|---|
-| **D25** (ÖNEMLİ-1) — dağıtıcı sınırının **bağlantısı** ölçülsün | **KAPANDI** | `tests/integration/projects-api.test.ts:619-653`. Test **davranışsal**, kaynak metni taramıyor: gerçek `createServer(0, dataDir)` + gerçek `fetch(baseUrl + '/api/health')`; üretim kodu değişmiyor, yalnızca `handle.server.projectsService.getActiveWatcherCount` test içinde geçici olarak fırlatacak şekilde değiştirilip `finally`'de geri alınıyor. Assert'ler: `500` + `error.code === 'internal_error'`, ardından metot geri alınınca ikinci istek `200` (süreç yaşıyor). **M1 mutasyonu artık KIRMIZI** (§3). |
-| **D26** (ÖNEMLİ-2) — başarısız "Kaldır" kullanıcıya görünsün | **KAPANDI** | `src/features/projects/web/useProjects.ts:97-118` (`remove()` artık `add()` ile aynı `{ok:true}` / `{ok:false,message}` sözleşmesini döndürüyor, yanlış "SSE senkronize eder" yorumu silinmiş), `src/features/projects/web/ProjectRow.tsx:40-53, 83-95` (`role="alert"` + `data-testid="remove-project-error"`, istek sırasında `disabled`). Testler: `tests/features/projects/web/useProjects.test.ts:75-116`, `tests/features/projects/web/SettingsScreen.test.tsx:127-156`. **M2 mutasyonu ikisini de KIRMIZI yapıyor** (§3). **Canlı tarayıcı gözlemi §4'te.** |
-| **D27** (NOT-4) — asenkron yan etki yüzeyi | **KAPANDI** | `src/features/projects/server/service.ts:74-81` `safelyNotify()`; **üç çağrı noktasının üçü de sarılı**: `:97-100` (chokidar debounce geri çağrımındaki `features` yayını), `:145-148` (`addProject` → izleme başlatma + `projects` yayını), `:162-169` (`removeProject` → izleme durdurma + `projects` yayını). `grep -n "broadcast\|watchProjectFeatures"` ile sayıldı: sarılmamış `hub.broadcast` **yok**. Test: `tests/features/projects/server/service.test.ts:1-112`. **M3: hem birim testi KIRMIZI hem canlı harness'ta süreç ölüyor** (§3). |
-| **D28** (NOT-1/NOT-2) — doğrulanmamış iddia kalmasın | **KAPANDI** | (a) `src/web/App.tsx:38` — `style={{ minWidth: 0 }}` **kaldırılmış**, `grep -n minWidth src/web/App.tsx` → yalnızca `:34`'teki "burada daha önce vardı, ölçüm doğrulamadı, kaldırıldı" açıklaması. Gerçeğe uymayan 10 satırlık gerekçe yorumu gitmiş. (b) `tests/features/projects/no-delete-guard.test.ts:68-75` — istisna **dize seviyesinde**: `content.match(/unlinkSync\([^)]*\)/g)` ile bulunan **her** çağrı `unlinkSync(tmpPath)` olmak zorunda, ayrıca `calls.length > 0` körlük assert'i var. **M4 KIRMIZI** (§3). |
+| **AC1** üç hedef beyaz listesi | ✅ | `write-gate.ts:22-30` `OPERATION_PATTERNS` + `:112-116` adım 8. Kendi harness'ımla 13 dosya-adı + 9 kapı-adı + 8 symlink/junction varyantı denendi (§5): **0 kaçış**, kök dışı diskte hiç değişmedi. |
+| **AC2** genel `write()` yok, 4 niyet fonksiyonu | ✅ | `write-gate.test.ts:35-39` `Object.keys(...).sort() → toEqual`. Dosyada başka `export` yok (`grep -c '^export' = 5`, biri `type WriteResult`). |
+| **AC3** silme/`unlink` yok | ❌ **B2** | Kod doğru (`archiveDenial` yalnızca `renameSync`, `write-gate.ts:324`; `unlinkSync` yalnızca kendi `.tmp`'si, `:158`). **Ama hiçbir çit yok:** `setFeatureStatus`'a gerçek bir `fs.unlinkSync(resolved.targetPath)` silme yeteneği ekledim → **539/539 YEŞİL**. Feature notunun kanıt olarak gösterdiği `no-write-gate-bypass.test.ts` bu dosyayı **dosya-seviyesinde muaf tutuyor** (`:54,:62`), `no-delete-guard.test.ts:28-29` ise yalnızca `src/features/projects` + `src/server/watch` tarıyor. |
+| **AC4** izinsiz yol / `..` / symlink / kök dışı reddi | ✅ | §5'teki 28 deneme + `write-gate.test.ts` beyaz liste tablosu + zorunlu `vi.spyOn(lstatSync)` testi. Junction'lı ata dizin (C2/C3/C7) gerçek diskte reddedildi. |
+| **AC5** yol işlemleri `node:path` ile, elle regex yok | ⚠️ **Ö3** | Kod uyuyor (`path.join/relative/dirname/basename` dışında elle ayraç birleştirme yok). Ama AC'nin parantez içindeki şartı — “**statik tarama testi doğrular**” — **uygulanmamış**: `DENIED` listesi (`no-write-gate-bypass.test.ts:26-52`) yalnızca fs çağrı desenleri içeriyor, yol/regex ile ilgili tek desen yok. |
+| **AC6** manifest diff'i | ✅ | `write-gate-manifest.test.ts` İDDİA A-E. Mutasyonum **MQ6** (`sha256` sabitlendi → içerik değişikliğine körleştir) **2 test KIRMIZI** verdi → manifest gerçekten ölçüyor. |
+| **AC7** statik tarama: `src/`'te `fs.write*` yok | ❌ **B1** | Tarama, AC'nin **adıyla saydığı** `fs.write*` ailesinin bir kısmını yakalamıyor (aşağıda 7 kaçak, ölçüldü). |
+| **AC8** atomik yazma (tmp+rename) | ✅ | `atomicWriteOnce` `:132-163` (`openSync 'wx'` + `fsync` + `renameSync`, `finally`'de tmp temizliği). MQ8 (`renameSync` → doğrudan `writeFileSync`) **KIRMIZI**. Ayrıca C6'da (dış dosyaya **hardlink**) yazma başarılı oldu ama **dış dosya değişmedi** — atomik rename dizin girdisini değiştirdiği için; atomikliğin güvenlik değeri ampirik olarak görüldü. |
 
-## 3. Kendi mutasyon tablom
+---
 
-Her mutasyon: yedekten uygula → hedef testi/harness'ı koş → gözlem → **birebir geri al** (md5 karşılaştırmalı).
-Developer'ın listesini kopyalamadım; M5 ve M6 onun planında olmayan iki ek prob.
+## 3. Fazlalık iddiasının denetimi (görev maddesi 3)
 
-| # | Mutasyon (dosya:satır) | Koşulan şey | Sonuç · hata mesajının ilk satırı | Geri alındı |
+Developer'ın iddiası: *“adım 8'in işlem/yol regex'i, adım 6/3'ün reddedeceği her girdiyi bağımsız
+olarak zaten reddediyor; mutasyon 1/2/10 gap değil, mimari fazlalık.”*
+
+**İddia DOĞRU. Kabul ediyorum — ama gerekçesi developer'ın yazdığından daha güçlü ve tek adımı
+(mutasyon 10'un “geometrik olarak mümkün değil” cümlesi) yanlış nedenle doğru.**
+
+Ölçüm (gerçek diskte junction kurup dört senaryo, her seferinde diskte ne olduğu ölçüldü):
+
+| Mutasyon | C1 hedef junction | C2 `docs/features`→junction | C3 `docs`→junction | C7 `archive`→junction | Dış dizin değişti mi |
+|---|---|---|---|---|---|
+| (yok, sağlam kod) | adım 2 reddetti | adım 3 | adım 3 | adım 3 | **hayır** |
+| **adım 3 kaldırıldı** | adım 2 | **adım 6** | **adım 6** | **adım 6** | hayır |
+| **adım 6 kaldırıldı** | adım 2 | adım 3 | adım 3 | adım 3 | hayır |
+| **adım 3 + 6 birlikte kaldırıldı** | adım 2 | **adım 8** | **adım 8** | **adım 8** | hayır |
+| **adım 8 kaldırıldı, 3/6 duruyor** | adım 2 | adım 3 | adım 3 | adım 3 | hayır |
+| **adım 2 + 3 + 6 hep birlikte kaldırıldı** | **adım 8** | **adım 8** | **adım 8** | **adım 8** | hayır |
+
+Yani developer'ın koşmadığı birleşik mutasyon (3+6, hatta 2+3+6) **koşuldu ve savunma tuttu**.
+
+**Adım 8'i atlatan ama 6/3'ün yakalayacağı bir girdi arandı, bulunamadı — ve bulunamayacağının
+yapısal nedeni var:** `targetPath = path.join(resolvedAnc, path.relative(anc, candidate))`
+(`write-gate.ts:110`); `anc`, `candidate`'ın bir atası olduğu için ek parça `..` içeremez, dolayısıyla
+`resolvedAnc` kök dışındaysa `targetPath` de kök dışındadır ve adım 8'in `path.relative(root,…)`
+değeri ya `..` ile başlar ya mutlaktır → çapa (`^docs/…$`) hiçbir hâlde tutmaz. Denenen varyantlar:
+ters bölü, çift ayraç, sondaki ayraç, `.`/`..` segmentleri, `\\?\` ve UNC önekleri, sürücü kökü,
+harf farkı, `...md`/`..md`, Türkçe `İ` — hepsi §5'te, hepsi reddedildi.
+
+**Ama iki düzeltme:**
+1. Developer'ın mutasyon 10 gerekçesi (“kök dışına TAM olarak `docs/features` adıyla çıkan senaryo
+   *geometrik olarak mümkün değil*”) yanlış argüman: mümkün olmama nedeni ad benzerliği değil,
+   `path.relative`'in **kök referanslı** olması. Sonuç aynı, gerekçe hatalı — sözleşmeye doğru
+   gerekçe yazılmalı ki gelecekte adım 8 gevşetilirken yanlış güvenle silinmesin.
+2. Fazlalığın kabul edilen bedeli açıkça yazılmalı: **adım 3 ve adım 6'nın bugün sıfır bağımsız
+   test kapsaması var.** Buna ek olarak benim MQ1 mutasyonum (ata döngüsü **yalnızca son ata**
+   segmentini kontrol etsin) da **539/539 YEŞİL** kaldı — yani döngünün üst segmentleri de çitsiz.
+   Kodda kalmaları doğru karar (savunma katmanı çoğaltması); çitsizliğin **rapora yazılması** şart.
+
+---
+
+## 4. Kendi mutasyon tablom (developer'ın 20'si tekrarlanmadı)
+
+Yöntem: mutasyon uygulandı → `npx vitest run` (539 test) → sonuç → `git checkout -- <dosya>`.
+
+| # | Hedef (görev maddesi 4) | Mutasyon | Sonuç | Not |
 |---|---|---|---|---|
-| M1 | `src/server/index.ts:289` — sınırın **bağlantısı** kaldırıldı (`withDispatchErrorBoundary((req,res)=>{` → `((req,res)=>{`) | tüm süit + tek dosya | **KIRMIZI** — `Test Files 1 failed \| 36 passed (37)` · `Tests 1 failed \| 436 passed (437)` · `Errors 1`; tek dosyada `FAIL … D20/ÖNEMLİ-1 bağlantı kanıtı` + `Error: Test timed out in 5000ms.` + `Uncaught Exception: Error: qa-probe-sync` (yığın: `src/server/index.ts:314` → `handleHealth :215` → `Server.<anonymous> :308`). **Önceki turda aynı mutasyon 430/430 YEŞİL kalıyordu.** | ✓ |
-| M2 | `useProjects.ts:107-118` — `remove()` `if (!res.ok) return` hâline döndürüldü (hata yutuluyor) | `tests/features/projects/web` | **KIRMIZI (2)** — `FAIL SettingsScreen > Kaldır hatası…` + `FAIL useProjects — remove() (D26…)`; `AssertionError: expected { ok: true } to deeply equal { ok: false, …(1) }` | ✓ |
-| M3 | `service.ts:97-100` — debounce geri çağrımındaki `safelyNotify` sarmalayıcısı kaldırıldı, `hub.broadcast` fırlatıyor | (a) `service.test.ts` (b) **canlı harness: gerçek chokidar + gerçek dosya yazımı** | (a) **KIRMIZI** — `AssertionError: expected [Function] to not throw an error but 'Error: sse yayını başarısız (qa-probe)' was thrown`. (b) **Süreç ÖLDÜ** — `UNCAUGHT (would normally kill process): sse yayini basarisiz (qa-live-probe)` · `EXIT=3`. Mutasyonsuz hâlde aynı harness: `STEP3 SURVIVED: process alive after debounce fired; watchers= 1` · `EXIT=0`. **İkisi de ölçüldü.** | ✓ |
-| M4 | `projects-registry.ts:83` — `fs.unlinkSync(tmpPath)` → `fs.unlinkSync(path.join(projects[0]?.path ?? tmpPath, 'README.md'))` (izlenen proje dosyasını hedefliyor) | `no-delete-guard.test.ts` | **KIRMIZI** — `AssertionError: expected 'unlinkSync(path.join(projects[0]?.pat…' to be 'unlinkSync(tmpPath)'`. Önceki turda aynı sınıf mutasyon (M7) guard'dan geçiyordu. | ✓ |
-| M5 | `projects-registry.ts:83` sonrası — hiç çağrılmayan `fs.promises.unlink(path.join('C:/qa-nonexistent','README.md'))` eklendi | `no-delete-guard.test.ts` | **YEŞİL — 12/12** ⚠ NOT-3: daraltılmış istisna yalnızca `unlinkSync(` desenine bakıyor, `fs.promises.unlink(` statik olarak hâlâ görünmez. (Dinamik manifest testi bunu yakalar — risk kapalı, çit dar.) | ✓ |
-| M6 | `service.ts:166` — `safelyNotify` closure'ının **içindeki** `watchers.delete(id)` kaldırıldı (D21 çitinin restrüktürden sağ çıkıp çıkmadığı) | tüm süit | **KIRMIZI (2)** — `FAIL … izleyici sayacı: kaldırma sonrası /api/health.watchers === N-1 (QA M7 çiti)` · `AssertionError: expected 2 to be 1`; ayrıca `FAIL service.test.ts > removeProject…` · `expected 1 to be +0`. D27'nin yeniden düzenlemesi D21 çitini **nötrleştirmemiş**. | ✓ |
+| **MQ1** | symlink savunması, **ata segmentleri** | `for (i=0; i<len-1)` → `for (i=len-2; i<len-1)` (yalnızca son ata `lstat`lenir) | **YEŞİL 539/539** | Üst ata segmentleri çitsiz (§3'e bakınız). |
+| **MQ2** | içerik tipi allowlist, `;` ayrıştırması | `raw.split(';')[0]` → `raw.trim().toLowerCase()` | **KIRMIZI 1** | `application/json; charset=utf-8 → dispatch` testi düştü — doğru yön (charset'li istek **kalmalı**). |
+| **MQ3** | `x-mc-write` dağıtıcı genelliği | kontrol yalnızca `pathname === '/api/projects'` için | **KIRMIZI 1** | `DELETE /api/projects/:id — header yok → 403` düştü → genellik gerçekten çitli. |
+| **MQ4** | “asla fırlatmaz” | `archiveDenial`'daki `mkdirSync`+`renameSync` `try` **dışına** | **YEŞİL 539/539** | **Ö1 — bulgu.** Ayrıca ampirik: `docs/approvals/archive` yolu bir **dosyayla** işgal edilince sağlam kod `write_failed` döndürüyor, mutasyonlu kod `EEXIST` **fırlatıyor**. Hiçbir test bunu ölçmüyor. |
+| **MQ5** | `OPERATION_PATTERNS` gevşetme | `archive` deseni → `^docs\/approvals\/archive\/.*$` | **YEŞİL 539/539** | **Ö4 — bulgu.** Desen yalnızca “fazla dar” yönünde çitli (developer mutasyon 19); dosya-adı bileşeni ölçülmüyor. |
+| **MQ6** | manifest, içerik değişikliği yakalama | `sha256: sha256File(full)` → `sha256: 'SABIT'` | **KIRMIZI 2** | Manifest gerçekten içerik ölçüyor. |
+| **MQ7** | `featureStatus` deseni gevşetme | `[A-Za-z0-9._-]+` → `.+` | **KIRMIZI 10** | Güçlü kapsama. |
+| **MQ8** | atomiklik | `renameSync(tmp,target)` → `writeFileSync(target,data)` | **KIRMIZI 1** | AC8 çitli. |
+| **MQ9** | `basename` kontrolü | `FILE_NAME_PATTERN.test(f) \|\| basename(f)!==f` → yalnız regex | **YEŞİL 539/539** | Gerçekten fazlalık (`[A-Za-z0-9._-]+` zaten `/` ve `\` kabul etmiyor) → NOT. |
+| **MQ10** | AC3 çiti | `setFeatureStatus` içine gerçek `fs.unlinkSync(resolved.targetPath)` silme yolu | **YEŞİL 539/539** | **B2 — bloklayıcı.** |
+| **MQ11-15** | adım 2/3/6/8 birleşimleri | §3'teki tablo | — | Fazlalık iddiasının denetimi. |
 
-**Sonuç: 5 KIRMIZI / 1 YEŞİL.** Önceki turun iki yeşil mutasyonu (M1 sınır bağlantısı, guard
-registry istisnası) artık kırmızı; tek yeşil kalan M5, önceki turun NOT-1'inin daralttıktan sonra
-geriye kalan dar kalıntısıdır.
+**Yeşil kalan (ölçmeyen test):** MQ1, MQ4, MQ5, MQ9, MQ10 (+ statik tarama kaçakları, §6).
 
-**Mutasyon koşularında bir kez altyapı gürültüsü (NOT-5):** M6 koşusunda bir vitest worker'ı
-`Worker exited unexpectedly with exit code 3221226505 … tests/integration/sse-stream.test.ts`
-ile düştü (`Test Files 2 failed | 34 passed (37)`, yani 37 yerine 36 dosya raporlandı). Önceki
-turda da bir kez görülmüştü (NOT-5). Temiz ağaçtaki **iki** tam `verify` koşusu ve iki e2e koşusu
-tertemiz; ürün kodu bulgusu değil.
+---
 
-## 4. "Kaldır" hatasının canlı gözlemi (görev maddesi 2)
+## 5. Delme denemeleri — yol kapısı (görev maddesi 5)
 
-Kurulum: `npm run build` sonrası üretim build'i, `MC_PORT=7433` + **izole `MC_DATA_DIR`**
-(scratchpad; gerçek `data/` klasörüne dokunulmadı), fixture proje scratchpad altında
-(`qa2proj/docs/features/F-100.md`). Tarayıcı: Playwright chromium, **375×700**.
+Harness: `scratchpad/pen1.mts` + `pen2.mts`, gerçek `fs`, her denemede **kök içi ve kök dışı dizin
+ayrı ayrı sha256'landı**; “diskte ne oldu” dönen koddan bağımsız ölçüldü. Gerçek proje klasörlerine
+hiç dokunulmadı; tüm fixture'lar sonda silindi (10 dizin).
 
-Adımlar ve gerçek çıktılar:
+| Deneme | Dönen | **Diskte ne oldu** |
+|---|---|---|
+| `fileName='../../../src/index.ts'` / `'..\\..\\src\\index.ts'` / `'../src/index.ts'` | `invalid_body` | değişiklik yok |
+| `fileName='F-001.md/'` · `'F-001.md '` (sondaki ayraç/boşluk) · `'.\\F-001.md'` | `invalid_body` | değişiklik yok |
+| `fileName='C:/Windows/temp/x.md'` · `'\\\\?\\C:\\x.md'` (UNC/uzun yol) · `'\\\\localhost\\C$\\x.md'` | `invalid_body` | değişiklik yok |
+| `fileName='F-001.MD'` (harf farkı) | `invalid_body` | değişiklik yok |
+| `fileName='f-001.md'` (harf farkı, küçük) | `ok:true` | **`docs/features/F-001.md` yazıldı** — Windows harf duyarsızlığı, beyaz liste **dışına çıkmadı**; kabul edilebilir |
+| `fileName='...md'` / `'..md'` | `write_failed (ENOENT)` | değişiklik yok |
+| kapı `G9` · `g2` · `'G2 '` · `'G2/../../src/index'` · `'../G2'` · `G2-1000` · `G2İ` | `invalid_body` | değişiklik yok |
+| kapı `ASSETS` · `G0-999` | `ok:true` | beyaz liste içinde, ADR-005 ile uyumlu |
+| **C1** `docs/features/F-001.md` → **junction**(kök dışı) | `write_denied: Hedef bir sembolik bağlantı.` | dış dizin **değişmedi** |
+| **C2** `docs/features` → **junction**(kök dışı) | `write_denied: Bir ata dizin sembolik bağlantı.` | dış dizin **değişmedi** |
+| **C3** `docs` → **junction**(dış `docs` klonu) | `write_denied: Bir ata dizin…` | dış `F-001.md` **birebir aynı** kaldı (içeriği okundu) |
+| **C7** `docs/approvals/archive` → **junction**(kök dışı) | `write_denied: Bir ata dizin…` | dış dizin **değişmedi** |
+| **C4/C5** dosya-symlink (dangling / var olan) | `EPERM` — bu makinede yönetici/Geliştirici Modu olmadan **kurulamıyor** (QA tur 2 ölçümüyle aynı) | — |
+| **C6** `G2.ok` = dış dosyaya **hardlink** | `ok:true` | **dış dosya DEĞİŞMEDİ** — `tmp+rename` dizin girdisini değiştirdi; hardlink kopmuş oldu |
+| **C8** `root` parametresi realpath'lenmemiş junction yolu | `write_denied: Hedef kök dışında.` | değişiklik yok (fail-closed) |
+| **A1** `docs/approvals/archive` yolu bir **dosya** | `write_failed (EEXIST)` | değişiklik yok |
+| **A3** hedef bir **dizin** | `write_failed (EISDIR)` | değişiklik yok |
+| **A4** `docs/approvals` bir **dosya** | `write_failed (EEXIST)` | değişiklik yok |
+| **A6** `nextStatus='done\nowner: hacker'` | `ok:true` | dosya `status: "done⏎owner: hacker"` oldu — YAML katlaması sayesinde **tek değer**, zararsız |
+| **A7** `nextStatus='x\n---\nBODY'` | **`ok:true`** | **dosya bozuldu:** `---⏎status: "x⏎---⏎BODY"⏎---⏎body` → frontmatter ilk `---`'da kapanıyor, `status: "x` **kapanmamış tırnak** = ayrıştırılamaz YAML (**Ö2**) |
 
-```
-1) POST /api/projects              -> {"success":true,...,"id":"p_6adeff","feature_count":1}
-2) projects.json bir DİZİNLE işgal edildi   -> blocked: true
-3) curl -X DELETE /api/projects/p_6adeff    -> 500          (sunucu yarısı doğru)
-4) Tarayıcı: Ayarlar dişlisi -> "Kaldır" tıklandı
-   alertCount            : 1
-   alerts                : ["⚠ Liste kaydedilemedi, tekrar deneyin."]
-   remove-project-error  : "⚠ Liste kaydedilemedi, tekrar deneyin."
-   project-row sayısı    : 1        (satır YERİNDE kaldı)
-   buton metni/durumu    : "Kaldır" / disabled=false   (yeniden ETKİN)
-5) İkinci tıklama                  -> aynı tek alert, satır duruyor, alert çoğalmıyor
-   document.scrollWidth 375 = viewport 375   (yatay taşma yok)
-6) Engel kaldırıldı -> "Kaldır"    -> alerts: [], project-row: 0,
-                                      "Henüz izlenen proje yok…" boş durumu
-7) GET /api/health                 -> ok:true, watchers:0, uptime_s 106  (süreç hiç ölmedi)
-   disk: {"version":1,"projects":[]}          ".tmp" artığı: 0
-```
+**Sonuç: yol kapısında geçen tek bir delme denemesi olmadı.** Kök dışında hiçbir bayt değişmedi.
 
-**Üç sorunun üçü de EVET:** hata mesajı görünüyor · satır yerinde kalıyor · düğme yeniden
-etkinleşiyor. Üstüne kurtarma yolu da çalışıyor (engel kalkınca ilk tıklama başarılı).
+## 6. Delme denemeleri — `x-mc-write` + içerik tipi zinciri (görev maddesi 6)
 
-Ekran görüntüsü: `docs/qa/screens/F-005-fix2-2026-09-05.png` (375px, kırmızı `⚠ Liste
-kaydedilemedi, tekrar deneyin.` satırı, altında proje satırı ve "Kaldır" düğmesi duruyor).
+Harness: `scratchpad/pen3.mjs` — gerçek sunucu (`tsx src/server/index.ts`, `MC_PORT=7461`,
+izole `MC_DATA_DIR`), 28 istek, her istekten sonra **olay dosyaları ve `projects.json` diskte sayıldı**.
 
-Önceki turda aynı senaryoda ölçüm `role="alert"` sayısı **0**, sayfa metninde "Liste
-kaydedilemedi" **yok** idi — ÖNEMLİ-2 kapandı.
+| İstek | Kod | Diskte |
+|---|---|---|
+| `/api/events` `content-type: application/json` (**hook'un `send-event.cjs:153` biçimi birebir**) | 202 | **olay yazıldı** ✅ kurulu hook'lar kırılmıyor |
+| `application/json; charset=utf-8` · `APPLICATION/JSON` · `"  application/json  "` · `application/json;;;` | 202 | olay yazıldı (allowlist normalize ediyor) |
+| `text/plain` · `multipart/form-data` · `application/x-www-form-urlencoded` · **başlıksız** | 400 | yazılmadı |
+| `text/plain` **+ `x-mc-write: 1`** (zincir karışımı) | 400 | yazılmadı — muafiyet dalı `x-mc-write` ile atlanamıyor |
+| `/api/events/` (sondaki eğik çizgi) `text/plain` | 403 | yazılmadı |
+| `/api/events?x=1` `text/plain` | 400 | yazılmadı |
+| `/api/%65vents` `text/plain` | 403 | yazılmadı |
+| `//api/events` (çift eğik) `text/plain` | 404 | yazılmadı — **ama koruma bloğu hiç çalışmıyor**, `serveStatic`'e düşüyor (N4) |
+| `POST /api/projects` başlıksız · `x-mc-write: 0` · `x-mc-write: ''` · `x-mc-write: 1,1` (çift başlık) | 403 | değişmedi (fail-closed) |
+| `POST /api/projects` `x-mc-write: 1` · `X-MC-WRITE: 1` | 400 | dispatch edildi (başlık engellemedi; büyük harfli başlık adı da çalışıyor) |
+| `DELETE` / `PUT` / `PATCH` `/api/projects/abc` başlıksız | 403 | değişmedi |
+| `HEAD` / `OPTIONS` `/api/events` başlıksız | 403 | değişmedi — **preflight kabul edilmiyor**, ADR-013'ün CORS gerekçesi ayakta |
+| `POST /api/events` `Origin: http://evil.example` | 403 | yazılmadı |
+| `POST /api/events` `Host: evil.example` | 403 | yazılmadı |
+| `GET /api/health` başlıksız | 200 | okuma yolu regresyonu yok |
 
-## 5. Regresyon kontrolü (görev maddesi 5)
+**Sonuç: zincirde delme yok.** ADR-013'ün beş parçası (allowlist, `;` öncesi, küçük harf,
+başlıksız=red, tek yer/dağıtıcı) çalışıyor.
 
-- `verify` (2×), `e2e`, `e2e:dev` — hepsi 0 çıkış, sayılar §1'de. **Ekle yolu** bozulmadı
-  (`tests/e2e/settings.spec.ts:70` geçersiz yol satır içi kırmızı hata + canlı ekranda Ekle formu
-  yerinde), **SSE `projects`/`features` çerçeveleri** bozulmadı (`timeline.spec.ts:327` kopma/
-  toparlanma ve `:429` kalıcı hata testleri geçti; `sse-stream.test.ts` süitte), **izleyici
-  sayacı** çiti hâlâ ölçüyor (M6 KIRMIZI), **shutdown** yolu geçti (`graceful-shutdown.test.ts`).
-- `settings.spec.ts:82` "kaldırma: satır kalkar + fixture disk manifesti değişmez" geçiyor —
-  yani D26'nın `res.json()` ayrıştırmaya geçişi **mutlu yolu** bozmadı.
-- D27'nin yeniden düzenlemesi `addProject`/`removeProject`'in dönüş sözleşmesini değiştirmedi
-  (`ok:true` + `item`/`removed`), M6 ve canlı ölçüm (watchers 1 → 0) bunu doğruladı.
-- `git diff b71f3e0..HEAD` boş (yeni commit atılmadı); düzeltme commit'lerinin dokunduğu dosya
-  kümesi sözleşmenin ilan ettiğiyle örtüşüyor, kapsam sızması yok.
+---
 
-## 6. Bulgular (0 BLOKLAYICI · 0 ÖNEMLİ · 6 NOT)
+## 7. Bulgular
 
-### NOT-1 — `safelyNotify` closure'ının granülerliği: bir hata, kardeş yan etkiyi de yutuyor
-`src/features/projects/server/service.ts:145-148` ve `:162-169`. İki yan etki (izleme başlatma/
-durdurma **ve** SSE yayını) **tek** closure içinde. Sonuçları: (a) `removeProject`'te
-`watcher.stop()` fırlarsa hemen ardındaki `watchers.delete(id)` hiç çalışmaz → kayıt silinmiş
-olmasına rağmen `watchers` haritasında ölü giriş kalır (`/api/health.watchers` yalan söyler);
-(b) `addProject`'te `startWatchingIfPossible` fırlarsa `hub.broadcast('projects', …)` atlanır →
-bağlı istemciler yeni projeyi yeniden yükleyene kadar görmez. Bilinen tetikleyicisi yok
-(chokidar hataları event olarak yayılır, `stop()` fırlatmaz), süreç ölmüyor, veri güvende —
-bu yüzden NOT. Öneri: her yan etkiyi ayrı `safelyNotify` çağrısına al (`stop`, `delete`,
-`broadcast`), böylece biri diğerini bloklamaz.
+| # | Şiddet | Dosya:satır | Bulgu / tekrar üretme / beklenen vs. gerçek |
+|---|---|---|---|
+| **B1** | **BLOKLAYICI** | `tests/no-write-gate-bypass.test.ts:26-52` | **AC7'nin statik taraması, AC'nin adıyla saydığı `fs.write*` ailesini yakalamıyor.** Tekrar üretme: taranan bir dosyaya (`src/server/index.ts`) tek satır ekle → `npx vitest run tests/no-write-gate-bypass.test.ts`. Yakalanmayanlar (ölçüldü, hepsi **40/40 YEŞİL**): `fs.open(p,'w',cb)` + `fs.write(fd,…)` (**tam işlevsel bir yazma yolu**), `fs.writevSync(`, `fs.promises.rm(`, `fs.rmdir(`, `fs.promises.rmdir(`, `fs.symlinkSync(`, `fs.linkSync(`. Yakalananlar: `fs.writeFileSync(`, `fsp.writeFile(`. **Beklenen:** `fs.write*` ailesinin tamamı yakalanır. **Gerçek:** `fs.write(`/`fs.writev(`/`fs.writevSync(` listede yok. Ayrıca `'fs.rm('` (satır 39) listedeki **tek nesne-önekli** desen — `fsp.rm(`/`promises.rm(` bu yüzden kaçıyor; `CLAUDE.md`/QA hafızasındaki F-005 D28 dersinin (“daraltılan çitin desen DIŞINDA kalan en yakın eşdeğer API'si”) birebir tekrarı. Testin adı da (`… yasak dosya sistemi çağrısı içermiyor`) taradığından geniş iddia ediyor. |
+| **B2** | **BLOKLAYICI** | `docs/features/F-006-yazma-kapisi.md` AC3 · `tests/no-write-gate-bypass.test.ts:54,62` · `tests/features/projects/no-delete-guard.test.ts:28-29` | **AC3 (“silme/`unlink` işlevi yok”) tamamen çitsiz ve AC'nin gösterdiği kanıt yanlış.** Tekrar üretme: `write-gate.ts` `setFeatureStatus` içine `if (nextStatus === '__purge__') { fs.unlinkSync(resolved.targetPath); return { ok: true, path: resolved.targetPath } }` ekle → `npx vitest run` → **539/539 YEŞİL**. **Beklenen:** yazma kapısının silme yeteneği kazanması en az bir testi kırar. **Gerçek:** `write-gate.ts` statik taramanın TEK dosya-seviyesi istisnası, `no-delete-guard` ise `src/server/`'ı hiç taramıyor → tek yazma yetkilisi modülün “silmez” özelliği hiçbir katmanda ölçülmüyor. |
+| **Ö1** | ÖNEMLİ | `src/server/write-gate.ts:322-327` | **“Asla fırlatmaz” garantisi `archiveDenial` için çitsiz.** MQ4: `mkdirSync`+`renameSync` `try` dışına → 539/539 YEŞİL. Ampirik kanıt: `docs/approvals/archive` yolu bir dosyayla işgal edilince sağlam kod `write_failed (EEXIST)` döndürüyor, mutasyonlu kod **fırlatıyor**. F-007 bu fonksiyonu bir handler'a bağladığı gün F-002/F-005'in süreç-öldüren bloklayıcısı tekrarlanır. Developer mutasyon 12 ile `atomicWriteOnce`'ın aynı sınıfını fark edip test ekledi ama **`archiveDenial`'ın ikinci `mkdirSync`'i atlandı**. |
+| **Ö2** | ÖNEMLİ | `src/server/write-gate.ts:184-189` (`safeYamlValue`) + `:256` | **Satır sonu içeren `nextStatus` tırnaklanıyor ama kaçırılmıyor → frontmatter bozulabiliyor.** Tekrar üretme: `setFeatureStatus(root,'F-001.md','x\n---\nBODY',hash)` → **`ok:true`**, dosya `---⏎status: "x⏎---⏎BODY"⏎---⏎body` oluyor; standart bir frontmatter okuyucu ilk `---`'da kapatır ve `status: "x` **kapanmamış tırnak** = ayrıştırılamaz YAML. Sözleşme §3 madde 5 (s.369-371) bu riski **adıyla öngörmüş** (“`safe()` bir satır sonu içeren değeri tırnaklamayı kaçırırsa dizi uzar”) ama 17 golden fixture'ın hiçbiri `nextStatus`'a satır sonu **beslemiyor** → çit hiç ateşlenmiyor. Düzeltme tek satır (`\r`/`\n`'i `\\n`'e kaçır) + bir fixture. |
+| **Ö3** | ÖNEMLİ | `docs/features/F-006-yazma-kapisi.md` AC5 · `tests/no-write-gate-bypass.test.ts:26-52` | **AC5'in “(statik tarama testi doğrular)” şartı uygulanmamış.** `DENIED` listesinde yol/ayraç/regex ile ilgili tek desen yok; feature notunun AC5 kanıtı olarak gösterdiği “DENIED listesi + çağrı-biçimli tarama” bu iddiayı taramıyor. AC'yi ya çitle ya da metnini “elle inceleme ile doğrulandı”ya düzelt — mevcut hâli yanlış güven üretiyor. |
+| **Ö4** | ÖNEMLİ | `src/server/write-gate.ts:28-29` | **`OPERATION_PATTERNS.archive` yalnızca “fazla dar” yönünde çitli.** MQ5: desen `^docs\/approvals\/archive\/.*$`'e gevşetildi → 539/539 YEŞİL. Developer mutasyon 19 deseni daraltıp KIRMIZI aldı; gevşetme yönü ölçülmüyor. Bugün ad üreteci iç (saldırgan kontrolü yok) olduğu için etki sınırlı, ama R1'in (arşiv deseni ↔ ad üreteci ayrışması) tekrar kaçmasına açık kapı bırakıyor. |
+| **Ö5** | ÖNEMLİ | `src/server/write-gate.ts:78-86` | **Ata-dizin `lstat` döngüsünün üst segmentleri çitsiz.** MQ1 (döngü yalnızca son atayı kontrol etsin) → 539/539 YEŞİL. Kod doğru, savunma çalışıyor (§5 C3 ölçüldü), eksik olan **çit**. §3'teki fazlalık analizi gereği bugün adım 8 kurtarıyor; adım 8 bir gün gevşerse bu yeşil mutasyon gerçek bir açığa döner. |
+| **N1** | NOT | `docs/progress.md` son bölüm | Bildirilen test sayısı **538**, gerçek **539**. |
+| **N2** | NOT | `src/server/index.ts:308` | `//api/events` (çift eğik çizgi) `pathname.startsWith('/api/')` önekini kaçırıyor → Host/Origin/`x-mc-write` bloğunun **tamamı atlanıyor** ve istek `serveStatic`'e düşüyor (ölçüldü: 404, disk değişmedi). Hiçbir yazma rotası bu yolla erişilebilir değil (rota eşleşmesi tam eşitlik) ve statik salt-okunur, ama korumanın önek tabanlı olması yeni bir rota deseni eklendiğinde sessizce delinir. |
+| **N3** | NOT | `src/server/write-gate.ts:312,324` | `archiveDenial` arşiv adını milisaniye damgasıyla üretiyor; aynı milisaniyede ikinci bir arşivleme aynı adı üretir ve `renameSync` Windows'ta **sessizce üzerine yazar** (ilk red gerekçesi kaybolur). Ölçüldü: ardışık iki çağrı farklı ms aldı, çakışma tetiklenmedi; test yok. |
+| **N4** | NOT | `tests/helpers/manifest.ts:33-42` | `walk` yalnızca `entry.isFile()` alıyor; bir dosya **symlink/junction'a dönüştürülürse** manifestten sessizce düşer (`isFile()===false`). “İzin verilmeyen hiçbir dosya değişmedi” iddiası bu dönüşüme kör. |
+| **N5** | NOT | `src/server/write-gate.ts:114-115` | NOT-2'nin (harf duyarlılığı, CEO “yapmıyoruz” dedi — sözleşme §9 risk 5) kullanıcıya dönen tek mesajı `İşlem, hedef yolla eşleşmiyor.`. `Docs/Features` gibi büyük harfli bir proje dizininde **her yazma** bu mesajla sessizce reddedilir ve teşhis edilemez. Karar doğru; mesaja/logs'a bir ipucu eklenmesi ucuz. |
 
-### NOT-2 — `stopAll()` hâlâ sarmalayıcısız, üstelik kapanış yolunda
-`src/features/projects/server/service.ts:173-178` içindeki `watcher.stop()` `safelyNotify`
-dışında; çağıranı `src/server/index.ts:369-370`'teki `server.on('close', …)` dinleyicisi, yani
-D27'nin kapattığı yüzeyle **aynı sınıf** bir asenkron yığın. Buradan fırlayacak bir hata
-`graceful shutdown`'ı yarıda keser. D27 üç çağrı noktasını kapsıyordu ve brief de üçünü
-istiyordu; bu dördüncüsü kapsam dışıydı — bu yüzden bulgu değil, kalıntı NOT.
+---
 
-### NOT-3 — daraltılmış guard istisnası `fs.promises.unlink(` için hâlâ kör
-`tests/features/projects/no-delete-guard.test.ts:70` deseni `/unlinkSync\([^)]*\)/g`. **M5**:
-`projects-registry.ts`'e hiç çağrılmayan bir `fs.promises.unlink(...)` eklendi → guard **12/12
-yeşil**. D28 istenen daraltmayı yaptı (dosya → dizge seviyesi) ve `unlinkSync` için artık
-sağlam; asenkron `fs.promises.*` ailesi taranmıyor. Risk dinamik manifest testiyle kapalı.
-Öneri (ucuz): registry istisnasına `expect(content.includes('promises.unlink')).toBe(false)`
-satırı ekle.
+## 8. F-005 regresyon denetimi (görev maddesi 7)
 
-### NOT-4 — 375px kozmetik borcu (önceki turdan devir)
-Marka "MISSION CONTRO" olarak kırpılıyor, nav etiketleri kaydırma şeridinde. Bu turda da aynı
-(ekran görüntüsünde görünüyor). F-007'nin kabul kriterine taşınması `docs/qa/F-005-contract.md`
-ve `cdd4bd9` ile zaten kayıt altında. Karar üzerinde etkisi yok.
+`git diff 614ced1..HEAD -- tests/integration/projects-api.test.ts
+tests/features/projects/web/SettingsScreen.test.tsx tests/e2e/settings.spec.ts`:
 
-### NOT-5 — vitest worker fork kararsızlığı bir kez daha görüldü
-M6 koşusunda `Worker exited unexpectedly with exit code 3221226505` (`sse-stream.test.ts`).
-Önceki turda da 5 koşudan 1'inde benzeri olmuştu. Zincir sessizce yeşile dönmüyor (dosya sayısı
-37 yerine 36 raporlanıyor, koşu hata veriyor), ama **sayıları okumadan "geçti" demek riskli** —
-CI'da `Test Files 37 passed (37)` ifadesini birebir doğrulayan bir kontrol düşünülebilir.
+- 15 çağrı sitesine `'x-mc-write': '1'` **eklendi**; başka hiçbir satır anlamca değişmedi
+  (silinen satırların tamamı eklenenlerin başlıksız hâli).
+- **Değişen tek beklenti:** `SettingsScreen.test.tsx:102-105`
+  `expect(fetchMock).toHaveBeenCalledWith('/api/projects/p_1', { method: 'DELETE' })` →
+  `{ method: 'DELETE', headers: { 'x-mc-write': '1' } }`.
+  Bu, feature notunun **İkinci genişletme** bölümünde CEO tarafından adıyla önceden onaylanmış
+  (“`SettingsScreen.test.tsx` (1 assert)”) ve `writeFetch`'in istemci davranışının doğrudan
+  yansıması — F-005'in **ürün** davranışı değişmedi.
+- Durum kodu, hata mesajı, banner metni, manifest assert'i, satır sayısı iddiası: **hiçbiri değişmedi**.
+- E2E `settings.spec.ts` 6 testi ve `projects-api.test.ts` bütünüyle yeşil.
 
-### NOT-6 — `remove()` hata mesajı gövde ayrıştırılamadığında tahmine düşüyor
-`src/features/projects/web/useProjects.ts:107-118`: yanıt gövdesi JSON değilse (`res.json()`
-fırlarsa) `catch` sabit "Liste kaydedilemedi, tekrar deneyin." döndürür — ağ kopması ve
-"sunucu JSON dışı 502 döndü" durumları aynı metni gösterir. Bugünkü sunucu her hata yolunda JSON
-döndürdüğü için pratik etkisi yok; `add()` de aynı deseni kullanıyor, yani tutarlı.
+**Sonuç: koruma F-005'in davranışını bozmadı.** ✅
 
-## 7. Temizlik kanıtı
+## 9. Kapsam denetimi (görev maddesi 9)
 
-- **Çalışma ağacı:** 6 mutasyonun tamamı yedekten geri alındı; her dosyanın **md5'i** tur başındaki
-  değerine birebir eşit — `index.ts 207db7ac…`, `service.ts 466243c5…`, `useProjects.ts b2157610…`,
-  `ProjectRow.tsx de785019…`, `projects-registry.ts 6e3c0af8…`, `App.tsx 1209fbef…`,
-  `no-delete-guard.test.ts 9bfb419b…`. **`git diff HEAD` tamamen boş.** `git status --porcelain`
-  yalnızca bu turda eklenen ekran görüntüsünü (`?? docs/qa/screens/F-005-fix2-2026-09-05.png`)
-  listeliyor. Ürün kodu **kalıcı olarak değiştirilmedi**; commit atılmadı, `git push` /
-  `install-hook` çalıştırılmadı. Geri alma sonrası `npm run verify` yeniden **37/437 + build ✓**.
-- **Süreçler/portlar:** QA sunucusu (pid 21324, tsx sarmalayıcısı 36756) `taskkill /T /F` ile
-  düşürüldü; ikisi de `tasklist`'te yok. `netstat -ano | grep LISTENING` →
-  **7333/7334/7335/7433/7434'te dinleyen yok**. Kalan iki `node.exe` (pid 13600, 31104) oturum
-  başında açılan Playwright MCP sunucusuna ait, benim bıraktığım yetim değil.
-- **Veri:** tüm geçici veri dizinleri, fixture projeler ve canlı harness (`d27-harness.mts`)
-  yalnızca scratchpad altında; **gerçek proje klasörlerine ve `data/`'ya hiçbir şey yazılmadı**.
-  `.playwright-mcp/` zaten `.gitignore`'da.
+`git diff 9521443..HEAD --stat`: 17 dosya. Ürün kodu yalnızca `src/server/write-gate.ts` (yeni),
+`src/server/index.ts` (+31, dağıtıcı kontrolü), `src/web/lib/write-fetch.ts` (yeni, 14),
+`src/shared/types.ts` (+9, iki sabit), `src/features/projects/web/useProjects.ts` (+5, iki çağrının
+`writeFetch`'e geçirilmesi). **Yeni ekran/sekme/düğme/rota YOK** — F-006 arayüz yazmadı. ✅
+Dosya sahipliği, feature notundaki iki CEO genişletmesiyle birebir örtüşüyor.
 
-## 8. Kapanış
+## 10. ADR-013 ↔ ADR-008 taahhüdü (görev maddesi 10)
 
-Açık madde yok. Feature notu `status: done` yapıldı. NOT-1/NOT-2/NOT-3 isteğe bağlı ve tek
-satırlık iyileştirmeler; F-006/F-007 sırasında aynı dosyaya dokunulduğunda ele alınabilir.
-NOT-4 zaten F-007 sözleşmesine taşındı.
+ADR-008 eki: *“F-006 bu kararı yeniden değerlendirmek ZORUNDADIR (etkin porta bağlama, token veya
+eşdeğeri).”* **Kapanmıştır** — ve gerçekten kapanmıştır, kâğıt üzerinde değil:
+
+- ADR-013 ana kararı tüm non-GET `/api/*` için özel başlık zorunlu kılıyor; reddedilen alternatifler
+  (tam origin eşleştirmesi, token) gerekçeli. Dağıtıcı seviyesinde **tek yerde** (`index.ts:321-335`),
+  route dispatch'ten **önce** — F-003'ün `/api/stream` dersinin doğru uygulaması.
+- `POST /api/events` istisnası **artık riski kapatıyor**: `application/json` CORS güvenli listesinde
+  **değil** → çapraz kaynaklı bir tarayıcı isteği preflight gerektirir; ölçtüm: `OPTIONS /api/events`
+  **403** ve yanıtta CORS başlığı yok → preflight geçmez. Güvenli listedeki üç tip (`text/plain`,
+  `application/x-www-form-urlencoded`, `multipart/form-data`) ve **başlıksız** istek de 400 alıyor
+  (ölçüldü). Yani ADR-008'in “aynı makinedeki başka bir yerel **sayfa**” riski hem yazma uçlarında
+  hem olay ucunda kapalı.
+- Kalan ve **bilinçli** artık risk (sözleşme D6): tarayıcı olmayan yerel bir süreç her iki başlığı da
+  gönderebilir — ama o süreç zaten doğrudan diske yazabilir; tehdit modeli dışında. Doğru sınır.
+
+**Açık kalan yön yok.** ADR-013'ün ek bölümü hook'un tam biçimini `send-event.cjs:153` referansıyla
+doğruluyor; ben de gerçek sunucuya o biçimle POST atıp olayın diske yazıldığını gördüm.
+
+---
+
+## 11. Temizlik kanıtı
+
+- `git diff HEAD` → **boş**; `git status --porcelain` → **boş** (rapor yazımından önce ölçüldü).
+  Uygulanan 15 mutasyonun tamamı `git checkout -- <dosya>` ile geri alındı.
+- Portlar: `netstat -ano | grep -E "7333|7334|7335|7433|7434|7461"` → **hiç satır yok**
+  (TIME_WAIT dahil temiz). Test sunucum 7461'de koştu ve `SIGTERM` ile kapatıldı.
+- Süreçler: `tasklist` → 2 `node.exe`; `Win32_Process` ile komut satırları okundu, **ikisi de
+  Playwright MCP** (pid 6356, 14820) — yetim `npm run dev`/`tsx` ağacı **yok**.
+- Delme fixture'ları yalnızca `os.tmpdir()` altındaki geçici dizinlerde kuruldu, **gerçek proje
+  klasörlerine yazılmadı**; sonda `fs.rmSync` ile 10 dizin silindi.
+
+---
+
+## 12. KALDI'yı kapatmak için istenenler
+
+1. **B1** — `DENIED` listesine en az `write(`, `writev(`, `writevSync(`, `open(`, `rm(`, `rmdir(`,
+   `symlink(`, `symlinkSync(`, `link(`, `linkSync(` ekle; `'fs.rm('` desenini nesne-önekinden
+   arındır (liste tutarlılığı). Her yeni desen için `grep -rn` ile yanlış-pozitif taraması yap
+   (R4'ün emsali) ve `it.each` kalıcı negatif-kontrol satırlarına ekle. Testin adını taradığıyla
+   birebir aynı iddiaya indir.
+2. **B2** — AC3 için gerçek bir çit: `write-gate.ts`'i dosya-seviyesi muafiyetten çıkarıp
+   `STORE_FILES` desenindeki gibi **dizge-seviyesi izinli tam-çağrı kümesine** taşı
+   (`fs.unlinkSync(tmp)` izinli, başka `unlink*`/`rm*` değil). Mutasyon: `setFeatureStatus`'a
+   silme yolu ekle → KIRMIZI görülsün.
+3. **Ö1** — `archiveDenial`'ın `mkdirSync`+`renameSync`'i için `expect(...).not.toThrow()` testi
+   (`docs/approvals/archive` bir dosyayla işgal edilmiş fixture'ı); mutasyonla KIRMIZI gösterilsin.
+4. **Ö2** — `safeYamlValue` satır sonlarını kaçırsın (`\n`→`\\n`, `\r`→`\\r`); satır sonu içeren
+   `nextStatus` için bir golden fixture ekle (mevcut `parts.length` eşitlik assert'i onu yakalar).
+5. **Ö3** — AC5'i ya çitle (yol/ayraç deseni taraması) ya da AC metnindeki “statik tarama testi
+   doğrular” ifadesini gerçeğe uydur.
+6. **Ö4** — `OPERATION_PATTERNS.archive`'ın **gevşetme** yönü için mutasyon/test ekle.
+7. **Ö5** — ata-dizin döngüsünün **üst** segmenti için izole bir test (adım 8'i geçen, yalnızca
+   adım 3'ün yakaladığı bir fixture kurulamıyorsa, `vi.spyOn(lstatSync)` ile çağrı sayısı assert'i).
+8. **N1-N5** — belgesel/ucuz; kapanışta not düşülmesi yeterli, ayrı tur gerektirmez.
+9. Sözleşmenin “Mutasyon kanıtı” tablosunda **mutasyon 10'un gerekçesi** düzeltilsin (§3): sebep
+   “geometrik imkânsızlık” değil, `path.relative`'in kök referanslı olması; ve adım 3/6'nın
+   **sıfır bağımsız kapsaması olduğu** açıkça yazılsın.

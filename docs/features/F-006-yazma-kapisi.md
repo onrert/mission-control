@@ -1,7 +1,7 @@
 ---
 id: F-006
 title: Yazma kapısı + sınır testleri
-status: qa
+status: fix
 owner: developer
 deps: [F-001]
 sprint: 1

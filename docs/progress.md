@@ -690,3 +690,118 @@ mutasyon kanıtı); AC1-AC4/AC6, CEO kararları A/B/C/D, `install-hook` güvenli
   davranışına ve mutasyon 7/11/13'ün test düzeltmelerine bakması önerilir.
 - GEÇTİ sonrası Faz 1 sırası: F-005 (proje kaydı/izleme + Ayarlar) → F-006 (yazma kapısı) →
   F-007 (Kanban).
+
+---
+
+## 2026-09-05 — F-003 kod turu QA'sı: **KALDI**
+
+qa-evaluator kod turunu inceledi, KALDI verdi (`docs/qa/F-003-2026-09-05.md`, aynı zamanda
+`docs/qa/latest.md`). Dört boyuttan üçü < 7: İşlevsellik 6, Özellik bütünlüğü 5, **Görsel/UX 2**,
+Kod kalitesi 5.
+
+- **B1 (bloklayıcı):** `vite.config.ts`'in `root: 'src/web'` ayarı yüzünden Tailwind v4'ün
+  otomatik kaynak taraması `src/features/events/web/**`'i hiç görmüyordu — o dizindeki HİÇBİR
+  utility sınıfı üretim CSS'inde yoktu (`sr-only` ekranda görünür metin oluyordu, filtre
+  çipleri/sütunlar bitişikti). 322 testin hiçbiri bunu yakalamadı (jsdom CSS yüklemez, E2E
+  `toBeVisible()` stilsiz öğe için de doğrudur).
+- **B2 (bloklayıcı):** B1'in doğrudan sonucu — `overflow-y-auto` üretilmediği için liste kabı
+  hiç kaydırılamıyordu, kaydırma-ile-oto-dondurma özelliği üretimde çalışamaz durumdaydı; ayrıca
+  bu davranışın sıfır test kapsamı vardı (M5 mutasyonu 322/322 yeşil bırakmıştı).
+- **Ö1:** CEO'nun zorunlu kıldığı "ilk yükleme URL'i" entegrasyon çiti totolojiydi — URL testin
+  içine literal yazılmıştı, istemcinin gerçekten ürettiği URL'den türetilmiyordu.
+- **Ö2:** AC5 E2E'si sözleşmenin sert `"Bağlantı koptu"` assert'ini sessizce `"Yeniden
+  bağlanıyor"`a çevirmişti (teknik gerekçe muhtemelen doğruydu ama süreç hatalıydı: kod
+  yorumundaki "CEO/QA'ya bildirildi" iddiası doğrulanamadı, `docs/progress.md`'de hiç eşleşme yok).
+- **Ö3:** Yeni eklenen `/api/stream` rotasının Host/DNS-rebinding korumasının (ADR-008, miras
+  alınan) hiç regresyon testi yoktu — mutasyon 314/314 yeşil bırakmıştı.
+- **Ö4:** AC5 E2E'sinin "kayıpsız" iddiası yapısal olarak `Last-Event-ID` replay'ini ölçmüyordu;
+  kesinti sırasında hiç olay üretilmediği için assert istemcinin bellek state'inden geçiyordu.
+
+Tam rapor + canlı ölçümler + ekran görüntüleri: `docs/qa/F-003-2026-09-05.md`.
+
+---
+
+## 2026-09-05 — F-003 düzeltme turu 1 (D11-D15 + NOT-1) · `status: qa`
+
+**Ne yapıldı** — QA kod turu KALDI'sındaki 5 CEO kararı (D11-D15) + NOT-1 kapatıldı, her biri
+mutasyonla kanıtlandı (uygula → KIRMIZI gözlendi → geri alındı):
+
+- **D11 (B1):** `src/web/index.css`'e `@source "../features/events/web"` eklendi — Tailwind v4'ün
+  otomatik taraması artık `src/features/events/web/**`'i de kapsıyor. **Zorunlu regresyon çiti:**
+  `tests/build-css.test.ts` — gerçek `vite build` çalıştırıp üretilen CSS'te 5 farklı kategoriden
+  sınıf (`sr-only`, `gap-3`, `overflow-y-auto`, `rounded-full`, `text-amber-300`) arıyor.
+  Mutasyon: `@source` satırı silindi → 5/5 test KIRMIZI (`expected ... to contain 'sr-only'` vb.,
+  CSS'te yalnızca Tailwind'in temel/reset katmanı kalıyordu) → satır geri kondu, 5/5 YEŞİL.
+- **D12 (B2):** B1 düzeltilince kaydırma zaten çalışır hâle geldi (kök neden `overflow-y-auto`nun
+  hiç üretilmemesiydi). `tests/e2e/timeline.spec.ts`'e sözleşmenin taahhüt ettiği kaydırma testi
+  eklendi — gerçek `mouse.wheel` + `Page.evaluate` ile `scrollTop`/`scrollHeight` ölçüyor, "N yeni
+  olay ↑" rozetini ve "Devam et"/rozet ile başa dönüşü kontrol ediyor.
+  Mutasyon: `TimelineScreen.tsx` `handleScroll`'daki `stream.setScrolledAway(el.scrollTop > 0)` →
+  `stream.setScrolledAway(false)` → yeni test KIRMIZI (`Expected: 0, Received: 1` — dondurulması
+  gereken olay listede göründü) → geri alındı, YEŞİL.
+- **D13 (Ö3):** `tests/integration/sse-stream.test.ts`'e `/api/stream`'in ADR-008 Host
+  allowlist'ine tabi olduğunu kanıtlayan bir test eklendi (ham `node:http` ile sahte `Host`
+  başlığı, `tests/server/health.test.ts`'teki desenin aynısı).
+  Mutasyon: `index.ts:237`'de `/api/stream`'i kontrolden muaf tutmak → yeni test KIRMIZI (bu kez
+  bir assertion hatası değil, **timeout** — mutasyonlu kod isteği 403 yerine açık bir SSE akışı
+  olarak kabul ettiği için `res.on('end')` hiç ateşlenmedi) → geri alındı, YEŞİL.
+- **D14 (Ö1):** `useEventStream.ts`'ten saf bir `buildInitialLoadUrl(eventsUrl)` fonksiyonu dışa
+  aktarıldı; `tests/integration/events-api.test.ts`'in zorunlu çiti artık URL'i literal yazmak
+  yerine bu fonksiyondan türetiyor.
+  Mutasyon: `buildInitialLoadUrl`'a `since_seq=-1` geri kondu → test KIRMIZI (`expected 400 to be
+  200`) → geri alındı, YEŞİL.
+- **D15 (Ö2):** İki ayrı, gerçek tarayıcı senaryosu birbirinden ayrıldı: (a) **geçici kopma**
+  (mevcut AC5 testi, gerçek süreç kill/restart) → "Yeniden bağlanıyor" — yanlış "CEO/QA'ya
+  bildirildi" iddiası içeren kod yorumu düzeltildi; (b) **kalıcı başarısızlık** (yeni test,
+  `page.route` ile gerçek Chromium ağ katmanında kontrollü 2xx-dışı yanıt — WHATWG "fail the
+  connection") → "Bağlantı koptu", bir daha yeniden bağlanmayı denemiyor (3 sn boyunca tek
+  istek doğrulandı). Ayrıca AC5'in "kayıpsız" iddiası artık yapısal: kesinti sırasında aynı
+  `MC_DATA_DIR`'e yazan geçici bir sunucu örneğiyle GERÇEKTEN bir olay üretiliyor, reconnect'te
+  `Last-Event-ID` replay'iyle geldiği doğrulanıyor.
+  Mutasyon 1 (kalıcı hata): `useEventStream.ts`'te `readyState === CLOSED` dalı da
+  `'reconnecting'`e eşlendi → yeni test KIRMIZI (`Received: "Yeniden bağlanıyor"`) → geri alındı.
+  Mutasyon 2 (yapısal replay): `stream.ts`'in replay döngüsü olayları hiç yazmayacak şekilde
+  bozuldu → AC5 testindeki `rowDuring` assert'i KIRMIZI (`element(s) not found`) → geri alındı.
+- **NOT-1:** `aria-live="polite"` canlı bölgesinin hiç testi yoktu.
+  `tests/features/events/web/TimelineScreen.test.tsx`'e eklendi: bölgenin tek olduğu, `sr-only`
+  taşıdığı, 4 `connectionStatus` değeri için rozetle birebir aynı 3 metne eşlendiği kontrol
+  ediliyor. Mutasyon: `aria-live` özniteliği kaldırıldı → 5/5 test KIRMIZI → geri alındı.
+- **Ele alınmayanlar (gerekçeli):**
+  - **NOT-2** (vitest worker çökmesi, `exit code 3221226505`) — bu turda da bir kez tekrar
+    gözlemlendi, hemen ardından 3/3 yeniden koşuda üretilemedi. Ortam kaynaklı, tekil bir kod
+    değişikliğiyle giderilemeyecek bir flake; izlemeye devam.
+  - **NOT-3** (`npm run e2e` bir kez sessiz `exit 127`) — bu turda tekrarlanmadı, aynı ortam
+    flake sınıfı.
+  - **NOT-4** (satırda yalnızca saat, tarih yok) — QA'nın kendisi "ileriki bir tur için not"
+    diyor; bu turun kapsamı yalnızca D11-D15 + NOT-1, kapsam genişletilmedi.
+
+**Nasıl doğrulandı**
+- `npm run verify` = 0 → **27 dosya / 326 test** (314 baseline + 5 `build-css.test.ts` + 2 Host
+  guard + 5 aria-live).
+- `npm run e2e` = 0 → **9/9** (önceki 7 + yeni kaydırma testi + yeni "kalıcı hata" testi).
+- `npm run e2e:dev` = 0 → **1/1**.
+- Her bulgu için mutasyon uygulanıp KIRMIZI gözlemlenip birebir geri alındı (tabloyu yukarıda
+  görebilirsiniz); her geri almadan sonra `git diff --stat` ilgili dosya için boş doğrulandı.
+- **Görsel doğrulama:** `npm run build` + `npm start` (izole geçici veri dizini), gerçek
+  olaylarla ekran görüntüsü: `docs/qa/screens/F-003-fix1-2026-09-05.png`. Filtre çipleri
+  ayrık/yuvarlak, sütunlar (saat/proje/agent/araç/özet) ayrık boşluklu, "Duraklat" butonu
+  çerçeveli, bağlantı rozeti ikon+metin+renk ile doğru, `sr-only` metni ekranda görünmüyor.
+- Yetim süreç kontrolü: ekran görüntüsü sonrası `taskkill /F /T` ile 4 `node.exe` kapatıldı,
+  `netstat` 7333/7334/7335/7433/7434'te `LISTENING` yok, `tasklist` yalnızca oturumun temel 2
+  `node.exe`'sine döndü.
+
+**Kalan risk**
+- NOT-2/NOT-3 ortam flake'leri hâlâ açık (yukarıya bakınız) — kod değişikliğiyle kapatılamaz,
+  yalnızca izlenebilir.
+- `tests/build-css.test.ts` gerçek bir `vite build` çalıştırıyor (~1-2 sn) — test suite'e sabit
+  bir süre ekliyor, kabul edilebilir ama büyürse (daha fazla build-bağımlı test) izlenmeli.
+- Kaydırma E2E testi sabit bir viewport (900×500) ve 30 satır dolgusuna dayanıyor — ekran
+  boyutu/satır yüksekliği varsayımları değişirse (ör. `min-h-8` başka bir değere çekilirse)
+  testin taşma koşulunu yeniden doğrulamak gerekir.
+- "Kalıcı hata" testi Playwright'ın `page.route` ile gerçek bir sunucu yanıtını simüle ediyor
+  (gerçek production Host-allowlist 403'ü değil) — davranışsal olarak eşdeğer (ikisi de "ilk
+  yanıt 2xx değil") ama sunucunun KENDİSİ bu testte hiç devrede değil; production'da bu yolu
+  gerçekten tetikleyen tek bilinen senaryo ADR-008 Host guard'ı (D13'te ayrıca test edildi).
+
+**Sonraki adım**
+- qa-evaluator düzeltme turu 1'i incelesin (`status: qa`).

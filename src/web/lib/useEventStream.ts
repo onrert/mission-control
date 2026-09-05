@@ -85,6 +85,13 @@ export interface UseEventStreamOptions {
    * (Timeline'ın kendi kullanımı) birebir korunur.
    */
   onProjects?: (records: ProjectListItem[]) => void
+  /**
+   * F-007 (sözleşme §2.2): `'features'` SSE kanalına abone olunur — yalnızca bu callback
+   * SAĞLANMIŞSA (ADR-004 madde 1, `onProjects` ile birebir aynı desen). Payload yalnızca
+   * `{project_id}` taşır (mimari §6.1'den bilinçli sapma, §3 madde 7); kartların kendisi
+   * `GET /api/features` ile ayrıca çekilir.
+   */
+  onFeatures?: (signal: { project_id: string }) => void
 }
 
 export type LoadState = 'loading' | 'ready' | 'error'
@@ -184,12 +191,24 @@ export function useEventStream(
         // bozuk `projects` verisi sessizce yok sayılır — akışın geri kalanını etkilemez.
       }
     }
+    const handleFeatures = (evt: MessageEvent): void => {
+      if (!options.onFeatures) return
+      try {
+        const signal = JSON.parse(evt.data as string) as { project_id: string }
+        options.onFeatures(signal)
+      } catch {
+        // bozuk `features` verisi sessizce yok sayılır — akışın geri kalanını etkilemez.
+      }
+    }
     es.addEventListener('open', handleOpen)
     es.addEventListener('error', handleError)
     es.addEventListener('event', handleEvent)
     es.addEventListener('resync', handleResync)
     if (options.onProjects) {
       es.addEventListener('projects', handleProjects)
+    }
+    if (options.onFeatures) {
+      es.addEventListener('features', handleFeatures)
     }
     return () => {
       es.removeEventListener('open', handleOpen)
@@ -199,9 +218,12 @@ export function useEventStream(
       if (options.onProjects) {
         es.removeEventListener('projects', handleProjects)
       }
+      if (options.onFeatures) {
+        es.removeEventListener('features', handleFeatures)
+      }
       es.close()
     }
-  }, [streamUrl, EventSourceImpl, loadEvents, options.onProjects])
+  }, [streamUrl, EventSourceImpl, loadEvents, options.onProjects, options.onFeatures])
 
   // Sözleşme §3 madde 5: frozen'a geçişte anlık görüntü al; frozen kalkınca canlıya dön.
   useEffect(() => {

@@ -54,7 +54,13 @@ export interface ApiResponse<T> {
   success: boolean
   data?: T
   error?: { code: ErrorCode; message: string }
-  meta?: { total?: number; next_seq?: number }
+  meta?: {
+    total?: number
+    next_seq?: number
+    /** F-007 sözleşme §5 D3 — `GET /api/features` bir proje kökü okunamadığında (EACCES vb.)
+     *  diğer projeleri etkilemeden bunu bildirir, kartlar listesi boş kalır. */
+    unreadable_projects?: Array<{ project_id: string; label: string }>
+  }
 }
 
 /** İzlenen proje kaydı (mimari §5.2, F-005). `data/projects.json`'daki `projects[]` şeması. */

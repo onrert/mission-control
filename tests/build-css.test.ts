@@ -112,3 +112,57 @@ describe('F-005: üretim CSS çıktısı src/features/projects/web sınıfların
     }
   )
 })
+
+describe('F-007: üretim CSS çıktısı src/features/kanban/web sınıflarını içerir (@source çiti)', () => {
+  let css: string
+
+  // QA tur 1 NOT-b (F-007 sözleşmesi §2.1): "birebir aynı desen" kopyalanırsa iki kök yeter
+  // sanılıp `src/features/projects/web` atlanabilir — bu turda kasıtlı olarak ÜÇ kök taranıyor.
+  const otherRoots = [
+    path.join(repoRoot, 'src', 'web'),
+    path.join(repoRoot, 'src', 'features', 'events', 'web'),
+    path.join(repoRoot, 'src', 'features', 'projects', 'web'),
+  ]
+
+  function readSourceFiles(root: string): string {
+    let combined = ''
+    for (const entry of fs.readdirSync(root, { withFileTypes: true, recursive: true } as never)) {
+      const e = entry as unknown as { name: string; parentPath?: string; path?: string }
+      const dir = e.parentPath ?? e.path ?? root
+      if (!e.name.endsWith('.ts') && !e.name.endsWith('.tsx')) continue
+      combined += fs.readFileSync(path.join(dir, e.name), 'utf8')
+    }
+    return combined
+  }
+
+  beforeAll(() => {
+    execFileSync(
+      process.execPath,
+      [path.join(repoRoot, 'node_modules', 'vite', 'bin', 'vite.js'), 'build'],
+      { cwd: repoRoot, stdio: 'pipe' }
+    )
+    css = readBuiltCss()
+  }, 60000)
+
+  // Yalnızca `src/features/kanban/web/**`'te kullanılan 3 sınıf (aynı ön-koşul deseni — bu
+  // sınıfların DİĞER üç kökte HİÇ geçmediği programatik olarak doğrulanır).
+  const kanbanOnlyClasses = [
+    ['min-w-[220px]', 'min-w-\\[220px\\]'],
+    ['bg-fuchsia-950/10', 'bg-fuchsia-950\\/10'],
+    ['text-[10px]', 'text-\\[10px\\]'],
+  ] as const
+
+  it.each(kanbanOnlyClasses)('ön koşul: sınıf "%s" diğer üç kökte HİÇ geçmiyor', (cls) => {
+    for (const root of otherRoots) {
+      const content = readSourceFiles(root)
+      expect(content.includes(cls)).toBe(false)
+    }
+  })
+
+  it.each(kanbanOnlyClasses)(
+    'sınıf "%s" (yalnızca kanban/web) üretilen CSS çıktısında var',
+    (_cls, selectorForm) => {
+      expect(css).toContain(selectorForm)
+    }
+  )
+})

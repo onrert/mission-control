@@ -2,7 +2,7 @@ import type http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import { setFeatureStatus } from '../../../server/write-gate'
-import { listFeatures } from './list-features'
+import { listFeaturesDetailed } from './list-features'
 import { parseFeatureCard } from './parse-feature'
 import type { ApiResponse, FeatureCard, ProjectListItem } from '../../../shared/types'
 import type { ProjectsService } from '../../projects/server/service'
@@ -31,8 +31,11 @@ export function handleListFeatures(
   const allProjects = projectsService.list().items
   const projects = projectId === null ? allProjects : allProjects.filter((p) => p.id === projectId)
 
-  const data = listFeatures(projects)
-  const body: ApiResponse<FeatureCard[]> = { success: true, data }
+  const { cards, unreadableProjects } = listFeaturesDetailed(projects)
+  const body: ApiResponse<FeatureCard[]> = { success: true, data: cards }
+  if (unreadableProjects.length > 0) {
+    body.meta = { unreadable_projects: unreadableProjects }
+  }
   sendJson(res, 200, body)
 }
 

@@ -38,13 +38,28 @@ describe('App (AC6 — DOMsuz statik render)', () => {
     expect(headerHtml).toContain('aria-label="Ayarlar"')
   })
 
-  it('Zaman Çizelgesi etiketi aria-current="page" taşır, Kanban/Ayarlar taşımaz; hiçbiri role="tab" değildir (YENİ-1)', () => {
+  it('F-007: gerçek tablist deseni kuruldu — role="tablist"/"tab"/"tabpanel" + aria-selected/roving tabindex, aria-current KALDIRILDI', () => {
     const headerMatch = /<header[\s\S]*?<\/header>/.exec(html)
     const headerHtml = headerMatch![0]
-    expect(headerHtml).toContain('aria-current="page"')
-    expect(headerHtml).not.toContain('role="tab"')
-    expect(headerHtml).not.toContain('aria-selected')
-    // yalnızca bir tane aria-current olmalı (Kanban/Ayarlar taşımıyor)
-    expect(headerHtml.match(/aria-current="page"/g)).toHaveLength(1)
+    // Mimari sapması (kasıtlı, §6 madde 1) — `aria-current="page"` `aria-selected`'ın yerini aldı.
+    expect(headerHtml).not.toContain('aria-current="page"')
+    expect(headerHtml).toContain('role="tablist"')
+    // İki gerçek sekme: Zaman Çizelgesi (seçili, tabIndex 0) + Kanban (seçili değil, tabIndex -1).
+    expect(headerHtml.match(/role="tab"/g)).toHaveLength(2)
+    expect(headerHtml).toContain('id="tab-timeline"')
+    expect(headerHtml).toContain('aria-controls="panel-timeline"')
+    expect(headerHtml).toContain('aria-selected="true"')
+    expect(headerHtml).toContain('aria-selected="false"')
+    expect(headerHtml).toContain('tabindex="0"')
+    expect(headerHtml).toContain('tabindex="-1"')
+    // Ayarlar bu desenin dışında kalır — kendi `aria-pressed` toggle butonu, `role="tab"` değil.
+    expect(headerHtml).toContain('aria-label="Ayarlar"')
+  })
+
+  it('F-007: iki tabpanel var (timeline/kanban), aria-labelledby ile kendi sekmesine bağlı', () => {
+    expect(html).toContain('id="panel-timeline"')
+    expect(html).toContain('aria-labelledby="tab-timeline"')
+    expect(html).toContain('id="panel-kanban"')
+    expect(html).toContain('aria-labelledby="tab-kanban"')
   })
 })

@@ -38,6 +38,25 @@ Dar "düzeltme turu doğrulaması" briefinde şu üç kontrol her seferinde iş 
    verme. Ayrıca **hangi assert'in önce geldiğine** bak: yük altında ilk kırılan eski
    `elapsedMs < 1000` kapısıydı, yeni eşik değil.
 
+8. **Sarmalayıcı/süreç iddialarını ÖLÇ, düzyazıya güvenme.** F-003 tur 2: "npm wrapper'ı atlayıp
+   doğrudan `tsx` spawn ediyorum, böylece öldürdüğüm süreç gerçekten sunucu" iddiası yanlış öncüle
+   dayanıyordu — `tsx` CLI'ının kendisi bir torun node süreci doğuruyor (ölçüldü: sarmalayıcı pid
+   != sunucu pid). Sonuç tesadüfen iyiydi (tsx@4.23 torunu da düşürüyor) ama garanti sürüme bağlı.
+   Depo dışında `spawn` + `tasklist` + port doluluk ölçümüyle 2 dakikada doğrulanır.
+9. **Sabit port seçen her test tasarımını projenin TÜM belgelenmiş port kümesine karşı sına.**
+   `vite.config.ts` (`MC_WEB_PORT`), `playwright*.config.ts`, `scripts/check-ports.mjs` (predev).
+   F-003 tur 2 AC5 alt sunucusu 7334'ü seçmişti — o, Vite dev sunucusunun varsayılanı; `npm run dev`
+   ile `npm run e2e` iki yönlü kilitleniyordu. Ayrıca `MC_PORT=0` kaçış yolu bu projede işlemez:
+   sunucu gerçek dinlenen portu stdout'a basmıyor.
+10. **Bir ekran ilk kez GERÇEK veri render etmeye başladığında, E2E sunucusunun hangi veri dizinini
+   okuduğuna bak.** Paylaşılan Playwright `webServer`'ına `MC_DATA_DIR` verilmiyorsa gerçek `data/`
+   okunur; F-004 hook'u 7333'e canlı olay POST ettiği için test koşarken dışarıdan veri akar ve
+   `shell.spec.ts`'in `not.toContain(...)` negatif assert'leri makineye/zamana bağımlı olur.
+11. **`role="tab"` gibi ARIA rolleri bağlam rolü olmadan geçerli değildir.** Tek başına `tab`
+   (tablist/tabpanel yok) axe `aria-required-parent` ihlalidir; ayrıca tıklaması no-op olan bir
+   buton, projenin kendi "iş yapmayan buton yasağı"na girer. Sadeleştirme önerirken UX doc'un
+   gezinme + erişilebilirlik bölümlerini (ekran envanteri, kısayollar, odak sırası) birlikte oku.
+
 **Why:** Düzeltme turları dar tutulduğu için yeniden inceleme yapılmaz; kaçan kusur bir daha
 bakılmayan bölgede kalır. **How to apply:** Kapanış tablosunu yazmadan önce bu üç kontrolü
 uygula; kanıtı komut çıktısı + dosya:satır ile ver. Ayrıca arşivleme yaparken önceki raporun

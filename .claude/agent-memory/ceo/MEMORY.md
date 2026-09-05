@@ -1,3 +1,4 @@
 - [Veron'un karar tarzı](user_veron-karar-tarzi.md) — kapsamlı seçeneği hızlıya tercih ediyor; onaylamadan önce belgeyi okuyor
 - [App Factory şablon klasörü](project_app-factory-sablon-klasoru.md) — C:/dev/app-factory şablondur, gerçek proje kopyada başlar; hat yalnızca G0–G1 kalibre edildi
 - [Bekleme turlarinda sessizlik](feedback_bekleme-turlarinda-sessizlik.md) — arka plan agent ucarken ara rapor yazma; yalnizca bitince haber ver
+- [Kesintisiz ilerleme](feedback_kesintisiz-ilerleme.md) — ara demo/duraklama onerme; feature sinirinda toplu push onayi iste

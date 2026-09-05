@@ -1452,3 +1452,56 @@ Ders: **mock'lanmış bir istemci testi, sunucunun o URL'i kabul ettiğini kanı
 **Zorunlu ek çit:** ilk yükleme URL'inin gerçek sunucu tarafından kabul edildiğini kanıtlayan bir
 **entegrasyon** testi yaz (mock yok, gerçek `createServer` + gerçek istek → 200 bekle).
 Mutasyon: URL'e `since_seq=-1` geri koy → bu test **KIRMIZI** vermeli.
+
+---
+
+## Mutasyon kanıtı (kod turu, 2026-09-05)
+
+Üçüncü developer turu, §8'deki 14 mutasyonun tamamını kod turunda gerçekten uyguladı,
+KIRMIZI'yı gözlemledi, birebir geri aldı. Her mutasyondan sonra ilgili test dosyası izole
+çalıştırıldı; tablo altındaki komut `npm run verify`/`npm run e2e`/`npm run e2e:dev` = 0 ve
+`git diff HEAD` boş ile kapatıldı (bkz. `docs/progress.md` F-003 girişi).
+
+| # | Mutasyon | Uygulandığı dosya | KIRMIZI veren test | Hata mesajının ilk satırı |
+|---|---|---|---|---|
+| 1 | N-1 düzeltmesi geri alındı: `ring.push` yazma denemesinden ÖNCEye taşındı | `src/server/store/jsonl-store.ts` | `tests/server/store/jsonl-store.test.ts` (7 test) | `expected store.read(-1, 10).events to have a length of 0 but got 1` |
+| 2 | `computeResyncDecision`'da `lastEventId < ringBounds.from → resync` dalı silindi | `src/server/sse/stream.ts` | `tests/server/sse/stream.test.ts` + `tests/integration/sse-stream.test.ts` (3 test) | `expected { type: 'replay' } to deeply equal { type: 'resync' }` |
+| 3 | `useEventStream`'in seq bazlı de-dup'ı kaldırıldı (Map anahtarı `seq` yerine benzersiz sayaç yapıldı — düz `if (!byId.has(...))` kaldırmak Map semantiği yüzünden yetersizdi, kanıtlanabilir gerçek bir kırılma için anahtarlama değiştirildi) | `src/web/lib/useEventStream.ts` | `tests/web/lib/useEventStream.test.ts` | `expected [ {...}, …(1) ] to have a length of 1 but got 2` |
+| 4 | `frozen` anlık görüntüsü (`visibleSnapshot`) bypass edildi, `events` her zaman `liveEvents` oldu | `src/web/lib/useEventStream.ts` | `tests/web/lib/useEventStream.test.ts` | `expected [ {...}, …(1) ] to have a length of 1 but got 2` |
+| 5 | İstemci tarafı filtre koşulları (proje/agent/tip) kaldırıldı, tüm satırlar her zaman render edildi | `src/features/events/web/TimelineScreen.tsx` | `tests/features/events/web/TimelineScreen.test.tsx` (2 test) | `expected [ <div…>, …(2) ] to have a length of 1 but got 2` |
+| 6 | `stream.ts`'te `req.on('close')` temizliği (unsubscribe + `clearInterval`) kaldırıldı | `src/server/sse/stream.ts` | `tests/integration/sse-stream.test.ts` | `expected 1 to be +0` (abone sayısı düşmedi) |
+| 7 | `hello` çerçevesine `id: ringBounds.to` tekrar eklendi | `src/server/sse/stream.ts` | `tests/integration/sse-stream.test.ts` (**yeni eklenen** dolu-ring vakası, aşağıya bakınız) | `expected '0' to be undefined` |
+| 8 | `computeResyncDecision`'dan `lastEventId > ringBounds.to → resync` dalı silindi | `src/server/sse/stream.ts` | `tests/server/sse/stream.test.ts` | `expected { type: 'replay' } to deeply equal { type: 'resync' }` |
+| 9 | `parseLastEventId` sıkı `/^[0-9]+$/` kuralı eski gevşek `Number(raw)` semantiğine döndürüldü | `src/server/sse/stream.ts` | `tests/server/sse/stream.test.ts` (10 test) | `expected false to be true` (`Number.isNaN(parsed)` artık `false`) |
+| 10 | `ingest.ts`'in 503 dalına da `hub.broadcast(...)` çağrısı eklendi | `src/features/events/server/ingest.ts` | `tests/integration/sse-stream.test.ts` (N-1 negatif test) | `expected [ { event: 'event', …(2) } ] to have a length of +0 but got 1` |
+| 11 | `ring.push` başarı dalından **hata** dalına taşındı (başarılı yazımda ring hiç güncellenmiyor) | `src/server/store/jsonl-store.ts` | `tests/server/store/jsonl-store.test.ts` (8 test) + `tests/integration/events-api.test.ts` (**yeni eklenen** race testi, aşağıya bakınız) | `expected null to deeply equal { from: 2, to: 4 }` / `expected [] to deeply equal [ 0 ]` |
+| 12 | `App.tsx`'e yeniden bir "aktif sekme" `useState(false)`'i eklenip `TimelineScreen`'in mount'u buna bağlandı | `src/web/App.tsx` | `tests/web/App.interaction.test.tsx` (2 test) | `Unable to find an element by: [data-testid="timeline-screen"]` |
+| 13 | `ScreenErrorBoundary` kaldırılıp `TimelineScreen` doğrudan mount edildi | `src/web/App.tsx` | `tests/web/App.interaction.test.tsx` (**davranışsal olarak yeniden yazılan** üçüncü test, aşağıya bakınız) | `Error: boom (mutasyon 13 testi)` (yakalanmadan fırladı) |
+| 14 | `useEventStream`'de `error`/`readyState` ayrımı kaldırılıp her hata `disconnected`'a eşlendi | `src/web/lib/useEventStream.ts` | `tests/web/lib/useEventStream.test.ts` | `expected 'disconnected' to be 'reconnecting'` |
+
+**Yeşil kalan / test düzeltmesi gerektiren üç durum (mutasyon değil, test düzeltildi):**
+
+1. **Mutasyon 7** — orijinal "hello çerçevesi id: taşımaz" testi bağlantıyı ring tamamen BOŞKEN
+   açıyordu (`ringBounds?.to === undefined`), bu yüzden `id: ringBounds?.to` eklense bile `id`
+   yine `undefined` kalıyor ve test YEŞİL kalıyordu — mutasyon gerçek bir regresyon olduğu hâlde
+   yakalanmıyordu. Düzeltme: `tests/integration/sse-stream.test.ts`'e önce bir olay POST edip
+   ring'i doldurarak bağlanan yeni bir test eklendi (ring dolu, `ringBounds.to = 0`) — bu kez
+   mutasyon gerçekten `KIRMIZI` verdi. Ürün kodu değişmedi.
+2. **Mutasyon 11** — sözleşme §2.1 dosya listesi `tests/integration/events-api.test.ts`'e "POST
+   202 sonrası hemen GET" yarış testi eklemeyi taahhüt ediyordu ama bu test önceki turlarda hiç
+   yazılmamıştı (yalnızca dosya-yükleme sonrası eski/N-1 testleri vardı). Eksik test eklendi;
+   mutasyonla birlikte hem bu yeni test hem de zaten var olan `getRingBounds` testleri KIRMIZI
+   verdi. Ürün kodu değişmedi.
+3. **Mutasyon 13** — orijinal test `App.tsx`'in kaynak metnini okuyup `'ScreenErrorBoundary'`
+   ve `'TimelineScreen'` dizgelerinin geçtiğini kontrol ediyordu; sınırı JSX'ten kaldırıp yalnızca
+   artık kullanılmayan `import` satırını bıraktığımda test **YEŞİL kaldı** (import satırı dize
+   aramasını hâlâ karşılıyordu) — davranışı değil, kaynak metnini ölçüyordu. Düzeltme:
+   `tests/web/App.interaction.test.tsx`'teki üçüncü test `vi.doMock` ile `TimelineScreen`'i
+   fırlatacak şekilde mock'layıp gerçek `App`'i dinamik `import()` ile yükleyen davranışsal bir
+   teste dönüştürüldü; mutasyonla birlikte hata yakalanmadan fırladı (KIRMIZI), düzeltmeyle
+   birlikte "Bu ekran yüklenemedi." göründü (YEŞİL). Ürün kodu değişmedi.
+
+**Doğrulama:** her mutasyon uygulandıktan hemen sonra geri alındı; iş sonunda `git diff HEAD`
+boştu (yalnızca yukarıdaki iki test dosyasındaki kalıcı iyileştirmeler commit edildi, ürün kodunda
+hiçbir kalıcı değişiklik yok). Tüm 14 mutasyon sonrası `npm run verify` = 0 (26 dosya / 314 test,
++2 yeni test), `npm run e2e` = 0 (7/7), `npm run e2e:dev` = 0 (1/1).

@@ -615,3 +615,78 @@ mutasyon kanıtı); AC1-AC4/AC6, CEO kararları A/B/C/D, `install-hook` güvenli
 **Sonraki adım**
 - qa-evaluator BUG-001 düzeltmesini incelesin (`status: qa`).
 - Ardından **F-003** (SSE zaman çizelgesi) başlayabilir.
+
+---
+
+## 2026-09-05 — F-003 (SSE akışı + canlı zaman çizelgesi + filtreler) kod turu tamamlandı · `status: qa`
+
+**Ne yapıldı**
+- Sözleşme aşaması: 3 developer + 2 QA turu (`docs/qa/F-003-contract.md`), CEO kararları A-G/
+  D1-D10, ADR-010 taslağı (§6). Kod turu (`08b7670` checkpoint commit'i) `src/server/sse/**`
+  (hub + `GET /api/stream` + `computeResyncDecision`), N-1 hayalet olay düzeltmesi
+  (`jsonl-store.ts` ring/disk yazma sırası), `src/web/lib/useEventStream.ts`, Zaman Çizelgesi
+  ekranı (`src/features/events/web/**`: filtre çipleri, gruplama, bağlantı rozeti, hata sınırı,
+  detay paneli, erişilebilirlik), `App.tsx` asgari kablolama, `playwright.config.ts` testMatch
+  genişletmesi ve CI'a bağımsız `e2e` job'ı.
+- **Kod turu iki kez tur sınırında kesildi** (bu, üçüncü developer turu). İkinci tur, mutasyon
+  12'yi (App.tsx'e yeniden "aktif sekme" state'i ekleme) uygularken kesildi ve **ürün kodunda
+  bıraktı** — `App.tsx`'te `useState` import'u + `timelineVisible` state'i + `TimelineScreen`'i
+  koşulsuz görünmez yapan sarmalayıcı kalmıştı. CEO bunu fark edip geri aldı (checkpoint commit
+  öncesi) ve `grep -rn "MUTATION\|timelineVisible" src/ tests/` ile doğruladı (boş döndü).
+  Üçüncü tur (bu tur) tüm 14 mutasyonu **gerçekten uygulayıp KIRMIZI gözlemleyip geri alarak**
+  tekrardan, eksiksiz kanıtladı — önceki iki turdan hiçbir kanıt diske yazılmamıştı.
+- **`since_seq=-1` hatası (CEO buldu, kod turu sırasında):** sözleşme üç ayrı yerde ilk yüklemenin
+  `GET /api/events?since_seq=-1` ile yapılacağını yazmıştı — bu, `query.ts`'in `parseSinceSeq`'i
+  negatif sayıyı reddettiği için sunucudan **400** dönerdi. Hata 3 developer + 2 QA turundan sağ
+  çıktı çünkü birim testleri `fetch`'i mock'luyordu (sunucuya hiç sormuyordu) ve gerçek çağrıyı
+  yapan tek katman (E2E) henüz koşmamıştı. Düzeltme: ilk yükleme `since_seq` parametresini **hiç
+  göndermez** (`GET /api/events?limit=200`) — sunucu parametre yokken zaten tüm ring'i kapsıyor.
+  Ders `docs/qa/F-003-contract.md` sonuna, kural CLAUDE.md'ye eklendi: **mock'lanmış bir istemci
+  testi, sunucunun o URL'i kabul ettiğini kanıtlamaz.**
+- **Mutasyon kanıtı (bu tur):** §8'deki 14 mutasyonun tamamı tek tek uygulandı, KIRMIZI gözlemlendi,
+  birebir geri alındı. Üç mutasyon (7, 11, 13) ilk denemede **YEŞİL kaldı** — mutasyon değil,
+  test zayıflığı bulundu ve düzeltildi (ürün kodu değişmedi):
+  - **Mutasyon 7** (hello çerçevesine `id:` eklenmesi): orijinal test boş ringde bağlanıyordu,
+    `ringBounds.to` zaten `undefined` olduğu için mutasyon fark yaratmıyordu. Düzeltme: önce bir
+    olay POST edip ring'i doldurarak bağlanan yeni bir test eklendi.
+  - **Mutasyon 11** (ring güncellemesinin başarı/hata dalı karışıklığı): sözleşmenin taahhüt
+    ettiği "POST 202 sonrası hemen GET" yarış testi hiç yazılmamıştı. Eklendi.
+  - **Mutasyon 13** (`ScreenErrorBoundary` kaldırılması): orijinal test `App.tsx` kaynak metnini
+    dize aramasıyla kontrol ediyordu; sınırı kaldırıp kullanılmayan `import`'u bıraktığımda dize
+    hâlâ eşleşiyordu. Düzeltme: `vi.doMock` ile `TimelineScreen`'i fırlatacak şekilde mock'layan
+    davranışsal bir teste dönüştürüldü.
+  Tam tablo (mutasyon → dosya → KIRMIZI veren test → hata mesajı): `docs/qa/F-003-contract.md`
+  "## Mutasyon kanıtı (kod turu, 2026-09-05)".
+- `docs/decisions/ADR-010-dom-test-altyapisi.md` yazıldı (sözleşme §6 taslağından, gerçek
+  `node_modules` sürümleriyle: `jsdom@27.0.1` tam sabit, `@testing-library/react@16.3.3`,
+  `@testing-library/dom@10.4.1`, `@testing-library/user-event@14.6.7`).
+- `docs/features/F-003-sse-zaman-cizelgesi.md`: 6 AC de kanıtla işaretlendi, `status: qa`.
+
+**Nasıl doğrulandı**
+- `npm run verify` = 0 → **26 dosya / 314 test** (checkpoint'teki 312'den +2: mutasyon 7/11
+  düzeltmeleri).
+- `npm run e2e` = 0 → **7/7** (AC1-AC6 + AC5'in izole süreç kill/restart testi).
+- `npm run e2e:dev` = 0 → **1/1**.
+- 14 mutasyonun tamamı tek tek uygulanıp KIRMIZI gözlemlenip geri alındı (yukarıya bakınız).
+- İş sonunda `git diff HEAD` **boş** — ürün kodunda hiçbir kalıcı değişiklik yok, yalnızca iki
+  test dosyasındaki kalıcı iyileştirmeler commit edildi.
+- Yetim süreç kontrolü: `tasklist`/port taraması (7333/7334/7335/7433/7434) — hepsi boş veya
+  `TIME_WAIT` (kapanış aşamasında), hiçbir `LISTENING` kalmadı.
+
+**Kalan risk**
+- **AC5 E2E'nin flaky potansiyeli** (sözleşme §9 "En büyük risk"): gerçek süreç kill/restart +
+  gerçek tarayıcı `EventSource` reconnect zamanlaması + Windows `taskkill /F /T` yedek katmanı —
+  bu turda 7/7 yeşil ama tarayıcıya/işletim sistemine bağlı reconnect gecikmesi zamanla
+  kırılganlık gösterebilir.
+- **`jsdom` sürümü bilinçli olarak güncel değil** (`27.0.1`, en güncel `30.0.1` değil) —
+  `engines.node` çelişkisi yüzünden (ADR-010). Proje Node tabanını yükseltirse gözden geçirilmeli.
+- **Eşzamanlı istemci sayısı sınırsız** (ADR-004 kararı, bilinçli) — tarayıcının kendi HTTP/1.1
+  bağlantı limitine bırakıldı.
+- Devralınan not: `features`/`projects`/`gates` SSE kanallarının gerçek üreticileri yok — F-005/
+  F-007/F-008'in işi, yalnızca `hub.broadcast(...)` çağıracaklar.
+
+**Sonraki adım**
+- qa-evaluator F-003'ü incelesin (`status: qa`) — özellikle AC5 E2E'nin gerçek kill/restart
+  davranışına ve mutasyon 7/11/13'ün test düzeltmelerine bakması önerilir.
+- GEÇTİ sonrası Faz 1 sırası: F-005 (proje kaydı/izleme + Ayarlar) → F-006 (yazma kapısı) →
+  F-007 (Kanban).

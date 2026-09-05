@@ -23,6 +23,17 @@ Kaynak: `docs/02-architecture.md` §7, §11.4; ADR-005.
 ## Dosya sahipliği (bu feature yalnızca şu dosyalara dokunur)
 `src/server/write-gate.ts`, `tests/helpers/manifest.ts`, ilgili testler.
 
+**Genişletme (CEO onayı, 2026-09-05 — sözleşme §2.2'de gerekçeli):**
+- `src/server/index.ts` — ADR-013 başlık kontrolü ve `POST /api/events` içerik tipi allowlist'i
+  **dağıtıcı seviyesinde tek yerde** uygulanacak (yeni bir yazma ucu eklendiğinde korumasız
+  kalmasın; F-003'te `/api/stream` Host korumasından muaf kalmış ve QA mutasyonu 314/314 yeşil
+  bırakmıştı). Yeni yazma uçları da burada tanımlanır.
+- `src/web/lib/write-fetch.ts` (yeni) — başlığı ekleyen **tek** istemci sarmalayıcısı.
+- `src/features/projects/web/useProjects.ts` — F-005'in `fetch` çağrıları `writeFetch`'e geçirilir.
+  **Zorunlu:** aksi hâlde F-006 kendi eklediği korumayla F-005'i kırar. Dokunuş minimum olacak;
+  F-005'in mevcut testleri (Ekle/Kaldır hata yolları dahil) **değişmeden** geçmeli.
+- `src/shared/types.ts` — başlık adı ve içerik tipi sabitleri.
+
 ## Notlar / kararlar
 - Bu feature bir güvenlik sınırıdır; QA KALDI verirse kapsam daraltılarak değil, düzeltilerek geçilir.
 

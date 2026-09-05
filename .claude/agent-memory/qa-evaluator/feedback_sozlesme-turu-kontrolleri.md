@@ -49,3 +49,8 @@ sabitlenmeli; "kırmızı verene kadar N artırırım" sonuca göre ayarlamadır
 (tur 2+) kapsam yalnızca "açık bulgular + düzeltmenin ürettiği regresyon" olur; onaylanmış
 bölümleri yeniden açma. Bulguları `## ADR uyum kontrolü`, `## Ölçmeyen test riski`,
 `## YENİ (regresyon)` gibi ayrı bölümlerde raporla. Bkz. [[proje-tur-ekonomisi]].
+
+6. **Rapor yazarken Bash heredoc'u ~10 KB'da kesiliyor** ve "unexpected EOF while looking for
+   matching quote" hatası veriyor (dosyaya hiçbir şey yazılmaz). Uzun QA bölümlerini 4-6 parçalık
+   `cat >> dosya <<'EOF'` çağrılarına böl; ayrıca alıntı içinde `split('\')` gibi ters bölü +
+   tırnak dizilimi kullanma — CLAUDE.md'nin ters bölü kuralının rapor metnindeki karşılığı.

@@ -1556,3 +1556,53 @@ alındı).
 - qa-evaluator F-007'yi yeniden değerlendirsin (düzeltme turu 1 — B1, B2, Ö1-Ö4, N1 kapatıldı).
 - GEÇTİ ise **G4-1 kilometre taşı** (Faz 1 tamamlandı, kullanıcı onayı) ve/veya Faz 2'ye geçiş
   kararı kullanıcıdan istenmeli.
+
+---
+
+## 2026-09-06 — F-007 (kanban) GEÇTİ · **FAZ 1 TAMAMLANDI**
+
+**Ne yapıldı**
+- Sözleşme: 3 developer + 2 QA turu, 14 bulgu + 4 regresyon **kod yazılmadan** kapandı.
+- Kod: frontmatter ayrıştırma · `GET/PATCH /api/features` · 7 sütun + "Bilinmeyen durum" ·
+  sürükle-bırak + klavye alternatifi · çakışma yönetimi (`expectedHash`) · echo yönetimi ·
+  kart detay modalı · **tam `tablist` deseni** · write-gate'in **async'e çevrilmesi** ·
+  `safeYamlValue` sertleştirmesi · `tests/e2e-config-guard.test.ts`.
+- Kod turu **dört kez** tur sınırında kesildi; biri ürün kodunda mutasyon bıraktı (CEO geri aldı).
+- QA kod turu **KALDI** (2 bloklayıcı) → düzeltme 1 → **GEÇTİ**.
+  Puanlar: İşlevsellik **9** · Bütünlük 8 · Görsel/UX 8 · Kod kalitesi 8.
+
+**Nasıl doğrulandı**
+- `npm run verify` = 0 (**48 dosya / 732 test**) · `e2e` = 0 (23) · `e2e:dev` = 0 · `npm audit` 0.
+- QA 8 bağımsız mutasyon koştu, **8'i de kırmızı**; echo mutasyonunu **12 kez** koşturdu, 12/12 kırmızı.
+- **Sessiz üzerine yazma yok:** sürükleme açıkken dosya diskten değiştirildi → 409, dış değişiklik
+  korundu, kart yeniden çizildi.
+- **AC2 bayt diff temiz:** gerçek sürükleme sonrası yalnızca `status` segmenti değişti; BOM, CRLF,
+  yorum satırı, gövde birebir aynı.
+- Görsel: 8 sütun, başlıklar "Geliştirme (dev)" biçiminde, modal `id/title/owner/deps/sprint`,
+  AC3 canlı güncelleme **466 ms**. Ekranlar `docs/qa/screens/F-007-*`.
+
+**Bu feature'ın iki dersi**
+1. **Asenkron handler, senkron hata sınırının arkasına saklanamaz.** `PATCH`'in asenkron gövdesi
+   `try/catch`'siz kaldı: **yazma diske uygulandı ama istemci hiç yanıt almadı** (10 sn sonra
+   bağlantı hatası), kart kalıcı "bekliyor" kaldı. Temiz bir hatadan **daha kötü** — iş yapıldı,
+   kimse bilmiyor. F-002/F-005 sınıfının üçüncü tekrarı; artık `CLAUDE.md`'de kural.
+2. **`toBeVisible()` kaydırma kabında yalan söyler.** 375px'te iki sekmenin de görünür genişliği
+   **0 piksel**di ama test yeşildi. Çit artık kırpılmış görünür genişliği ölçüyor; QA 280-1920
+   arası 13 viewport'ta doğruladı.
+
+**Kalan risk (hepsi NOT)**
+- Vitest worker fork kararsızlığı (dördüncü kez): bir koşuda kırmızı, tekrarında yeşil.
+- Ö5/N3: `docs/03-ux.md`'ye iki not (klavye sapması + iki yeni hata metni) — **CEO ödevi**.
+
+**FAZ 1 DURUMU: 7/7 feature `done`.**
+F-001 iskelet · F-002 olay alma + JSONL depo + retention · F-003 SSE + canlı zaman çizelgesi ·
+F-004 send-event hook + kurulum · F-005 proje kayıt + chokidar izleme + Ayarlar ·
+F-006 yazma kapısı · F-007 kanban.
+Toplam **732 birim + 23 E2E testi**, CI Windows'ta yeşil.
+
+**Sonraki adım**
+- **G4-1 kilometre taşı — kullanıcı onayı.** Çalışan demo sunulacak; onay verilirse
+  `docs/approvals/G4-1.ok` yazılacak.
+- Sonra Faz 2: F-008 kapılar paneli → F-009 transkript spike → F-010 thread → F-011 token.
+- **F-008'e devredilen taahhüt:** `archiveDenial` bir handler'a bağlanmadan önce senkron bekleme
+  içerip içermediği denetlenmeli (F-007 sözleşmesi §9, Karar 3).

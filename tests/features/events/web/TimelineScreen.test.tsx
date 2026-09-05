@@ -249,3 +249,28 @@ describe('TimelineScreen — render üst sınırı (1000, hook zaten uyguluyor)'
     expect(screen.getAllByTestId('timeline-row')).toHaveLength(50)
   })
 })
+
+// QA düzeltme turu 1, NOT-1: `aria-live="polite"` canlı bölgesinin (sözleşme §1 madde 4,
+// §3 madde 10) hiç testi yoktu. `sr-only` sınıfının GERÇEKTEN ekrandan gizlediği B1'in kendi
+// çiti (`tests/build-css.test.ts`, üretim CSS'inde `sr-only` üretildiğini kanıtlıyor) —
+// burada yalnızca doğru ARIA özniteliğinin ve doğru metnin (rozetle birebir aynı 3 durum
+// eşlemesi) var olduğu, jsdom seviyesinde denetleniyor.
+describe('TimelineScreen — aria-live canlı bölge (NOT-1)', () => {
+  it('aria-live="polite" ve sr-only taşıyan tek bir bölge var', () => {
+    render(<TimelineScreen stream={makeStream({ connectionStatus: 'connected' })} />)
+    const liveRegions = document.querySelectorAll('[aria-live="polite"]')
+    expect(liveRegions.length).toBe(1)
+    expect(liveRegions[0]?.className).toContain('sr-only')
+  })
+
+  it.each([
+    ['connected', 'Bağlı'],
+    ['reconnecting', 'Yeniden bağlanıyor'],
+    ['connecting', 'Yeniden bağlanıyor'],
+    ['disconnected', 'Bağlantı koptu'],
+  ] as const)('connectionStatus=%s -> canlı bölge metni "%s"', (status, expectedText) => {
+    render(<TimelineScreen stream={makeStream({ connectionStatus: status })} />)
+    const liveRegion = document.querySelector('[aria-live="polite"]')
+    expect(liveRegion?.textContent).toBe(expectedText)
+  })
+})

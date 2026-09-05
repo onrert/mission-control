@@ -11,7 +11,7 @@ process.on('exit', () => removeTempDataDir(e2eDataDir))
 
 export default defineConfig({
   testDir: 'tests/e2e',
-  testMatch: ['shell.spec.ts', 'timeline.spec.ts', 'settings.spec.ts'],
+  testMatch: ['shell.spec.ts', 'timeline.spec.ts', 'settings.spec.ts', 'kanban.spec.ts'],
   use: {
     baseURL: 'http://127.0.0.1:7333',
   },

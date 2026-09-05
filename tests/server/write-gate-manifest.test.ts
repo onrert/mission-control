@@ -42,7 +42,7 @@ afterEach(() => {
 })
 
 describe('write-gate manifest testi (F-006 sözleşmesi §6) — gerçek fs, tam kullanıcı akışı', () => {
-  it('izin verilenler dışında hiçbir dosya değişmez; pozitif assert de her yazmayı doğrular', () => {
+  it('izin verilenler dışında hiçbir dosya değişmez; pozitif assert de her yazmayı doğrular', async () => {
     const before = snapshotDir(root)
     const beforeByPath = byPath(before)
 
@@ -51,19 +51,19 @@ describe('write-gate manifest testi (F-006 sözleşmesi §6) — gerçek fs, tam
     if (!f001Before || !g1Before) throw new Error('fixture eksik')
 
     // Senaryo — pozitif ve negatif yollar birlikte.
-    const r1 = setFeatureStatus(root, 'F-001.md', 'qa', f001Before.sha256)
+    const r1 = await setFeatureStatus(root, 'F-001.md', 'qa', f001Before.sha256)
     expect(r1.ok).toBe(true) // İDDİA E parçası
 
-    const r2 = setFeatureStatus(root, 'F-001.md', 'ikinci-durum', 'bayat-hash')
+    const r2 = await setFeatureStatus(root, 'F-001.md', 'ikinci-durum', 'bayat-hash')
     expect(r2).toMatchObject({ ok: false, code: 'conflict' })
 
-    const r3 = setFeatureStatus(root, '../../../etc/passwd', 'qa', 'x')
+    const r3 = await setFeatureStatus(root, '../../../etc/passwd', 'qa', 'x')
     expect(r3).toMatchObject({ ok: false, code: 'invalid_body' })
 
-    const r4 = writeGateApproval(root, 'G1', 'tekrar onay')
+    const r4 = await writeGateApproval(root, 'G1', 'tekrar onay')
     expect(r4.ok).toBe(true) // İDDİA E parçası
 
-    const r5 = writeGateDenial(root, 'G3', 'red sebebi 3')
+    const r5 = await writeGateDenial(root, 'G3', 'red sebebi 3')
     expect(r5.ok).toBe(true) // İDDİA E parçası
 
     const r6 = archiveDenial(root, 'G2')

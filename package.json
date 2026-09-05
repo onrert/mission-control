@@ -25,9 +25,11 @@
     "install-hook": "node scripts/install-hook.mjs"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
     "chokidar": "^4.0.3",
     "react": "^19",
-    "react-dom": "^19"
+    "react-dom": "^19",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@eslint/js": "^9",

@@ -15,6 +15,7 @@ import {
   handleAddProject,
   handleRemoveProject,
 } from '../features/projects/server/handlers'
+import { handleListFeatures, handlePatchFeatureStatus } from '../features/kanban/server/handlers'
 import { WRITE_HEADER_NAME, WRITE_HEADER_VALUE } from '../shared/types'
 
 // QA düzeltme turu 1 (B1 madde f) — güvenlik ağı, ASIL çözüm değil: asıl çözüm `jsonl-store.ts`
@@ -364,6 +365,31 @@ export function createServer(port: number, dataDir?: string): ServerWithHub {
       }
       if (pathname === '/api/projects' && req.method === 'POST') {
         handleAddProject(req, res, projectsService)
+        return
+      }
+      if (pathname === '/api/features' && req.method === 'GET') {
+        handleListFeatures(req, res, projectsService)
+        return
+      }
+      if (pathname?.startsWith('/api/features/') && req.method === 'PATCH') {
+        // `/api/features/:project_id/:file` — dosya adı `.md` uzantısı taşır, kendi içinde `/`
+        // olamaz (write-gate `FILE_NAME_PATTERN`); yalnızca ilk `/`'e kadar project_id, kalanı
+        // file (decodeURIComponent handler'da yapılır, sözleşme §4.2 adım 3).
+        const rest = pathname.slice('/api/features/'.length)
+        const sepIndex = rest.indexOf('/')
+        if (sepIndex === -1) {
+          res.writeHead(404, { 'content-type': 'application/json' })
+          res.end(
+            JSON.stringify({
+              success: false,
+              error: { code: 'not_found', message: 'Proje bulunamadı.' },
+            })
+          )
+          return
+        }
+        const rawProjectId = rest.slice(0, sepIndex)
+        const rawFile = rest.slice(sepIndex + 1)
+        handlePatchFeatureStatus(req, res, projectsService, rawProjectId, rawFile)
         return
       }
       if (pathname?.startsWith('/api/projects/') && req.method === 'DELETE') {

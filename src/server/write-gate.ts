@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { parse as parseYaml } from 'yaml'
 
 // Yazma kapısı (sözleşme `docs/qa/F-006-contract.md`, ADR-005). İzlenen bir proje köküne
 // yazan TEK modül. Genel amaçlı `write(path, content)` YOK — yalnızca dört niyet fonksiyonu
@@ -125,9 +126,15 @@ function resolveInsideRoot(
   }
 }
 
-/** Senkron API'de engelleyici bekleme — bu modülün TEK bekleme aracı (ADR-005 madde 5). */
-function sleepSyncMs(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+/**
+ * Asenkron bekleme — bu modülün TEK bekleme aracı (ADR-005 madde 5, F-007 sözleşme §3 madde 13
+ * T4). Önceki sürüm `Atomics.wait` ile SENKRON bekliyordu; F-006'da kabul edilebilirdi çünkü
+ * hiçbir HTTP handler'a bağlı değildi. F-007 `setFeatureStatus`'u `PATCH /api/features`'a
+ * bağladığı için artık ~350ms'lik senkron blok ana iş parçacığını (dolayısıyla SSE akışı dahil
+ * TÜM istekleri) durdururdu — `setTimeout` tabanlı bu sürüm event loop'u bloklamaz.
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 type AtomicWriteOnceResult =
@@ -167,7 +174,7 @@ function atomicWriteOnce(targetPath: string, data: string | Buffer): AtomicWrite
 }
 
 /** Atomik yazma (tmp+rename), EPERM/EBUSY'de 50/100/200 ms 3 deneme (ADR-005 madde 5). */
-function atomicWrite(targetPath: string, data: string | Buffer): WriteResult {
+async function atomicWrite(targetPath: string, data: string | Buffer): Promise<WriteResult> {
   const delaysMs = [50, 100, 200]
   let lastMessage = 'yazma denenmedi'
   for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
@@ -176,7 +183,7 @@ function atomicWrite(targetPath: string, data: string | Buffer): WriteResult {
     lastMessage = result.message
     const retryable = result.errno === 'EPERM' || result.errno === 'EBUSY'
     if (!retryable || attempt === delaysMs.length) break
-    sleepSyncMs(delaysMs[attempt] ?? 0)
+    await delay(delaysMs[attempt] ?? 0)
   }
   return { ok: false, code: 'write_failed', message: lastMessage }
 }
@@ -185,9 +192,34 @@ function sha256(data: string | Buffer): string {
   return crypto.createHash('sha256').update(data).digest('hex')
 }
 
+// F-007 sözleşme §3 madde 4 (D43, QA tur 1 bulgu 8) — gösterge-karakteri kümesi (19 karakter).
+const YAML_INDICATOR_START = /^[-?:,[\]{}#&*!|>'"%@`]/
+
+/**
+ * `value` bağımsız bir YAML belgesi olarak ayrıştırıldığında string DIŞINDA bir tipe (boolean/
+ * null/number) çözülüyor mu? (`true`, `null`, `~`, `12`, `.inf` gibi tip-zorlayan skalerler —
+ * hiçbiri gösterge karakteriyle başlamaz ama tırnaksız yazılırsa `status` alanını bozar.)
+ */
+function resolvesToNonString(value: string): boolean {
+  try {
+    return typeof parseYaml(value) !== 'string'
+  } catch {
+    // Ayrıştırma hatası veren değerler zaten gösterge-karakteri veya `:`/`#`/satır-sonu
+    // kurallarından biriyle yakalanır; güvenli varsayılan `false` — aşırı-tırnaklama yapmamak
+    // Karpathy §2 ile tutarlı, 40 fixture'lık kapsama testinde bu dalın hiçbir round-trip'i
+    // bozmadığı ölçüldü (sözleşme §3 madde 4).
+    return false
+  }
+}
+
 /** `status:`/`status : x` gibi değerleri YAML açısından güvenli hale getirir. */
 function safeYamlValue(value: string): string {
-  const needsQuoting = /[:#\r\n]/.test(value) || value !== value.trim()
+  const needsQuoting =
+    value === '' ||
+    /[:#\r\n]/.test(value) ||
+    value !== value.trim() ||
+    YAML_INDICATOR_START.test(value) ||
+    resolvesToNonString(value)
   if (!needsQuoting) return value
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
@@ -197,12 +229,12 @@ function safeYamlValue(value: string): string {
  * Yalnızca izlenen projenin `docs/features/<fileName>.md` dosyasının frontmatter'ındaki
  * `status:` satırını değiştirir; gövdeye asla inmez (sözleşme §3 madde 5).
  */
-export function setFeatureStatus(
+export async function setFeatureStatus(
   root: string,
   fileName: string,
   nextStatus: string,
   expectedHash: string
-): WriteResult {
+): Promise<WriteResult> {
   if (!FILE_NAME_PATTERN.test(fileName) || path.basename(fileName) !== fileName) {
     return { ok: false, code: 'invalid_body', message: 'Geçersiz dosya adı.' }
   }
@@ -267,7 +299,7 @@ export function setFeatureStatus(
   parts[statusIdx] = `status: ${safeYamlValue(nextStatus)}`
   const newText = parts.join('')
 
-  const writeResult = atomicWrite(resolved.targetPath, newText)
+  const writeResult = await atomicWrite(resolved.targetPath, newText)
   if (!writeResult.ok) {
     return writeResult
   }
@@ -275,13 +307,13 @@ export function setFeatureStatus(
 }
 
 /** İçerik biçimlendirmesi çağıranın sorumluluğu; bu fonksiyon `body`'yi olduğu gibi yazar. */
-function writeGateFile(
+async function writeGateFile(
   root: string,
   gate: string,
   body: string,
   operation: 'approval' | 'denial',
   fileNameFor: (gate: string) => string
-): WriteResult {
+): Promise<WriteResult> {
   if (!GATE_PATTERN.test(gate)) {
     return { ok: false, code: 'invalid_body', message: 'Geçersiz kapı tanımlayıcısı.' }
   }
@@ -295,11 +327,11 @@ function writeGateFile(
   return atomicWrite(resolved.targetPath, body)
 }
 
-export function writeGateApproval(root: string, gate: string, body: string): WriteResult {
+export function writeGateApproval(root: string, gate: string, body: string): Promise<WriteResult> {
   return writeGateFile(root, gate, body, 'approval', (g) => `${g}.ok`)
 }
 
-export function writeGateDenial(root: string, gate: string, body: string): WriteResult {
+export function writeGateDenial(root: string, gate: string, body: string): Promise<WriteResult> {
   return writeGateFile(root, gate, body, 'denial', (g) => `${g}.deny.md`)
 }
 

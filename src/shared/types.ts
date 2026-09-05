@@ -45,6 +45,10 @@ export type ErrorCode =
    *  index.ts` `withDispatchErrorBoundary`) döndürdüğü genel 500 kodu; herhangi bir handler
    *  öngörülemeyen bir hata fırlattığında kullanılır. */
   | 'internal_error'
+  /** F-007 sözleşme §2.2 — write-gate'in mimari §6'da zaten tanımlı kodları, `PATCH /api/
+   *  features`'a bağlanınca ilk kez bir HTTP handler'ın ürettiği birleşime eklendi. */
+  | 'write_denied'
+  | 'write_failed'
 
 export interface ApiResponse<T> {
   success: boolean
@@ -79,3 +83,28 @@ export interface ProjectListItem extends ProjectRecord {
  */
 export const WRITE_HEADER_NAME = 'x-mc-write'
 export const WRITE_HEADER_VALUE = '1'
+
+/**
+ * Kanban kartı (F-007 sözleşme §3 madde 1, mimari §5.3). `docs/features/<file>.md`
+ * frontmatter'ının bir alt kümesi + türetilmiş alanlar (`column`, `content_hash`, `mtime_ms`).
+ * `parse_error` doluysa `id`/`title` dosya adından türetilir, diğer alanlar boş/varsayılan kalır
+ * ve kart "Ayrıştırılamayan dosyalar" listesine gider (`column` bu durumda da `'unknown'`).
+ */
+export interface FeatureCard {
+  project_id: string
+  file: string
+  id: string
+  title: string
+  status: string
+  /** `STATUS_COLUMNS`'taki bilinen bir `key` veya `'unknown'` (ADR-001 karar 5). */
+  column: string
+  owner: string
+  deps: string[]
+  sprint: string
+  /** `sha256(tam dosya baytları)`, hex — write-gate'in `expectedHash` karşılaştırmasıyla BİREBİR
+   *  aynı kaynak (sözleşme §3 madde 2). */
+  content_hash: string
+  mtime_ms: number
+  /** Frontmatter ayrıştırılamadıysa hata mesajı; başarılıysa `undefined`. */
+  parse_error?: string
+}

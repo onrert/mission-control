@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { parse as parseYaml } from 'yaml'
 import {
   archiveDenial,
   setFeatureStatus,
@@ -41,43 +42,43 @@ describe('write-gate — export yüzeyi (AC2)', () => {
 })
 
 describe('setFeatureStatus — yol beyaz listesi', () => {
-  it('geçerli fileName + doğru hash → yazılır (AC1)', () => {
+  it('geçerli fileName + doğru hash → yazılır (AC1)', async () => {
     const full = writeFile(root, 'docs/features/F-001.md', '---\nstatus: todo\n---\nbody\n')
     const hash = sha256(fs.readFileSync(full))
-    const result = setFeatureStatus(root, 'F-001.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'F-001.md', 'qa', hash)
     expect(result.ok).toBe(true)
     expect(fs.readFileSync(full, 'utf8')).toBe('---\nstatus: qa\n---\nbody\n')
   })
 
-  it('fileName traversal (`../../../etc/passwd`) → invalid_body (AC4)', () => {
-    const result = setFeatureStatus(root, '../../../etc/passwd', 'qa', 'x')
+  it('fileName traversal (`../../../etc/passwd`) → invalid_body (AC4)', async () => {
+    const result = await setFeatureStatus(root, '../../../etc/passwd', 'qa', 'x')
     expect(result).toMatchObject({ ok: false, code: 'invalid_body' })
   })
 
-  it('fileName yanlış uzantı (`a.txt`) → invalid_body', () => {
-    const result = setFeatureStatus(root, 'a.txt', 'qa', 'x')
+  it('fileName yanlış uzantı (`a.txt`) → invalid_body', async () => {
+    const result = await setFeatureStatus(root, 'a.txt', 'qa', 'x')
     expect(result).toMatchObject({ ok: false, code: 'invalid_body' })
   })
 
-  it('fileName alt dizin içeriyor (`sub/a.md`) → invalid_body', () => {
-    const result = setFeatureStatus(root, 'sub/a.md', 'qa', 'x')
+  it('fileName alt dizin içeriyor (`sub/a.md`) → invalid_body', async () => {
+    const result = await setFeatureStatus(root, 'sub/a.md', 'qa', 'x')
     expect(result).toMatchObject({ ok: false, code: 'invalid_body' })
   })
 
-  it('expectedHash uyuşmuyor → conflict, dosya değişmez', () => {
+  it('expectedHash uyuşmuyor → conflict, dosya değişmez', async () => {
     const full = writeFile(root, 'docs/features/F-002.md', '---\nstatus: todo\n---\n')
     const before = fs.readFileSync(full, 'utf8')
-    const result = setFeatureStatus(root, 'F-002.md', 'qa', 'yanlis-hash')
+    const result = await setFeatureStatus(root, 'F-002.md', 'qa', 'yanlis-hash')
     expect(result).toMatchObject({ ok: false, code: 'conflict' })
     expect(fs.readFileSync(full, 'utf8')).toBe(before)
   })
 
-  it('hedef dosya yok (ENOENT) → fırlamaz, write_failed döner', () => {
-    const result = setFeatureStatus(root, 'F-999.md', 'qa', 'x')
+  it('hedef dosya yok (ENOENT) → fırlamaz, write_failed döner', async () => {
+    const result = await setFeatureStatus(root, 'F-999.md', 'qa', 'x')
     expect(result).toMatchObject({ ok: false, code: 'write_failed' })
   })
 
-  it('hedefin kendisi symlink → ata dizin içi başka bir dosyaya işaret ediyorsa write_denied (D30, QA Bulgu 3)', () => {
+  it('hedefin kendisi symlink → ata dizin içi başka bir dosyaya işaret ediyorsa write_denied (D30, QA Bulgu 3)', async () => {
     const realTarget = writeFile(root, 'src/index.ts', 'export {}')
     fs.mkdirSync(path.join(root, 'docs', 'features'), { recursive: true })
     const link = path.join(root, 'docs', 'features', 'F-001.md')
@@ -90,7 +91,7 @@ describe('setFeatureStatus — yol beyaz listesi', () => {
       // bu ortamda beklenen, bu alt-test GEÇTİ'ye katkı SAYMAZ (zorunlu kanıt spy testinde).
     }
     if (created) {
-      const result = setFeatureStatus(root, 'F-001.md', 'qa', 'herhangi')
+      const result = await setFeatureStatus(root, 'F-001.md', 'qa', 'herhangi')
       expect(result).toMatchObject({ ok: false, code: 'write_denied' })
       expect(fs.readFileSync(realTarget, 'utf8')).toBe('export {}')
     } else {
@@ -98,7 +99,7 @@ describe('setFeatureStatus — yol beyaz listesi', () => {
     }
   })
 
-  it('hedefin kendisi symlink → zorunlu, atlanmayan sahte-stat testi (vi.spyOn lstatSync)', () => {
+  it('hedefin kendisi symlink → zorunlu, atlanmayan sahte-stat testi (vi.spyOn lstatSync)', async () => {
     writeFile(root, 'src/index.ts', 'export {}')
     const targetPath = path.join(root, 'docs', 'features', 'F-001.md')
     fs.mkdirSync(path.dirname(targetPath), { recursive: true })
@@ -115,26 +116,26 @@ describe('setFeatureStatus — yol beyaz listesi', () => {
         return (realLstat as any)(p, ...rest)
       })
     try {
-      const result = setFeatureStatus(root, 'F-001.md', 'qa', 'herhangi')
+      const result = await setFeatureStatus(root, 'F-001.md', 'qa', 'herhangi')
       expect(result).toMatchObject({ ok: false, code: 'write_denied' })
     } finally {
       spy.mockRestore()
     }
   })
 
-  it('ata dizin (`docs/features`) kök içi başka bir dizine symlink → write_denied (junction, D30)', () => {
+  it('ata dizin (`docs/features`) kök içi başka bir dizine symlink → write_denied (junction, D30)', async () => {
     const realDir = path.join(root, 'real-features')
     fs.mkdirSync(realDir, { recursive: true })
     writeFile(root, 'real-features/F-001.md', '---\nstatus: todo\n---\n')
     fs.mkdirSync(path.join(root, 'docs'), { recursive: true })
     const link = path.join(root, 'docs', 'features')
     fs.symlinkSync(realDir, link, 'junction')
-    const result = setFeatureStatus(root, 'F-001.md', 'qa', 'herhangi')
+    const result = await setFeatureStatus(root, 'F-001.md', 'qa', 'herhangi')
     expect(result).toMatchObject({ ok: false, code: 'write_denied' })
     expect(fs.readFileSync(path.join(realDir, 'F-001.md'), 'utf8')).toBe('---\nstatus: todo\n---\n')
   })
 
-  it('root kendisi bir symlink (kayıt sonrası değiştirilmiş) → gerçek hedefi çözer, kök dışıysa write_denied (ADR-005 risk maddesi)', () => {
+  it('root kendisi bir symlink (kayıt sonrası değiştirilmiş) → gerçek hedefi çözer, kök dışıysa write_denied (ADR-005 risk maddesi)', async () => {
     const realRoot = `${root}-real`
     fs.mkdirSync(path.join(realRoot, 'docs', 'features'), { recursive: true })
     fs.writeFileSync(
@@ -144,14 +145,14 @@ describe('setFeatureStatus — yol beyaz listesi', () => {
     fs.rmSync(root, { recursive: true, force: true })
     fs.symlinkSync(realRoot, root, 'junction')
     try {
-      const result = setFeatureStatus(root, 'F-001.md', 'qa', 'herhangi')
+      const result = await setFeatureStatus(root, 'F-001.md', 'qa', 'herhangi')
       expect(result).toMatchObject({ ok: false })
     } finally {
       fs.rmSync(realRoot, { recursive: true, force: true })
     }
   })
 
-  it('önek tuzağı: root farklı bir dizinin öneki olsa bile write_denied (QA Bulgu 11)', () => {
+  it('önek tuzağı: root farklı bir dizinin öneki olsa bile write_denied (QA Bulgu 11)', async () => {
     const trapRoot = `${root}-factory`
     fs.mkdirSync(path.join(trapRoot, 'docs', 'features'), { recursive: true })
     fs.writeFileSync(
@@ -159,31 +160,31 @@ describe('setFeatureStatus — yol beyaz listesi', () => {
       '---\nstatus: todo\n---\n'
     )
     try {
-      const result = setFeatureStatus(root, 'F-001.md', 'qa', 'herhangi')
+      const result = await setFeatureStatus(root, 'F-001.md', 'qa', 'herhangi')
       expect(result).toMatchObject({ ok: false })
     } finally {
       fs.rmSync(trapRoot, { recursive: true, force: true })
     }
   })
 
-  it('root verilmemiş (boş dizge) → write_denied', () => {
-    const result = setFeatureStatus('', 'F-001.md', 'qa', 'x')
+  it('root verilmemiş (boş dizge) → write_denied', async () => {
+    const result = await setFeatureStatus('', 'F-001.md', 'qa', 'x')
     expect(result).toMatchObject({ ok: false, code: 'write_denied' })
   })
 
-  it('root bir dosya (dizin değil) → write_denied', () => {
+  it('root bir dosya (dizin değil) → write_denied', async () => {
     const filePath = path.join(root, 'not-a-dir.txt')
     fs.writeFileSync(filePath, 'x')
-    const result = setFeatureStatus(filePath, 'F-001.md', 'qa', 'x')
+    const result = await setFeatureStatus(filePath, 'F-001.md', 'qa', 'x')
     expect(result).toMatchObject({ ok: false, code: 'write_denied' })
   })
 
-  it('root göreli bir yol → write_denied', () => {
-    const result = setFeatureStatus('docs', 'F-001.md', 'qa', 'x')
+  it('root göreli bir yol → write_denied', async () => {
+    const result = await setFeatureStatus('docs', 'F-001.md', 'qa', 'x')
     expect(result).toMatchObject({ ok: false, code: 'write_denied' })
   })
 
-  it('EPERM/EBUSY 3 denemede de sürerse write_failed döner (ADR-005 madde 5)', () => {
+  it('EPERM/EBUSY 3 denemede de sürerse write_failed döner (ADR-005 madde 5)', async () => {
     const full = writeFile(root, 'docs/features/F-003.md', '---\nstatus: todo\n---\n')
     const hash = sha256(fs.readFileSync(full))
     const renameSpy = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
@@ -192,7 +193,7 @@ describe('setFeatureStatus — yol beyaz listesi', () => {
       throw err
     })
     try {
-      const result = setFeatureStatus(root, 'F-003.md', 'qa', hash)
+      const result = await setFeatureStatus(root, 'F-003.md', 'qa', hash)
       expect(result).toMatchObject({ ok: false, code: 'write_failed' })
       expect(renameSpy).toHaveBeenCalledTimes(4) // ilk deneme + 3 retry
     } finally {
@@ -202,11 +203,11 @@ describe('setFeatureStatus — yol beyaz listesi', () => {
 
   // Mutasyon 12 (sözleşme §8) — `mkdirSync`'in `try` içinde olduğunu, hedef dizin bir DOSYAYLA
   // işgal edilmişken (`ENOTDIR`) bile modülün asla fırlamadığını kanıtlar.
-  it('hedef dizin (docs/approvals) bir dosyayla işgal edilmişse fırlamaz, write_failed döner (ENOTDIR)', () => {
+  it('hedef dizin (docs/approvals) bir dosyayla işgal edilmişse fırlamaz, write_failed döner (ENOTDIR)', async () => {
     fs.mkdirSync(path.join(root, 'docs'), { recursive: true })
     fs.writeFileSync(path.join(root, 'docs', 'approvals'), 'ben bir dosyayım')
-    expect(() => writeGateApproval(root, 'G2', 'x')).not.toThrow()
-    const result = writeGateApproval(root, 'G2', 'x')
+    await expect(writeGateApproval(root, 'G2', 'x')).resolves.not.toBeNull()
+    const result = await writeGateApproval(root, 'G2', 'x')
     expect(result).toMatchObject({ ok: false, code: 'write_failed' })
   })
 
@@ -215,11 +216,11 @@ describe('setFeatureStatus — yol beyaz listesi', () => {
   // hiç dokunulmadan `invalid_body` dönmeli.
   it.each(['x\n---\nBODY', 'x\r---\rBODY', 'x\r\n---\r\nBODY'])(
     'nextStatus satır sonu içeriyorsa (%s) invalid_body döner, frontmatter bozulmaz (D38/Ö2)',
-    (nextStatus) => {
+    async (nextStatus) => {
       const before = '---\nstatus: todo\n---\nbody\n'
       const full = writeFile(root, 'docs/features/G18.md', before)
       const hash = sha256(before)
-      const result = setFeatureStatus(root, 'G18.md', nextStatus, hash)
+      const result = await setFeatureStatus(root, 'G18.md', nextStatus, hash)
       expect(result).toMatchObject({ ok: false, code: 'invalid_body' })
       expect(fs.readFileSync(full, 'utf8')).toBe(before)
     }
@@ -232,7 +233,7 @@ describe('setFeatureStatus — yol beyaz listesi', () => {
   // daraltınca (`for (i = len-2; i < len-1)`) 539/539 yeşil kalmıştı — `docs` segmenti hiç
   // `lstatSync`'lenmemiş olsa bile fark edilmiyordu. Bu test gerçek bir symlink kurmadan,
   // `lstatSync`'e giden her yolu kaydedip HER İKİ segmentin de gerçekten sorgulandığını kanıtlar.
-  it('ata dizin lstatSync taraması TÜM üst segmentleri kontrol eder, yalnızca sonuncuyu değil (Ö5)', () => {
+  it('ata dizin lstatSync taraması TÜM üst segmentleri kontrol eder, yalnızca sonuncuyu değil (Ö5)', async () => {
     const full = writeFile(root, 'docs/features/F-001.md', '---\nstatus: todo\n---\n')
     const hash = sha256(fs.readFileSync(full))
     const docsPath = path.resolve(path.join(root, 'docs'))
@@ -247,7 +248,7 @@ describe('setFeatureStatus — yol beyaz listesi', () => {
         return (realLstat as any)(p, ...rest)
       })
     try {
-      const result = setFeatureStatus(root, 'F-001.md', 'qa', hash)
+      const result = await setFeatureStatus(root, 'F-001.md', 'qa', hash)
       expect(result.ok).toBe(true)
       expect(seen.has(docsPath)).toBe(true)
       expect(seen.has(featuresPath)).toBe(true)
@@ -272,11 +273,11 @@ describe('setFeatureStatus — bayt koruma (golden fixtures)', () => {
     }
   }
 
-  it('1) saf LF, status ortada', () => {
+  it('1) saf LF, status ortada', async () => {
     const before = '---\ntitle: X\nstatus: todo\ndeps: []\n---\nbody\n'
     const full = writeFile(root, 'docs/features/G1.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G1.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G1.md', 'qa', hash)
     expect(result.ok).toBe(true)
     const after = fs.readFileSync(full, 'utf8')
     assertOnlyStatusLineChanged(before, after, 4)
@@ -284,31 +285,31 @@ describe('setFeatureStatus — bayt koruma (golden fixtures)', () => {
     expect(after).not.toContain('\r\n')
   })
 
-  it('2) saf CRLF, status ortada', () => {
+  it('2) saf CRLF, status ortada', async () => {
     const before = '---\r\ntitle: X\r\nstatus: todo\r\n---\r\nbody\r\n'
     const full = writeFile(root, 'docs/features/G2.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G2.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G2.md', 'qa', hash)
     expect(result.ok).toBe(true)
     const after = fs.readFileSync(full, 'utf8')
     assertOnlyStatusLineChanged(before, after, 4)
     expect(after.match(/\r\n/g)?.length).toBe(before.match(/\r\n/g)?.length)
   })
 
-  it('3) karışık CRLF/LF', () => {
+  it('3) karışık CRLF/LF', async () => {
     const before = '---\r\ntitle: X\nstatus: todo\r\n---\nbody\n'
     const full = writeFile(root, 'docs/features/G3.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G3.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G3.md', 'qa', hash)
     expect(result.ok).toBe(true)
     assertOnlyStatusLineChanged(before, fs.readFileSync(full, 'utf8'), 4)
   })
 
-  it('4) BOM + LF — algoritma çalışır ve BOM baytları korunur', () => {
+  it('4) BOM + LF — algoritma çalışır ve BOM baytları korunur', async () => {
     const before = '﻿---\ntitle: X\nstatus: todo\n---\nbody\n'
     const full = writeFile(root, 'docs/features/G4.md', before)
     const hash = sha256(Buffer.from(before, 'utf8'))
-    const result = setFeatureStatus(root, 'G4.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G4.md', 'qa', hash)
     expect(result.ok).toBe(true)
     const afterBuf = fs.readFileSync(full)
     expect(afterBuf.subarray(0, 3)).toEqual(Buffer.from([0xef, 0xbb, 0xbf]))
@@ -317,161 +318,292 @@ describe('setFeatureStatus — bayt koruma (golden fixtures)', () => {
     expect(after).toContain('status: qa')
   })
 
-  it('5) status tırnaklı değer', () => {
+  it('5) status tırnaklı değer', async () => {
     const before = '---\nstatus: "in progress"\n---\nbody\n'
     const full = writeFile(root, 'docs/features/G5.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G5.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G5.md', 'qa', hash)
     expect(result.ok).toBe(true)
     expect(fs.readFileSync(full, 'utf8')).toContain('status: qa')
   })
 
-  it('6) status ilk satırda (frontmatter açılışından hemen sonra)', () => {
+  it('6) status ilk satırda (frontmatter açılışından hemen sonra)', async () => {
     const before = '---\nstatus: todo\ntitle: X\n---\nbody\n'
     const full = writeFile(root, 'docs/features/G6.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G6.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G6.md', 'qa', hash)
     expect(result.ok).toBe(true)
     assertOnlyStatusLineChanged(before, fs.readFileSync(full, 'utf8'), 2)
   })
 
-  it('7) status son satırda (kapanıştan hemen önce)', () => {
+  it('7) status son satırda (kapanıştan hemen önce)', async () => {
     const before = '---\ntitle: X\nstatus: todo\n---\nbody\n'
     const full = writeFile(root, 'docs/features/G7.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G7.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G7.md', 'qa', hash)
     expect(result.ok).toBe(true)
     assertOnlyStatusLineChanged(before, fs.readFileSync(full, 'utf8'), 4)
   })
 
-  it('8) girintili status: (alt alan, dokunulmamalı) + girintisiz status: birlikte', () => {
+  it('8) girintili status: (alt alan, dokunulmamalı) + girintisiz status: birlikte', async () => {
     const before = '---\nnested:\n  status: child\nstatus: todo\n---\nbody\n'
     const full = writeFile(root, 'docs/features/G8.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G8.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G8.md', 'qa', hash)
     expect(result.ok).toBe(true)
     const after = fs.readFileSync(full, 'utf8')
     expect(after).toContain('  status: child')
     expect(after).toContain('\nstatus: qa')
   })
 
-  it('9) frontmatter yok → invalid_body', () => {
+  it('9) frontmatter yok → invalid_body', async () => {
     const before = 'title: X\nstatus: todo\n'
     const full = writeFile(root, 'docs/features/G9.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G9.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G9.md', 'qa', hash)
     expect(result).toMatchObject({ ok: false, code: 'invalid_body' })
     expect(fs.readFileSync(full, 'utf8')).toBe(before)
   })
 
-  it('10) kapanış ... (--- değil)', () => {
+  it('10) kapanış ... (--- değil)', async () => {
     const before = '---\nstatus: todo\n...\nbody\n'
     const full = writeFile(root, 'docs/features/G10.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G10.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G10.md', 'qa', hash)
     expect(result.ok).toBe(true)
     assertOnlyStatusLineChanged(before, fs.readFileSync(full, 'utf8'), 2)
   })
 
-  it('11) unicode başlık', () => {
+  it('11) unicode başlık', async () => {
     const before = '---\ntitle: "Özel Karakterler ığüşöç"\nstatus: todo\n---\n'
     const full = writeFile(root, 'docs/features/G11.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G11.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G11.md', 'qa', hash)
     expect(result.ok).toBe(true)
     assertOnlyStatusLineChanged(before, fs.readFileSync(full, 'utf8'), 4)
   })
 
-  it('12) çok satırlı blok skaler', () => {
+  it('12) çok satırlı blok skaler', async () => {
     const before = '---\ndescription: |\n  satır1\n  satır2\nstatus: todo\n---\n'
     const full = writeFile(root, 'docs/features/G12.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G12.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G12.md', 'qa', hash)
     expect(result.ok).toBe(true)
     const after = fs.readFileSync(full, 'utf8')
     expect(after).toContain('  satır1\n  satır2')
     expect(after).toContain('status: qa')
   })
 
-  it('13) deps: [F-001, F-002] dizi değeri etkilenmemeli', () => {
+  it('13) deps: [F-001, F-002] dizi değeri etkilenmemeli', async () => {
     const before = '---\ndeps: [F-001, F-002]\nstatus: todo\n---\n'
     const full = writeFile(root, 'docs/features/G13.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G13.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G13.md', 'qa', hash)
     expect(result.ok).toBe(true)
     expect(fs.readFileSync(full, 'utf8')).toContain('deps: [F-001, F-002]')
   })
 
-  it('14) son satırda satır sonu ayracı yok', () => {
+  it('14) son satırda satır sonu ayracı yok', async () => {
     const before = '---\nstatus: todo\n---'
     const full = writeFile(root, 'docs/features/G14.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G14.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G14.md', 'qa', hash)
     expect(result.ok).toBe(true)
     expect(fs.readFileSync(full, 'utf8')).toBe('---\nstatus: qa\n---')
   })
 
-  it('15) status : değer (iki nokta öncesi boşluk)', () => {
+  it('15) status : değer (iki nokta öncesi boşluk)', async () => {
     const before = '---\nstatus : todo\n---\n'
     const full = writeFile(root, 'docs/features/G15.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G15.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G15.md', 'qa', hash)
     expect(result.ok).toBe(true)
     expect(fs.readFileSync(full, 'utf8')).toBe('---\nstatus: qa\n---\n')
   })
 
-  it('16) iki --- bloğu — ikinci blok gövdede, kendi status satırını taşıyor, yalnızca ilk değişmeli', () => {
+  it('16) iki --- bloğu — ikinci blok gövdede, kendi status satırını taşıyor, yalnızca ilk değişmeli', async () => {
     const before = '---\nstatus: todo\n---\nbody\n---\nstatus: nested\n---\n'
     const full = writeFile(root, 'docs/features/G16.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G16.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G16.md', 'qa', hash)
     expect(result.ok).toBe(true)
     const after = fs.readFileSync(full, 'utf8')
     expect(after).toContain('status: qa')
     expect(after).toContain('status: nested')
   })
 
-  it("17) frontmatter'da status yok, gövdede girintisiz status: var → invalid_body, gövde değişmez", () => {
+  it("17) frontmatter'da status yok, gövdede girintisiz status: var → invalid_body, gövde değişmez", async () => {
     const before = '---\ntitle: X\n---\nstatus: leaked\n'
     const full = writeFile(root, 'docs/features/G17.md', before)
     const hash = sha256(before)
-    const result = setFeatureStatus(root, 'G17.md', 'qa', hash)
+    const result = await setFeatureStatus(root, 'G17.md', 'qa', hash)
     expect(result).toMatchObject({ ok: false, code: 'invalid_body' })
     expect(fs.readFileSync(full, 'utf8')).toBe(before)
   })
 })
 
+// F-007 sözleşme §3 madde 4 (D43, QA tur 1 bulgu 8, tur 2 R4) — `safeYamlValue` sertleştirmesi.
+// Kabul ölçütü BAĞLAYICI: 40/40. 19 gösterge-karakterli + 21 tip-zorlayan skaler, HER BİRİ
+// gerçek `yaml.parse()` round-trip'iyle doğrulanır (test kendi hash'ini yeniden hesaplamaz —
+// `setFeatureStatus`'un GERÇEK davranışını, dosyayı okuyup yeniden ayrıştırarak ölçer).
+describe('setFeatureStatus — safeYamlValue sertleştirmesi (T5, 40/40 kabul ölçütü)', () => {
+  function extractFrontmatterBlock(fileText: string): string {
+    const withoutBom = fileText.charCodeAt(0) === 0xfeff ? fileText.slice(1) : fileText
+    const match = /^---\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)/.exec(withoutBom)
+    if (!match) throw new Error('frontmatter bloğu bulunamadı (test yardımcı fonksiyonu)')
+    return match[1] ?? ''
+  }
+
+  const indicatorCharacterValues = [
+    '-x',
+    '?x',
+    ':x',
+    ',x',
+    '[x',
+    ']x',
+    '{x',
+    '}x',
+    '#x',
+    '&x',
+    '*x',
+    '!x',
+    '|x',
+    '>x',
+    "'x",
+    '"x',
+    '%x',
+    '@x',
+    '`x',
+  ]
+
+  const typeCoercingValues = [
+    'true',
+    'True',
+    'TRUE',
+    'false',
+    'False',
+    'FALSE',
+    'null',
+    'Null',
+    'NULL',
+    '~',
+    '12',
+    '+12',
+    '1.5',
+    '0x1F',
+    '0o17',
+    '.inf',
+    '+.inf',
+    '.Inf',
+    '.INF',
+    '.nan',
+    '.NaN',
+  ]
+
+  const allFixtures = [...indicatorCharacterValues, ...typeCoercingValues]
+
+  it('19 gösterge-karakterli + 21 tip-zorlayan = 40 fixture', () => {
+    expect(indicatorCharacterValues.length).toBe(19)
+    expect(typeCoercingValues.length).toBe(21)
+    expect(allFixtures.length).toBe(40)
+  })
+
+  it.each(allFixtures)(
+    "status: %j yazıldıktan sonra gerçek yaml.parse() round-trip'i orijinal dizgeyi verir",
+    async (value) => {
+      const before = '---\nstatus: todo\n---\nbody\n'
+      const fileName = `G-safe-${crypto.randomBytes(4).toString('hex')}.md`
+      const full = writeFile(root, `docs/features/${fileName}`, before)
+      const hash = sha256(before)
+      const result = await setFeatureStatus(root, fileName, value, hash)
+      expect(result.ok).toBe(true)
+      const after = fs.readFileSync(full, 'utf8')
+      const block = extractFrontmatterBlock(after)
+      const parsed = parseYaml(block) as { status: unknown }
+      expect(parsed.status).toBe(value)
+    }
+  )
+
+  it('7 bilinen durum (todo/contract/dev/qa/fix/done/blocked) hiçbiri tırnaklanmaz (aşırı-tırnaklama yok)', async () => {
+    const known = ['todo', 'contract', 'dev', 'qa', 'fix', 'done', 'blocked']
+    for (const value of known) {
+      const before = '---\nstatus: todo\n---\n'
+      const fileName = `G-known-${value}.md`
+      const full = writeFile(root, `docs/features/${fileName}`, before)
+      const hash = sha256(before)
+      const result = await setFeatureStatus(root, fileName, value, hash)
+      expect(result.ok).toBe(true)
+      expect(fs.readFileSync(full, 'utf8')).toBe(`---\nstatus: ${value}\n---\n`)
+    }
+  })
+})
+
+// T4 (sözleşme §3 madde 13, §5) — `Atomics.wait` → async: retry sürerken event loop bloklanmaz.
+describe('setFeatureStatus — Atomics.wait yerine async delay (T4, event loop bloklanmaz)', () => {
+  it('EPERM retry sürerken paralel bir mikro-görev (Promise.resolve().then) hemen çözülür', async () => {
+    const full = writeFile(root, 'docs/features/F-t4.md', '---\nstatus: todo\n---\n')
+    const hash = sha256(fs.readFileSync(full))
+    let attempts = 0
+    const renameSpy = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      attempts++
+      if (attempts < 2) {
+        const err = new Error('EPERM: yapay') as NodeJS.ErrnoException
+        err.code = 'EPERM'
+        throw err
+      }
+    })
+    try {
+      let microtaskResolvedAt = 0
+      const start = Date.now()
+      // Retry'ın ilk bekleme süresi 50ms'dir — `Atomics.wait` geri gelseydi bu mikro-görev de
+      // en az 50ms gecikirdi. `await delay()` (setTimeout tabanlı) event loop'u bloklamadığı
+      // için bu mikro-görev retry'ın ilk beklemesinden ÇOK ÖNCE (aynı tick'te) çözülür.
+      const microtaskPromise = Promise.resolve().then(() => {
+        microtaskResolvedAt = Date.now()
+      })
+      const resultPromise = setFeatureStatus(root, 'F-t4.md', 'qa', hash)
+      await microtaskPromise
+      const microtaskElapsed = microtaskResolvedAt - start
+      const result = await resultPromise
+      expect(result.ok).toBe(true)
+      expect(microtaskElapsed).toBeLessThan(20)
+    } finally {
+      renameSpy.mockRestore()
+    }
+  })
+})
+
 describe('writeGateApproval / writeGateDenial — yol beyaz listesi', () => {
-  it("gate='G2' → docs/approvals/G2.ok yazılır", () => {
-    const result = writeGateApproval(root, 'G2', 'onaylandı')
+  it("gate='G2' → docs/approvals/G2.ok yazılır", async () => {
+    const result = await writeGateApproval(root, 'G2', 'onaylandı')
     expect(result.ok).toBe(true)
     expect(fs.readFileSync(path.join(root, 'docs', 'approvals', 'G2.ok'), 'utf8')).toBe('onaylandı')
   })
 
-  it("gate='G7' → invalid_body", () => {
-    const result = writeGateApproval(root, 'G7', 'x')
+  it("gate='G7' → invalid_body", async () => {
+    const result = await writeGateApproval(root, 'G7', 'x')
     expect(result).toMatchObject({ ok: false, code: 'invalid_body' })
   })
 
-  it("gate='G2/../../x' → invalid_body", () => {
-    const result = writeGateApproval(root, 'G2/../../x', 'x')
+  it("gate='G2/../../x' → invalid_body", async () => {
+    const result = await writeGateApproval(root, 'G2/../../x', 'x')
     expect(result).toMatchObject({ ok: false, code: 'invalid_body' })
   })
 
-  it("gate='ASSETS' → docs/approvals/ASSETS.ok yazılır", () => {
-    const result = writeGateApproval(root, 'ASSETS', 'x')
+  it("gate='ASSETS' → docs/approvals/ASSETS.ok yazılır", async () => {
+    const result = await writeGateApproval(root, 'ASSETS', 'x')
     expect(result.ok).toBe(true)
     expect(fs.existsSync(path.join(root, 'docs', 'approvals', 'ASSETS.ok'))).toBe(true)
   })
 
-  it("gate='G4-2' → docs/approvals/G4-2.deny.md yazılır (gruplu gate)", () => {
-    const result = writeGateDenial(root, 'G4-2', 'red')
+  it("gate='G4-2' → docs/approvals/G4-2.deny.md yazılır (gruplu gate)", async () => {
+    const result = await writeGateDenial(root, 'G4-2', 'red')
     expect(result.ok).toBe(true)
     expect(fs.existsSync(path.join(root, 'docs', 'approvals', 'G4-2.deny.md'))).toBe(true)
   })
 
-  it('boş body → invalid_body', () => {
-    const result = writeGateApproval(root, 'G2', '')
+  it('boş body → invalid_body', async () => {
+    const result = await writeGateApproval(root, 'G2', '')
     expect(result).toMatchObject({ ok: false, code: 'invalid_body' })
   })
 })
@@ -534,8 +666,8 @@ describe('archiveDenial — yalnızca rename, no-op durumu', () => {
 })
 
 describe('resolveInsideRoot adım 8 — işlem/yol eşleşmesi (R3, genel API üzerinden)', () => {
-  it('writeGateApproval yalnızca approval şablonuna yazabilir (mutasyon 11 emsali, düz kullanım doğrulaması)', () => {
-    const result = writeGateApproval(root, 'G2', 'x')
+  it('writeGateApproval yalnızca approval şablonuna yazabilir (mutasyon 11 emsali, düz kullanım doğrulaması)', async () => {
+    const result = await writeGateApproval(root, 'G2', 'x')
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.path.split(path.sep).join('/')).toMatch(/docs\/approvals\/G2\.ok$/)

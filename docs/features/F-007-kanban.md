@@ -27,3 +27,19 @@ Kaynak: `docs/02-architecture.md` §7; `docs/03-ux.md` ekran 2 + akışlar (a), 
 
 ## Notlar / kararlar
 - Tüm yazmalar F-006 yazma kapısından geçer; doğrudan `fs` çağrısı yasak.
+
+## F-005'ten devralınan taahhütler (CEO, 2026-09-05)
+1. **Tam ve geçerli `tablist` deseni.** F-003 ve F-005 bilinçli olarak sekme deseni kurmadı: tek
+   gerçek ekran varken `role="tab"` geçersiz ARIA üretiyor (bağlamı `tablist` olmadan). Kanban
+   **gerçek ikinci sekmeyi** getirdiği için desen burada kurulacak: `role="tablist"` + `role="tab"` +
+   `role="tabpanel"` + `aria-controls`/`id` eşleşmesi + ok tuşu gezinmesi + roving `tabindex`.
+   Ayarlar bu desene **girmez** — o sağda sabit bir dişli düğmesidir (`docs/03-ux.md:21`).
+2. **AC1'in görsel kanıtı.** F-005'in AC1'i ("klasör eklendiğinde `docs/features/*.md` dosyaları
+   5 sn içinde görünür") yalnızca `features` SSE sinyali seviyesinde kanıtlandı; "kanbanda görünür"
+   kısmı Kanban var olmadığı için ertelendi (F-005 sözleşmesi §9). F-007 bunu uçtan uca kanıtlamalı.
+3. **Dar genişlikte gezinme kaybolmamalı.** `docs/03-ux.md:17` birincil senaryoyu 320-480px
+   (VS Code Simple Browser) olarak tanımlıyor ve "gizli navigasyon olmasın" diyor. F-005'te Ayarlar
+   dişlisi sağa sabitlenince nav etiketleri 375px'te kaydırma şeridinin arkasında kaldı; bugün
+   statik etiket oldukları için gezinme kaybı yok, ama **Kanban gerçek sekmeye dönüşünce bu kuralı
+   ihlal eder**. F-007 sözleşmesine dar genişlikte gezinilebilirlik kriteri konmalı ve E2E'de
+   375px'te ölçülmeli.

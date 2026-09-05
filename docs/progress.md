@@ -860,3 +860,83 @@ QA tarafından doğrulandı; üretim CSS'i 8,5 → 14,9 kB).
 - F-005'te **kullanıcı kararı gerekiyor:** hangi proje klasörleri izlenecek ve o projelere hook
   kurulacak mı (depo dışına yazma, her biri ayrı onay).
 - F-006 **ADR-008 ekindeki artık riski** yeniden değerlendirmek zorunda.
+
+---
+
+## 2026-09-05 — F-005 (proje kayıt defteri + chokidar izleme + Ayarlar ekranı) kod turu tamamlandı
+
+**Ne yapıldı**
+- Sözleşme aşaması: 3 developer + 2 QA turu, 14 bulgu + 2 regresyon **tek satır kod yazılmadan**
+  kapandı (`docs/qa/F-005-contract.md`, "KARAR: ONAY"). En pahalı yakalama QA'nın ampirik
+  ölçümüydü: tur 1'in "yeni bağımlılık gerekmiyor, `node:fs.watch` yeter" kararı, aynı Windows
+  makinesinde ölçülünce çürüdü — izlenen dizin silinip yeniden oluşturulunca `fs.watch` **kalıcı
+  olarak ölüyor** (0 olay), dizin silinmiş kalırsa 1 sn'de 112.535 / 3 sn'de 342.548 olaylık bir
+  fırtına üretiyor. CEO kararı D16 ile `chokidar@^4.0.3`'e geri dönüldü (mimari §3.4'ün zaten
+  onayladığı kapalı listeden).
+- Kod turu (önceki bir developer ajanı tarafından yazıldı, bu turda **kanıt** tamamlandı):
+  `src/server/store/projects-registry.ts` (kayıt defteri, atomik yazma, `isCorrupt()`),
+  `src/server/watch/{debounce,project-watcher}.ts` (150 ms trailing debounce + chokidar
+  sarmalayıcı), `src/features/projects/server/{validate-path,handlers,service}.ts` (yol
+  doğrulama — `fs.realpathSync.native` ile Windows büyük/küçük harf kanonikleştirmesi (D17),
+  `GET/POST/DELETE /api/projects`, izleyici orkestrasyonu), `src/features/projects/web/
+  {SettingsScreen,ProjectRow,AddProjectForm,useProjects}.tsx` (Ayarlar ekranı), `App.tsx`'e
+  dişli düğmesi + `hidden` özniteliğiyle panel geçişi (CEO kararı — tam `tablist` deseni
+  F-007'ye ertelendi), `useEventStream`'e `onProjects` kanalı, `index.ts`'te Origin kontrolünün
+  tüm non-GET `/api/*` uçlarına genelleşmesi. 4 commit (`77e4e3a`, `174c3c6`, `96b9444`, `6ce35d2`).
+- Bu turda tamamlanan: **§8'in 10 mutasyonunun tamamı** sıfırdan koşulup KIRMIZI gözlemlendi ve
+  geri alındı (önceki ajan tur sınırına takılmıştı, kanıt diske hiç yazılmamıştı — bkz.
+  `docs/qa/F-005-contract.md` "Mutasyon kanıtı (kod turu, 2026-09-05)"); chokidar'ın iki kritik
+  senaryosunun (dizin sil+yeniden-oluştur, dizin silinmiş kalırsa olay fırtınası) **gerçek
+  sayılarla** ölçümü; `docs/decisions/ADR-012-proje-izleme-mekanizmasi.md` kalıcı ADR'ye
+  çevrildi; feature notu 6 AC kanıtla işaretlendi, `status: todo` → `status: qa`.
+
+**Nasıl doğrulandı**
+- `npm run verify` = 0 (**36 dosya / 425 test**, typecheck+lint+build dahil).
+- `npm run e2e` = 0 (**14 geçti** — önceki feature'da 9'du, `settings.spec.ts`'in 5 testi
+  gerçekten koşuyor: proje ekleme, geçersiz yol hatası, kaldırma+manifest, 3 proje, gerçek
+  hesaplanmış `display` + `aria-pressed`).
+- `npm run e2e:dev` = 0 (1 geçti).
+- **Mutasyon kanıtı — 10/10 KIRMIZI, hiçbiri yeşil kalmadı** (tam tablo `docs/qa/F-005-contract.md`
+  sonunda): debounce coalesce (1), AC3 çekirdek reddi (2), registry tekilleştirme (3), kaldırma
+  yolunda kasıtlı `unlinkSync` → manifest testi kırmızı (4), gerçek `fs.rmSync` kodu → statik
+  guard kırmızı (5), çoklu proje izolasyonu (6), Origin genelleşmesi regresyonu (7), `hidden`→
+  koşullu render → unmount garantisi kırmızı (8), `hidden={false}` → gerçek tarayıcı `display`
+  assert'i kırmızı (8b), izlenen proje köküne yazma → manifest "eklenen küme" testi kırmızı (9),
+  `stopAll()` kaldırma → izleyici sayacı `server.close()` sonrası hâlâ `1` (10). Her mutasyondan
+  sonra `git diff HEAD -- src/ tests/` boş doğrulandı.
+- **chokidar'ın iki senaryosu gerçek sayılarla ölçüldü** (`tests/server/watch/
+  project-watcher.test.ts` 5/5 yeşil + bağımsız tek seferlik ölçüm betiği, hiçbir kalıntı
+  bırakmadan): dizin sil+yeniden-oluştur sonrası `.md` yazımı **hâlâ sinyal üretiyor** (fs.watch
+  tam tersine kalıcı ölüyordu); dizin silinip silinmiş kalırsa 1 sn'de **0** ham olay, 3 sn'de
+  **0** ham olay, CPU ~3.9 ms (fs.watch'ta 1 sn'de 112.535 olay, ~641 ms CPU idi). chokidar,
+  `fs.watch`'ın iki kusurunu **miras almıyor** — `MC_WATCH_POLLING=1` geri dönüşüne gerek kalmadı.
+- Yetim süreç/port kontrolü: `tasklist` içinde `node.exe` yok, 7333/7334/7335/7433/7434'te yalnızca
+  `TIME_WAIT` (kapanmış) kayıtlar var, aktif dinleyici yok.
+
+**Sözleşme turunun en pahalı bulgusu (kod yazılmadan yakalandı)**
+- `node:fs.watch`'ın ölçülen iki kusuru (kalıcı ölüm + olay fırtınası) + `fs.realpathSync`'in
+  (`.native` olmadan) Windows'ta büyük/küçük harfi kanonikleştirmediği (aynı gerçek dizine 6
+  farklı yazımla çağrılınca 3 farklı dizge üretiyordu — `.native` ile **1**). İkisi de tur 1'in
+  kâğıt üstünde savunulabilir ama ölçülmemiş varsayımlarıydı; QA'nın ampirik ölçümü onları çürüttü.
+
+**Kalan risk / bilinçli kapsam dışı bırakılanlar**
+- **AC1'in "kanbanda görünür" kısmı F-007'ye devredildi** (sözleşme §9 madde 7, CEO kararı D19) —
+  Kanban henüz yok; bu feature'ın payı `features` SSE sinyalinin event-driven üretildiğinin
+  kanıtlanmasıdır. F-007'nin kendi sözleşmesi bu sinyalin gerçek kart görünürlüğüne dönüştüğünü
+  uçtan uca doğrulamalı.
+- Tam `role="tablist"`/`tab`/`tabpanel` deseni + roving tabindex + ok tuşu gezinmesi **bu
+  feature'da kurulmadı** (CEO kararı, Karpathy §2 — bugün tek gerçek ekran var) — F-007'ye
+  devredildi (sözleşme §9 madde 8).
+- chokidar'ın polling **olmayan** modda dosya kilitliyken (`EBUSY`, Windows/antivirüs) davranışı
+  test edilmedi — gerçek kilit senaryosu simüle edilemiyor (F-002'nin retention riskiyle aynı
+  sınıf, kabul edilmiş).
+- Kayıp/geri gelen proje klasörü için otomatik yeniden izleme yok (periyodik "yeniden dene" —
+  hiçbir AC istemiyor, kullanıcı projeyi kaldırıp yeniden eklemeli).
+- `features` SSE payload'ı yalnızca `{project_id}` taşıyor, mimarinin literal `cards` alanını
+  içermiyor (F-005'in dosya sahipliği `FeatureCard` türetimini kapsamıyor, F-007'nin işi).
+- `EventRecord.project_id` hâlâ hiç doldurulmuyor (AC4 bugün `project_name` ile karşılanıyor).
+
+**Sonraki adım**
+- qa-evaluator F-005'i değerlendirsin (feature notu `status: qa`).
+- Sıradaki feature: **F-006** (yazma kapısı) — Faz 1 sırası F-005 → F-006 → F-007, sonra G4-1
+  kilometre taşı. F-006 ADR-008 ekindeki Origin/Host artık riskini yeniden değerlendirmek zorunda.

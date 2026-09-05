@@ -1251,3 +1251,50 @@ olarak proje depolarını izliyor — yani senaryo günlük. Sözleşme kâğıt
 **CEO'nun kendi hatası (kayda geçsin):** Ayarlar/sekme kararı developer'ın turu **bittikten sonra**
 sözleşmenin sonuna eklendiği için gövdeye hiç yayılmadı ve yedi yerde çelişki bıraktı. Karar ya
 tur başlamadan verilmeli, ya da turun görev listesine "gövdeye yay" maddesi olarak konmalı.
+
+---
+
+## Mutasyon kanıtı (kod turu, 2026-09-05)
+
+Kod ve testler önceki ajan tarafından yazılmıştı ancak hiçbir mutasyon kanıtı diske işlenmemişti;
+bu turda §8'in 10 mutasyonunun tamamı sıfırdan koşuldu. Her mutasyon: uygula → izole test dosyasını
+çalıştır → KIRMIZI gözlemini kaydet → `Edit` ile birebir geri al → `git diff HEAD -- src/ tests/`
+boş olduğunu doğrula. Hiçbiri yeşil kalmadı (testi düzeltme gerektiren yok).
+
+| # | Mutasyon | Koşulan test | KIRMIZI kanıt (hata mesajının ilk satırı) |
+|---|---|---|---|
+| 1 | `debounce.ts` trailing reset kaldırıldı (`clearTimeout` çağrısı silindi) | `tests/server/watch/debounce.test.ts` | `AssertionError: expected "spy" to not be called at all, but actually been called 2 times` (`callback` 150ms'den önce zaten çağrılmış) |
+| 2 | `validate-path.ts`'te `docs/features` varlık kontrolü ters çevrildi (`!fs.existsSync` → `fs.existsSync`) | `tests/features/projects/server/validate-path.test.ts` | `AssertionError: expected false to be true` (vaka 3 dahil 8 vaka KIRMIZI) |
+| 3 | `projects-registry.ts` `add()`'teki `findByRealPath` tekilleştirme kontrolü kaldırıldı | `tests/server/store/projects-registry.test.ts` | `AssertionError: expected true to be false` (conflict testi ikinci `add()`'i `ok:true` döndürdü) |
+| 4 | `service.ts` `removeProject`'e kasıtlı `fs.unlinkSync(...F-001.md)` eklendi | `tests/integration/projects-api.test.ts` (AC2 manifest testi) | `AssertionError: expected 6 to be 7` (manifest dosya sayısı kaldırma sonrası eksik) |
+| 5 | `service.ts`'e gerçek kod olarak `fs.rmSync(target, {recursive:true,force:true})` içeren yeni bir fonksiyon eklendi | `tests/features/projects/no-delete-guard.test.ts` | `AssertionError: expected true to be false` (`service.ts` yasaklı alt dizge `rmSync` içeriyor) |
+| 6 | `service.ts`'te `onChange`'e `record.id` yerine sabit `'p_fixed'` geçirildi | `tests/integration/projects-api.test.ts` (AC4 izolasyon + AC5) | `AssertionError: expected 'p_fixed' to be 'p_31a24e'` (3 test KIRMIZI: AC4 izolasyon + AC5 restart) |
+| 7 | `index.ts`'teki genelleşmiş Origin kontrolü (`req.method !== 'GET'`) eski özel-duruma (`POST /api/events`) geri alındı | `tests/integration/projects-api.test.ts` (Host/Origin regresyon testi) | `AssertionError: expected 201 to be 403` (cross-origin `POST /api/projects` artık kabul ediliyor) |
+| 8 | `App.tsx`'te `hidden` özniteliği yerine koşullu JSX render (`{active==='timeline' && <TimelineScreen/>}`) kullanıldı | `tests/web/App.interaction.test.tsx` | `TestingLibraryElementError: Unable to find an element by: [data-testid="timeline-screen"]` (panel değişince gerçekten unmount oldu) |
+| 8b | `App.tsx`'te iki panelin `hidden={...}` ifadesi sabit `hidden={false}`'a değiştirildi | `tests/e2e/settings.spec.ts` (gerçek tarayıcı, `npm run build && npm start`) | `Expected: "none" / Received: "block"` (`#panel-settings`'in gerçek hesaplanmış `display`'i Zaman Çizelgesi aktifken hâlâ `block`) |
+| 9 | `service.ts`'in `addProject`'ine izlenen proje köküne `fs.writeFileSync(path.join(added.record.path, '.mc-cache'), 'debug')` eklendi | `tests/integration/projects-api.test.ts` (AC2 manifest testi) | `AssertionError: expected undefined to be defined` (manifest sonrası eklenen `.mc-cache` yolu beklenmeyen bir giriş olarak yakalandı) |
+| 10 | `index.ts`'teki `server.on('close', ...)` içinden `projectsService.stopAll()` çağrısı kaldırıldı | `tests/integration/projects-api.test.ts` (izleyici kapanış testi) | `AssertionError: expected 1 to be +0` (`server.close()` sonrası `getActiveWatcherCount()` hâlâ `1`) |
+
+**Sonuç:** 10/10 mutasyon KIRMIZI verdi, hiçbiri testi düzeltmeyi gerektirmedi. Her mutasyon
+sonrası `git diff HEAD -- src/ tests/` boş çıktı verdi (geri alma birebir).
+
+### chokidar'ın iki senaryosunun gerçek ölçümü (kod turu, aynı Windows makinesi)
+
+`tests/server/watch/project-watcher.test.ts`'teki iki gerçek-chokidar testi (satır 99, 123)
+çalıştırıldı — ikisi de **geçiyor** (`npx vitest run tests/server/watch/project-watcher.test.ts`
+→ 5/5 yeşil). Ayrıca sayısal kanıt için bağımsız, tek seferlik bir ölçüm betiği (repo köküne
+geçici olarak kopyalanıp çalıştırıldı, sonra silindi — hiçbir dosya kalıcı değil) aynı iki
+senaryoyu izole ölçtü:
+
+| Senaryo | `node:fs.watch` (ADR-012 taslağı, tur 1 QA ölçümü) | `chokidar@4.0.3` (bu turda ölçüldü) |
+|---|---|---|
+| Dizin sil + yeniden oluştur → `.md` yazımı sinyal üretiyor mu | **Hayır** — kalıcı ölüm, 0 olay | **Evet** — `onChange` yine 1 kez tetiklendi (`count === 2` toplamda, testteki ikinci yazım) |
+| Dizin silinip silinmiş kalırsa 1 sn'deki ham olay sayısı | 112.535 olay/sn | **0 olay/sn** (`rawEventCount < 500` eşiğinin çok altında) |
+| Dizin silinip silinmiş kalırsa 3 sn'deki ham olay sayısı | 342.548 olay | **0 olay** (3 sn boyunca hiç `all` olayı üretmedi) |
+| ~3 sn boyunca kullanıcı+sistem CPU | ~641 ms (~%21 çekirdek) | ~3.9 ms (ölçüm hatası payı içinde, ihmal edilebilir) |
+
+**Sonuç:** chokidar, `fs.watch`'ın ölçülen iki kusurunu (kalıcı ölüm + olay fırtınası) **miras
+almıyor** — tam tersine, dizin kaybolduğunda kendi iç tanıtıcısını temizce kapatıp yalnızca
+`readdirp`'in taramasını durduruyor gibi görünüyor (ham olay sayısı 0). §9'daki "en büyük risk"
+kapandı: `MC_WATCH_POLLING=1` geri dönüşüne bu iki senaryo için **gerek kalmadı** — anahtar
+mimarideki orijinal amacıyla (ağ sürücüsü/WSL) dokunulmadan duruyor.

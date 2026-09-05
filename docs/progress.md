@@ -1358,3 +1358,94 @@ yazıldı → **manifest testi 24 testle kırmızı verdi**, yani "ikinci savunm
   tam `tablist` deseni · F-005 AC1'in görsel kanıtı · dar genişlikte gezinme · `Atomics.wait`
   asenkrona çevirme · `safeYamlValue` sertleştirme (+ `OPERATION_PATTERNS` koşulu).
 - Sonra **G4-1 kilometre taşı** (kullanıcı onayı).
+
+---
+
+## 2026-09-06 — F-007 (Kanban panosu + frontmatter status yazma + çakışma/echo yönetimi) GEÇTİ adayı — mutasyon kanıtı + dokümantasyon tamamlandı
+
+**Ne yapıldı (bu turda)**
+Kod zaten tamdı (son kod commit'i `ed97bd1`, önceki üç ayrı oturumda tur sınırına takılıp
+diskteki gerçek duruma güvenerek devam edilmişti — bkz. aşağıdaki "Bu feature'ın geçmişi"). Bu
+turun tek işi, sözleşmenin (`docs/qa/F-007-contract.md` §8) daha önce yazılıp hiç çalıştırılmamış
+mutasyon planını gerçekten koşturmak, dokümanları kapatmaktı:
+- **14 mutasyon** uygulandı → ilgili test koşturuldu → KIRMIZI gözlendi → `git checkout --` ile
+  birebir geri alındı → `git diff HEAD -- src/` boş olduğu her seferinde doğrulandı. Brief'in
+  özellikle işaret ettiği 5 kalemin (echo/D42, çakışma/AC4, klavye/AC9, `safeYamlValue`, guard/D40)
+  tamamı dahil. Tam tablo `docs/qa/F-007-contract.md` "## Mutasyon kanıtı (kod turu, 2026-09-05)".
+- **Yeşil kalan bulundu ve düzeltildi (mutasyon değil, test):** `useFeatures.test.ts`'teki
+  `fetchReturning()` yardımcı fonksiyonu her mock çağrısında **aynı** nesne referansını
+  döndürüyordu; bu yüzden `mergeCards`'ın hash-bazlı birleştirmesi tamamen kaldırılsa bile "aynı
+  content_hash → aynı referans" testi sahte biçimde yeşil kalıyordu. Düzeltme: mock artık her
+  çağrıda kartların sığ kopyasını üretiyor (commit `ac40677`). Düzeltme sonrası gerçek koda karşı
+  5/5 stabil yeşil; mutasyona karşı ise flaky (aşağıya bakınız, kayıt olarak bırakıldı).
+- `safeYamlValue` 40/40 yeniden koşturulup doğrulandı (19 gösterge-karakterli + 21 tip-zorlayan,
+  gerçek `yaml.parse()` round-trip).
+- Stil çiti (`src/features/kanban/web` için `@source` + üç-kök ön-koşullu CSS testi) zaten mevcuttu,
+  ek iş gerekmedi — doğrulanıp raporlandı.
+- `docs/features/F-007-kanban.md`: 10 AC + 6 devralınan taahhüt kanıtla işaretlendi
+  (`status: contract` → `status: qa`).
+- `docs/qa/F-007-contract.md`'ye mutasyon kanıtı bölümü eklendi.
+
+**Bu feature'ın geçmişi (önceki oturumlardan devralınan, ilk kez burada özetleniyor)**
+- Sözleşme aşaması: 3 developer + 2 QA turu, 14 bulgu + 4 regresyon **tek satır kod yazılmadan**
+  kapandı (`docs/qa/F-007-contract.md` "CEO onayı — sözleşme KAPANDI"). En pahalı 4 yakalama: yeni
+  E2E dosyasının `testMatch`'e hiç girmemesi (3. tekrar, F-003/F-005'ten sonra) · echo ölçümünün
+  `MODE!=='production'` kapılı olup üretim E2E'sinde hiç çalışmaması · `safeYamlValue`'nun 40
+  değerin 10'unda (`true`/`null`/`~`/`12`/`0x1F`/`.inf`) round-trip'i kaybetmesi · dnd-kit'in canlı
+  bölgesinin `aria-live="assertive"` olup Türkçe `polite` iddiasını yanlışlaması.
+- **Kod turu üç ayrı oturumda tur sınırına takıldı** (bu ortamda alt agent'lar SendMessage
+  kullanamıyor, devam ettirilemiyor — CLAUDE.md'nin kayıtlı dersi). Her kesintide yeni oturum
+  diskteki gerçek duruma güvenerek devam etti; CEO diff'leri elle doğruladı.
+- Bu süreçte **vitest worker fork kararsızlığı ikinci kez gözlemlendi**: bir koşuda 47/48 dosya
+  kırmızı, hemen tekrar koşulduğunda 48/48 yeşil — gerçek bir kod hatası değil, ortam kararsızlığı.
+  Kayıt: kırmızıya "alışmak" tehlikeli, her kırmızı sonucu en az bir kez tekrar koşup doğrulamak
+  gerekiyor (bu turda da mutasyon 5'in RED/GREEN flake'i bu sınıfın bir örneği, ayrıca not edildi).
+- Bir önceki ajan mutasyon testi ortasında kesildi ve `useFeatures.ts`'teki hash-bazlı birleştirme
+  satırını **kaldırılmış** hâlde bıraktı (yarım kalan mutasyon, geri alınmamış); **CEO bunu
+  diskte tespit edip geri aldı ve doğruladı** — bu turun başında bu satırın gerçekten yerinde
+  olduğu ayrıca teyit edildi.
+- 5 E2E hatası (18 passed/5 failed → 23 passed) önceki turda kapatıldı: AC6/AC9 sürükleme/klavye
+  yarışları (worker'ların paralel çalışması ürün dışı gürültü üretiyordu, seri hâle getirildi),
+  D42 echo ölçümünün tabanı, `settings.spec.ts` regresyonu, `shell.spec.ts`'in artık gerçek
+  `tablist`e göre güncellenmiş assert'i.
+
+**Nasıl doğrulandı (bu turda yeniden koşturuldu, hepsi 0)**
+- `npm run verify` = 0 → **48 dosya / 728 test** (typecheck + lint + test + build).
+- `npm run e2e` = 0 → **23 passed** (gerçek Chromium, tek worker).
+- `npm run e2e:dev` = 0 → **1 passed** (`dev-shell.spec.ts`, `playwright.dev.config.ts`).
+- 14 mutasyonun hepsi: uygula → hedef test dosyası/`-t` filtresiyle izole koştur → KIRMIZI
+  gözlemi kaydet → `git checkout -- <dosya>` → `git status --short` boş doğrula. Guard mutasyonu
+  (D40) için geçici `tests/e2e/zzz-qa-probe.spec.ts` eklendi, KIRMIZI gözlendi, hemen silindi.
+- Süreç/port temizliği: `tasklist` içinde `node.exe` yok; 7333/7334/7335/7433/7434 yalnızca
+  `TIME_WAIT` (kapanmış) soketler, aktif dinleyici yok.
+- `git diff HEAD` bu turun sonunda yalnızca beklenen dosyaları gösteriyor (bkz. commit listesi).
+
+**Commit'ler (bu turda)**
+- `ac40677` — test(kanban): echo referans-eşitliği fixture'ı güçlendirildi (mutasyon kanıtının
+  kendisini doğru ölçmesi için; ürün kodunda değişiklik yok).
+- Bu turun doküman commit'i (bu mesajdan sonra): `docs/qa/F-007-contract.md` mutasyon kanıtı
+  bölümü + `docs/features/F-007-kanban.md` AC/taahhüt işaretleme + `status: qa` + bu progress.md
+  kaydı.
+
+**Kalan risk**
+- **Mutasyon 5'in (D42/echo) kendisi flaky**: düzeltilmiş test gerçek koda karşı 5/5 stabil
+  yeşil, ama mutasyonlu koda karşı 3 koşudan 2'si kırmızı/1'i yanlışlıkla yeşil kaldı —
+  `rerender()`'ın tetiklediği ikinci fetch'in React state'ine yansıması ile `waitFor(() =>
+  fetchImpl çağrı sayısı === 2)` koşulunun karşılanma anı arasında bir yarış var. Gerçek üretim
+  kodu için risk yok (stabil); mutasyon kanıtının kendisinin tam determinist hale getirilmesi bu
+  turun kapsamı dışında bırakıldı (zaten çoğunlukla yakalıyor, ek düzeltme kapsam genişletmesi
+  olurdu).
+- CEO ödevleri hâlâ açık (F-007 sözleşmesi §9, kod turunu etkilemiyor, dokümantasyon senkronu):
+  (1) `docs/03-ux.md:443`'ün klavye akışını gerçek tasarıma göre güncellemesi (yalnızca `Boşluk`
+  ile sürükleme başlatma), (2) `docs/02-architecture.md` §6.1/§7.2 adım 9/§7.3'ün F-007'nin
+  gerçek (daha basit) tasarımına göre bir ADR ile güncellenmesi, (3) iki yeni hata metninin
+  Türkçe metin sözlüğüne eklenmesi.
+- `OPERATION_PATTERNS`'ın 3./6. adımlarının bağımsız kapsaması hâlâ sıfır (F-006'dan miras,
+  F-007'de tetiklenmedi, grep ile doğrulandı) — F-008'e devrediliyor (feature notu madde 6).
+- `archiveDenial` hâlâ async değil (bilinçli asimetri, §3 madde 5) — F-008 kendi turunda bir
+  handler'a bağlamadan önce bunu denetlemeli (feature notunun kendi taahhüdü).
+
+**Sonraki adım**
+- qa-evaluator F-007'yi değerlendirsin (feature notu `status: qa`).
+- GEÇTİ ise **G4-1 kilometre taşı** (Faz 1 tamamlandı, kullanıcı onayı) ve/veya Faz 2'ye geçiş
+  kararı kullanıcıdan istenmeli.

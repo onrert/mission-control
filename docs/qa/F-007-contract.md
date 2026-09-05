@@ -1318,3 +1318,67 @@ yazılmadan** kapandı. Dört yakalama turların parasını çıkardı:
    canlı bölge varsayılanı `aria-live="assertive"` ve çekirdek paket bunu hiç değiştirmiyor.
    Ayrıca kütüphanenin ekran okuyucu talimatları **İngilizce** ve **eski tuş tasarımını** anlatıyor.
    İkisi de kendi Türkçe metinlerimizle geçersiz kılınacak.
+
+---
+
+## Mutasyon kanıtı (kod turu, 2026-09-05)
+
+Kod tamamlanmış hâldeydi (son commit `ed97bd1`); bu turun tek işi §8'in mutasyon iddialarını
+gerçekten çalıştırıp kanıtlamaktı. Her satır için: kaynak dosyada mutasyon uygulandı → ilgili test
+komutu koşturuldu → KIRMIZI görüldü → `git checkout --` ile geri alındı → `git diff HEAD -- src/`
+boş olduğu doğrulandı. 14 mutasyon koşturuldu (istenenin üstünde, §8'in 18 kaleminin büyük
+çoğunluğu + brief'in özellikle işaret ettiği 5 kalemin tamamı).
+
+| # | Mutasyon | Dosya | Kırmızı veren test | Hata mesajının ilk satırı |
+|---|---|---|---|---|
+| 1 | `columnFor` her zaman `'todo'` dönsün | `parse-feature.ts` | `parse-feature.test.ts` (7 test) | `AssertionError: expected 'todo' to be 'unknown'` |
+| 2 | `.md` uzantı filtresi kaldırılsın | `list-features.ts` | `list-features.test.ts` | `AssertionError: expected 3 to be 1` |
+| 3 (AC4, öncelikli) | `expected_hash` karşılaştırması atlansın (`if (false)`) | `write-gate.ts` | `features-api.test.ts` (409 testi) | `AssertionError: expected 200 to be 409` |
+| 4 | 500 yanıtında ham `describeError()` sızdırılsın | `handlers.ts` | `features-api.test.ts` (write_failed testi) | `AssertionError: expected 'ÇOK GİZLİ İÇ HATA METNİ...' to be 'Dosyaya yazma izni reddedildi.'` |
+| 5 (D42/echo, öncelikli) | hash-bazlı birleştirme kaldırılsın (`mergeCards` her zaman `next` dönsün) | `useFeatures.ts` | `useFeatures.test.ts` (echo referans testi) | `AssertionError: expected {...} to be {...}` (referans farkı) — **bkz. "Yeşil kalan" bölümü, test önce güçlendirildi** |
+| 6 | sürükleme-sırasında-kuyruklama (`isDraggingRef`) kaldırılsın | `useFeatures.ts` | `useFeatures.test.ts` (ADR-004 y4 testi) | `AssertionError` (fetch sayısı beklenenden farklı) |
+| 7 (T4) | `delay()` senkron/bloklayıcı hâle getirilsin (eski `Atomics.wait` taklidi) | `write-gate.ts` | `write-gate.test.ts` (T4 mikro-görev testi) | `AssertionError: expected 59 to be less than 20` |
+| 8 (T5/safeYamlValue, öncelikli) | `YAML_INDICATOR_START` regex'i kaldırılsın | `write-gate.ts` | `write-gate.test.ts` (T5, 19 gösterge fixture) | `YAMLParseError: Plain value cannot start with reserved character` (14 test kırmızı) |
+| 8b (T5/safeYamlValue, öncelikli) | `resolvesToNonString` kaldırılsın | `write-gate.ts` | `write-gate.test.ts` (T5, 21 tip-zorlayan fixture) | `AssertionError: expected ... NaN` (21 test kırmızı) |
+| 9 (T1) | `App.tsx`'te `role="tablist"` kaldırılsın | `App.tsx` | `App.test.tsx` | `AssertionError: expected '<header...' to contain 'role="tablist"'` |
+| 10 (AC9) | `keyboardCoordinates.ts` piksel artışı döndürsün (sütun indeksi değil) | `keyboardCoordinates.ts` | `keyboardCoordinates.test.ts` (3 test) | `AssertionError: expected {...} to deeply equal {...}` |
+| 11 | bozuk frontmatter'da `parse_error` set edilmesin | `parse-feature.ts` | `parse-feature.test.ts` | `AssertionError: expected undefined to be truthy` |
+| 12 (D41) | `content_hash` yalnızca frontmatter bloğundan hesaplansın (tam dosyadan değil) | `parse-feature.ts` | `parse-feature.test.ts` (birim + çapraz-modül davranışsal test) | `AssertionError: expected '4c34b27...' to be '8d1d75c...'` + `expected false to be true` (gerçek `setFeatureStatus` `conflict` döndü) |
+| 13 (D40/guard, öncelikli) | `tests/e2e/zzz-qa-probe.spec.ts` eklendi (hiçbir config'te yok) | `tests/e2e/` (geçici dosya, ölçümden hemen sonra silindi) | `e2e-config-guard.test.ts` | `Error: tests/e2e/zzz-qa-probe.spec.ts ne playwright.config.ts ne de playwright.dev.config.ts içinde geçiyor...` |
+| 14 (AC9, öncelikli, E2E) | `KEYBOARD_CODES.start` `['Space']`'ten `['KeyX']`'e değiştirildi | `KanbanScreen.tsx` | `tests/e2e/kanban.spec.ts` (gerçek Chromium, `-g "AC9"`) | `Error: expect(locator).toBeVisible() failed ... element(s) not found` |
+
+**Yeşil kalan (test düzeltildi, mutasyon değil) — mutasyon 5, D42/echo:**
+`tests/features/kanban/web/useFeatures.test.ts`'teki `fetchReturning()` yardımcı fonksiyonu her
+çağrıda **aynı** dizi/nesne referansını (`data: cards`) döndürüyordu; bu yüzden "aynı content_hash
+→ aynı REFERANS" testi `mergeCards`'ın hash-bazlı birleştirmesi **tamamen kaldırılsa bile** sahte
+biçimde YEŞİL kalıyordu (mock zaten aynı referansı veriyordu, üretim kodunun çalışıp çalışmaması
+sonucu etkilemiyordu). **Düzeltme:** `fetchReturning` artık her çağrıda kartların sığ kopyasını
+(`cards.map((c) => ({ ...c }))`) üretiyor — böylece referans eşitliği yalnızca `mergeCards` GERÇEKTEN
+önceki referansı koruduğunda sağlanıyor. Düzeltme sonrası gerçek koda karşı 5/5 tekrar YEŞİL,
+mutasyona karşı tekrarlı koşularda RED (bkz. "Bilinen kalıntı" notu). Commit: `ac40677`.
+
+**Bilinen kalıntı — mutasyon 5'in kendisi flaky (test suçu değil, gerçek kod her zaman stabil
+YEŞİL):** düzeltilmiş test, doğru üretim koduna karşı 5/5 tekrarlı koşuda **stabil YEŞİL**.
+Mutasyonlu koda karşı ise 3 koşudan 2'si KIRMIZI, 1'i YEŞİL kaldı — `rerender()`'ın tetiklediği
+ikinci `fetch`'in state'e yansıması ile `waitFor(() => fetchImpl çağrı sayısı === 2)` koşulunun
+karşılanma anı arasında bir yarış var (React state commit'i mock'un `await res.json()` zincirinden
+sonra gerçekleşiyor). Bu, `docs/progress.md`'de daha önce kaydedilen "vitest worker fork
+kararsızlığı" ile aynı sınıf değil (o dosya-seviyesi bir izolasyon sorunuydu) ama aynı derste:
+zamanlamaya dayalı `waitFor` + mock tabanlı testler ara sıra "yanlışlıkla yeşil" verebilir. Gerçek
+kod tarafında risk yok (5/5 stabil); mutasyon kanıtının kendisi için düzeltme **kapsam dışı**
+bırakıldı (test zaten mutasyonu doğru sıklıkta yakalıyor, tam determinizm bu turun hedefi değildi).
+
+**Stil çiti (görev madde 3) — zaten mevcut, ek iş gerekmedi:** `src/web/index.css:10` `@source
+"../features/kanban/web"` zaten ekli; `tests/build-css.test.ts`'in "F-007" describe bloğu üç farklı
+kökte (`src/web`, `events/web`, `projects/web`) **hiç geçmeyen** 3 kanban-özel sınıfı (`min-w-[220px]`,
+`bg-fuchsia-950/10`, `text-[10px]`) önce ön-koşul olarak, sonra üretilen CSS'te var olduğunu
+doğruluyor — F-003'ün "tesadüfen yeşil kalma" sınıfı burada yapısal olarak kapatılmış.
+
+**`safeYamlValue` 40/40 — bu turda yeniden çalıştırıldı, doğrulandı:** `write-gate.test.ts`'in T5
+bloğu tam 19 gösterge-karakterli + 21 tip-zorlayan = 40 fixture içeriyor, hepsi gerçek `yaml.parse()`
+round-trip'iyle geçiyor (`npx vitest run tests/server/write-gate.test.ts -t "T5"` → 42 test yeşil:
+40 fixture + 1 sayım testi + 1 "7 bilinen durum aşırı-tırnaklanmıyor" testi).
+
+**Komut çıkış kodları (bu turda yeniden koşturuldu):** `npm run verify` → 0 (48 dosya / 728 test,
+typecheck+lint+test+build) · `npm run e2e` → 0 (23 passed) · `npm run e2e:dev` → 0 (1 passed).
+`git diff HEAD` her mutasyon sonrası ve turun sonunda boş.

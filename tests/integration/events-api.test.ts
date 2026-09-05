@@ -396,6 +396,20 @@ describe('N-1 (F-003 CEO kararı C): 503 dönen olay GET /api/events üzerinde h
     const finalBody = (await getFinal.json()) as { data: Array<{ seq: number }> }
     expect(finalBody.data.map((e) => e.seq)).toEqual([1])
   })
+
+  it('POST 202 yanıtı çözülür çözülmez ring güncel olur (mutasyon 11 hedefi — yarış yok)', async () => {
+    const postRes = await fetch(`${handle.baseUrl}/api/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hook_event_name: 'PreToolUse' }),
+    })
+    expect(postRes.status).toBe(202)
+    // Aradaki `await` dışında hiçbir bekleme yok — `store.append()`'in döndürdüğü promise
+    // çözülür çözülmez ring'in zaten güncel olması gerekiyor (sözleşme §3 madde 8/§7).
+    const getRes = await fetch(`${handle.baseUrl}/api/events`)
+    const body = (await getRes.json()) as { data: Array<{ seq: number }> }
+    expect(body.data.map((e) => e.seq)).toEqual([0])
+  })
 })
 
 describe('AC-5: sunucu yeniden başlatılınca en az 100 olay geri döner', () => {

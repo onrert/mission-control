@@ -70,17 +70,31 @@ describe('App.interaction — TimelineScreen koşulsuz mount (YENİ-1/Bulgu 4/12
     }
   })
 
-  it('TimelineScreen içinde fırlayan bir hata yalnızca o ekranı etkiler, sekme çubuğu/rozet etkilenmez', async () => {
-    // Bu test doğrudan ScreenErrorBoundary.test.tsx'te izole edilmiş biçimde ele alınıyor;
-    // burada yalnızca App.tsx'in gerçekten TimelineScreen'i ScreenErrorBoundary ile sardığını
-    // (statik olarak) doğruluyoruz.
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const appSrc = fs.readFileSync(
-      path.join(__dirname, '..', '..', 'src', 'web', 'App.tsx'),
-      'utf8'
-    )
-    expect(appSrc).toContain('ScreenErrorBoundary')
-    expect(appSrc).toContain('TimelineScreen')
+  it('TimelineScreen içinde fırlayan bir hata yalnızca o ekranı etkiler, sekme çubuğu/rozet etkilenmez (mutasyon 13 hedefi)', async () => {
+    // Davranışsal test: gerçek TimelineScreen render sırasında fırlayacak şekilde mock'lanır;
+    // App.tsx onu ScreenErrorBoundary ile sarmıyorsa hata App'in tamamını düşürür ve sekme
+    // çubuğu/rozet de DOM'dan kaybolur — yalnızca dize arama (import satırı yeterli olurdu,
+    // kullanım kaldırılsa bile gerçek regresyonu yakalamazdı) yerine gerçek davranış ölçülür.
+    vi.resetModules()
+    vi.doMock('../../src/features/events/web/TimelineScreen', () => ({
+      TimelineScreen: () => {
+        throw new Error('boom (mutasyon 13 testi)')
+      },
+    }))
+    const restore = stubGlobals()
+    try {
+      const { default: AppWithThrowingScreen } = await import('../../src/web/App')
+      render(<AppWithThrowingScreen />)
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(screen.getByText('Bu ekran yüklenemedi.')).toBeTruthy()
+      expect(screen.getByTestId('app-title').textContent).toBe('MISSION CONTROL')
+      expect(screen.getByTestId('connection-badge-shell')).toBeTruthy()
+    } finally {
+      restore()
+      vi.doUnmock('../../src/features/events/web/TimelineScreen')
+      vi.resetModules()
+    }
   })
 })

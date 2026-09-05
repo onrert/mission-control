@@ -615,3 +615,39 @@ describe('sistemik hata sınırı: withDispatchErrorBoundary (D20)', () => {
     expect(endCalls).toBe(1)
   })
 })
+
+// QA düzeltme turu 1 doğrulaması ÖNEMLİ-1: yukarıdaki birim testleri `withDispatchErrorBoundary`'nin
+// KENDİ mantığını çitliyor ama `createServer`'ın gerçek dağıtıcısına BAĞLI olduğunu hiç ölçmüyordu
+// (`index.ts:288`'deki sarmalayıcı kaldırılınca — M1 mutasyonu — tüm süit 430/430 yeşil kalıyordu).
+// Bu test, statik metin taraması DEĞİL: gerçek `createServer()` + gerçek HTTP isteği kullanır.
+// Üretim kodu hiç değişmez — `handleHealth`'in senkron olarak çağırdığı gerçek
+// `projectsService.getActiveWatcherCount()` metodu, dağıtıcının kendi çağrı yığınında fırlayacak
+// şekilde geçici olarak değiştirilir (test sonunda birebir geri alınır).
+describe('sistemik hata sınırı: createServer gerçekten sarmalanmış dağıtıcıyı kullanıyor (D20/ÖNEMLİ-1 bağlantı kanıtı)', () => {
+  it('gerçek HTTP isteğinde dağıtıcı yığınında fırlayan senkron hata 500 internal_error döner, süreç yaşar', async () => {
+    const dataDir = createTempDataDir()
+    const handle = await startServer(dataDir)
+    const original = handle.server.projectsService.getActiveWatcherCount
+    try {
+      handle.server.projectsService.getActiveWatcherCount = () => {
+        throw new Error('qa-probe-sync')
+      }
+
+      const res = await fetch(`${handle.baseUrl}/api/health`)
+      expect(res.status).toBe(500)
+      const body = (await res.json()) as { success: boolean; error: { code: string } }
+      expect(body.success).toBe(false)
+      expect(body.error.code).toBe('internal_error')
+
+      // Süreç yaşıyor mu? Sınır olmadan (M1 mutasyonu) bu senkron throw süreci
+      // `uncaughtException` ile düşürürdü — bu istekten sonraki hiçbir istek yanıt alamazdı.
+      handle.server.projectsService.getActiveWatcherCount = original
+      const health2 = await fetch(`${handle.baseUrl}/api/health`)
+      expect(health2.status).toBe(200)
+    } finally {
+      handle.server.projectsService.getActiveWatcherCount = original
+      await stopServer(handle)
+      removeTempDataDir(dataDir)
+    }
+  })
+})

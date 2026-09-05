@@ -1298,3 +1298,45 @@ almıyor** — tam tersine, dizin kaybolduğunda kendi iç tanıtıcısını tem
 `readdirp`'in taramasını durduruyor gibi görünüyor (ham olay sayısı 0). §9'daki "en büyük risk"
 kapandı: `MC_WATCH_POLLING=1` geri dönüşüne bu iki senaryo için **gerek kalmadı** — anahtar
 mimarideki orijinal amacıyla (ağ sürücüsü/WSL) dokunulmadan duruyor.
+
+---
+
+## Düzeltme turu 2 (2026-09-05) — plan (D25-D28, `docs/qa/F-005-fix1-2026-09-05.md` KOŞULLU GEÇTİ)
+
+QA'nın düzeltme turu 1 doğrulaması KOŞULLU GEÇTİ verdi: 2 ÖNEMLİ açık (ÖNEMLİ-1/ÖNEMLİ-2, CEO
+kararlarında D25/D26), + NOT-4 (D27) ve iki NOT (D28) isteğe bağlı. Bu tur SADECE bu dört maddeyi
+kapatır; D20-D24 ve önceki turların onaylanan bölümleri yeniden açılmaz.
+
+**D25 (ÖNEMLİ-1) — ne yapılacak:** `src/server/index.ts`'e üretim kodu DEĞİŞTİRİLMEZ (davranış
+zaten doğru, QA'nın canlı probu bunu kanıtladı). `tests/integration/projects-api.test.ts`'e gerçek
+`createServer()` + gerçek HTTP isteği kullanan yeni bir test eklenir: `handleHealth`'in senkron
+çağırdığı gerçek `projectsService.getActiveWatcherCount()` metodu geçici olarak (yalnızca test
+içinde, `finally`'de birebir geri alınır) fırlayacak şekilde değiştirilir, `/api/health`'e gerçek
+`fetch` yapılır. **Doğrulama:** normal koşuda 500 + `internal_error`, sonra (metot geri alınınca)
+200; `index.ts:288`'deki `withDispatchErrorBoundary(` kaldırılırsa (M1) bu test dosyası artık
+YEŞİL KALAMAZ (senkron throw dağıtıcının çağrı yığınında sınırsız kalır → süreç/işçi çöker →
+kırmızı/hata olarak raporlanır) — mutasyon uygulanıp gözlemlenip geri alınacak.
+
+**D26 (ÖNEMLİ-2) — ne yapılacak:** `useProjects.ts`'in `remove()`'u `add()` ile aynı desene
+çevrilir: `{ok:true}` / `{ok:false,message}` döner (yanlış "SSE senkronize eder" yorumu silinir).
+`ProjectRow.tsx` sonucu yüzeye çıkarır: `role="alert"` + `docs/03-ux.md` ekran-3 metni ("Liste
+kaydedilemedi, tekrar deneyin."), `AddProjectForm`'daki desenle tutarlı. **Doğrulama:**
+`useProjects.test.ts`'e 500 vakası (dönen değer + item listede kalır), `SettingsScreen.test.tsx`'e
+görünürlük assert'i (alert metni + satır kalır). **Mutasyon:** `if (!res.ok) return`'e geri
+dönülür → her iki yeni test KIRMIZI vermeli.
+
+**D27 (NOT-4) — ne yapılacak:** `service.ts`'teki üç çağrı noktası (`addProject`/`removeProject`
+sonrası broadcast + `startWatchingIfPossible`'ın debounce callback'indeki `hub.broadcast`)
+`safelyNotify()` (küçük, paylaşılan try/catch+log yardımcısı) ile sarılır — yazma zaten başarılı
+olduktan sonraki bu yan etkiler süreci düşürmemeli. **Doğrulama:** yeni `tests/features/projects/
+server/service.test.ts` — sahte, her zaman fırlayan bir `hub` ile hem senkron (add/remove sonrası)
+hem asenkron (gerçek dosya değişikliği + debounce) yolun süreci düşürmediği/sonucu bozmadığı
+ölçülür.
+
+**D28 (NOT'lar) — ne yapılacak:** `App.tsx`'teki `style={{minWidth:0}}` + onu haklı çıkaran
+yanlış yorum kaldırılır (ölçüm zaten bu satırın gereksiz olduğunu kanıtlamıştı). `no-delete-guard.
+test.ts`'teki `projects-registry.ts` istisnası dosya düzeyinden dizge düzeyine daraltılır: yalnızca
+tam `unlinkSync(tmpPath)` çağrısına izin verilir, başka herhangi bir `unlinkSync(...)` guard'ı
+KIRMIZI vermeye zorlar.
+
+**Kapsam dışı:** F-006, F-007, Faz 2, hook kurulumu, D20-D24'ün yeniden açılması.

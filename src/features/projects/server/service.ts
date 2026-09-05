@@ -64,6 +64,23 @@ function storageUnavailableError(err: unknown): {
 }
 
 /**
+ * QA düzeltme turu 2 (D27/NOT-4) — kayıt defteri yazımı zaten BAŞARILI olduktan SONRA çalışan
+ * yan etkiler (izleyici başlatma/durdurma, SSE `broadcast`) `withDispatchErrorBoundary`'nin
+ * kapsamadığı bir asenkron yığında çalışır (`req.on('end')` içi ya da chokidar'ın debounce
+ * zamanlayıcısı — `debounce.ts`'te try/catch yok). Buradan fırlayan bir hata (ör. kapanmış bir
+ * SSE soketine `res.write`) yazma işleminin sonucunu DEĞİŞTİRMEMELİ ve süreci düşürmemeli;
+ * kaynağında yakalanıp loglanır.
+ */
+function safelyNotify(action: string, fn: () => void): void {
+  try {
+    fn()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    process.stderr.write(`Uyarı: ${action} başarısız oldu (süreç etkilenmedi): ${message}\n`)
+  }
+}
+
+/**
  * Registry + watcher orkestrasyonu + hub broadcast (sözleşme §2.1). Açılışta var olan kayıtlar
  * için `docs/features` varsa otomatik yeniden izlemeye başlar (AC5).
  */
@@ -78,7 +95,9 @@ export function createProjectsService(dataDir: string, hub: SseHub): ProjectsSer
     const featuresDir = path.join(record.path, 'docs', 'features')
     if (!fs.existsSync(featuresDir)) return
     const watcher = watchProjectFeatures(featuresDir, () => {
-      hub.broadcast('features', { project_id: record.id })
+      safelyNotify(`proje değişikliği SSE yayını (${record.id})`, () =>
+        hub.broadcast('features', { project_id: record.id })
+      )
     })
     watchers.set(record.id, watcher)
   }
@@ -121,8 +140,12 @@ export function createProjectsService(dataDir: string, hub: SseHub): ProjectsSer
     if (!added.ok) {
       return { ok: false, code: 'conflict', message: 'Bu proje zaten izleniyor.' }
     }
-    startWatchingIfPossible(added.record)
-    hub.broadcast('projects', currentList())
+    // D27/NOT-4: yazma zaten başarılı — izleme başlatma/SSE yayını burada fırlarsa çağıran
+    // yine de `ok:true` alır (bkz. `safelyNotify` dokümantasyonu).
+    safelyNotify('proje eklendi bildirimi (izleme başlatma/SSE yayını)', () => {
+      startWatchingIfPossible(added.record)
+      hub.broadcast('projects', currentList())
+    })
     return { ok: true, item: toProjectListItem(added.record) }
   }
 
@@ -134,12 +157,16 @@ export function createProjectsService(dataDir: string, hub: SseHub): ProjectsSer
       return storageUnavailableError(err)
     }
     if (!removed) return { ok: true, removed: false }
-    const watcher = watchers.get(id)
-    if (watcher) {
-      watcher.stop()
-      watchers.delete(id)
-    }
-    hub.broadcast('projects', currentList())
+    // D27/NOT-4: yazma zaten başarılı — izleme durdurma/SSE yayını burada fırlarsa çağıran yine
+    // de `ok:true` alır (bkz. `safelyNotify` dokümantasyonu).
+    safelyNotify('proje kaldırıldı bildirimi (izleme durdurma/SSE yayını)', () => {
+      const watcher = watchers.get(id)
+      if (watcher) {
+        watcher.stop()
+        watchers.delete(id)
+      }
+      hub.broadcast('projects', currentList())
+    })
     return { ok: true, removed: true }
   }
 

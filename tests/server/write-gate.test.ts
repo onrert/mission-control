@@ -199,6 +199,16 @@ describe('setFeatureStatus — yol beyaz listesi', () => {
       renameSpy.mockRestore()
     }
   }, 10_000)
+
+  // Mutasyon 12 (sözleşme §8) — `mkdirSync`'in `try` içinde olduğunu, hedef dizin bir DOSYAYLA
+  // işgal edilmişken (`ENOTDIR`) bile modülün asla fırlamadığını kanıtlar.
+  it('hedef dizin (docs/approvals) bir dosyayla işgal edilmişse fırlamaz, write_failed döner (ENOTDIR)', () => {
+    fs.mkdirSync(path.join(root, 'docs'), { recursive: true })
+    fs.writeFileSync(path.join(root, 'docs', 'approvals'), 'ben bir dosyayım')
+    expect(() => writeGateApproval(root, 'G2', 'x')).not.toThrow()
+    const result = writeGateApproval(root, 'G2', 'x')
+    expect(result).toMatchObject({ ok: false, code: 'write_failed' })
+  })
 })
 
 describe('setFeatureStatus — bayt koruma (golden fixtures)', () => {

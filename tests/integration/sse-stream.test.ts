@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { once } from 'node:events'
 import fs from 'node:fs'
 import path from 'node:path'
+import http from 'node:http'
 import { createServer, type ServerWithHub } from '../../src/server/index'
 import { createTempDataDir, removeTempDataDir } from '../helpers/temp-data-dir'
 import { connectSse, type SseClient } from '../helpers/sse-client'
@@ -217,4 +218,52 @@ describe('GET /api/stream — SSE entegrasyonu', () => {
     // yeniden başlat ki afterEach kendi stopServer'ını çağırabilsin
     handle = await startServer(dataDir)
   })
+
+  // QA düzeltme turu 1, D13 (Ö3): ADR-008 loopback Host allowlist'i `/api/stream`'i de
+  // kapsıyor (index.ts'te route dispatch'ten önce, `handleStream`'den miras) ama bunun hiç
+  // regresyon testi yoktu — M6 mutasyonu (`/api/stream`'i kontrolden muaf tutmak) 314/314
+  // yeşil bırakmıştı. `fetch`/undici Host başlığını istemci tarafında yönetir ve
+  // geçersiz kılınmasına izin vermez, bu yüzden ham `node:http` soketi kullanılır
+  // (bkz. `tests/server/health.test.ts` aynı desen).
+  it('D13: yabancı Host başlığıyla GET /api/stream 403 forbidden_origin döner (ADR-008)', async () => {
+    const { status, body } = await requestWithHost(handle.port, '/api/stream', 'evil.com')
+    expect(status).toBe(403)
+    const parsed = JSON.parse(body) as { success: boolean; error: { code: string } }
+    expect(parsed.success).toBe(false)
+    expect(parsed.error.code).toBe('forbidden_origin')
+  })
+
+  it('D13 regresyon: geçerli Host başlığıyla GET /api/stream normal şekilde hello çerçevesi gönderir', async () => {
+    const client = await connectSse(handle.port, { Host: `127.0.0.1:${handle.port}` })
+    const hello = await client.waitForFrame((f) => f.event === 'hello')
+    expect(hello.event).toBe('hello')
+    client.close()
+  })
 })
+
+function requestWithHost(
+  port: number,
+  targetPath: string,
+  hostHeader: string
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port,
+        path: targetPath,
+        method: 'GET',
+        headers: { Host: hostHeader, accept: 'text/event-stream' },
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (c: Buffer) => chunks.push(c))
+        res.on('end', () => {
+          resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') })
+        })
+      }
+    )
+    req.on('error', reject)
+    req.end()
+  })
+}

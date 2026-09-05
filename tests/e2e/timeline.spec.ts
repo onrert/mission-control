@@ -1,9 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
 import { spawn, type ChildProcess } from 'node:child_process'
+import { once } from 'node:events'
 import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createTempDataDir, removeTempDataDir } from '../helpers/temp-data-dir'
+import { createServer } from '../../src/server/index'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.join(__dirname, '..', '..')
@@ -356,13 +358,45 @@ test.describe('AC5 - bağlantı kopması ve toparlanma', () => {
     // yeniden dener. 30 sn'lik gerçek bir tarayıcı probu ile doğrulandı (Chromium, bu makinede):
     // `TerminateProcess` sonrası `readyState` HİÇBİR ZAMAN `CLOSED`'a düşmüyor, her ~5 sn'de bir
     // `CONNECTING` ile `error` ateşleniyor. Bu yüzden bu senaryonun ulaşabileceği tek durum
-    // "Yeniden bağlanıyor"dur — sözleşmenin bu satırdaki "Bağlantı koptu" beklentisi D1'in kendi
-    // mekanizmasıyla çelişiyordu (bkz. docs/progress.md F-003 bölümü, CEO/QA'ya bildirildi).
+    // "Yeniden bağlanıyor"dur. QA düzeltme turu 1 (D15/Ö2): sözleşmenin bu satırdaki "Bağlantı
+    // koptu" beklentisi yalnızca GEÇİCİ kopma (bu senaryo) için hiç geçerli değildi — CEO kararı
+    // D15 semantiği netleştirdi: geçici kopma → "Yeniden bağlanıyor" (burada), kalıcı başarısızlık
+    // (WHATWG "fail the connection") → "Bağlantı koptu" (ayrı bir testte, aşağıdaki
+    // "AC5 (kalıcı hata)" describe bloğu, gerçek bir 2xx-dışı yanıtla kanıtlanıyor).
     await expect(shellBadge).toContainText('Yeniden bağlanıyor', { timeout: 10000 })
+
+    // QA düzeltme turu 1 (Ö4): kesinti SIRASINDA gerçekten bir olay üretilir — aynı
+    // `MC_DATA_DIR`'e yazan geçici (ephemeral) bir sunucu örneğiyle. Böylece aşağıdaki
+    // "kayıpsız" iddiası istemcinin BELLEK state'inden değil, sunucunun reconnect'te
+    // `Last-Event-ID` ile GERÇEKTEN replay ettiği bir olaydan kanıtlanır (öncesinde kesinti
+    // sırasında hiç olay üretilmiyordu, ring `{from:0,to:0}` kalıyordu, replay boş dönüyordu).
+    const markerDuring = uniqueMarker('ac5-during-outage')
+    const ephemeral = createServer(0, tempDir)
+    await once(ephemeral, 'listening')
+    const ephemeralAddress = ephemeral.address()
+    if (ephemeralAddress === null || typeof ephemeralAddress === 'string') {
+      throw new Error('ephemeral sunucu için beklenmeyen adres türü')
+    }
+    await fetch(`http://127.0.0.1:${ephemeralAddress.port}/api/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        hook_event_name: 'PreToolUse',
+        project_path: 'C:\\dev\\apps\\ac5-proje',
+        tool_name: 'Bash',
+        tool_input: { command: markerDuring },
+      }),
+    })
+    ephemeral.close()
+    await once(ephemeral, 'close')
 
     child = await spawnServer(tempDir)
 
     await expect(shellBadge).toContainText('Bağlı', { timeout: 10000 })
+
+    // Kesinti sırasında üretilen olay Last-Event-ID replay'i ile geldi mi — yapısal kanıt.
+    const rowDuring = page.locator('[data-testid="timeline-row"]', { hasText: markerDuring })
+    await expect(rowDuring).toBeVisible({ timeout: 5000 })
 
     const markerAfter = uniqueMarker('ac5-after')
     await page.request.post(`http://127.0.0.1:${AC5_PORT}/api/events`, {
@@ -380,5 +414,36 @@ test.describe('AC5 - bağlantı kopması ve toparlanma', () => {
     // kayıpsız + çiftsiz: "önceki" olay hâlâ tam olarak bir kez görünüyor.
     const rowBefore = page.locator('[data-testid="timeline-row"]', { hasText: markerBefore })
     await expect(rowBefore).toHaveCount(1)
+  })
+})
+
+// QA düzeltme turu 1 (D15/Ö2): AC5'in "bağlantı koptu durumunu gösterir" yarısı — WHATWG
+// EventSource spec'inde `readyState=CLOSED` YALNIZCA "fail the connection" adımında oluşur
+// (ilk yanıt 2xx değilse veya `Content-Type` `text/event-stream` değilse). Bu, yukarıdaki
+// AC5 testinin ulaştığı "geçici kopma" (ECONNREFUSED → sonsuz `CONNECTING`/"Yeniden
+// bağlanıyor") durumundan YAPISAL OLARAK FARKLI bir yoldur ve önceden hiç kanıtlanmamıştı
+// (yalnızca sahte `EventSource` ile birim testi vardı). `page.route` gerçek Chromium ağ
+// katmanını keser — sayfanın gerçek `EventSource`'u bunu gerçek bir sunucu yanıtı sanır,
+// istemci kodu hiç mock'lanmıyor.
+test.describe('AC5 (kalıcı hata) - "fail the connection" ⇒ "Bağlantı koptu"', () => {
+  test('sunucu ilk bağlanmada 2xx dışı bir yanıt dönerse rozet "Bağlantı koptu" gösterir ve bir daha yeniden bağlanmayı denemez', async ({
+    page,
+  }) => {
+    let streamRequestCount = 0
+    await page.route('**/api/stream', (route) => {
+      streamRequestCount += 1
+      return route.fulfill({ status: 403, contentType: 'application/json', body: '{}' })
+    })
+
+    await page.goto('/')
+    const shellBadge = page.locator('[data-testid="connection-badge-shell"]')
+    await expect(shellBadge).toContainText('Bağlantı koptu', { timeout: 5000 })
+
+    // Geçici kopmanın (yukarıdaki AC5 testi) aksine, "fail the connection" sonrası tarayıcı
+    // BİR DAHA ASLA yeniden bağlanmayı denemez — birkaç saniye bekleyip tek bir istek
+    // yapıldığını doğrulamak, durumun GEÇİCİ değil KALICI olduğunun davranışsal kanıtıdır.
+    await page.waitForTimeout(3000)
+    expect(streamRequestCount).toBe(1)
+    await expect(shellBadge).toContainText('Bağlantı koptu')
   })
 })

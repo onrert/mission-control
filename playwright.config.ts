@@ -12,6 +12,15 @@ process.on('exit', () => removeTempDataDir(e2eDataDir))
 export default defineConfig({
   testDir: 'tests/e2e',
   testMatch: ['shell.spec.ts', 'timeline.spec.ts', 'settings.spec.ts', 'kanban.spec.ts'],
+  // Tüm spec dosyaları TEK paylaşılan `webServer`/`MC_DATA_DIR`/proje kaydını kullanıyor
+  // (yukarıdaki yorum). `kanban.spec.ts` gerçek `POST/DELETE /api/projects` çağrıları yapan
+  // testler eklediğinden (F-007), varsayılan çoklu-worker paralelliği farklı spec
+  // dosyalarının aynı anda proje eklemesine/silmesine yol açıyor — `settings.spec.ts`'in
+  // "tam olarak N proje" sayımlarını ve `kanban.spec.ts`'in echo/render-sayacı ölçümünü
+  // (paylaşılan `projects`/`features` SSE yayını başka bir test tetiklediğinde) kirletiyor.
+  // Tek worker (dosyalar arası tam sıralı çalıştırma) bu paylaşılan-durum yarışını kökten
+  // ortadan kaldırır; testler içi davranış/assert'ler değişmedi.
+  workers: 1,
   use: {
     baseURL: 'http://127.0.0.1:7333',
   },

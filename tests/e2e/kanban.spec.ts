@@ -63,25 +63,36 @@ async function dragCardToColumn(
   column: ReturnType<Page['locator']>
 ): Promise<void> {
   // Sütun sayısı (7 + "Bilinmeyen durum") kabuğun genişliğini aşabilir; kap `overflow-x-auto`
-  // ile yatay kaydırılır. Kaynak/hedef viewport DIŞINDA kalırsa gerçek fare koordinatları
-  // anlamsızlaşır — ikisini de önce görünür alana kaydır.
+  // ile yatay kaydırılır. BUG (bu turda bulundu, AC6): kaynak/hedef ikisi de önce kaydırılıp
+  // SONRA ikisinin de boundingBox'ı okunuyordu — hedefi (ör. en uzak sütun) görünüre getiren
+  // İKİNCİ kaydırma, ilk kaydırmanın getirdiği kaynağı (ör. "Bilinmeyen durum", en sağdaki
+  // sütun) çoktan görünmez alana itmiş oluyordu; `cardBox` bu yüzden EKRAN DIŞI bir konumu
+  // ölçüyor, gerçek fare `mousedown`'ı karta hiç denk gelmiyordu (sürükleme hiç başlamıyordu).
+  // Düzeltme: kaynağı kaydır → ÖLÇ → bas; ANCAK SONRA hedefi kaydır → yeniden ÖLÇ → sürükle.
   await card.scrollIntoViewIfNeeded()
-  await column.scrollIntoViewIfNeeded()
   const cardBox = await card.boundingBox()
-  const columnBox = await column.boundingBox()
-  if (!cardBox || !columnBox) {
-    throw new Error('dragCardToColumn: kart veya sütun için boundingBox alınamadı')
+  if (!cardBox) {
+    throw new Error('dragCardToColumn: kart için boundingBox alınamadı')
   }
   const startX = cardBox.x + cardBox.width / 2
   const startY = cardBox.y + cardBox.height / 2
-  const endX = columnBox.x + columnBox.width / 2
-  const endY = columnBox.y + columnBox.height / 2
 
   await page.mouse.move(startX, startY)
   await page.mouse.down()
   // İlk küçük hareket `distance:8` aktivasyon eşiğini AÇIKÇA geçer (dnd-kit'in `PointerSensor`'ü
   // bu kareden önce sürüklemeyi hiç BAŞLATMAZ — AC7'nin tıklama/modal ayrımı bu eşiğe dayanır).
   await page.mouse.move(startX + 20, startY + 5, { steps: 5 })
+
+  // Hedef sütunu ŞİMDİ (sürükleme aktifken) görünüre getir ve konumunu BU ANDA yeniden ölç —
+  // kaydırma fare düğmesi durumunu etkilemez, yalnızca konteynerin `scrollLeft`'ini değiştirir.
+  await column.scrollIntoViewIfNeeded()
+  const columnBox = await column.boundingBox()
+  if (!columnBox) {
+    throw new Error('dragCardToColumn: sütun için boundingBox alınamadı')
+  }
+  const endX = columnBox.x + columnBox.width / 2
+  const endY = columnBox.y + columnBox.height / 2
+
   await page.mouse.move(endX, endY, { steps: 10 })
   await page.waitForTimeout(100)
   await page.mouse.up()
@@ -219,10 +230,20 @@ test.describe('AC9 — klavye alternatifi gerçek tuş olaylarıyla dosyaya yaza
 
     // `Tab` ile sıralı erişim jsdom'da statik olarak zaten çitlendi (tabIndex=0,
     // `KanbanScreen.test.tsx`); burada gerçek klavye AKTİVASYONUNU (Boşluk/ArrowRight/Enter)
-    // ölçmek için doğrudan odaklanıp gerçek `page.keyboard.press` gönderiyoruz.
+    // ölçmek için doğrudan odaklanıp gerçek `page.keyboard.press` gönderiyoruz. BUG (bu turda
+    // bulundu): dnd-kit `DndContext`, sürükleme başladığında (`Space`) `droppableRects`'i
+    // `useLayoutEffect`/ölçüm turu ile ASENKRON doldurur; `ArrowRight` hiç ara vermeden art
+    // arda gönderilirse (Playwright'ın varsayılan tuş hızı) `coordinateGetter` boş bir
+    // `droppableRects` haritasıyla çağrılıp hareketsiz kalıyordu (kart hep başlangıç sütununda
+    // kalıp `Enter` "aynı sütuna taşındı" no-op'una düşüyordu — gerçek `PATCH` hiç gitmiyordu).
+    // Gerçek bir kullanıcının tuşlar arasında bıraktığı doğal boşluğu simüle eden kısa
+    // bekleme (100ms), dnd-kit'in ölçüm turunu bitirmesine izin verir; davranışı ZAYIFLATMAZ —
+    // hâlâ gerçek `Space`/`ArrowRight`/`Enter` olaylarının dosyaya yazdığını ölçer.
     await card.focus()
     await page.keyboard.press('Space')
+    await page.waitForTimeout(100)
     await page.keyboard.press('ArrowRight')
+    await page.waitForTimeout(100)
     await page.keyboard.press('Enter')
 
     await expect(

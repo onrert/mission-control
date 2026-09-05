@@ -35,22 +35,29 @@ test('kabuk açılır, başlık görünür, konsol hatası yok, tıklanabilir ö
   // (3) konsol/pageerror hatası yok
   expect(consoleErrors).toEqual([])
 
-  // (4) F-005: üst çubukta artık TAM OLARAK BİR tıklanabilir öğe var — Ayarlar dişli düğmesi
-  // (CEO kararı, "Ayarlar'ın yeri ve sekme deseninin ertelenmesi"). Zaman Çizelgesi/Kanban
-  // hâlâ statik öğeler (F-003 CEO kararı D8), tam `tablist` deseni F-007'ye ertelendi.
-  const clickableCount = await page.locator('header button, header a, header [role=button]').count()
-  expect(clickableCount).toBe(1)
+  // (4) F-007: Kanban gerçek bir sekmeye dönüştü, tam `tablist` deseni geldi (§6 madde 1) —
+  // üst çubukta artık ÜÇ etkileşimli öğe var: iki gerçek sekme (`role="tab"`, Zaman
+  // Çizelgesi/Kanban) + Ayarlar dişli düğmesi (tablist deseninin DIŞINDA kalan sabit düğme,
+  // `docs/03-ux.md:21`). Bu artık "bire" değil "üçe" ölçen, ama hâlâ tam sayıyla çitleyen bir
+  // iddia (F-003/F-005'in eski "tek tıklanabilir öğe" varsayımının yerini aldı).
+  const clickableCount = await page
+    .locator('header button, header a, header [role=button], header [role=tab]')
+    .count()
+  expect(clickableCount).toBe(3)
   const settingsButton = page.locator('header [aria-label="Ayarlar"]')
   await expect(settingsButton).toBeVisible()
 
-  // (4b) Zaman Çizelgesi etiketi aria-current="page" taşır, Kanban/Ayarlar taşımaz; hiçbiri
-  // role="tab" değildir (geçersiz ARIA riskine hiç girilmiyor).
-  const ariaCurrentCount = await page.locator('header [aria-current="page"]').count()
-  expect(ariaCurrentCount).toBe(1)
-  const ariaCurrentText = await page.locator('header [aria-current="page"]').innerText()
-  expect(ariaCurrentText).toBe('Zaman Çizelgesi')
+  // (4b) `aria-current` kaldırıldı, yerini `aria-selected` aldı (Karar 1, §6 madde 1) — artık
+  // hiçbir öğe `aria-current` taşımıyor, ama TAM OLARAK bir `role="tab"` `aria-selected="true"`
+  // olmalı (varsayılan: Zaman Çizelgesi) ve toplam iki gerçek `tab` var.
+  const ariaCurrentCount = await page.locator('header [aria-current]').count()
+  expect(ariaCurrentCount).toBe(0)
+  const selectedTabs = page.locator('header [role="tab"][aria-selected="true"]')
+  await expect(selectedTabs).toHaveCount(1)
+  const selectedTabText = await selectedTabs.innerText()
+  expect(selectedTabText).toBe('Zaman Çizelgesi')
   const tabRoleCount = await page.locator('header [role="tab"]').count()
-  expect(tabRoleCount).toBe(0)
+  expect(tabRoleCount).toBe(2)
 
   // (5) yükleme kanıtı (birincil) — font gerçekten yüklendi mi
   const fontLoaded = await page.evaluate(async () => {

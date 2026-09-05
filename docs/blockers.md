@@ -149,6 +149,32 @@ sonuç zaten statik olarak kesin) — CEO onayı gelirse aynı turda (yalnızca 
 e2e` bu üç dosya yüzünden KIRMIZI kalacak; F-006'nın kendi dosyalarının hepsi (write-gate.ts,
 dağıtıcı, writeFetch, statik tarama, manifest testi) yeşil ve bağımsız doğrulanabilir durumda.
 
+## 2026-09-05 — bilgilendirme (devralan developer, F-007 kod turu tur 2) — `tests/e2e/shell.spec.ts` sözleşme dışı ama beklenen güncelleme
+
+**Görev:** CEO'nun devraldığı beş E2E hatasından biri `shell.spec.ts:9` idi — F-007 App.tsx'i
+gerçek `tablist` desenine çevirince (Karar 1, §6 madde 1: `aria-current` kaldırıldı, yerine
+`aria-selected` geldi; iki gerçek `role="tab"` span'i eklendi) bu dosyanın F-005 döneminden
+kalan "tek tıklanabilir öğe" / "tam olarak bir `aria-current`" iddiaları eskidi.
+
+**Kontrol:** `docs/qa/F-007-contract.md` §2.1/§2.2 dosya listesinde `tests/e2e/shell.spec.ts`
+**yok** — dosya sahipliği F-001/F-005'te. CEO'nun görev talimatı bu durumu zaten öngörmüştü
+("5 numaralı hata shell.spec.ts'i gerektiriyor — sözleşmede var mı kontrol et; yoksa
+blockers.md'ye yazıp devam et, bu beklenen bir güncelleme").
+
+**Yapılan:** Durdurulmadı (CEO'nun kendi talimatı "devam et" diyordu). Assert'ler yeni gerçeğe
+göre güncellendi, ölçme niteliği korundu (`CLAUDE.md` "hâlâ ölçen bir iddia" kuralı):
+- `clickableCount` artık 1 değil **3** bekliyor (`header [role=tab]` seçiciye eklendi) — iki
+  sekme + Ayarlar düğmesi.
+- `ariaCurrentCount` artık **0** (App.tsx `aria-current` hiç yazmıyor).
+- Yeni assert: tam olarak bir `[role="tab"][aria-selected="true"]` var ve metni "Zaman
+  Çizelgesi" (varsayılan seçili sekme).
+- `tabRoleCount` artık 0 değil **2**.
+
+**Durum:** `npx playwright test tests/e2e/shell.spec.ts` = 0 (2/2). Ürün kodu
+(`src/web/App.tsx`) bu turda **değiştirilmedi** — yalnızca test dosyası F-007'nin zaten
+sözleşmede onaylı `App.tsx` değişikliğine (§2.2) uyacak şekilde güncellendi. Bloklayıcı değil,
+bilgilendirme amaçlı kayıt.
+
 ## 2026-09-05 — KAPANDI (devralan developer, kod turu)
 
 CEO onayı feature notuna ("İkinci genişletme") yazıldı; üç dosya mekanik olarak düzeltildi

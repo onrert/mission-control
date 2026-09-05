@@ -35,11 +35,13 @@ test('kabuk açılır, başlık görünür, konsol hatası yok, tıklanabilir ö
   // (3) konsol/pageerror hatası yok
   expect(consoleErrors).toEqual([])
 
-  // (4) üst çubukta tıklanabilir öğe yok (F-003 YENİ-1/CEO kararı D8: Zaman Çizelgesi de
-  // gerçek `tablist`/`tab` deseni kurmuyor, yalnızca statik `aria-current="page"` taşıyor —
-  // bu assert değişmeden doğru kalıyor).
+  // (4) F-005: üst çubukta artık TAM OLARAK BİR tıklanabilir öğe var — Ayarlar dişli düğmesi
+  // (CEO kararı, "Ayarlar'ın yeri ve sekme deseninin ertelenmesi"). Zaman Çizelgesi/Kanban
+  // hâlâ statik öğeler (F-003 CEO kararı D8), tam `tablist` deseni F-007'ye ertelendi.
   const clickableCount = await page.locator('header button, header a, header [role=button]').count()
-  expect(clickableCount).toBe(0)
+  expect(clickableCount).toBe(1)
+  const settingsButton = page.locator('header [aria-label="Ayarlar"]')
+  await expect(settingsButton).toBeVisible()
 
   // (4b) Zaman Çizelgesi etiketi aria-current="page" taşır, Kanban/Ayarlar taşımaz; hiçbiri
   // role="tab" değildir (geçersiz ARIA riskine hiç girilmiyor).

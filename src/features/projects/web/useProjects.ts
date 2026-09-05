@@ -80,7 +80,12 @@ export function useProjects(liveUpdate: ProjectListItem[] | null): UseProjectsRe
         if (!body.success) {
           return { ok: false, message: body.error.message }
         }
-        setItems((prev) => [...prev, body.data])
+        // Kayıt SSE `projects` kanalıyla da (tam liste) yayınlanır — POST yanıtı ile SSE
+        // çerçevesinin varış sırası ağa bağlıdır (SSE zaten açık bir bağlantı, POST yanıtı
+        // ayrı bir round-trip). SSE, bu optimistik eklemeden ÖNCE gelirse `prev` zaten yeni
+        // kaydı içerir; id bazlı dedup olmadan aynı proje iki kez listelenirdi (E2E'de
+        // ampirik gözlendi). Bu yüzden yalnızca `prev`'de henüz yoksa eklenir.
+        setItems((prev) => (prev.some((p) => p.id === body.data.id) ? prev : [...prev, body.data]))
         return { ok: true }
       } catch {
         return { ok: false, message: 'Liste kaydedilemedi, tekrar deneyin.' }

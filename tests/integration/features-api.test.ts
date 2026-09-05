@@ -263,8 +263,12 @@ describe('PATCH /api/features/:project_id/:file — write_denied (ata dizin syml
         { status: 'qa', expected_hash: hash }
       )
       expect(res.status).toBe(403)
-      const body = res.json as { success: boolean; error: { code: string } }
+      const body = res.json as { success: boolean; error: { code: string; message: string } }
       expect(body.error.code).toBe('write_denied')
+      // QA düzeltme turu 1 (N1) — 403 artık 500 (write_failed) ile AYNI metni döndürmüyor;
+      // kullanıcı güvenlik reddiyle disk hatasını ayırt edebilsin (sözleşme §4.3, CEO Karar 2).
+      expect(body.error.message).toBe('Dosya biçimi tanınamadı. Tekrar deneyin.')
+      expect(body.error.message).not.toBe('Dosyaya yazma izni reddedildi.')
     } finally {
       fs.rmSync(featuresPath, { recursive: true, force: true })
       fs.renameSync(backup, featuresPath)

@@ -179,9 +179,12 @@ export function handlePatchFeatureStatus(
         }
 
         if (result.code === 'write_denied') {
+          // QA düzeltme turu 1 (N1) — önceden 500 (write_failed) ile AYNI metni döndürüyordu;
+          // kullanıcı güvenlik reddi ile disk hatasını ayırt edemiyordu. Sözleşme §4.3 (CEO
+          // Karar 2): write_denied/invalid_body ikisi de bu ortak, eylem öneren metni kullanır.
           sendJson(res, 403, {
             success: false,
-            error: { code: 'write_denied', message: 'Dosyaya yazma izni reddedildi.' },
+            error: { code: 'write_denied', message: 'Dosya biçimi tanınamadı. Tekrar deneyin.' },
           })
           return
         }

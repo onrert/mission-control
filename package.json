@@ -25,6 +25,7 @@
     "install-hook": "node scripts/install-hook.mjs"
   },
   "dependencies": {
+    "chokidar": "^4.0.3",
     "react": "^19",
     "react-dom": "^19"
   },

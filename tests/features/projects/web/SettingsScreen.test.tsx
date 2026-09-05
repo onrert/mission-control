@@ -124,6 +124,36 @@ describe('SettingsScreen', () => {
     ).toBeTruthy()
   })
 
+  // QA düzeltme turu 2 (D26) — canlı ölçüm: DELETE 500 dönünce eskiden hiçbir geri bildirim
+  // yoktu (`role="alert"` sayısı 0). `docs/03-ux.md` ekran-3 "Hata" metniyle birebir aynı mesaj
+  // artık satırda görünür ve satır listeden düşmez.
+  it('Kaldır hatası: DELETE 500 dönerse "Liste kaydedilemedi, tekrar deneyin." satırda görünür, satır kalır', async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'DELETE') {
+        return {
+          ok: false,
+          status: 500,
+          json: async () => ({
+            success: false,
+            error: { code: 'storage_unavailable', message: 'Liste kaydedilemedi, tekrar deneyin.' },
+          }),
+        }
+      }
+      return { ok: true, status: 200, json: async () => ({ success: true, data: [item()] }) }
+    })
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch)
+    const user = userEvent.setup()
+    render(<SettingsScreen liveUpdate={null} />)
+    await waitFor(() => expect(screen.getAllByTestId('project-row')).toHaveLength(1))
+
+    await user.click(screen.getByText('Kaldır'))
+
+    const alert = await screen.findByTestId('remove-project-error')
+    expect(alert.textContent).toContain('Liste kaydedilemedi, tekrar deneyin.')
+    // Yazma başarısız oldu — satır kalmalı.
+    expect(screen.getAllByTestId('project-row')).toHaveLength(1)
+  })
+
   it('registry_corrupt alanı yokken/false iken banner hiç render edilmez', async () => {
     stubFetchOnce({ success: true, data: [] })
     render(<SettingsScreen liveUpdate={null} />)

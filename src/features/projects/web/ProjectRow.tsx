@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import type { ProjectListItem } from '../../../shared/types'
+import type { AddProjectFailure, AddProjectSuccess } from './useProjects'
 
 // Sözleşme §6 "durum tasarımı": ikon burada tekrar tanımlanır (3 satırlık inline SVG,
 // `src/features/events/web/icons.tsx`'ten import ETMEZ — dikey dilim izolasyonu, henüz yalnızca
@@ -25,7 +27,7 @@ function AlertTriangleIcon({ className }: { className?: string }) {
 
 export interface ProjectRowProps {
   project: ProjectListItem
-  onRemove: (id: string) => void
+  onRemove: (id: string) => Promise<AddProjectSuccess | AddProjectFailure>
 }
 
 function copyPath(path: string): void {
@@ -35,6 +37,22 @@ function copyPath(path: string): void {
 }
 
 export function ProjectRow({ project, onRemove }: ProjectRowProps) {
+  const [removing, setRemoving] = useState(false)
+  // QA düzeltme turu 2 (D26): `onRemove` başarısız olursa (`ok:false`) burada gösterilir —
+  // `AddProjectForm`'daki desenle aynı (`role="alert"`).
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleRemove(): Promise<void> {
+    if (removing) return
+    setRemoving(true)
+    setError(null)
+    const result = await onRemove(project.id)
+    setRemoving(false)
+    if (!result.ok) {
+      setError(result.message)
+    }
+  }
+
   return (
     <div
       data-testid="project-row"
@@ -63,11 +81,17 @@ export function ProjectRow({ project, onRemove }: ProjectRowProps) {
       )}
       <button
         type="button"
-        onClick={() => onRemove(project.id)}
-        className="min-h-8 shrink-0 rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300"
+        onClick={() => void handleRemove()}
+        disabled={removing}
+        className="min-h-8 shrink-0 rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 disabled:opacity-50"
       >
-        Kaldır
+        {removing ? 'kaldırılıyor…' : 'Kaldır'}
       </button>
+      {error && (
+        <p role="alert" data-testid="remove-project-error" className="w-full text-sm text-red-400">
+          ⚠ {error}
+        </p>
+      )}
     </div>
   )
 }

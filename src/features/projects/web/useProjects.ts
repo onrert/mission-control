@@ -19,7 +19,7 @@ export interface UseProjectsResult {
   registryCorrupt: boolean
   retry: () => void
   add(path: string, label?: string): Promise<AddProjectSuccess | AddProjectFailure>
-  remove(id: string): Promise<void>
+  remove(id: string): Promise<AddProjectSuccess | AddProjectFailure>
 }
 
 interface ProjectsListResponse {
@@ -94,13 +94,24 @@ export function useProjects(liveUpdate: ProjectListItem[] | null): UseProjectsRe
     []
   )
 
-  const remove = useCallback(async (id: string): Promise<void> => {
+  // QA düzeltme turu 2 (D26) — önceki hâl (`if (!res.ok) return`) yazma başarısız olduğunda
+  // kullanıcıya HİÇBİR geri bildirim vermiyordu; yorumdaki "SSE `projects` kanalı zaten
+  // senkronize edecek" gerekçesi geçersizdi çünkü yazma başarısızken `service.ts` bu kanalda
+  // hiç yayın yapmıyor (bkz. `service.ts` `removeProject`). `add()` ile aynı desen: sunucunun
+  // döndürdüğü mesajı (`docs/03-ux.md` ekran-3 "Liste kaydedilemedi, tekrar deneyin.") çağırana
+  // döndür, `SettingsScreen`/`ProjectRow` görünür kılsın.
+  const remove = useCallback(async (id: string): Promise<AddProjectSuccess | AddProjectFailure> => {
     try {
       const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' })
-      if (!res.ok) return
+      const body = (await res.json()) as
+        { success: true; data: { removed: boolean } } | ProjectErrorResponse
+      if (!body.success) {
+        return { ok: false, message: body.error.message }
+      }
       setItems((prev) => prev.filter((p) => p.id !== id))
+      return { ok: true }
     } catch {
-      // sessizce yut — SSE `projects` kanalı zaten gerçek durumu senkronize edecek.
+      return { ok: false, message: 'Liste kaydedilemedi, tekrar deneyin.' }
     }
   }, [])
 

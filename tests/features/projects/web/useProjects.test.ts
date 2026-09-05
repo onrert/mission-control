@@ -70,3 +70,47 @@ describe("useProjects — add() SSE ile yarış (E2E'de gözlenen çift satır h
     expect(result.current.items).toHaveLength(1)
   })
 })
+
+// QA düzeltme turu 2 (D26) — önceki hâl (`if (!res.ok) return`) `500` yanıtını sessizce
+// yutuyordu; çağıran hiçbir zaman `remove()`'un başarısız olduğunu öğrenemiyordu.
+describe('useProjects — remove() (D26: 500 yanıtı yutulmaz)', () => {
+  it('DELETE 500 storage_unavailable dönerse remove() {ok:false, message} döner, item listeden düşmez', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (init?.method === 'DELETE') {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            json: async () => ({
+              success: false,
+              error: {
+                code: 'storage_unavailable',
+                message: 'Liste kaydedilemedi, tekrar deneyin.',
+              },
+            }),
+          })
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true, data: [item()] }),
+        })
+      }) as unknown as typeof fetch
+    )
+
+    const { result } = renderHook(({ liveUpdate }) => useProjects(liveUpdate), {
+      initialProps: { liveUpdate: null as ProjectListItem[] | null },
+    })
+    await waitFor(() => expect(result.current.items).toHaveLength(1))
+
+    let outcome: { ok: boolean; message?: string } = { ok: true }
+    await act(async () => {
+      outcome = await result.current.remove('p_1')
+    })
+
+    expect(outcome).toEqual({ ok: false, message: 'Liste kaydedilemedi, tekrar deneyin.' })
+    // Yazma başarısız oldu — item listede kalmalı (sunucu durumu değişmedi).
+    expect(result.current.items).toHaveLength(1)
+  })
+})

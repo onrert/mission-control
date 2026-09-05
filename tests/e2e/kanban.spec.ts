@@ -337,8 +337,40 @@ test.describe('AC5 — yazma hatası: kart eski sütununa döner, okunabilir hat
   })
 })
 
-test.describe('T3 — 375px genişlikte gezinme kaybolmaz', () => {
-  test("Zaman Çizelgesi/Kanban sekmeleri ve Ayarlar dişlisi 375px'te erişilebilir kalır", async ({
+/**
+ * QA düzeltme turu 1 (BLOKLAYICI B2) — `toBeVisible()` + `.click()` bir `overflow-x-auto`
+ * kabında kaydırılıp ekran dışında kalan bir öğe için de TRUE döner (`.click()` otomatik
+ * kaydırır), yani önceki çit kullanıcının hiç göremediği bir sekmede de yeşil kalıyordu (QA
+ * gerçek Chromium'da ölçtü: her iki sekmenin de kırpılmış görünür genişliği 0px idi). Bu
+ * yardımcı QA'nın kendi ölçüm yöntemini birebir tekrarlar: elementin `getBoundingClientRect()`'ini
+ * TÜM kaydırılabilir (`overflow-x: auto/scroll/hidden`) ata kapların görünür alanıyla VE
+ * viewport'un kendisiyle kesiştirir, kalan görünür genişliği döner.
+ */
+async function clippedVisibleWidth(page: Page, selector: string): Promise<number> {
+  return page.evaluate((sel) => {
+    const el = document.querySelector(sel) as HTMLElement | null
+    if (!el) return 0
+    const rect = el.getBoundingClientRect()
+    let left = rect.left
+    let right = rect.right
+    let node: HTMLElement | null = el.parentElement
+    while (node) {
+      const style = window.getComputedStyle(node)
+      if (['auto', 'scroll', 'hidden'].includes(style.overflowX)) {
+        const containerRect = node.getBoundingClientRect()
+        left = Math.max(left, containerRect.left)
+        right = Math.min(right, containerRect.right)
+      }
+      node = node.parentElement
+    }
+    left = Math.max(left, 0)
+    right = Math.min(right, window.innerWidth)
+    return Math.max(0, right - left)
+  }, selector)
+}
+
+test.describe('T3 — 375px genişlikte gezinme kaybolmaz (QA düzeltme turu 1: B2)', () => {
+  test('Zaman Çizelgesi/Kanban sekmelerinin KIRPILMIŞ GÖRÜNÜR genişliği > 0, Ayarlar dişlisi erişilebilir kalır', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 375, height: 700 })
@@ -350,6 +382,11 @@ test.describe('T3 — 375px genişlikte gezinme kaybolmaz', () => {
     expect(settingsBox).not.toBeNull()
     expect(settingsBox!.x).toBeGreaterThanOrEqual(0)
     expect(settingsBox!.x + settingsBox!.width).toBeLessThanOrEqual(375)
+
+    // Gerçek ölçüm — `toBeVisible()` YETERSİZ (QA raporu, bu turda ölçüldü): kırpılmış görünür
+    // genişlik her iki sekme için de > 0 olmalı, `.click()`'in otomatik kaydırmasından ÖNCE.
+    expect(await clippedVisibleWidth(page, '#tab-timeline')).toBeGreaterThan(0)
+    expect(await clippedVisibleWidth(page, '#tab-kanban')).toBeGreaterThan(0)
 
     const kanbanTab = page.getByRole('tab', { name: 'Kanban' })
     await expect(kanbanTab).toBeVisible()

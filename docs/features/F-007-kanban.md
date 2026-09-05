@@ -1,7 +1,7 @@
 ---
 id: F-007
 title: Kanban panosu + frontmatter status yazma + çakışma/echo yönetimi
-status: qa
+status: done
 owner: developer
 deps: [F-005, F-006]
 sprint: 1

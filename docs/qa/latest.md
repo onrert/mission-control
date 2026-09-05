@@ -1,345 +1,244 @@
-# F-007 — QA kod turu raporu (qa-evaluator, 2026-09-06)
+# F-007 — QA düzeltme turu 1 doğrulaması (qa-evaluator, 2026-09-06)
 
-KARAR: KALDI
+KARAR: GEÇTİ
 ESKALE: false
 
-Puanlar (1-10): **İşlevsellik 7 · Özellik bütünlüğü 6 · Görsel/UX 6 · Kod kalitesi 6**
-Karar kuralı: üç boyut < 7 ve iki bloklayıcı bulgu var → KALDI.
+Puanlar (1-10): **İşlevsellik 9 · Özellik bütünlüğü 8 · Görsel/UX 8 · Kod kalitesi 8**
+(önceki tur: 7 · 6 · 6 · 6). Dört boyut da ≥ 7, açık BLOKLAYICI/ÖNEMLİ yok → **GEÇTİ**.
 
-Kapsam: `docs/features/F-007-kanban.md` (10 AC + 6 devralınan taahhüt), `docs/qa/F-007-contract.md`
-(CEO onayı → CEO kararları → D40-D45 → A-F → gövde), `docs/03-ux.md` ekran 2 + akışlar,
-ADR-001 (karar 5/8), ADR-005, ADR-013.
+Kapsam (bağlayıcı, brief'e göre dar): **B1, B2, M9, M6b, M4, Ö1, N1 + D46-D50** ve düzeltmenin
+ürettiği regresyon. Önceki turda onaylanan bölümler (sessiz üzerine yazma, AC2 bayt diff,
+F-005/F-006 regresyonu, güvenlik, kapsam) **yeniden açılmadı**.
 
 ---
 
-## 1. Komutlar ve gerçek çıktılar (hepsini kendim koşturdum)
+## 1. Komutlar ve gerçek çıkış kodları (hepsini kendim koşturdum)
 
 | Komut | Çıkış kodu | Sonuç |
 |---|---|---|
-| `npm run verify` | **0** | typecheck + lint + `Test Files 48 passed (48)` / `Tests 728 passed (728)` + `vite build ✓ built in 1.15s` |
-| `npm run e2e` | **0** | `23 passed (27.4s)` (chromium, workers:1) |
-| `npm run e2e:dev` | **0** | `1 passed (4.4s)` |
-| `npm audit` | **0** | `found 0 vulnerabilities` |
+| `npm run verify` (1. koşu) | **1** | `Worker exited unexpectedly with exit code 3221226505` — `tests/integration/projects-api.test.ts`; `47 passed (48)` / `722 passed (732)`. Bilinen vitest worker fork kararsızlığı (bu projede **4. kez**). |
+| `npm run verify` (2. koşu) | **0** | `Test Files 48 passed (48)` / `Tests 732 passed (732)` + `vite build ✓ built in 1.18s` |
+| `npm run verify` (3. koşu, tüm mutasyonlar geri alındıktan sonra) | **0** | `48 passed (48)` / `732 passed (732)` |
+| `npm run e2e` (2 kez) | **0** / **0** | `23 passed (27.1s)` ve `23 passed (26.0s)` |
+| `npm run e2e:dev` (2 kez) | **0** / **0** | `1 passed` |
+| `npm run build` (elle, dist doğrulaması) | **0** | `index-BtoxddyP.css 19.42 kB` |
 
-Vitest worker fork kararsızlığı bu turda **görülmedi**: `npx vitest run` bu turda toplam 9 kez
-koşturuldu (mutasyonlu koşular dahil), doğru kodda her seferinde 728/728.
+CEO'nun ölçtüğü sayılar (48 dosya / 732 test / 23 E2E) **birebir doğrulandı**.
 
 ---
 
-## 2. AC1-AC10 + T1-T6 kanıt tablosu (16/16 kutu işaretliydi — her birini ayrı doğruladım)
+## 2. Kapanış tablosu — B1/B2/M9/M6b/M4/Ö1/N1 + D46-D50
 
-Doğrulama ortamı: **üretim derlemesi** (`npm run build` + `tsx src/server/index.ts`), izole
-`MC_DATA_DIR`, `MC_PORT=7433`, geçici fixture proje (11 dosya: 7 geçerli durum + CRLF/BOM/yorumlu
-dosya + tanımsız durum + bozuk frontmatter + `.txt`).
-
-| # | Kriter | Kanıt | Sonuç |
+| # | Bulgu / karar | Durum | Kendi kanıtım |
 |---|---|---|---|
-| AC1 | Kart doğru sütunda | Tarayıcı: 7 sütunun her birinde beklenen kart; `parse-feature.test.ts` + M2b mutasyonum KIRMIZI | **GEÇTİ** |
-| AC2 | Yalnızca `status` baytı değişir | §4 bayt diff: 144→146 bayt, **tek fark** `status:   todo` → `status: contract`; BOM, CRLF, yorum satırı, gövde birebir korundu. M3b (`+ ' '`) 11 test KIRMIZI | **GEÇTİ** |
-| AC3 | Dış değişiklik ≤2 sn | Gerçek ölçüm: dosya yazımı `t=1788642797485`, DOM'da görünme `t=1788642797951` → **466 ms** | **GEÇTİ** |
-| AC4 | Çakışma: yazma durur, uyarı, yeniden çizim | §3'teki sessiz-üzerine-yazma denemesi: 409, disk korundu, Türkçe banner + kart eski sütunda. M1 (handler hash'i diskten yeniden hesaplasın) KIRMIZI | **GEÇTİ** |
-| AC5 | Yazma hatası: kart geri döner, panel çökmez | `chmod 444` ile gerçek EPERM: kart QA sütununda kaldı, `F-103 kaydedilemedi: Dosyaya yazma izni reddedildi.` + `[Tekrar dene]`, panel ayakta. M8 (rollback kaldır) KIRMIZI. **Ama:** `rereadCard` hata yolu kapsanmıyor → **B1** | **KOŞULLU** |
-| AC6 | "Bilinmeyen durum" + sürüklenebilir | 8. sütun render ediliyor (`kanban-column-unknown`); F-300 klavye ile Engelli'ye taşındı, diskte `status: blocked` | **GEÇTİ** |
-| AC7 | Kart detayı salt okunur | Modal: `F-100 — Kart todo`, Durum/Sahip (owner)/Bağımlılıklar (deps)/Sprint; ekran görüntüsü aşağıda | **GEÇTİ** |
-| AC8 | Echo döngü/yanıp sönme yok | E2E D42 render sayacı gerçek çit (M4 mutasyonumu KIRMIZI yakaladı). jsdom çiti flaky → **Ö4** | **KOŞULLU** |
-| AC9 | Klavye alternatifi | Gerçek tarayıcı: `Tab`→`Boşluk`→`ArrowRight`→`Enter` üç ayrı kartta diske yazdı. M5 (`keyboardCodes.end`→`['KeyQ']`) E2E'de KIRMIZI (birim testlerde YEŞİL) | **GEÇTİ** |
-| AC10 | "Etiket (kod)" başlıkları | DOM: `Yapılacak (todo)`, `Sözleşme (contract)`, `Geliştirme (dev)`, `QA (qa)`, `Düzeltme (fix)`, `Bitti (done)`, `Engelli (blocked)`, `Bilinmeyen durum` — ADR-001 karar 8 uyumlu | **GEÇTİ** |
-| T1 | Tam `tablist` deseni | Statik ARIA doğru (`role=tablist/tab/tabpanel`, roving `tabindex`, Ayarlar desen dışında). **Ok tuşu odağı taşımıyor (Ö1), klavye kodu tamamen çitsiz (Ö2), `aria-controls` yarım çitli (Ö3)** | **KALDI** |
-| T2 | F-005 AC1 görsel kanıtı | Canlı ölçüm: `POST /api/projects` → kart DOM'da **4,6 sn** içinde; proje çipi de eklendi | **GEÇTİ** |
-| T3 | 375px'te gezinme kaybolmaz | Ölçüm: her iki sekmenin **görünür piksel genişliği 0** → **B2** | **KALDI** |
-| T4 | `Atomics.wait`→async | `write-gate.ts:136` `delay()` `setTimeout` tabanlı; `Atomics.wait` grep=0; `setFeatureStatus`/`writeGateApproval`/`writeGateDenial` async | **GEÇTİ** |
-| T5 | `safeYamlValue` sertleştirme | `YAML_INDICATOR_START` + `resolvesToNonString` (`write-gate.ts:191-215`), 40 golden fixture yeşil | **GEÇTİ** |
-| T6 | `OPERATION_PATTERNS` koşulu | `git diff fec3aa2..HEAD -- src/server/write-gate.ts`: desenlere hiç dokunulmamış → koşul tetiklenmedi, kayıt doğru | **GEÇTİ (uygulanamaz)** |
+| **B1** | `PATCH` yanıtsız kalıyor (async IIFE `try/catch`'siz) | **KAPANDI** | §3 fault injection: `HTTP=200 time=0.040` (önce `HTTP=000 time=10.013`) |
+| **D46** | IIFE gövdesi `try/catch` + yarı-başarı `200` (`data` yok) | **UYGULANDI** | `handlers.ts:130-215`; düzeltme-öncesi koda geri dönüş → integration testi `Test timed out in 5000ms` (KIRMIZI) |
+| **B2** | 375px'te iki sekmenin kırpılmış görünür genişliği 0 px | **KAPANDI** | §4: 13 viewport'ta ölçüm, her ikisi de 126 px / 50 px |
+| **D47** | Sekme çubuğu <640px'te kendi tam-genişlikli satırında; çit gerçek kırpma ölçüyor | **UYGULANDI** | `App.tsx:83-96`, `tests/e2e/kanban.spec.ts:349-389`; eski düzene dönüş → `Received: 0` (KIRMIZI) |
+| **M9 / Ö2 / D48a** | `onKeyDown={onTabKeyDown}` silinince eskiden 728/728+23/23 yeşildi | **KAPANDI** | Mutasyon → `App.interaction.test.tsx:196` KIRMIZI (`expected 'false' to be 'true'`) |
+| **M6b / Ö3 / D48b** | İki sekme de `panel-timeline` → eskiden 728/728 yeşildi | **KAPANDI** | Mutasyon → `App.test.tsx:78` KIRMIZI |
+| **M4 / Ö4 / D49** | Echo çiti %73 yanlış-yeşildi | **KAPANDI** | §5: mutasyon **12/12 KIRMIZI**, doğru kod **8/8 YEŞİL** |
+| **Ö1 / D50** | Ok tuşu DOM odağını taşımıyordu | **KAPANDI** | jsdom: `focusTab` no-op → `App.interaction.test.tsx:198` KIRMIZI. Gerçek Chromium: `ArrowLeft` sonrası `document.activeElement = tab-timeline`, `tabindex` 0/-1 doğru |
+| **N1** | 403 `write_denied` 500 ile aynı metni dönüyordu | **KAPANDI** | `handlers.ts:184` → `Dosya biçimi tanınamadı. Tekrar deneyin.`; eski metne dönüş → `features-api.test.ts:270` KIRMIZI. Ham write-gate metni sızmıyor (403 dalında hiç kullanılmıyor, 500 dalı yalnızca `process.stderr.write`) |
+
+**Yeşil kalan mutasyon: YOK (0/8).**
 
 ---
 
-## 3. Sessiz üzerine yazma denemesi (görev madde 4 — AC4'ün özü)
+## 3. B1 fault injection ölçümü (dört madde, üretim derlemesi + gerçek HTTP + gerçek tarayıcı)
 
-**Senaryo:** Kanban açıkken F-102 kartında `Boşluk` ile klavye sürüklemesi başlatıldı (bu sırada
-`useFeatures.isDraggingRef` yeniden çekmeyi kuyruklar), sürükleme **açıkken** dosya diskten
-değiştirildi (`metin` → `DISARIDAN DEGISTIRILDI - KAYBOLMAMALI`), sonra `ArrowRight` + `Enter` ile
-bırakıldı.
+Kurulum: `rereadCard`'ın (`handlers.ts:42-47`) başına `MC_QA_FAULT=1` ile tetiklenen bir `EBUSY`
+`throw` enjekte edildi (geçici, geri alındı). `npm run build` + `npx tsx src/server/index.ts`,
+`MC_PORT=7434`, izole `MC_DATA_DIR`, scratchpad'de iki kartlı geçici fixture proje.
 
-**Diskte gerçekte ne oldu (dönen koda değil, `od -c` çıktısına baktım):**
-
-```
-status: dev            <- DEĞİŞMEDİ
-# Govde dev
-DISARIDAN DEGISTIRILDI - KAYBOLMAMALI   <- dış değişiklik KORUNDU
-```
-
-- HTTP: `409 Conflict` (tarayıcı konsolunda tek hata satırı bu).
-- UI: `F-102 panel açıkken dışarıdan değişti — güncel durum yüklendi (Geliştirme/dev). Az önceki
-  sürükleme uygulanmadı.` + `[Kapat]`; kart Geliştirme sütununda yeniden çizildi.
-- **Sessiz üzerine yazma YOK.** AC4 uçtan uca doğrulandı.
-
-Ek olarak hash üretim noktasını ve handler seviyesini ayrı ayrı mutasyonladım (M1, M2b) — ikisi de
-KIRMIZI, yani çakışma yolu iki noktadan çitli.
-
-Kalan teorik pencere (bulgu değil, kayıt): `setFeatureStatus` oku-karşılaştır-yaz sırasını
-kilitsiz yapıyor (`write-gate.ts:255-302`); okuma ile `rename` arasındaki (~ms) pencerede yapılan
-bir dış yazım kaybolur. Tek kullanıcılı yerel araçta kabul edilebilir, ADR-005 madde 7 bunu zaten
-"hash karşılaştırması" seviyesinde tanımlıyor.
-
-## 4. AC2 bayt diff kanıtı
-
-Gerçek klavye sürüklemesi sonrası, BOM + CRLF + yorum satırı + fazladan boşluk içeren fixture:
-
-| | önce | sonra |
+| Madde | Ölçüm | Sonuç |
 |---|---|---|
-| bayt | 144 | 146 |
-| farklı segment | `status:   todo` | `status: contract` |
-| BOM (`﻿`) | var | var |
-| satır sonları | tümü `\r\n` | tümü `\r\n` |
-| `# yorum satiri` / gövde | aynı | aynı |
+| **(a) İstemci bir yanıt alıyor mu?** | `curl -m 10 -X PATCH …` → `{"success":true}` · **`HTTP=200 time=0.039984`** (önceki tur: `HTTP=000 time=10.013`) | **EVET** |
+| **(b) Süreç yaşıyor mu?** | Aynı süreçte ardışık 4 istek daha: `GET /api/features` → `HTTP=200 time=0.0037`; çakışma yolu → `HTTP=500 time=0.0034`; tekrar → `HTTP=500 time=0.0028`. `server-fault.log`'da **`unhandledRejection` güvenlik ağı satırı YOK**, yalnızca dürüst uyarı satırları | **EVET** |
+| **(c) Yazma gerçekleştiyse istemci öğreniyor mu (yarı-başarı dürüst mü)?** | Diskte `status: contract` (yazma uygulandı) + yanıt `{"success":true}` **`data` alanı YOK** → istemci "yazıldı ama tazelenemedi" ayrımını yapabiliyor. Sunucu stderr: `Uyarı: durum yazıldı ama güncel kart okunamadı (F-901.md): EBUSY…` | **EVET** |
+| **(d) İstemcide `pendingKeys` temizleniyor mu?** | Gerçek Chromium, üretim derlemesi, fault AÇIK: F-902 kartında `Space`→`ArrowRight`→`Enter`. Sonuç: `[data-testid^="kanban-card-pending-"]` → **boş dizi**, kart **`kanban-column-qa`**'da, canlı bölge `"Ikinci kart → QA (qa) olarak taşındı"`, diskte `status: qa`. Kalıcı "yazılıyor…" YOK | **EVET** |
 
-`\r\n` ayracını yakalama grubuyla bölüp segment segment karşılaştırdım: **`status` satırı dışında
-farklı segment yok.** Not: satır tamamen yeniden yazıldığı için `status:` sonrasındaki fazladan
-girinti normalleşiyor — ADR-005 madde 6 "yalnızca girintisiz ilk `status:` satırı değiştirilir"
-kapsamında, ihlal değil.
+**Ek ölçüm (yarı-başarının kurtarma yolu, brief dışı ama düzeltmenin ürettiği davranış):**
+fault **hâlâ açıkken** aynı kart ikinci kez taşındı (`qa`→`fix`) ve **başarılı oldu** → chokidar
+echo'su bayat `content_hash`'i gerçekten düzeltiyor, yarı-başarı çıkmaz sokak değil. Diskte
+`status: fix`, DOM'da `kanban-column-fix`.
+
+**D46 mutasyonu (çitin gerçekten ölçtüğü):**
+- Düzeltme-öncesi `handlers.ts` (`git show 2e7647f:…`) geri yüklendi →
+  `features-api.test.ts` **2 test KIRMIZI**: B1 testi `5023ms` ile **zaman aşımı** (istek gerçekten
+  asılı kalıyor) + N1 testi.
+- Yalnızca iç `try/catch` (yarı-başarı dalı) kaldırıldı → B1 testi KIRMIZI (`expected 200, got 500`)
+  — dış güvenlik ağı devreye giriyor, yani iki savunma hattı **ayrı ayrı** çitli.
+- İstemci yarısı: `useFeatures.ts:188` yarı-başarı dalı devre dışı → `useFeatures.test.ts:248`
+  KIRMIZI (rollback geri geliyor).
 
 ---
 
-## 5. Kendi mutasyon tablom (9 mutasyon — developer'ın 14'ünü tekrarlamadım; biri kasıtlı tekrar)
+## 4. 375px ve 320px görünür genişlik ölçümü (kendi kırpma hesabımla, `toBeVisible()` kullanılmadı)
 
-Her mutasyon: uygula → ölç → `git checkout --` ile geri al.
+Yöntem: `getBoundingClientRect()` + tüm `overflow-x: auto/scroll/hidden` ata kaplarla ve
+viewport'la kesişim. Gerçek Chromium, üretim derlemesi, `http://127.0.0.1:7434`.
+
+| Viewport | `#tab-timeline` görünür | `#tab-kanban` görünür | Ayarlar | Header yüksekliği | `documentElement.scrollWidth` |
+|---|---|---|---|---|---|
+| 280 | **126 px** | **50 px** | 79 px | 77 | 280 |
+| **320** | **126 px** | **50 px** | 79 px | 77 | 320 |
+| 360 | 126 | 50 | 79 | 77 | 360 |
+| **375** | **126 px** | **50 px** | 79 px | 77 | 375 |
+| 414 / 480 / 560 / 639 | 126 | 50 | 79 | 77 | = vw |
+| 640 (kırılma noktası) | 126 | 50 | 79 | **56** | 640 |
+| 768 / 1024 / 1280 / 1920 | 126 | 50 | 79 | 56 | = vw |
+
+- **Önceki tur: her ikisi de 0 px. Şimdi 13 viewport'un hiçbirinde kırpma yok**, yatay belge
+  kaydırması da yok (`scrollWidth == innerWidth` her yerde).
+- Başlık 320px'te `truncate` ile 113 px'e iniyor (`MISSION …`), sekmelerle genişlik yarışmıyor.
+- **Mutasyon (D47):** `App.tsx` yalnızca **düzen** açısından düzeltme-öncesi hâline döndürüldü
+  (roving tabindex/`focusTab` KORUNARAK) → `npx playwright test -g "T3"` **KIRMIZI**:
+  `clippedVisibleWidth('#tab-timeline')` → `Received: 0`. Çit gerçekten ölçüyor.
+- **Tailwind üretimi doğrulandı** (F-003 dersi): `order-1/2/3`, `sm:order-none`, `flex-wrap`,
+  `gap-y-2`, `sm:flex-nowrap`, `sm:h-14`, `sm:w-auto`, `flex-none`, `truncate` sınıflarının hepsi
+  `dist/web/assets/index-BtoxddyP.css` içinde üretiliyor (`emptyOutDir` de çalışıyor: mutasyonlu
+  koşudan kalan `index-DRH4O7py.css` yeniden derlemede silindi).
+
+Ekran görüntüleri: `docs/qa/screens/F-007-fix1-qa-320px.png`,
+`docs/qa/screens/F-007-fix1-qa-375px.png`, `docs/qa/screens/F-007-fix1-qa-kanban-1280.png`,
+`docs/qa/screens/F-007-fix1-qa-timeline-1280.png`, `docs/qa/screens/F-007-fix1-qa-timeline-375px.png`.
+
+---
+
+## 5. Echo kırılganlık ölçümü (M4 — 12 koşu + 8 kontrol koşusu)
+
+Mutasyon: `src/features/kanban/web/useFeatures.ts:56` hash-eşit dalı `return prevCard` yerine
+`return { ...prevCard }` (önceki turdaki kendi dar mutasyonumun birebir aynısı).
+
+| Koşu | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Mutasyonlu (`npx vitest run tests/features/kanban/web/useFeatures.test.ts`) | K | K | K | K | K | K | K | K | K | K | K | K |
+
+**12/12 KIRMIZI** (K), her koşu ayrı `vitest run` süreci. Kırılan test her seferinde aynı:
+`useFeatures — echo no-op … > aynı content_hash ile gelen refetch aynı kart REFERANSINI korur`,
+`AssertionError: … // Object.is equality`.
+
+Kontrol (doğru kod, 8 ardışık koşu): **8/8 YEŞİL** (`11 passed (11)`) — çit yanlış-kırmızı da
+vermiyor. Önceki turdaki **%73 yanlış-yeşil oranı sıfırlandı.** Developer'ın "5/5" iddiası
+doğrulandı ve 12'ye genişletildi. Kök neden gerçekten kapanmış: senkronizasyon sinyali artık
+`fetchImpl` çağrı sayısı değil, `setCards` ile aynı React commit'inde yazılan `lastSyncedAt`
+(`useFeatures.ts:94`, test `useFeatures.test.ts:81`).
+
+---
+
+## 6. Kendi mutasyon tablom (8 mutasyon — hepsi uygulandı, ölçüldü, `git checkout --` ile geri alındı)
 
 | # | Mutasyon | Dosya:satır | Koşturulan | Sonuç |
 |---|---|---|---|---|
-| M1 | Handler istemcinin `expected_hash`'ini yok sayıp diskten yeniden hesaplasın (sessiz üzerine yazma) | `handlers.ts:124` | `features-api.test.ts` | **KIRMIZI** (409 testi) |
-| M2b | `content_hash` üretim noktası bozulsun (`sha256(buffer+'x')`) | `parse-feature.ts:48` | tam vitest | **KIRMIZI** (3 test) |
-| M3b | `newText = parts.join('') + ' '` (status DIŞINDA bayt ekle) | `write-gate.ts:300` | tam vitest | **KIRMIZI** (11 test, golden fixture'lar) |
-| M4 | `mergeCards` aynı referans yerine **sığ kopya** döndürsün | `useFeatures.ts:56` | `useFeatures.test.ts` ×11 | **YEŞİL 8/11** (bkz. Ö4) · E2E D42: **KIRMIZI** |
-| M4b | Developer'ın mutasyon 5'i birebir tekrar (`return next`) | `useFeatures.ts:56` | `useFeatures.test.ts` ×6 | **YEŞİL 1/6** (flaky doğrulandı) |
-| M5 | `keyboardCodes.end` = `['KeyQ']` (Enter/Boşluk/Tab onayı kaldırıldı) | `KanbanScreen.tsx:59` | tam vitest / E2E `-g AC9` | Birim **YEŞİL 728/728**, E2E **KIRMIZI** |
-| M6 | `aria-controls` = `panel-XX-<tab>` | `App.tsx:83` | `App.test.tsx` | **KIRMIZI** (1 test) |
-| M6b | Her iki sekme de `aria-controls="panel-timeline"` | `App.tsx:83` | tam vitest | **YEŞİL 728/728** (bkz. Ö3) |
-| M7 | `tests/e2e/zzz-qa-probe.spec.ts` eklendi (hiçbir config'te yok) | geçici dosya | `e2e-config-guard.test.ts` | **KIRMIZI**, dosya silindi |
-| M8 | `patchStatus` hata dalındaki `restore()` kaldırıldı | `useFeatures.ts:199` | tam vitest | **KIRMIZI** (1 test) |
-| M9 | `onKeyDown={onTabKeyDown}` tamamen kaldırıldı (tablist ok tuşları) | `App.tsx:87` | tam vitest **+ tam E2E** | **YEŞİL 728/728 + 23/23** (bkz. Ö2) |
+| Q1 | Düzeltme-öncesi `handlers.ts` tamamen geri yüklendi (B1 + N1 birlikte) | `handlers.ts` | `features-api.test.ts` | **KIRMIZI** (2 test; B1 testi **5023 ms zaman aşımı**) |
+| Q2 | Yalnızca iç `try/catch` (yarı-başarı dalı) kaldırıldı, dış ağ korundu | `handlers.ts:134-160` | `features-api.test.ts` | **KIRMIZI** (`expected 200, got 500`) |
+| Q3 | İstemci yarı-başarı dalı devre dışı (`if (false && …)`) | `useFeatures.ts:188` | `useFeatures.test.ts` | **KIRMIZI** (`outcome.kind` `success` değil) |
+| Q4 | `onKeyDown={onTabKeyDown}` tamamen silindi (M9 tekrarı) | `App.tsx:87` | `App.interaction.test.tsx` + `App.test.tsx` | **KIRMIZI** (önceki turda 728/728+23/23 YEŞİL'di) |
+| Q5 | İki sekme de `aria-controls="panel-timeline"` (M6b tekrarı) | `App.tsx:83` | `App.test.tsx` | **KIRMIZI** (önceki turda 728/728 YEŞİL'di) |
+| Q6 | `focusTab()` gövdesi no-op (`void screen`) | `App.tsx:52` | `App.interaction.test.tsx` | **KIRMIZI** (`document.activeElement` taşınmadı) |
+| Q7 | `App.tsx` düzeni düzeltme-öncesine döndürüldü, `focusTab` KORUNDU (B2 izolasyonu) | `App.tsx:69-96` | `npx playwright test -g "T3"` | **KIRMIZI** (`Received: 0`) |
+| Q8 | `mergeCards` hash-eşit dalı `{ ...prevCard }` (M4 tekrarı) | `useFeatures.ts:56` | `useFeatures.test.ts` ×12 | **12/12 KIRMIZI** (önceki turda 11 koşuda 8 YEŞİL'di) |
 
-**Yeşil kalan mutasyonlar: M4 (kısmen), M5 (birim katmanında), M6b, M9.**
-
-Ayrıca hata yolu **fault injection** (mutasyon değil, arıza enjeksiyonu) — bkz. B1.
+**Yeşil kalan mutasyon sayısı: 0.** Önceki turda yeşil kalan dört mutasyonun (M4, M6b, M9 ve
+klavye/odak yolu) **tamamı** artık çitli.
 
 ---
 
-## 6. Bulgular (2 bloklayıcı · 5 önemli · 4 not)
+## 7. Regresyon denetimi (düzeltmenin ürettiği yan etki var mı?)
 
-### BLOKLAYICI
-
-**B1 — `PATCH /api/features` yanıtı, yazma başarılı olduktan sonraki bir okuma hatasında SONSUZA
-KADAR askıda kalıyor (istemci hiçbir yanıt almıyor).**
-`src/features/kanban/server/handlers.ts:123-165` — `void (async () => { … })()`; içindeki
-`rereadCard()` (`handlers.ts:43-48`, satır 128 ve 135'te çağrılıyor) `try/catch` içinde **değil**.
-`withDispatchErrorBoundary` (`src/server/index.ts:147`) yalnızca **senkron** dağıtımı sarıyor,
-bu asenkron IIFE'yi yakalayamaz.
-
-*Tekrar üretme (ölçüldü):* `rereadCard`'ın başına `MC_QA_FAULT=1` ile tetiklenen bir `EBUSY`
-fırlatması eklendi (geçici, geri alındı) → üretim derlemesi 7434'te başlatıldı → geçerli hash ile
-`PATCH` gönderildi.
-*Beklenen:* 500 + `{"code":"write_failed"}` (mimari §6 / `src/shared/types.ts:45`: "handler ne
-olursa olsun genel 500'e düşer").
-*Gerçek:* `HTTP=000 time=10.013` (curl 10 sn'de zaman aşımına uğradı, sunucu **hiç yanıt
-vermedi**), `server2.log`'da tek satır: `Beklenmeyen reddedilen promise (güvenlik ağı, B1): Error:
-EBUSY…`. **Yazma diskte gerçekleşmişti** (`status: dev`), yani veri yazıldı ama istemci hiçbir
-zaman haber almıyor.
-*İstemci etkisi:* `useFeatures.patchStatus`'un `await writeFetchForPatch(...)`'i hiç çözülmez →
-`pendingKeys` o kart için **hiç temizlenmez** (`useFeatures.ts:164-170` yalnızca yanıt/catch
-yolunda çağrılıyor), kart kalıcı olarak "bekliyor" durumunda donar; ne hata banner'ı ne rollback
-çalışır. Süreç yalnızca F-002'den kalan `unhandledRejection` **güvenlik ağı** sayesinde ayakta —
-o ağın kendi yorumu "ASIL çözüm değil" diyor (`src/server/index.ts:21-24`).
-*Neden gerçekçi:* ürün Windows-only (ADR-009); ADR-005 madde 5 aynı dosya için EPERM/EBUSY
-riskini **yazma** tarafında kabul edip 3 kademeli retry koymuş. Yazmadan hemen sonraki okuma, AV
-tarayıcısının dosyayı kilitlediği tam penceredir. Yani hata sınıfı sözleşmenin kendi kabul ettiği
-sınıf; kapatılan taraf yazma, açık kalan taraf okuma.
-*Sınıf tekrarı:* F-002 B1 ve F-005'in "yeni yazma yolunda fault injection" dersinin **üçüncü**
-tekrarı; bu turda hiçbir test bu yolu koşmuyor (`grep -n "rereadCard" tests/` = 0).
-
-**B2 — T3 (devralınan taahhüt 3) sağlanmıyor: 375px'te sekme çubuğunun görünür piksel genişliği
-SIFIR; çiti de bunu ölçmüyor.**
-*Ölçüm (gerçek Chromium, 375×720, `getBoundingClientRect`):*
-`header > div` (kaydırma kabı) `x=16, right=184, clientWidth=168, scrollWidth=395, scrollLeft=0`;
-`#tab-timeline` `x=219`, `#tab-kanban` `x=361` → **kırpılmış görünür genişlik: her ikisi de 0 px.**
-Kullanıcı `MISSION CONTRO…` başlığı ve Ayarlar dişlisinden başka bir şey görmüyor; ekranlar arası
-geçiş ancak başlık şeridini yatay kaydırmayı **keşfederse** mümkün.
-*Sözleşme ne diyor:* §6 madde 3 — "gezinme **hiçbir zaman tamamen gizlenmez**".
-`docs/03-ux.md:17` (G3 onaylı) — dar ekranda "yatay kaydırılabilir bir şerit halinde kalır —
-hamburger menüsü, **gizli navigasyon** veya ikinci bir tıklama katmanı gerektirmez".
-*Çit neden yakalamıyor:* `tests/e2e/kanban.spec.ts:353-362` sekmeler için yalnızca
-`toBeVisible()` + `.click()` kullanıyor. Playwright'ta `toBeVisible()` bir `overflow-x-auto`
-kabında kaydırılmış öğe için **doğrudur** ve `.click()` öğeyi otomatik olarak görünür alana
-kaydırır — yani test, kullanıcının hiç göremediği bir sekmede de yeşil kalır. Ayarlar düğmesi için
-gerçek bir `boundingBox` sınırı var (satır 348-351), sekmeler için **yok**.
-*Etki:* F-005'te aynı sınıf "statik etiket" olduğu için tolere edilmişti; F-007 sekmeleri **tek
-gezinme mekanizmasına** çevirdiği için taahhüt tam da bu yüzden devredilmişti. Taahhüt feature
-notunda `[x]` işaretli ve kanıt olarak bu ölçmeyen test gösteriliyor.
-*Not:* geniş ekranda (1280px) sorun yok.
-
-### ÖNEMLİ
-
-**Ö1 — Tablist ok tuşları DOM odağını taşımıyor (WAI-ARIA roving tabindex ihlali).**
-`src/web/App.tsx:45-59` `onTabKeyDown` yalnızca `selectTab(...)` çağırıyor; yeni seçili sekmeye
-`focus()` verilmiyor.
-*Ölçüm:* `#tab-kanban` odaktayken `ArrowLeft` → `aria-selected="true"` **tab-timeline**'a geçti,
-`tabIndex` 0/-1 yer değiştirdi, ama `document.activeElement` hâlâ **tab-kanban** (artık
-`tabIndex=-1` olan öğe). Ekran okuyucu odak taşınmadığı için sekme değişimini duyurmaz; sonraki
-`Tab` basışı beklenmedik yere düşer. Sözleşme §7 bunu açıkça "APG Tabs Pattern, roving tabindex"
-diye tanımlıyor.
-
-**Ö2 — Tablist klavye gezinmesinin HİÇBİR testi yok (M9 tam yeşil).**
-`onKeyDown={onTabKeyDown}` bağlantısı tamamen silindiğinde **728/728 birim + 23/23 E2E yeşil**
-kaldı. `grep -rn "ArrowLeft\|onTabKeyDown\|'End'" tests/` → tablist için 0 sonuç. Sözleşme §5 T1
-satırı "E2E (**gerçek ok tuşu, gerçek focus**)" vaat ediyordu; teslim edilen kanıt
-`tests/web/App.test.tsx:41-56`'daki **statik HTML dizge** assert'leri. `Home`/`End` (§7'de
-"tek satırlık ek" denen davranış) da hiç ölçülmüyor.
-
-**Ö3 — `aria-controls` eşleşmesi yarım çitli (M6b tam yeşil).**
-`App.test.tsx:50` yalnızca `aria-controls="panel-timeline"` dizgesini arıyor. Her iki sekmeyi de
-`panel-timeline`'a bağlayan mutasyon 728/728 yeşil kaldı — yani Kanban sekmesinin panel ilişkisi
-hiç ölçülmüyor (ekran okuyucu yanlış panele giderdi). Aynı test dosyası `panel-kanban` için
-`aria-labelledby`'yi kontrol ediyor ama ters yönü (`tab-kanban` → `panel-kanban`) atlamış.
-
-**Ö4 — Echo çiti (jsdom) flaky ve çoğunlukla ölçmüyor — ölçüldü.**
-`tests/features/kanban/web/useFeatures.test.ts:61-75`: assert, `fetchImpl` **çağrı sayısı** 2'ye
-ulaşır ulaşmaz koşuyor; React'in ikinci state commit'ini beklemiyor. Sonuç:
-kendi mutasyonum (`return { ...prevCard }`, davranışsal olarak referans kimliğini bozan en dar
-mutasyon) **11 koşuda 8 kez YEŞİL**; developer'ın mutasyon 5'i (`return next`) **6 koşuda 1 kez
-YEŞİL**. Developer bunu "bilinen kalıntı" olarak kaydetmiş ama sıklığı ölçmemiş — gerçek yanlış-
-yeşil oranı benim mutasyonumda %73. **Bloklayıcı değil**, çünkü ikinci savunma hattı gerçek:
-E2E D42 render sayacı (`kanban.spec.ts:367-405`) aynı mutasyonu deterministik olarak KIRMIZI
-verdi (`expect(after).toBe(before)`). Düzeltme yönü: assert'i `waitFor(() => expect(cards[0])
-.toBe(firstRef))` yerine, ikinci fetch'in state'e yansıdığını gösteren bir gözlemden (ör.
-`lastSyncedAt` değişimi) sonra yapmak.
-
-**Ö5 — Sözleşme §6 madde 1'in açıkça söz verdiği "Ayarlar açıkken tablist durumu" testi yazılmamış.**
-Sözleşme: "`KanbanScreen.test.tsx`/App testlerine bu üçüncü durumu … doğrulayan bir test eklenir."
-`grep -rn "lastTabScreen" tests/` = 0. Davranışı tarayıcıda elle doğruladım ve **doğru**
-(Ayarlar açıkken tam olarak bir `[role=tab][aria-selected=true]` kalıyor, `aria-pressed="true"`),
-ama çit yok → gelecek turda sessizce bozulabilir. (Ayrıca sözleşme "Ayarlar kendi
-`#panel-settings`'inde gösterilir" diyor; DOM'da böyle bir id yok — metin bayat.)
-
-### NOT (GEÇTİ'yi engellemez, kayıt)
-
-**N1 —** 403 `write_denied` istemciye §4.3 sözlüğündeki *"dosya biçimi tanınamadı. Tekrar
-deneyin."* yerine 500 ile **aynı** metni (`Dosyaya yazma izni reddedildi.`) döndürüyor
-(`handlers.ts:147` ve `:158`). Kullanıcı güvenlik reddi ile disk hatasını ayırt edemiyor; sözlük
-satırı uygulanmamış.
-
-**N2 —** Brief'in "`settings.spec.ts` ve `shell.spec.ts` assert'leri değişti" öncülü yarı yanlış:
-`git diff fec3aa2..HEAD --stat` yalnızca `tests/e2e/shell.spec.ts`'i (+31/-... ) gösteriyor,
-`settings.spec.ts`'e **hiç dokunulmamış**. `shell.spec.ts` değişikliği davranış gevşetmesi
-değil, yeni gerçeğe uyarlama: `clickableCount` 1→**3**, `aria-current` sayısı 1→**0**,
-`tabRoleCount` 0→**2** ve **yeni** bir "tam olarak bir `[role=tab][aria-selected=true]`, metni
-`Zaman Çizelgesi`" assert'i eklenmiş. Ölçme niteliği korunmuş, regresyon yok.
-
-**N3 —** CEO ödevleri hâlâ açık: `docs/03-ux.md:443` klavye akışı hâlâ "`Enter`/`Boşluk` ile
-seçili moda al" diyor (CEO onaylı sapma yansıtılmamış) ve §4.3'ün iki yeni hata metni UX Türkçe
-sözlüğüne eklenmemiş (`grep "sunucuya ulaşılamadı" docs/03-ux.md` = 0). Developer'ın işi değil,
-ama G4-1 öncesi kapanmalı.
-
-**N4 —** `setFeatureStatus` oku→karşılaştır→`rename` sırası kilitsiz; okuma ile yeniden adlandırma
-arasındaki milisaniyelik pencerede yapılan bir dış yazım sessizce kaybolur. Tek kullanıcılı yerel
-araçta kabul edilebilir; kayıt olarak duruyor (ADR-005 madde 7'nin sınırı).
+| Kontrol | Ölçüm | Sonuç |
+|---|---|---|
+| Geniş ekranda (≥640px) düzen değişti mi | 640/768/1024/1280/1920'de header **56 px** (= `h-14`), tek satır, başlık `x=16 y=14`, sekmeler `y=18`, Ayarlar `x=1185` | **Değişmedi** |
+| Zaman çizelgesi ekranı | 1280 ve 375'te render doğru (CANLI rozeti, `0 olay/dk`, Duraklat, filtre şeridi, boş-durum metni); ekran görüntüleri ekli | **Sağlam** |
+| Kanban panosu 1280 | 8 sütun, başlıklar `Yapılacak (todo)` biçiminde, kartlar diskteki duruma göre doğru sütunda (F-901→contract, F-902→fix) | **Sağlam** |
+| Tarayıcı konsolu | `browser_console_messages` → **0 hata, 0 uyarı** | **Temiz** |
+| Tailwind derleme çıktısı | Yeni düzen sınıflarının hepsi `dist` CSS'te; `tests/build-css.test.ts` 17/17 yeşil | **Sağlam** |
+| Birim + E2E paketi | 732/732, 23/23, 1/1 (mutasyonlar geri alındıktan sonra tekrar koşuldu) | **Yeşil** |
+| `shell.spec.ts` / `settings.spec.ts` | `npm run e2e` içinde yeşil | **Regresyon yok** |
 
 ---
 
-## 7. Görsel doğrulama (üretim derlemesi + izole veri dizini + geçici fixture)
+## 8. Bulgular (0 bloklayıcı · 0 önemli · 5 not)
 
-| Gözlem | Sonuç |
-|---|---|
-| 7 durum sütunu + "Bilinmeyen durum" | 8 sütun render ediliyor (`kanban-column-todo…unknown`) |
-| Sütun başlığı biçimi | `Geliştirme (dev)` — ADR-001 karar 8 uyumlu, hepsi Türkçe |
-| Kart sürüklenince dosya değişiyor mu | Evet (klavye ile 3 farklı kart, 3 farklı dosya diskte değişti) |
-| Kart detay modalı (AC7) | `id`, `title`, `Durum`, `Sahip (owner)`, `Bağımlılıklar (deps)`, `Sprint`; `Esc` kapatıyor |
-| Hata durumunda kart eski sütununa dönüyor mu (AC5) | Evet, `[Tekrar dene]` ile birlikte |
-| Ayrıştırılamayan dosyalar | `Ayrıştırılamayan dosyalar (1)` ayrı liste, sürüklenemez |
-| `.txt` dosyası | Kanbanda yok (doğru) |
-| 375px | **Sekmeler görünmüyor (B2)**; sütunlar ve uyarı banner'ları doğru sarıyor |
-| Konsol | Yalnızca beklenen 409/500 kaynak hataları; JS hatası/pageerror yok |
+**N-1 — 403 `write_denied` metni anlamsal olarak yanıltıcı (sözleşmece onaylı).**
+`handlers.ts:184` artık `'Dosya biçimi tanınamadı. Tekrar deneyin.'` dönüyor; bu, kök dışına
+symlink'lenmiş bir dosya gibi bir **güvenlik reddini** "dosya biçimi" sorunu gibi anlatıyor.
+Sözleşme §4.3 Karar 2 (`docs/qa/F-007-contract.md:500`) bu birleştirmeyi açıkça onaylamış, bu
+yüzden **ihlal değil**. Küçük tutarsızlık: sözleşme satırı metni cümle içinde küçük harfle
+(`… kaydedilemedi: dosya biçimi tanınamadı…`) yazıyor, uygulama `KanbanScreen.tsx:172`'de
+`F-901 kaydedilemedi: Dosya biçimi tanınamadı. Tekrar deneyin.` üretiyor (cümle ortasında büyük
+harf). Kozmetik.
 
-Ekran görüntüleri:
-- `docs/qa/screens/F-007-2026-09-06-kanban-1280.png` (pano, 1280px)
-- `docs/qa/screens/F-007-2026-09-06-modal.png` (AC7 detay modalı)
-- `docs/qa/screens/F-007-2026-09-06-conflict.png` (AC4 çakışma banner'ı)
-- `docs/qa/screens/F-007-2026-09-06-write-error.png` (AC5 yazma hatası + kart geri döndü)
-- `docs/qa/screens/F-007-2026-09-06-375px.png` (**B2**: dar genişlikte sekmeler görünmüyor)
+**N-2 — Yarı-başarıdan sonra istemcinin `content_hash`'i bayat kalıyor; kurtarma chokidar
+echo'suna bağlı.** Ölçüldü ve **çalışıyor** (fault açıkken ikinci taşıma başarılı oldu). Ancak
+SSE bağlantısı kopmuşken yarı-başarı yaşanırsa, kullanıcının bir sonraki sürüklemesi hiçbir dış
+değişiklik olmadığı hâlde 409 "dosya dışarıdan değişti" banner'ı görür. Bu birleşik durumun
+(yarı-başarı + kopuk akış) çiti yok. Tek kullanıcılı yerel araçta kabul edilebilir; kayıt.
 
-## 8. Erişilebilirlik denetimi
+**N-3 — Echo çitinin senkronizasyon sinyali `lastSyncedAt = Date.now()` (ms çözünürlüğü).**
+İki refetch aynı milisaniyeye düşerse `expect(lastSyncedAt).not.toBe(firstSyncedAt)` hiç
+sağlanmaz ve test **zaman aşımıyla KIRMIZI** olur. Yön güvenli (yanlış-yeşil değil,
+yanlış-kırmızı) ve 8/8 kontrol koşusunda hiç görülmedi; kayıt olarak duruyor.
 
-| Kontrol | Sonuç |
-|---|---|
-| `role="tablist"` / `tab` / `tabpanel` | Var, yapısal olarak geçerli |
-| `aria-controls`/`id` eşleşmesi | Doğru render ediliyor, **çiti yarım (Ö3)** |
-| Roving `tabindex` | Değerler doğru (0/-1), **odak taşınmıyor (Ö1)** |
-| Ok tuşları / `Home` / `End` | Seçimi değiştiriyor, **çitsiz (Ö2)** |
-| Ayarlar desene giriyor mu | **Hayır** — `aria-pressed` toggle butonu, `role=tab` değil (doğru) |
-| Ayarlar açıkken tablist | Tam olarak bir `aria-selected=true` kalıyor (doğru, çitsiz — Ö5) |
-| `aria-roledescription` | `"kart"` (Türkçe, dnd-kit'in `"draggable"`'ı geçersiz kılınmış) |
-| `screenReaderInstructions` | `DndDescribedBy-0`: *"Bu kartı taşımak için Boşluk tuşuna basın…"* — Türkçe ve **gerçek tuş tasarımıyla uyumlu** |
-| dnd-kit'in kendi `aria-live="assertive"` bölgesi | `DndLiveRegion-0` DOM'da var ama içeriği **boş** (susturma çalışıyor) |
-| Kendi canlı bölgemiz | `role="status" aria-live="polite" aria-atomic="true"`, sürükleme sırasında `Sözleşme (contract) sütununa taşınıyor` yazdı — Türkçe, `polite` |
+**N-4 — vitest worker fork kararsızlığı bu turda tekrar görüldü (projede 4. kez).**
+`npm run verify` ilk koşusunda `tests/integration/projects-api.test.ts` çalışırken worker
+`exit code 3221226505` ile düştü (47/48 dosya, 722/732 test). Hemen tekrar koşulduğunda ve
+turun sonunda tekrar koşulduğunda 0 / 48 / 732. Kod hatası değil, ama G4-1 öncesi CI güvenilirliği
+için kayda değer: 3 tam koşunun **1'i** kararsızdı.
 
-## 9. Kapsam, regresyon ve güvenlik denetimi
+**N-5 — CEO ödevleri hâlâ açık (önceki turdan devir, developer sahipliği dışında).**
+`grep -rn "lastTabScreen" tests/` = **0** (Ö5, sözleşmenin söz verdiği "Ayarlar açıkken tablist"
+testi yazılmamış — davranış doğru, çit yok); `docs/03-ux.md:443` klavye akışı hâlâ
+`Enter`/`Boşluk` ile başlatmayı anlatıyor (uygulama yalnızca `Space` ile başlatıyor);
+`grep -c "sunucuya ulaşılamadı" docs/03-ux.md` = **0** (§4.3'ün yeni metinleri UX sözlüğüne
+işlenmemiş); sözleşme:629'daki `#panel-settings` cümlesi hâlâ bayat. G4-1 öncesi kapanmalı.
 
-- **Faz 2 sızıntısı yok:** `grep -rniE "kapılar|thread|token" src/features/kanban src/web/App.tsx`
-  → 0 (yalnızca `onNavigateSettings` eşleşti). `App.test.tsx` negatif çiti hâlâ yerinde.
-- **`src/features/kanban/**` içinde yazma çağrısı yok:** `writeFile|appendFile|unlink|rename|
-  rmSync|mkdir` → 0 sonuç. Yalnızca okuma (`readFileSync`/`statSync`/`readdirSync`/`existsSync`)
-  — ADR-005'e uygun; tüm yazmalar `write-gate.setFeatureStatus` üzerinden.
-- **`git diff fec3aa2..HEAD --stat`:** 38 dosya, +4093/-166. Kanban dizini + `write-gate.ts` (58
-  satır: yalnızca async dönüşümü ve `safeYamlValue`), `App.tsx`, `useEventStream.ts` (`onFeatures`),
-  `index.ts` (rota), `shared/*`. Sözleşme §2.1/§2.2 dosya listesinin dışına çıkılmamış (tek
-  istisna `tests/e2e/shell.spec.ts`, `docs/blockers.md`'de kayıtlı ve CEO talimatıyla).
-- **F-006 regresyonu:** `write-gate.test.ts` bayt-koruma golden fixture'ları ve
-  `write-gate-manifest.test.ts` hâlâ yeşil; async dönüşüm imzaları değiştirmiş ama garantileri
-  değiştirmemiş. `OPERATION_PATTERNS`'a dokunulmamış (T6 koşulu tetiklenmedi — doğrulandı).
-- **Güvenlik:** `x-mc-write` kontrolü tek yerde, dağıtıcıda (`src/server/index.ts:333`), yeni
-  `PATCH /api/features/...` rotası ondan **sonra** çözülüyor; regresyon çiti var
-  (`tests/integration/features-api.test.ts:285-297`: başlıksız PATCH → 403, GET muaf). Ham
-  write-gate hata metni istemciye sızmıyor (`handlers.ts:153-159`: stderr'e ham, istemciye sabit
-  Türkçe metin; developer mutasyon 4 KIRMIZI). `npm audit` = 0 açık.
+---
+
+## 9. Puanların gerekçesi
+
+- **İşlevsellik 9 (önce 7):** B1'in dört maddesi de ölçülerek kapandı — yanıt geliyor (40 ms),
+  süreç yaşıyor, yarı-başarı dürüst raporlanıyor, `pendingKeys` temizleniyor, üstelik echo ile
+  kendiliğinden toparlanıyor. Ö1 hem jsdom'da hem gerçek tarayıcıda doğrulandı. Kırılan tek bir
+  işlevsel yol bulamadım. 10 değil, çünkü yarı-başarının kurtarması dış bir mekanizmaya (SSE
+  echo) bağlı ve o birleşimin çiti yok (N-2).
+- **Özellik bütünlüğü 8 (önce 6):** T3 artık gerçekten sağlanıyor (280-1920px'te ölçüldü),
+  T1'in klavye/odak yarısı gerçek çitlere kavuştu, `aria-controls` iki yönlü ölçülüyor. 10
+  değil: Ö5'in söz verilen testi hâlâ yok (CEO ödevi) ve T6 F-008'e devredilmiş durumda.
+- **Görsel/UX 8 (önce 6):** UX'in birincil aralığında (320-480px) gezinme tam görünür, yatay
+  belge kaydırması yok, geniş ekran görünümü bitişik piksel düzeyinde değişmemiş, konsol temiz.
+  10 değil: 403 metninin anlamı yanıltıcı (N-1) ve dar genişlikte başlık `MISSION …`'a düşüyor
+  (kabul edilebilir tercih, ama marka görünürlüğü azalıyor).
+- **Kod kalitesi 8 (önce 6):** 8 mutasyonun **8'i** kırmızı, yeşil kalan yok; hata yolu artık
+  gerçek HTTP üzerinden fault-injection ile çitli; echo çiti 12/12 determinist. 10 değil:
+  worker fork kararsızlığı (N-4) ve `Date.now()` tabanlı senkronizasyon sinyali (N-3) kalan
+  kırılganlıklar.
+
+---
 
 ## 10. Temizlik kanıtı
 
-- `git diff HEAD` → **boş** (tüm mutasyonlar geri alındı; `git status --porcelain` yalnızca bu
-  raporun 5 ekran görüntüsünü untracked gösteriyor).
-- Geçici probe dosyası `tests/e2e/zzz-qa-probe.spec.ts` **silindi**; fixture dizinleri
-  (`scratchpad/qa007/**`) silindi; gerçek proje klasörlerine hiç yazılmadı.
-- Süreç/port: 7333/7334/7335/7433/7434 üzerinde **LISTENING süreç yok**. Kalan iki `node.exe`
-  Playwright MCP sunucusuna ait (komut satırı doğrulandı), uygulama süreci değil.
+- **`git diff HEAD` → boş** (8 mutasyonun hepsi `git checkout --` ile geri alındı; her mutasyondan
+  sonra ayrıca doğrulandı). `git status --porcelain` yalnızca bu raporun **5 untracked ekran
+  görüntüsünü** gösteriyor.
+- Geçici fault enjeksiyonu `handlers.ts`'ten kaldırıldı (`git checkout --` sonrası
+  `grep MC_QA_FAULT src/` = 0). Geçici probe/test dosyası eklenmedi.
+- Geçici fixture dizini (`…/scratchpad/qa007fix`, iki `.md` kart + izole `MC_DATA_DIR`)
+  `fs.rmSync` ile silindi; **gerçek proje klasörlerine hiç yazılmadı** (`data/`, `docs/features/`
+  dokunulmadı — tek istisna bu raporun kendisi ve `docs/qa/screens/`).
+- `dist/` mutasyonlu koşudan kalan artık CSS ile bırakılmadı: temiz kaynaktan `npm run build`
+  yeniden koşuldu, `dist/web/assets/` yalnızca 7 beklenen dosya içeriyor.
+- **Süreç/port:** `tasklist /FI "IMAGENAME eq node.exe"` → 2 süreç, ikisi de Playwright MCP
+  sunucusu (komut satırı doğrulandı: `@playwright/mcp`), uygulama süreci değil.
+  `netstat -ano` → **7333/7334/7335/7433/7434 üzerinde LISTENING yok.** Fault sunucusu (pid 18340)
+  ve temiz sunucu (pid 37364) `taskkill /T /F` ile ağaçlarıyla birlikte kapatıldı.
 
----
+## 11. G4-1 öncesi kapanması istenenler (bloklayıcı değil, CEO ödevi)
 
-## 11. Puanların gerekçesi
-
-- **İşlevsellik 7:** Mutlu yol, çakışma, hata, klavye, echo, canlı yansıma — hepsi gerçek
-  tarayıcıda çalışıyor. Kırılan tek işlevsel yol B1 (yanıtsız kalan istek) ve Ö1 (odak).
-- **Özellik bütünlüğü 6:** 10 AC'nin 10'u karşılanıyor, ama 6 devralınan taahhütten **T3 ihlal
-  edilmiş** ve **T1 yarım** (klavye davranışı hatalı + çitsiz); ikisi de `[x]` işaretli.
-- **Görsel/UX 6:** Geniş ekranda tasarım temiz, Türkçe metinler ve durum ikonları doğru; ama
-  UX dokümanının **birincil viewport'unda (320-480px) gezinme görünmüyor** (B2).
-- **Kod kalitesi 6:** 728 test + 23 E2E + iyi kurulmuş guard'lar; buna karşılık yeni yazma
-  yolunda hata yakalama yok (B1), 4 mutasyonum yeşil kaldı ve sözleşmede söz verilen üç test
-  (ok tuşu, Ayarlar durumu, `aria-controls` ters yönü) yazılmamış.
-
-## 12. KALDI'yı kapatmak için istenenler
-
-1. **B1:** `handlers.ts`'teki asenkron IIFE'yi `try/catch`'e al; hata dalında 500 +
-   `write_failed` metni dön ve stderr'e logla. Çit: `rereadCard`'ı fırlatan bir entegrasyon testi
-   (gerçek HTTP üzerinden yanıt geldiğini ve sürecin ayakta kaldığını ölçen), ayrıca mutasyon:
-   `try/catch` kaldırılınca test KIRMIZI.
-2. **B2:** 375px'te en az bir sekme her zaman görünür olsun (ör. başlığı kaydırma kabının dışına
-   almak veya dar genişlikte kısaltmak). Çit: `boundingBox()` **ve** kırpma hesabı ile "her iki
-   sekmenin görünür genişliği > 0" — `toBeVisible()` bu iddia için yeterli değil (bu turda
-   ölçüldü).
-3. **Ö1/Ö2:** Ok tuşu seçimde yeni sekmeye `focus()` verilsin; E2E'de `ArrowRight`/`ArrowLeft`/
-   `Home`/`End` sonrası `document.activeElement` ölçülsün. Mutasyon: `onKeyDown` bağlantısını
-   silmek KIRMIZI vermeli (bugün yeşil).
-4. **Ö3:** `aria-controls="panel-kanban"` de assert edilsin (veya iki sekmenin `aria-controls`
-   değerlerinin **farklı** ve kendi panel id'lerine eşit olduğu).
-5. **Ö4:** jsdom echo assert'i determinist hâle getirilsin; kabul ölçütü: `{ ...prevCard }`
-   mutasyonu 10/10 KIRMIZI.
-6. **Ö5:** `lastTabScreen` davranışı için söz verilen test yazılsın; sözleşmedeki
+1. Ö5 — `lastTabScreen` (Ayarlar açıkken tablist durumu) testi yazılsın; sözleşme:629'daki
    `#panel-settings` cümlesi gerçeğe göre düzeltilsin.
-7. **N1:** 403 için §4.3 sözlüğündeki metin kullanılsın (veya sözlük gerçeğe göre güncellensin).
+2. N3 — `docs/03-ux.md:443` klavye akışı gerçek tuş tasarımına (`Space` ile başlat) güncellensin;
+   §4.3'ün iki yeni hata metni UX Türkçe sözlüğüne eklensin.
+3. N-4 — vitest worker fork kararsızlığı için bir karar (yeniden deneme politikası veya
+   `isolate`/pool ayarı) alınsın; şu an 3 koşunun 1'i kararsız.

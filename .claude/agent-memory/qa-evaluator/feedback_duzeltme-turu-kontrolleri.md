@@ -166,3 +166,24 @@ zaten tarihli bir kopyası var mı diye bak (`diff -q`) — ikinci kez yanlış 
     G3 onaylı UX dokümanından (Enter/Boşluk) sapıyordu — sapma listesine girmemişti. Daraltma gördüğün
     an: (a) kütüphane varsayılanını dist'ten oku (`defaultKeyboardCodes`), (b) belgede o tuşun geçtiği
     TÜM satırları grep'le, (c) bağlayıcı UX/mimari dokümanla karşılaştır, sapma işaretli mi diye bak.
+
+28. **Playwright koşusu `dist/`'i YENİDEN DERLER — mutasyonlu bir E2E koşusundan sonra derleme
+    çıktısı MUTASYONLU kalır.** F-007 fix1'de düzen mutasyonuyla `npx playwright test -g "T3"`
+    koşturdum; `webServer` build çalıştırdığı için `dist/web/assets/*.css` mutasyonlu kaynaktan
+    üretildi. Sonra "yeni Tailwind sınıfları üretiliyor mu" diye baktığımda `order-1`/`gap-y-2`
+    **0 kez** çıktı ve bir an bloklayıcı sandım — oysa ürün kodu doğruydu, artefakt bayattı.
+    Kural: `git checkout --` ile geri aldıktan SONRA `npm run build` koştur, ardından dist'i
+    denetle; dizin dosya sayısını da say (`emptyOutDir` çalışıyor mu). Ayrıca minifiye tek satırlık
+    CSS'te `grep -c` SATIR sayar, `str.count()` ile OLUŞUM say.
+29. **Dar-viewport düzeltmesini tek noktada değil, ARALIK TARAYARAK doğrula.** Bulgu 375px'te
+    ölçülmüş olsa bile düzeltme `sm:` gibi bir kırılma noktasına dayanıyorsa 280/320/375/480/560/
+    **639/640**/768/1280/1920 dizisini tek `page.setViewportSize` döngüsünde ölç; header yüksekliği
+    + kırpılmış görünür genişlik + `documentElement.scrollWidth` üçlüsünü birlikte yaz. F-007
+    fix1'de bu, "kırılma noktasının iki yanı da doğru + hiçbir genişlikte yatay belge kaydırması
+    yok" kanıtını 30 saniyede verdi ve geniş-ekran regresyonu sorusunu da aynı ölçümle kapattı.
+30. **"Yarı-başarı" tasarımlarında KURTARMA yolunu arıza AÇIKKEN ölç.** F-007 D46, yazma başarılı
+    ama yeniden okuma başarısız durumunda `data`sız `200` dönüyor; istemcinin `content_hash`'i
+    bayat kalıyor ve düzeltmenin kendi yorumu "chokidar echo'su düzeltir" diyor. Bunu kanıtlamanın
+    yolu ikinci bir işlemi arıza hâlâ açıkken denemek: aynı kart ikinci kez taşındı ve BAŞARILI
+    oldu → yarı-başarı çıkmaz sokak değil. Tek istek ölçmek bu iddiayı doğrulamaz; ikinci istek
+    409 verseydi düzeltme kullanıcıyı sahte "dosya dışarıdan değişti" uyarısına düşürüyor olurdu.

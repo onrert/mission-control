@@ -1036,3 +1036,77 @@ turu için istenenler" bölümündeki 5 madde ele alındı.
 
 **Sonraki adım**
 - qa-evaluator bu düzeltme turunu değerlendirsin (feature notu `status: qa`).
+
+---
+
+## 2026-09-05 — F-005 düzeltme turu 2 (D25-D28, QA'nın KOŞULLU GEÇTİ kararı kapatıldı)
+
+**Ne yapıldı** — QA'nın düzeltme turu 1 doğrulaması (`docs/qa/F-005-fix1-2026-09-05.md`)
+KOŞULLU GEÇTİ verdi: 2 ÖNEMLİ (D25/D26) + NOT-4 (D27) + iki NOT (D28). Sözleşme
+`docs/qa/F-005-contract.md`'nin "Düzeltme turu 2" bölümüne planlandı, sonra uygulandı.
+
+- **D25 (ÖNEMLİ-1) — dağıtıcı sınırının bağlantısı artık davranışsal olarak çitli.** Üretim kodu
+  değişmedi (davranış zaten doğruydu). `tests/integration/projects-api.test.ts`'e gerçek
+  `createServer()` + gerçek HTTP isteği kullanan yeni bir test eklendi: `handleHealth`'in
+  senkron çağırdığı gerçek `projectsService.getActiveWatcherCount()` metodu test içinde geçici
+  olarak fırlayacak şekilde değiştirilir (üretim kodu dokunulmaz, `finally`'de birebir geri
+  alınır), gerçek `fetch('/api/health')` yapılır → 500 `internal_error` + sonraki istek 200.
+- **D26 (ÖNEMLİ-2) — "Kaldır" hatası artık kullanıcıya görünür.** `useProjects.ts`'in
+  `remove()`'u `add()` ile birebir aynı desene çevrildi: `{ok:true}` / `{ok:false,message}`
+  döner (yanlış "SSE zaten senkronize edecek" yorumu silindi — yazma başarısızken `service.ts`
+  o kanalda hiç yayın yapmıyor). `ProjectRow.tsx` sonucu `role="alert"` ile yüzeye çıkarır
+  (`AddProjectForm`'daki desenle tutarlı), buton kaldırma sırasında devre dışı kalır
+  ("kaldırılıyor…").
+- **D27 (NOT-4) — chokidar debounce yolundaki SSE broadcast artık süreci düşürmüyor.**
+  `service.ts`'e küçük, paylaşılan bir `safelyNotify(action, fn)` yardımcısı eklendi (try/catch
+  + Türkçe uyarı logu); yazma zaten başarılı olduktan SONRA çalışan üç yan etki bununla sarıldı:
+  `addProject`'in izleme başlatma+broadcast'i, `removeProject`'in izleme durdurma+broadcast'i, ve
+  — asıl risk — `startWatchingIfPossible`'ın chokidar'ın debounce zamanlayıcısından tetiklenen
+  `onChange` callback'i (`hub.broadcast('features', ...)`, kapanmış bir SSE soketine `res.write`
+  fırlarsa artık süreç ölmüyor).
+- **D28 (NOT'lar) — iki ölü/yanlış doküman temizlendi.** `App.tsx`'teki `style={{minWidth:0}}`
+  + onu haklı çıkaran 10 satırlık yanlış gerekçe yorumu kaldırıldı (QA'nın M11a mutasyonu zaten
+  satırın gereksiz olduğunu kanıtlamıştı). `no-delete-guard.test.ts`'teki `projects-registry.ts`
+  istisnası dosya düzeyinden **dizge düzeyine** daraltıldı: yalnızca tam `unlinkSync(tmpPath)`
+  çağrısına izin verilir, başka herhangi bir `unlinkSync(...)` (ör. izlenen bir projenin
+  `README.md`'sini silen bir regresyon) artık guard'ı KIRMIZI vermeye zorlar.
+
+**Nasıl doğrulandı**
+
+- `npm run typecheck` = 0, `npm run lint` = 0 (ayrı ayrı çalıştırıldı).
+- `npx vitest run` (tüm süit) = **37 dosya / 437 test** (+7 yeni test — D25 1, D26 2, D27 3,
+  D28 1), art arda 2 kez tertemiz.
+- `npm run verify` = 0 (typecheck+lint+437 test+build dahil). `npm run e2e` = 0 (**15/15**).
+  `npm run e2e:dev` = 0 (1/1).
+- **Mutasyon kanıtı (uygula → hedef testi koş → KIRMIZI gözlemle → `Edit` ile birebir geri al —
+  her biri ayrı çalıştırıldı, `git diff` geri alma sonrası boş):**
+
+  | # | Mutasyon (dosya) | Koşulan test | Kırmızı kanıt (ilk satır) |
+  |---|---|---|---|
+  | D25 | `index.ts:288` — `withDispatchErrorBoundary(` sarmalayıcısı kaldırıldı | yeni D25 testi | `Error: Test timed out in 5000ms` + Vitest "Uncaught Exception: qa-probe-sync" (senkron throw dağıtıcının çağrı yığınında sınırsız kaldı, istek hiç yanıt alamadı) |
+  | D26 | `useProjects.ts`: `remove()` eski `if (!res.ok) return`'e döndürüldü | `useProjects.test.ts` + `SettingsScreen.test.tsx` (yeni ikisi) | `expected {ok:true} to deeply equal {ok:false,…}`; `findByTestId('remove-project-error')` timeout ile patladı |
+  | D27 | `service.ts`: debounce callback'indeki `safelyNotify` sarmalayıcısı kaldırıldı | yeni `service.test.ts` (mock tabanlı, chokidar zamanlamasına bağımlı değil) | `expected [Function] to not throw an error but 'Error: sse yayını başarısız (qa-probe)' was thrown` |
+  | D28 | `projects-registry.ts`: `unlinkSync(tmpPath)` → `unlinkSync(path.join(dataDir,'README.md'))` | genişletilmiş `no-delete-guard.test.ts` | `expected 'unlinkSync(path.join(dataDir, \'README.md\')' to be 'unlinkSync(tmpPath)'` |
+
+  Not: D27'nin ilk denemesi gerçek chokidar dosya değişikliği + 600ms bekleme kullanıyordu ama
+  bu, mutasyonu YAKALAMADI (assertion, broadcast'in gerçekten çağrılıp çağrılmadığından
+  bağımsızdı) — QA'nın "yeşil kalan mutasyon = ölçmeyen test" dersi (CLAUDE.md) burada da
+  tekrarladı. Test, `watchProjectFeatures`'ı `vi.mock` ile sahteleyip `service.ts`'in geçirdiği
+  gerçek `onChange` closure'ını doğrudan yakalayıp çağıran deterministik bir teste çevrildi;
+  bu hem zamanlamaya bağımlı değil hem de mutasyonu güvenilir şekilde kırmızı veriyor.
+- Süreç/port temizliği: `tasklist`'te `node.exe` yok; 7333/7334/7335/7433/7434'te yalnızca
+  kapanmış bağlantıların `TIME_WAIT` kayıtları var, `LISTENING` yok.
+
+**Kalan risk / bilinçli kapsam dışı bırakılanlar**
+- D20-D24 ve önceki turların onaylanan bölümleri (manifest içerik değişikliği, chokidar ölçümü,
+  sekme deseni, `hidden`, görsel akış) bilerek yeniden açılmadı (QA'nın kapsam sınırı).
+- `docs/qa/latest.md`'nin NOT-3 (375px'te marka kırpılması + nav etiketlerinin kaydırma şeridinde
+  kalması) ve NOT-5 (bir kerelik `vitest-pool` worker hatası) ve NOT-6 (`storage_unavailable`
+  mesajının yol-yarışı senaryosunda semantik olarak isabetsiz olması) bu turun kapsamı dışında
+  bırakıldı — QA bunları kapanış listesine koymadı.
+- `safelyNotify`'ın logladığı uyarılar yalnızca stderr'e yazılıyor; kalıcı bir metrik/alarm yok
+  (mevcut mimaride başka hiçbir hata yolu da böyle bir mekanizma kullanmıyor, kapsam dışı).
+
+**Sonraki adım**
+- qa-evaluator bu düzeltme turunu dar kapsamda doğrulasın (yalnızca D25-D28 + mutasyon kanıtı);
+  D20-D24 ve önceki turların onaylanan bölümleri yeniden açılmasın.

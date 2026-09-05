@@ -37,3 +37,8 @@ Ayrıca (paylaşılan, sözleşme §2.2'de gerekçeli — QA düzeltme turu 1 NO
   (registry yazma hatasında süreç ölmüyor artık, iki katmanlı hata sınırı, izleyici sayacı
   kaldırma çiti, no-delete-guard yazma taraması, dar genişlikte Ayarlar dişlisi, manifest boş
   dizin çiti). Detay: `docs/qa/F-005-2026-09-05.md` (KALDI raporu) + `docs/progress.md`.
+- Düzeltme turu 2 (2026-09-05): QA'nın düzeltme turu 1 doğrulamasındaki (KOŞULLU GEÇTİ) D25/D26
+  ÖNEMLİ bulguları + D27/D28 NOT'ları kapatıldı (dağıtıcı bağlantısının davranışsal kanıtı,
+  `remove()`'un 500 hatasını yüzeye çıkarması, chokidar debounce yolundaki SSE broadcast'in
+  süreci düşürmemesi, ölü satır içi stil ve guard istisnasının daraltılması). Detay:
+  `docs/qa/F-005-fix1-2026-09-05.md` (KOŞULLU GEÇTİ raporu) + `docs/progress.md`.

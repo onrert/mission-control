@@ -148,3 +148,10 @@ sonuç zaten statik olarak kesin) — CEO onayı gelirse aynı turda (yalnızca 
 Üçü de F-005 dosya sahipliğinde, F-006 sözleşmesinin §2 listesinde yok. `npm run verify`/`npm run
 e2e` bu üç dosya yüzünden KIRMIZI kalacak; F-006'nın kendi dosyalarının hepsi (write-gate.ts,
 dağıtıcı, writeFetch, statik tarama, manifest testi) yeşil ve bağımsız doğrulanabilir durumda.
+
+## 2026-09-05 — KAPANDI (devralan developer, kod turu)
+
+CEO onayı feature notuna ("İkinci genişletme") yazıldı; üç dosya mekanik olarak düzeltildi
+(yalnızca `x-mc-write: '1'` header'ı eklendi, gerçekte ~15 çağrı sitesi çıktı — tahmin edilenden
+fazla ama hepsi aynı sınıf). `npm run verify` = 0 (538/538), `npm run e2e` = 0 (15/15), `npm run
+e2e:dev` = 0 (1/1). Detay: `docs/progress.md` "2026-09-05 — F-006 kod turu tamamlandı" bölümü.

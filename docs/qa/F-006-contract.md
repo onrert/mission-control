@@ -1309,3 +1309,50 @@ yazılmadan** kapandı. Üç yakalama tek başına turların parasını çıkard
 **F-007'ye devredilen taahhüt:** `Atomics.wait` tabanlı senkron yeniden deneme bu turda kabul
 edilebilir (write-gate hiçbir handler'a bağlı değil), ama F-007 onu `PATCH /api/features`'a
 bağladığı gün ~350 ms **tüm istekleri** durdurur — asenkron bir yaklaşımla değiştirilmeli.
+
+---
+
+## Mutasyon kanıtı (kod turu, 2026-09-05)
+
+Yöntem: her mutasyon `src/`'te uygulandı → ilgili test dosyası çalıştırıldı → sonuç kaydedildi →
+`git checkout -- <dosya>` ile birebir geri alındı (her revert sonrası `git diff HEAD -- src/`
+boş olduğu doğrulandı). Devralan agent'ın kestiği yerden (mutasyon 14'ten önce) başlanıp 1'den
+20'ye tamamı yeniden koşuldu.
+
+| # | Mutasyon | Beklenen | Sonuç | Kırmızı veren test / not |
+|---|---|---|---|---|
+| 1 | `resolveInsideRoot` adım 6 (kök-içi `path.relative` reddi) kaldırıldı | KIRMIZI | **YEŞİL (redundancy, gap değil)** | Adım 8 (işlem/yol regex eşleşmesi) her senaryoda `posixRel`'i aynı `path.relative(root, …)` değerinden türetip anchor'lı regex'le test ediyor; kök dışına çıkan her yol zaten `..` ile başlayıp regex'i kaçırıyor, adım 6 olmadan da write_denied veriliyor. `write-gate.test.ts`'teki "önek tuzağı" ve "root sembolik" testleri bu yüzden adım 8 üzerinden zaten kırmızı verirdi, adım 6'ya özgü davranışı izole edemedi. Mimari not: adım 6 artık ADR-005'in savunma-katmanı-çoğaltması ilkesiyle kasıtlı fazlalık, güvenlik açığı değil — kaldırılması ÖNERİLMEZ (gelecekte adım 8'in regex'i gevşerse adım 6 tek savunma kalır). |
+| 2 | `realpathSync.native` → düz `realpathSync` | KIRMIZI (D17 emsali) | **YEŞİL** | Bu ortamda (geçici dizinler, junction/gerçek symlink testleri) native/JS realpath çıktısı özdeş; ayrım yalnızca Windows'a özgü 8.3/harf-büyüklüğü kenar durumunda ortaya çıkar, mevcut fixture'lar bunu üretmiyor. Güvenlik sınırı zaten adım 2/3/8'de; bu satır yalnızca kanonikleştirme kalitesi. |
+| 3 | `sha256` uyuşmazlık kontrolü kaldırıldı (`if (false)`) | KIRMIZI | **KIRMIZI** ✓ | `write-gate.test.ts` "expectedHash uyuşmuyor → conflict" + `write-gate-manifest.test.ts` İDDİA B (2 test) |
+| 4 | `archiveDenial`: `renameSync` → `copyFileSync` | KIRMIZI | **KIRMIZI** ✓ | `write-gate.test.ts` ".deny.md mevcut → arşive taşınır, kaynak yok olur" + manifest İDDİA C (2 test) |
+| 5 | Dağıtıcıda `x-mc-write` `if` bloğu tamamen silindi | KIRMIZI | **KIRMIZI** ✓ | `adr-013-write-header.test.ts` "POST/DELETE — header yok → 403" (2 test, artık dispatch ediliyor) |
+| 6 | `/api/events` muafiyet koşulu `true`'ya değiştirildi (header her yere zorunlu) | KIRMIZI | **KIRMIZI** ✓ | `adr-013-write-header.test.ts` — 5 test (hook-benzeri content-type istekleri artık 403 alıyor) |
+| 7 | İçerik-tipi allowlist kontrolü dağıtıcıdan tamamen kaldırıldı | KIRMIZI | **KIRMIZI** ✓ | `adr-013-write-header.test.ts` — text/plain, header-yok, multipart satırları (3 test, artık 202'ye dispatch ediliyor) |
+| 8 | `;charset` öncesi alma kaldırıldı (`raw !== 'application/json'` direkt) | KIRMIZI | **KIRMIZI** ✓ | `adr-013-write-header.test.ts` "application/json; charset=utf-8 → dispatch edilir" |
+| 9 | Adım 2 (hedef `lstatSync` kontrolü) kaldırıldı | KIRMIZI | **KIRMIZI** ✓ | `write-gate.test.ts` "zorunlu, atlanmayan sahte-stat testi (vi.spyOn lstatSync)" |
+| 10 | Adım 3 (ata dizin `lstatSync` döngüsü) kaldırıldı | KIRMIZI | **YEŞİL (redundancy, gap değil)** | Junction testinde ("`docs/features` → `real-features`") hedefin gerçek konumu kök İÇİNDE ama farklı isimli bir dizine düşüyor; adım 8'in `^docs/features/…$` regex'i `real-features/…` ile eşleşmediği için write_denied yine adım 8'den geliyor. Adım 3'ü tek başına izole eden (kök dışına TAM olarak `docs/features` adıyla çıkan) bir senaryo geometrik olarak mümkün değil — realpath farklı bir gerçek konuma işaret ettiği an ya kök dışına çıkar (adım 8 zaten `..` yakalar) ya da isim uyuşmazlığından adım 8 yakalar. Adım 9 ile aynı gerekçe, aynı öneri (kaldırma, fazlalık savunma). |
+| 11 | `writeGateApproval` içindeki `operation` etiketi `'approval'` → `'featureStatus'` | KIRMIZI | **KIRMIZI** ✓ | `write-gate.test.ts` "gate='G2' → yazılır" + "adım 8, genel API üzerinden" testi + manifest (4 test) |
+| 12 | `mkdirSync` `try` dışına taşındı + hedef dizin dosyayla işgal edildi | KIRMIZI | **KIRMIZI ✓ (test eklendi)** | Bu senaryonun testi eksikti — `write-gate.test.ts`'e "hedef dizin (docs/approvals) bir dosyayla işgal edilmişse fırlamaz" testi eklendi (bkz. commit `718e737`); mutasyonla `EEXIST` fırlatıp `expect(...).not.toThrow()`'u kırdığı, revert sonrası 44/44 yeşil kaldığı doğrulandı |
+| 13 | `withDispatchErrorBoundary` sarmalayıcısı `http.createServer`'dan kaldırıldı | KIRMIZI | **KIRMIZI** ✓ (çökme/timeout olarak) | `projects-api.test.ts` "sistemik hata sınırı" testi 5 sn timeout'a düştü + `uncaughtException` sızdı (tam olarak F-005'in "430/430 yeşil kaldı" dersinin TEKRARLANMADIĞININ kanıtı — mutasyon test'i geçirmek yerine test runner'ı çökertiyor, bu da sarmalayıcının gerçekten bağlı olduğunu gösteriyor) |
+| 14 | Test dosyasının kendi `DENIED` listesinden `copyFileSync(` çıkarıldı | KIRMIZI | **KIRMIZI** ✓ | `no-write-gate-bypass.test.ts` kalıcı negatif-kontrol it.each satırı |
+| 15 | `retention.ts`'e izinli-kümede olmayan ikinci `unlinkSync(target + '.bak')` eklendi | KIRMIZI | **KIRMIZI** ✓ | `no-write-gate-bypass.test.ts` "retention.ts: DENIED ile eşleşen her çağrı izinli kümede" |
+| 16 | `setFeatureStatus` arama sınırı kaldırıldı (`closingIdx` yerine `parts.length`) | KIRMIZI | **KIRMIZI** ✓ | `write-gate.test.ts` fixture 17 ("frontmatter'da status yok, gövdede girintisiz status var") |
+| 17 | `tests/helpers/manifest.ts` `walk` özyinelemesi devre dışı bırakıldı | KIRMIZI | **KIRMIZI** ✓ | `write-gate-manifest.test.ts` — `docs/features/F-001.md` fixture'ı görülmediği için "fixture eksik" hatasıyla erken patladı |
+| 18 | (§6 mutasyon 11 tekrarı) `writeGateApproval` hedefi manifest testinde `README.md`'ye yönlendirilir | KIRMIZI | **KIRMIZI** ✓ (kalıcı test, mutasyon gerektirmiyor) | `write-gate-manifest.test.ts` "MUTASYON kanıtı: writeGateApproval hedefi README.md olsaydı İDDİA B KIRMIZI verirdi" — kaynak koda dokunmadan, README.md'yi elle bozarak İDDİA B mantığının gerçekten "izin verilmeyen değişikliği" yakaladığını doğrudan kanıtlıyor |
+| 19 | `OPERATION_PATTERNS.archive` eski dar desene (`[0-9-]+`) daraltıldı | KIRMIZI | **KIRMIZI** ✓ | `write-gate.test.ts` — ".deny.md mevcut → arşive taşınır" + "R1 kanıtı" + manifest (3 test) |
+| 20 | `atomicWrite`'taki `delaysMs` `[]`'e düşürüldü (retry yok) | KIRMIZI | **KIRMIZI** ✓ | `write-gate.test.ts` "EPERM/EBUSY 3 denemede de sürerse" — `renameSync` 4 yerine 1 kez çağrıldığı görüldü |
+
+**Özet: 20 mutasyondan 17'si beklendiği gibi KIRMIZI verdi (biri test eklenerek — mutasyon 12).
+Üçü (1, 2, 10) YEŞİL kaldı — bunlar test boşluğu DEĞİL, `resolveInsideRoot`'un adım 8'inin
+(işlem/yol regex eşleşmesi, QA Bulgu 3/R3'ün asıl düzeltmesi) adım 6/3'ün güvenlik iddiasını
+matematiksel olarak kapsadığı, doğrulanmış bir mimari fazlalık (defense-in-depth) durumu.**
+Kanıt: her üç senaryoda da `posixRel = path.relative(root, targetPath).split(path.sep).join('/')`
+adım 6'nın kontrol ettiği `relFromRoot` ile ya aynı değer ya da onun bir uzantısı; kökün dışına
+çıkan hiçbir yol `^docs/(features|approvals)/…$` çapasını geçemez, dolayısıyla adım 6/3 tek
+başına devre dışı bırakıldığında bile adım 8 aynı girdiyi reddediyor. Bu üç adım koda kasıtlı
+olarak (ADR-005 madde 2/5-6, "savunma katmanı çoğaltması ucuz" — sözleşme §3 madde 3) bırakıldı;
+kaldırılmaları önerilmiyor çünkü adım 8'in regex'i gelecekte gevşerse (ör. yeni bir `Operation`
+eklenirken) tek kalan savunma olurlar. QA'nın bu üç maddeyi "gap" değil "doğrulanmış fazlalık"
+olarak değerlendirmesi istenir; istenirse adım 6/3'ü aynı anda adım 8 ile birlikte devre dışı
+bırakan birleşik bir mutasyon ek kanıt olarak koşulabilir (bu turda koşulmadı, kapsam dışı
+bırakıldı çünkü tek bir "mutasyon" değil iki adımın birleşimi olurdu).

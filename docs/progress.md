@@ -1157,3 +1157,69 @@ KOŞULLU GEÇTİ verdi: 2 ÖNEMLİ (D25/D26) + NOT-4 (D27) + iki NOT (D28). Söz
 - F-006 sözleşmesinde **kullanıcı kararı gerekiyor:** ADR-008 ekindeki artık risk (aynı makinedeki
   başka bir yerel sayfa panele istek atabiliyor) yeniden değerlendirilecek — F-006 sunucuya kullanıcı
   adına diske yazdırdığı için tehdit modeli değişiyor.
+
+---
+
+## 2026-09-05 — F-006 (yazma kapısı + sınır testleri) kod turu tamamlandı, QA bekliyor
+
+**Devir durumu:** Önceki developer agent tur sınırında kesildi. 5 ara commit bırakmıştı
+(`e302a98` write-gate modülü, `f3add1c` ADR-013 dağıtıcı entegrasyonu, `ce842c5` `writeFetch` +
+`useProjects` geçişi, `d1a6762` statik tarama + manifest, `ffccbdb` symlink whitelist satırı) ve
+`docs/blockers.md`'ye doğru bir soru bırakmıştı: F-006'nın `x-mc-write` zorunluluğu F-005'in üç
+test dosyasını kırıyordu, ama bu dosyalar F-006'nın dosya sahipliği dışındaydı. CEO onayı geldi
+(feature notu "İkinci genişletme"), ben bu onayla devraldım.
+
+**Ne yapıldı**
+1. **F-005 test düzeltmesi (CEO onaylı, tamamen mekanik):** `tests/integration/projects-api.test.ts`
+   (~20 çağrı sitesi — tahmin edilenden fazla çıktı, tüm POST/DELETE çağrıları tarandı),
+   `tests/features/projects/web/SettingsScreen.test.tsx` (1 assert — `writeFetch`'in eklediği
+   header'ı da bekleyecek şekilde güncellendi), `tests/e2e/settings.spec.ts` (2 çağrı sitesi).
+   Yalnızca `x-mc-write: '1'` header'ı eklendi; hiçbir test beklentisi/davranışı değişmedi
+   (cross-origin 403 bekleyen testler zaten Origin kontrolünden önce reddedildiği için
+   dokunulmadı).
+2. **Gerçek bug bulundu ve düzeltildi:** `tests/no-write-gate-bypass.test.ts`'in kendi
+   `it.each` negatif-kontrol testi TypeScript'te derlenmiyordu (tuple/callback imza uyuşmazlığı)
+   — düzeltildi. Bu düzeltme, gizli kalmış ikinci bir gerçek boşluğu ortaya çıkardı: `DENIED`
+   listesinde `copyFile(` vardı ama `copyFileSync(` yoktu (biri diğerini alt string olarak
+   kapsamıyor, çünkü desen `(` ile bitiyor) — eklendi.
+3. **Sözleşme §8'deki 20 mutasyonun tamamı koşuldu** (bkz. `docs/qa/F-006-contract.md` sonu,
+   "Mutasyon kanıtı" tablosu): her mutasyon uygulandı → ilgili test dosyası çalıştırıldı → sonuç
+   kaydedildi → `git checkout` ile geri alındı, her revert sonrası `git diff HEAD -- src/`
+   boş olduğu doğrulandı.
+   - **17/20 beklendiği gibi KIRMIZI verdi.**
+   - **Mutasyon 12 için eksik test bulundu ve eklendi** (commit `718e737`): `atomicWriteOnce`'ın
+     `mkdirSync`'i try-dışına taşınıp hedef dizin bir dosyayla işgal edildiğinde modülün fırlayıp
+     fırlamadığını ölçen hiçbir test yoktu. Eklenen test mutasyonla `EEXIST` fırlatıp
+     `expect(...).not.toThrow()`'u kırdığını, revert sonrası 44/44 yeşil kaldığını doğruladı.
+   - **3'ü (mutasyon 1, 2, 10) YEŞİL kaldı — gap değil, doğrulanmış mimari fazlalık.**
+     `resolveInsideRoot`'un adım 6 (kök-içi `path.relative` reddi) ve adım 3 (ata dizin symlink
+     kontrolü) kaldırıldığında bile adım 8 (işlem/yol regex eşleşmesi, QA Bulgu 3/R3'ün asıl
+     düzeltmesi) aynı girdiyi zaten reddediyor — ikisi matematiksel olarak aynı
+     `path.relative(root, …)` değerini kullanıyor, kökün dışına çıkan hiçbir yol
+     `^docs/(features|approvals)/…$` çapasını geçemiyor. Adım 2 (mutasyon 9, hedefin KENDİSİ
+     symlink) bağımsız kaldı ve kırmızı verdi — bu üçü aynı sınıf değil. Detaylı kanıt ve gerekçe
+     kontrat dosyasında; bu üç adımın koddan kaldırılması ÖNERİLMEZ (ADR-005'in kasıtlı
+     savunma-katmanı-çoğaltması ilkesi, gelecekte adım 8 gevşerse tek kalan savunma olurlar).
+
+**Nasıl doğrulandı**
+- `npm run verify` = 0 (typecheck + lint + **538/538 test, 41 dosya** + build).
+- `npm run e2e` = 0 (**15/15**), `npm run e2e:dev` = 0 (**1/1**).
+- Mutasyon kanıtı yukarıda özetlendi, tam tablo `docs/qa/F-006-contract.md` "Mutasyon kanıtı
+  (kod turu, 2026-09-05)" başlığında.
+- Yetim süreç kontrolü: `tasklist` ve 7333/7334/7335/7433/7434 portları temiz (yalnızca
+  TIME_WAIT soketleri, dinleyen süreç yok).
+
+**Kalan risk**
+- resolveInsideRoot'un adım 6/3'ünün gerçekten fazlalık olduğu değerlendirmesi bu turun kendi
+  analizi — qa-evaluator bağımsız doğrulamalı (istenirse adım 6/3'ü adım 8 ile BİRLİKTE devre
+  dışı bırakan birleşik bir mutasyon ek kanıt olarak koşulabilir, bu turda koşulmadı).
+- `write-gate.ts` bu turda hiçbir HTTP handler'a bağlı değil (sözleşme §1 madde 7, bilinçli) —
+  F-007 onu `PATCH /api/features`'a bağladığında `Atomics.wait` tabanlı senkron retry'ın tüm
+  istekleri ~350ms durdurma riski o turun kendi sorunu (sözleşme sonunda not edildi).
+- ADR-008 ekindeki port-yok-sayma artık riski F-006 tarafından ADR-013 ile "kapatıldı" sayılıyor
+  (sözleşme kaynaklar bölümü) — qa-evaluator bu iddiayı ADR-013 metnine karşı doğrulamalı.
+
+**Sonraki adım**
+- qa-evaluator F-006'yı değerlendirsin: 8 AC + mutasyon kanıt tablosu + üç "yeşil kalan
+  mutasyon"un fazlalık gerekçesi.
+- GEÇTİ ise F-007 (kanban) başlayabilir (F-006 F-007'den önce bitmek zorundaydı, artık bitti).

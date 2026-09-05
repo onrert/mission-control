@@ -20,7 +20,11 @@ Dar "düzeltme turu doğrulaması" briefinde şu üç kontrol her seferinde iş 
    kararından ÖNCE geliyorsa o karar sözleşmeye işlenmemiştir — F-004 tur 2'de CEO'nun iki
    kademeli zamanlama assert'i (sert kapı >1000 ms + scriptin iç ölçümü) hiçbir bölüme
    girmemişti, sözleşme hâlâ CEO'nun kırılgan bulduğu tek kademeli `elapsedMs < 400`'ü
-   taşıyordu.
+   taşıyordu. F-005 tur 2'de aynısı tekrarladı: CEO "tam tablist deseni F-007'ye ertelendi"
+   dedi, gövde hâlâ `useTabs.ts` + `role="tablist"` kuruyordu ve §9 kararı "AÇIK SORU" olarak
+   taşıyordu. Bu desende SON bölümü ÖNCE oku, sonra gövdeyi ona karşı grep'le
+   (`grep -n 'role="tab\|useTabs\|AÇIK SORU'`); ayrıca kararın hayatta bıraktığı taslağın
+   kendisi de karara uymayabilir (F-005'te (a) seçeneği hâlâ `role="tablist"` içeriyordu).
 5. **Mutasyon senaryosunu MUTASYONLU hâlde de elle yürüt.** "En az 5 kez damlatan sunucu" gibi
    ÜST SINIRI olmayan değil, ALT sınırı olan ifadeler mutasyona kaçış yolu bırakır: F-004'te
    5 damla bitince idle bekçisi devreye girip mutasyonu yeşile döndürüyordu. Sayıları
@@ -65,6 +69,16 @@ Dar "düzeltme turu doğrulaması" briefinde şu üç kontrol her seferinde iş 
    çalışıyor mu). (c) **Kapsama oranını ölç**: F-003 fix1'de çit, yeni dizindeki 69 özgün
    sınıfın 5'ini örnekliyordu — dizin seviyesinde kanarya, tek sınıf düşmesine kör. Bu NOT'tur,
    KALDI değil; ama "yeni ekran eklenince çit de elle güncellenmeli" uyarısını rapora yaz.
+
+13. **"X yok" çitleri ikili yaşar: jsdom + E2E.** Yeni bir etkileşimli öğe (buton) eklenen her
+   sözleşmede, mevcut negatif çitleri iki katmanda birden ara — F-005'te `tests/web/App.test.tsx`
+   (`headerHtml not.toContain('<button')`) §2.2'ye alınmıştı ama `tests/e2e/shell.spec.ts:41`
+   (`header button,... count === 0`) hiç anılmamıştı; kod turunda yapısal KIRMIZI olurdu.
+14. **Sunucu yaşam döngüsü assert'lerinde gözlem yolunun fiziksel olarak mümkün olduğunu sor.**
+   F-005 tur 2'de "`server.close()` öncesi/sonrası `/api/health`'in `watchers` alanını okur"
+   yazıyordu — kapanıştan sonra HTTP isteği ECONNREFUSED alır, assert hiç koşamaz. "(veya eşdeğer
+   bir sayaç)" gibi kaçış yolları bu tür imkânsızlıkları gizler; tek ve uygulanabilir gözlem
+   yolunu sözleşmede sabitlet.
 
 **Why:** Düzeltme turları dar tutulduğu için yeniden inceleme yapılmaz; kaçan kusur bir daha
 bakılmayan bölgede kalır. **How to apply:** Kapanış tablosunu yazmadan önce bu üç kontrolü

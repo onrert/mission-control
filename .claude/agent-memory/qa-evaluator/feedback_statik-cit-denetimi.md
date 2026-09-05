@@ -39,3 +39,20 @@ madde 19.
    doğru olup olmadığına bakmak (onunki "geometrik imkânsızlık"tı; gerçek neden
    `path.relative`'in kök referanslı olmasıydı), (c) "bu katmanların sıfır bağımsız test
    kapsaması var" cümlesini rapora koymak.
+
+5. **Düzeltme turunda KALAN kaçakların şiddetini ADR'nin kendi kabul cümlesine göre kalibre et,
+   sonra ikinci savunma hattını AMPİRİK olarak sına.** F-006 fix1'de 9 eski kaçağın 9'u da
+   kapanmıştı ama 7 yeni biçim kaçtı. Şiddeti belirleyen üç şey oldu: (a) ADR-005'in
+   "Sonuçlar/riskler" bölümü statik guard'ın `fs['write'+'File']` gibi **dolaylı çağrıları
+   yakalamadığını adıyla kabul ediyordu** — ADR'de yazılı kabul edilmiş sınır BLOKLAYICI
+   sayılamaz, aksi hâlde çit hiçbir zaman geçemez; (b) kaçan biçimleri **doğal** (kaza sınıfı:
+   `import fsPromises from 'node:fs/promises'` + `fsPromises.rm(`) ve **kasıtlı gizleme**
+   (`const w = fs.writeFileSync`) diye ayırmak; (c) **kaçan biçimle gerçek bir mutasyon yazıp
+   ikinci savunma hattının (manifest testi) onu yakaladığını ölçmek** — yakalıyorsa NOT, yakalamıyorsa
+   bloklayıcı. Ayrıca çitin *neden* daraltıldığına bak: F-006'da belirsiz adların (`write(`, `open(`)
+   alıcıya bağlanması zorunluydu, çünkü `src/`'te meşru `process.stderr.write(` var — gevşetme
+   talebi yanlış pozitif üretirdi. Bunu rapora yaz, yoksa sonraki tur "listeyi genişlet" der.
+
+**Why:** Kapsam daraltarak geçirmek kadar, imkânsız bir bütünlük standardı dayatıp sonsuz tur
+açmak da hatadır; ADR'nin yazılı kabul sınırı + ölçülmüş ikinci savunma hattı bu iki hatanın
+arasındaki tek savunulabilir çizgidir.

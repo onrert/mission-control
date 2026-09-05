@@ -49,3 +49,13 @@ Kaynak: `docs/02-architecture.md` §7; `docs/03-ux.md` ekran 2 + akışlar (a), 
    ~350 ms ana iş parçacığını bloklar ve SSE akışı dahil **tüm istekleri** durdurur. F-007
    sözleşmesi bunu asenkron bir yaklaşımla değiştirmek zorundadır. Kaynak: `docs/qa/F-006-contract.md`
    §9 risk 4 + QA doğrulama tur 2.
+5. **`safeYamlValue` sertleştirilecek — handler'a bağlamadan ÖNCE.** QA ölçtü (F-006 doğrulama
+   turu 2, NOT-3): `src/server/write-gate.ts:190` yalnızca `:`/`#`/`\r`/`\n` görünce tırnaklıyor;
+   `"x`, `[x`, `*x`, `!x` gibi değerler **ayrıştırılamaz bir `status:` satırı** üretiyor. F-006'da
+   bloklayıcı sayılmadı çünkü `setFeatureStatus`'un `src/` içinde **hiç çağıranı yok** (grep: 0).
+   **F-007 onu `PATCH /api/features`'a bağlayan feature'dır** — bağlamadan önce kapatılmalı.
+6. **`OPERATION_PATTERNS` gevşetilirse adım 3/6 aynı turda çitlenecek.** QA'nın koşulu: yol
+   çözümlemesinin 3. ve 6. adımlarının **bağımsız kapsaması sıfır** (adım 8'in işlem/yol regex'i
+   onları gölgeliyor; QA 28 varyantla doğruladı). Bugün kabul edilebilir. Ama F-007
+   `OPERATION_PATTERNS`'a yeni bir desen eklerse veya mevcut birini gevşetirse, o gölge kalkar ve
+   adım 3/6 **aynı turda** çitlenmek zorundadır.

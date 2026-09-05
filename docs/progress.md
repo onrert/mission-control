@@ -1306,3 +1306,55 @@ feature'ı olduğu için CEO kararı: kapsam daraltılmadan, tüm bulgular düze
 **Sonraki adım**
 - qa-evaluator F-006'yı yeniden değerlendirsin (düzeltme turu — D34-D39 + Ö3 + N1-N5).
 - GEÇTİ ise F-007 (kanban) başlayabilir.
+
+---
+
+## 2026-09-05 — F-006 (yazma kapısı + sınır testleri) GEÇTİ
+
+**Ne yapıldı**
+- Sözleşme: 3 developer + 2 QA turu, 14 bulgu + 4 regresyon **kod yazılmadan** kapandı.
+- Kod: `src/server/write-gate.ts` (yol beyaz listesi, symlink savunması, `OPERATION_PATTERNS`,
+  atomik yazma, "asla fırlatmaz"), dağıtıcıda `x-mc-write` + `POST /api/events` içerik tipi
+  allowlist'i, `src/web/lib/write-fetch.ts`, statik bypass taraması, manifest testi.
+- QA kod turu **KALDI** (2 bloklayıcı) → düzeltme 1 → **GEÇTİ**.
+  Puanlar: İşlevsellik 8 · Bütünlük 8 · Görsel/UX 7 · Kod kalitesi 8.
+
+**Nasıl doğrulandı**
+- `npm run verify` = 0 (**41 dosya / 564 test**) · `e2e` = 0 (15) · `e2e:dev` = 0 (1) · `npm audit` 0.
+- **Delme denemeleri:** QA 28 yol + 8 symlink/junction + 28 HTTP denemesi yaptı ve her satırda
+  **diskte ne olduğunu ölçtü** — kök dışında tek bayt değişmedi. Hardlink saldırısında yazma
+  başarılı oldu ama `tmp+rename` dış dosyayı korudu.
+- QA 12 bağımsız mutasyon koştu; beş farklı silme biçimi (`unlinkSync`, `rmSync`,
+  `promises.unlink`, `rmdir`, `fsp.rm`) ayrı ayrı kırmızı verdi.
+
+**Bu feature'ın dersi: güvenlik feature'ında kanıt, kodun kendisi kadar önemli**
+QA kod turu iki bloklayıcı buldu ve ikisi de aynı sınıftandı — **kabul kriteri var, testi var,
+ama test hiçbir şey ölçmüyor:**
+- AC3 "silme işlevi yok" **tamamen çitsizdi**: yazma kapısına gerçek bir `fs.unlinkSync` eklenince
+  539 testin hepsi yeşil kalıyordu. Sebep: statik taramanın tek dosya-seviyesi istisnası tam da
+  `write-gate.ts`'in kendisiydi.
+- AC7'nin taraması, adıyla saydığı `fs.write*` ailesini yakalamıyordu: `fs.open(p,'w')` +
+  `fs.write(fd,…)` — tam işlevsel bir yazma yolu — kaçıyordu. 9 denemeden 7'si geçti.
+**Kapının kendisi zaten kilitliydi; kilitli olduğunu kanıtlayan testler yalan söylüyordu.**
+
+**QA'nın kayda değer yargısı**
+Statik taramayı atlatan 7 dolaylı biçim (`const w = fs.writeFileSync`, dinamik erişim, namespace
+import…) bulundu ama **bloklayıcı sayılmadı**, üç ölçülmüş gerekçeyle: (a) ADR-005 statik guard'ın
+dolaylı çağrıları yakalamadığını zaten kabul ediyor; (b) kaçan bir biçimle gerçek bir silme
+yazıldı → **manifest testi 24 testle kırmızı verdi**, yani "ikinci savunma hattı" iddiası ölçüldü;
+(c) belirsiz adları alıcıya bağlamak zorunluydu — `src/`'te meşru `process.stderr.write(` var.
+
+**Kalan risk (hepsi NOT)**
+- `safeYamlValue` yalnızca `:#\r\n` görünce tırnaklıyor; `"x`, `[x`, `*x` ayrıştırılamaz satır üretir.
+  Bugün zararsız (`setFeatureStatus`'un `src/` içinde hiç çağıranı yok) — **F-007'ye taşındı.**
+- Yol çözümlemesinin 3./6. adımlarının bağımsız kapsaması sıfır (adım 8 onları gölgeliyor).
+  `OPERATION_PATTERNS` gevşetilirse aynı turda çitlenmeli — **F-007'ye taşındı.**
+- İzin verilen dize çakışması: `const tmp = resolved.targetPath; fs.unlinkSync(tmp)` istisnayla
+  çakışıyor (tasarımın doğal sınırı).
+- İçe aktarma takma adı tarayıcısı yalnızca `node:fs`/`fs`/`fs/promises` adlarını biliyor.
+
+**Sonraki adım**
+- **F-007 kanban** — Faz 1'in son feature'ı. Beş devralınan taahhütle açılacak:
+  tam `tablist` deseni · F-005 AC1'in görsel kanıtı · dar genişlikte gezinme · `Atomics.wait`
+  asenkrona çevirme · `safeYamlValue` sertleştirme (+ `OPERATION_PATTERNS` koşulu).
+- Sonra **G4-1 kilometre taşı** (kullanıcı onayı).

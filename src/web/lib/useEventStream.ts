@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
-import type { EventRecord } from '../../shared/types'
+import type { EventRecord, ProjectListItem } from '../../shared/types'
 
 /**
  * Bağlantı durumu (sözleşme §3 madde 6, CEO kararı D1): 3 gözlemlenebilir durum +
@@ -79,6 +79,12 @@ export type EventSourceConstructor = (new (url: string) => EventSourceLike) & {
 export interface UseEventStreamOptions {
   EventSourceImpl?: EventSourceConstructor
   fetchImpl?: typeof fetch
+  /**
+   * F-005 (sözleşme §2.2): `'projects'` SSE kanalına abone olunur — yalnızca bu callback
+   * SAĞLANMIŞSA (ADR-004 madde 1 "tek bağlantı çok kanal"). Verilmezse mevcut davranış
+   * (Timeline'ın kendi kullanımı) birebir korunur.
+   */
+  onProjects?: (records: ProjectListItem[]) => void
 }
 
 export type LoadState = 'loading' | 'ready' | 'error'
@@ -169,18 +175,33 @@ export function useEventStream(
     const handleResync = (): void => {
       void loadEvents()
     }
+    const handleProjects = (evt: MessageEvent): void => {
+      if (!options.onProjects) return
+      try {
+        const records = JSON.parse(evt.data as string) as ProjectListItem[]
+        options.onProjects(records)
+      } catch {
+        // bozuk `projects` verisi sessizce yok sayılır — akışın geri kalanını etkilemez.
+      }
+    }
     es.addEventListener('open', handleOpen)
     es.addEventListener('error', handleError)
     es.addEventListener('event', handleEvent)
     es.addEventListener('resync', handleResync)
+    if (options.onProjects) {
+      es.addEventListener('projects', handleProjects)
+    }
     return () => {
       es.removeEventListener('open', handleOpen)
       es.removeEventListener('error', handleError)
       es.removeEventListener('event', handleEvent)
       es.removeEventListener('resync', handleResync)
+      if (options.onProjects) {
+        es.removeEventListener('projects', handleProjects)
+      }
       es.close()
     }
-  }, [streamUrl, EventSourceImpl, loadEvents])
+  }, [streamUrl, EventSourceImpl, loadEvents, options.onProjects])
 
   // Sözleşme §3 madde 5: frozen'a geçişte anlık görüntü al; frozen kalkınca canlıya dön.
   useEffect(() => {

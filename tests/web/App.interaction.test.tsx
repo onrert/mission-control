@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import App from '../../src/web/App'
 import { FakeEventSource } from '../helpers/fake-event-source'
 
@@ -95,6 +96,77 @@ describe('App.interaction — TimelineScreen koşulsuz mount (YENİ-1/Bulgu 4/12
       restore()
       vi.doUnmock('../../src/features/events/web/TimelineScreen')
       vi.resetModules()
+    }
+  })
+})
+
+describe("App.interaction — Ayarlar geçişi (F-005 CEO kararı, tam tablist F-007'ye ertelendi)", () => {
+  it("Ayarlar düğmesine tıklanınca TimelineScreen DOM'dan kaldırılmaz (hidden olur, unmount olmaz)", async () => {
+    FakeEventSource.reset()
+    const restore = stubGlobals()
+    try {
+      const user = userEvent.setup()
+      render(<App />)
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      const timelineBefore = screen.getByTestId('timeline-screen')
+      await user.click(screen.getByRole('button', { name: 'Ayarlar' }))
+
+      // TimelineScreen hâlâ DOM'da (F-003'ün unmount'suz garantisi) — yalnızca hidden.
+      const timelineAfter = screen.getByTestId('timeline-screen')
+      expect(timelineAfter).toBe(timelineBefore)
+      expect(timelineAfter.closest('[id="panel-timeline"]')).toHaveProperty('hidden', true)
+      expect(screen.getByTestId('settings-screen').closest('[id="panel-settings"]')).toHaveProperty(
+        'hidden',
+        false
+      )
+    } finally {
+      restore()
+    }
+  })
+
+  it('Ayarlar aria-pressed click() sonrası true/false arasında değişir', async () => {
+    FakeEventSource.reset()
+    const restore = stubGlobals()
+    try {
+      const user = userEvent.setup()
+      render(<App />)
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      const button = screen.getByRole('button', { name: 'Ayarlar' })
+      expect(button.getAttribute('aria-pressed')).toBe('false')
+      await user.click(button)
+      expect(button.getAttribute('aria-pressed')).toBe('true')
+      await user.click(button)
+      expect(button.getAttribute('aria-pressed')).toBe('false')
+    } finally {
+      restore()
+    }
+  })
+
+  it('Kanban statik <span> — click() ile ulaşılamaz, aktif ekranı değiştirmez', async () => {
+    FakeEventSource.reset()
+    const restore = stubGlobals()
+    try {
+      const user = userEvent.setup()
+      render(<App />)
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      const kanban = screen.getByText('Kanban')
+      expect(kanban.tagName).toBe('SPAN')
+      await user.click(kanban)
+      // Kanban tıklamanın hiçbir etkisi yok — Ayarlar hâlâ basılı değil, panel değişmedi.
+      expect(screen.getByRole('button', { name: 'Ayarlar' }).getAttribute('aria-pressed')).toBe(
+        'false'
+      )
+    } finally {
+      restore()
     }
   })
 })

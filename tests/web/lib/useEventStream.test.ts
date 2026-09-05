@@ -282,4 +282,47 @@ describe('useEventStream', () => {
     expect(result.current.scrolledAway).toBe(false)
     expect(result.current.frozen).toBe(false)
   })
+
+  it('F-005: onProjects verilmezse "projects" olayına hiç abone olunmaz (geriye dönük uyumluluk)', async () => {
+    FakeEventSource.reset()
+    const fetchImpl = fakeFetchOk([])
+    renderHook(() =>
+      useEventStream('/api/stream', '/api/events', {
+        EventSourceImpl: FakeEventSource as never,
+        fetchImpl,
+      })
+    )
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
+    const es = FakeEventSource.instances[0]!
+    // dispatch 'projects' olsa bile hiçbir dinleyici kayıtlı değil — hata fırlamaz.
+    expect(() => es.dispatch('projects', [{ id: 'p_1' }])).not.toThrow()
+  })
+
+  it('F-005: onProjects verilirse "projects" SSE olayı callback\'e iletilir', async () => {
+    FakeEventSource.reset()
+    const fetchImpl = fakeFetchOk([])
+    const onProjects = vi.fn()
+    renderHook(() =>
+      useEventStream('/api/stream', '/api/events', {
+        EventSourceImpl: FakeEventSource as never,
+        fetchImpl,
+        onProjects,
+      })
+    )
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
+    const es = FakeEventSource.instances[0]!
+    const records = [
+      {
+        id: 'p_1',
+        path: 'C:\\x',
+        label: 'x',
+        added_at: 't',
+        enabled: true,
+        exists: true,
+        feature_count: 0,
+      },
+    ]
+    act(() => es.dispatch('projects', records))
+    expect(onProjects).toHaveBeenCalledWith(records)
+  })
 })

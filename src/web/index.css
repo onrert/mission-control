@@ -6,6 +6,7 @@
    `@source` bu dizini açıkça ekler (yol bu dosyaya göre görelidir). Regresyon çiti:
    `tests/build-css.test.ts` (gerçek `vite build` çalıştırıp çıktı CSS'i denetler). */
 @source "../features/events/web";
+@source "../features/projects/web";
 
 @theme {
   --font-display: 'Departure Mono', ui-monospace, monospace;

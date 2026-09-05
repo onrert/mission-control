@@ -1223,3 +1223,86 @@ test dosyasını kırıyordu, ama bu dosyalar F-006'nın dosya sahipliği dış�
 - qa-evaluator F-006'yı değerlendirsin: 8 AC + mutasyon kanıt tablosu + üç "yeşil kalan
   mutasyon"un fazlalık gerekçesi.
 - GEÇTİ ise F-007 (kanban) başlayabilir (F-006 F-007'den önce bitmek zorundaydı, artık bitti).
+
+---
+
+## 2026-09-05 — F-006 QA kod turu KALDI, düzeltme turu tamamlandı
+
+**QA verdiği karar:** KALDI (2 bloklayıcı: B1/D35, B2/D34 + 5 önemli: Ö1/D36, Ö2/D38, Ö3, Ö4/D37,
+Ö5). Tam rapor `docs/qa/F-006-2026-09-05.md` (= `docs/qa/latest.md`). Bu bir güvenlik sınırı
+feature'ı olduğu için CEO kararı: kapsam daraltılmadan, tüm bulgular düzeltilerek geçilecek.
+
+**Ne yapıldı (D34-D39, CEO kararlarının hepsi uygulandı)**
+1. **D34/B2 (bloklayıcı) — AC3 "silme yok" çitsizdi.** `write-gate.ts`, `no-write-gate-bypass
+   .test.ts`'in TEK dosya-seviyesi istisnasıydı; QA gerçek bir `fs.unlinkSync(resolved.targetPath)`
+   ekleyip 539/539 yeşil aldı. Düzeltme: dosya artık üç store dosyasıyla aynı, ÇAĞRI-BİÇİMLİ +
+   DİZGE-SEVİYESİ izinli tam-çağrı kümesiyle taranıyor (yalnızca `atomicWriteOnce`/`archiveDenial`'ın
+   kendi 7 tmp/rename/mkdir çağrısı izinli). Mutasyonla doğrulandı (aşağıda).
+2. **D35/B1 (bloklayıcı) — statik tarama `fs.write*` ailesinin bir kısmını kaçırıyordu.** QA'nın 9
+   kaçak denemesi (`fs.open`+`fs.write` çifti, `fs.writevSync`, `fs.promises.rm`, `fs.rmdir`,
+   `fs.promises.rmdir`, `fs.symlinkSync`, `fs.linkSync`, `fsp.rm`, `promises.rm`) + tek nesne-önekli
+   `'fs.rm('` deseni. Düzeltme: DENIED listesi "bare" (Sync sonekli/kendine özgü isimler, dizge
+   arama güvenli) ve "scoped" (kısa/çakışan isimler — `write`/`open`/`rm`/`rmdir`/`symlink`/`link`/
+   `writev` — yalnızca `fs`/`fs.promises`/`fsp`/`promises` alıcısına bağlı regex) olarak ikiye
+   ayrıldı. Ayrıca yeniden adlandırılmış import (`import { writeFile as wf }`) veya destructure
+   (`const { rm } = fs`) ile fs kapasitesi EDİNİMİNİN kendisini yakalayan ayrı bir mekanizma eklendi
+   (çağrı-biçimli tarama kullanım anında "fs"/"rm" birlikte göremediği için bunu göremezdi).
+3. **D36/Ö1 — `archiveDenial`'ın "asla fırlamaz" garantisi çitsizdi.** Kod zaten doğruydu
+   (`mkdirSync`+`renameSync` `try` içinde), ama arşiv hedefi bir dosyayla işgal edilmiş senaryosunu
+   (`EEXIST`) ölçen test yoktu (QA'nın MQ4 mutasyonu 539/539 yeşil kalmıştı). Test eklendi.
+4. **D37/Ö4 — `OPERATION_PATTERNS.archive` yalnızca daraltma yönünde çitliydi.** Gevşetme yönü
+   (`.*`'e kadar) için `Date.prototype.toISOString` sahtelenerek üretilen ad biçimine uymayan bir
+   dosya adının `write_denied` aldığını kanıtlayan test eklendi.
+5. **D38/Ö2 — frontmatter enjeksiyonu.** `setFeatureStatus(root, file, 'x\n---\nBODY', hash)`
+   `ok:true` dönüp frontmatter'ı bozuyordu (`safeYamlValue` satır sonunu tırnaklıyor ama
+   kaçırmıyordu). Düzeltme: satır sonu içeren `nextStatus` artık baştan `invalid_body` ile
+   reddediliyor (kaçırmak yerine reddetmek — CEO tercihi, `status` tek kelime).
+6. **D39 — sözleşmedeki yanlış gerekçe + eksik bedel notu.** Mutasyon 10'un "geometrik olarak
+   mümkün değil" argümanı yanlıştı (gerçek neden `path.relative`'in kök referanslı olması, ada
+   bağlı değil) — düzeltildi. Adım 3/6'nın sıfır bağımsız kapsaması olduğu artık açıkça yazılı;
+   adım 3 için `vi.spyOn(lstatSync)` ile üst ata segmentinin de gerçekten sorgulandığını kanıtlayan
+   bir test eklendi (Ö5, QA'nın MQ1 mutasyonu 539/539 yeşil kalmıştı).
+7. **Ö3 — AC5'in yanlış iddiası.** "Yol için elle regex kullanılmaz (statik tarama testi
+   doğrular)" ifadesi yanlıştı — DENIED listesi yol/ayraç deseni taramıyor. Metin düzeltildi
+   ("elle kod incelemesiyle doğrulandı" — kırılgan bir yol-regex-tespit deseni yazmak zaten elle
+   doğrulanmış bir özellik için orantısız karmaşıklık olurdu).
+8. **N1-N5 — bilinçli olarak KOD DEĞİŞİKLİĞİ almadı** (QA'nın kendi notu: "belgesel/ucuz, ayrı tur
+   gerektirmez"): N1 (test sayısı 538→539/564 farkı, bu turda düzeltildi), N2 (`//api/events` çift
+   eğik önek atlaması — hiçbir yazma rotası bu yolla erişilebilir değil), N3 (arşiv adı ms
+   çakışması — tek kullanıcılı akışta pratikte imkânsız, kabul edilmiş risk), N4 (manifest
+   `walk`'ının symlink'e körlüğü), N5 (harf duyarlılığı red mesajının teşhis edilemezliği — CEO
+   zaten davranışı değiştirmeme kararı vermişti, yalnızca mesaj netliği önerisi).
+
+**Mutasyon kanıtı (bu turun kendi ölçümü, hepsi uygula → KIRMIZI → `git checkout` ile geri al)**
+
+| Bulgu | Mutasyon | Sonuç |
+|---|---|---|
+| D34/B2 | `setFeatureStatus`'a `nextStatus==='__mutation_probe_delete__'` dalında gerçek `fs.unlinkSync(resolved.targetPath)` | KIRMIZI — `write-gate.ts: ... yeniden adlandırma/destructure yok` testi, çağrı izinli kümede değil |
+| D35/B1 | QA'nın 9 kaçak denemesi + `unlinkSync` — hepsi `it.each` kalıcı negatif-kontrol olarak eklendi | Hepsi YEŞİL (yakalanıyor) — kalıcı test, ayrıca kaldırılırsa (deneme) KIRMIZI verir |
+| D36/Ö1 | `archiveDenial`: `mkdirSync`'i `try` dışına taşı | KIRMIZI — `EEXIST: file already exists, mkdir '...docs\approvals\archive'` fırlatıldı, `.not.toThrow()` kırıldı |
+| D37/Ö4 | `OPERATION_PATTERNS.archive` → `/^docs\/approvals\/archive\/.*$/` | KIRMIZI — sahte zaman damgası artık `ok:true` dönüyor, `write_denied` bekleniyordu |
+| D38/Ö2 | Satır sonu guard'ı kaldırıldı | KIRMIZI — 3 golden fixture (`\n`, `\r`, `\r\n`) `ok:true` döndü |
+| Ö5 | Ata döngüsü yalnızca son segmenti kontrol edecek şekilde daraltıldı | KIRMIZI — `docsPath` (üst segment) hiç `lstatSync`'lenmedi |
+
+**Nasıl doğrulandı**
+- `npm run verify` = 0 (typecheck + lint + **564/564 test, 41 dosya** + build).
+- `npm run e2e` = 0 (**15/15**), `npm run e2e:dev` = 0 (**1/1**).
+- Yukarıdaki 6 mutasyonun hepsi canlı kaynakta uygulanıp KIRMIZI görüldü, `git checkout --` ile
+  birebir geri alındı (her revert sonrası `git status --porcelain` boş doğrulandı).
+- Süreç/port temizliği: `tasklist` içinde node.exe yok; 7333/7334/7335/7433/7434 yalnızca
+  TIME_WAIT soketleri, dinleyen süreç yok.
+
+**Kalan risk**
+- N2/N3/N4/N5 bilinçli olarak açık bırakıldı (yukarıda gerekçeli) — qa-evaluator bu kararı
+  bağımsız değerlendirmeli.
+- Adım 6'nın (yalnızca adım 3'ün değil) izole bir bağımsız-kapsama testi bu turda eklenmedi
+  (sözleşme kendi notu: "istenirse birleşik mutasyon ek kanıt olarak koşulabilir", kapsam dışı
+  bırakıldı) — gelecekte adım 8 gevşerse bu ölçülmemiş kalır.
+- `write-gate.ts` hâlâ hiçbir HTTP handler'a bağlı değil (F-007'nin işi); D35'in import-alias
+  taraması yalnızca `node:fs`/`fs`/`fs/promises` isimlerini biliyor, üçüncü parti bir sarmalayıcı
+  (ör. `fs-extra`) üzerinden aynı kapasiteyi edinen bir kod bu tarama tarafından görülmez (bugün
+  böyle bir bağımlılık yok, `package.json`'da doğrulandı).
+
+**Sonraki adım**
+- qa-evaluator F-006'yı yeniden değerlendirsin (düzeltme turu — D34-D39 + Ö3 + N1-N5).
+- GEÇTİ ise F-007 (kanban) başlayabilir.

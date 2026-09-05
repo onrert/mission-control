@@ -30,14 +30,12 @@ export default function App() {
             (`overflow-x-auto`) — Ayarlar dişlisi bu kaydırma alanının DIŞINDA, `shrink-0` ile
             sağda sabit kalır (`docs/03-ux.md:17` dar panel senaryosu / `:21` "sağda sabit dişli
             ikonu"). Önceden tüm başlık tek bir `overflow-x-auto` satırıydı ve dar genişlikte
-            dişli, başlık+nav ile birlikte ekran dışına kayıyordu. `minWidth:0` satır içi stille
-            verilir (eşdeğer bir Tailwind yardımcı sınıfı DEĞİL — `tests/build-css.test.ts` o
-            sınıf adını `projects/web`'e özgü bir @source-çiti parmak izi olarak kullanıyor,
-            çakışmayı önlemek için burada inline style tercih edildi): flex öğesinin varsayılan
-            `min-width:auto`'su
-            aksi hâlde bu öğenin içerik genişliğine küçülmesini engelleyip DIŞ `<header>`'ı
-            taşırırdı. */}
-        <div className="flex flex-1 items-center gap-6 overflow-x-auto" style={{ minWidth: 0 }}>
+            dişli, başlık+nav ile birlikte ekran dışına kayıyordu.
+            QA düzeltme turu 2 (D28/NOT-2): burada daha önce satır içi `style={{ minWidth: 0 }}`
+            vardı; "aksi hâlde `<header>` taşardı" iddiasıyla eklenmişti ama ölçüm bunu
+            doğrulamadı (satırın kaldırılması 375px E2E'yi bozmadı) — Karpathy §3 gereği ölü
+            satır kaldırıldı. */}
+        <div className="flex flex-1 items-center gap-6 overflow-x-auto">
           <span
             data-testid="app-title"
             className="shrink-0 whitespace-nowrap font-display tracking-wide text-lg"

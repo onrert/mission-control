@@ -57,4 +57,19 @@ describe('no-delete-guard (CEO kararı B/C)', () => {
     expect(content.includes('rmdirSync')).toBe(false)
     expect(content.includes('fs.rm(')).toBe(false)
   })
+
+  // QA düzeltme turu 2 (D28/NOT-1): önceki hâl `projects-registry.ts`'i DOSYA düzeyinde
+  // tarama listesinden tamamen çıkarıyordu, bu yüzden dosyanın herhangi bir yerindeki bir
+  // `unlinkSync(...)` çağrısı (izlenen bir proje kökünde, ör. `README.md`) statik olarak kör
+  // kalıyordu. İstisna artık DİZGE düzeyinde: yalnızca kendi `.tmp` artığını temizleyen tam
+  // `unlinkSync(tmpPath)` çağrısına izin verilir; başka herhangi bir `unlinkSync(...)` argümanı
+  // guard'ı KIRMIZI vermeye zorlar.
+  it('projects-registry.ts: tek `unlinkSync` çağrısı yalnızca kendi `.tmp` artığını hedefler (`unlinkSync(tmpPath)`)', () => {
+    const content = fs.readFileSync(registryFile, 'utf8')
+    const calls = content.match(/unlinkSync\([^)]*\)/g) ?? []
+    expect(calls.length).toBeGreaterThan(0)
+    for (const call of calls) {
+      expect(call).toBe('unlinkSync(tmpPath)')
+    }
+  })
 })

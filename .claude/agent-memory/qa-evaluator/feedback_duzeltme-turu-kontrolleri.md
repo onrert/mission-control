@@ -85,14 +85,42 @@ Dar "düzeltme turu doğrulaması" briefinde şu üç kontrol her seferinde iş 
    KIRMIZI), ama `http.createServer(withDispatchErrorBoundary(fn))` çağrısındaki sarmalayıcıyı
    **silmek** 430/430 yeşil bıraktı — yani teslimat uygulamadan koparılabiliyordu. Kural: export
    edilip doğrudan birim testlenen her sarmalayıcı/middleware için ayrıca "gerçek HTTP üzerinden
-   bağlı mı" mutasyonu çalıştır.
+   bağlı mı" mutasyonu çalıştır. (F-005 fix2'de kapatıldı: gerçek `createServer` + gerçek `fetch`
+   + servis metodunu test içinde fırlatır hâle getirme deseni doğru çözüm; aynı mutasyon artık
+   `Test timed out` + `Uncaught Exception` ile kırmızı.)
 16. **Aynı hata sınıfının SUNUCU yarısı kapandığında İSTEMCİ yarısını ayrıca ölç.** F-005 fix1
    sunucuda 500 + `"Liste kaydedilemedi, tekrar deneyin."` döndürüyordu; `add` yolu bunu banner
    olarak gösteriyor, `remove` yolu `if (!res.ok) return` ile sessizce yutuyordu (buton
    "çalışmıyor" gibi görünüyor). Süreç eskiden çöktüğü için bu davranış hiç gözlemlenememişti.
-   Fault injection'ı **tarayıcıdan** da tekrarla, yalnızca curl'den değil.
+   Fault injection'ı **tarayıcıdan** da tekrarla, yalnızca curl'den değil. Tarayıcı turunda dört
+   şeyi birden ölç: alert görünürlüğü · satır/kayıt yerinde mi · düğme yeniden etkin mi ·
+   **engel kalkınca kurtarma** (aynı düğme başarıyla çalışıyor mu).
 17. **`status: qa`/`fix` gibi frontmatter alanlarını rapordan sonra sen güncelle**; KOŞULLU
    GEÇTİ'de `fix` bırak ve kapanış için istenen maddeleri raporun sonunda numaralı ver.
+
+18. **Asenkron yığın düzeltmelerinde birim testinin KIRMIZI olması yetmez — süreç ölümünü depo
+   dışında ölç.** F-005 fix2'de `safelyNotify` düzeltmesinin testi `vi.mock` ile chokidar'ı
+   sahteleyip closure'ı doğrudan çağırıyordu: sarmalayıcı kaldırılınca test kırmızı oluyor ama bu,
+   "gerçekte süreç ölürdü" iddiasını KANITLAMIYOR (test içinde throw yalnızca assert'i düşürür).
+   Scratchpad'e `.mts` bir harness yaz (tsx, `.ts` + top-level await'te "cjs output format"
+   hatası verir), servisi `pathToFileURL(...).href` ile dinamik import et, fırlatan sahte hub +
+   GERÇEK dosya yazımı kullan, `process.on('uncaughtException')` ile ölümü yakala. F-005'te:
+   sarmalayıcıyla `EXIT=0 SURVIVED`, sarmalayıcısız `EXIT=3 UNCAUGHT` — iki yönlü kanıt 2 dakikada.
+19. **Bir "istisna daraltıldı" düzeltmesinden sonra istisnanın YENİ kenarını mutasyonla.** D28,
+   `no-delete-guard`'ın registry istisnasını dize seviyesine (`unlinkSync(tmpPath)`) indirdi;
+   istenen mutasyon (proje dosyasını hedefle) kırmızı verdi, ama aynı dosyaya hiç çağrılmayan bir
+   `fs.promises.unlink(...)` eklemek 12/12 yeşil kaldı — daraltma `unlinkSync` ailesini kapatıp
+   asenkron kardeşini açık bıraktı. Kural: daraltılan çitin **regex/desenini oku**, desenin
+   DIŞINDA kalan en yakın eşdeğer API ile ikinci bir mutasyon çalıştır.
+20. **Yeni bir try/catch sarmalayıcısında closure GRANÜLERLİĞİNE bak.** Birden çok yan etki tek
+   `safelyNotify(...)` closure'ına konursa ilk fırlatan kardeşini de yutar (F-005: `watcher.stop()`
+   fırlarsa hemen ardındaki `watchers.delete(id)` hiç çalışmaz → sayaç yalan söyler; `addProject`'te
+   izleme kurulumu fırlarsa `broadcast` atlanır → istemciler bayat kalır). NOT seviyesi, ama
+   raporda adı geçmeli.
+21. **Fixture kurarken kabuktan özyinelemeli silme komutu çağırma** — `block-dangerous.cjs` hook'u
+   scratchpad yolları için de tetikleniyor ve tur harcatıyor. Benzersiz dizin adı seç; silmen
+   gerekiyorsa `node -e` içinden `fs` API'siyle yap. Aynı hook, **memory dosyasına** böyle bir
+   komutu örnek olarak yazan Bash komutunu da bloklar — o dosyaları Write aracıyla yaz.
 
 **Why:** Düzeltme turları dar tutulduğu için yeniden inceleme yapılmaz; kaçan kusur bir daha
 bakılmayan bölgede kalır. **How to apply:** Kapanış tablosunu yazmadan önce bu üç kontrolü

@@ -1,7 +1,7 @@
 ---
 id: F-005
 title: Proje kayıt defteri + chokidar izleme + Ayarlar ekranı (çok projeli izleme)
-status: qa
+status: done
 owner: developer
 deps: [F-003]
 sprint: 1

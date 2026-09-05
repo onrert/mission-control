@@ -1110,3 +1110,50 @@ KOŞULLU GEÇTİ verdi: 2 ÖNEMLİ (D25/D26) + NOT-4 (D27) + iki NOT (D28). Söz
 **Sonraki adım**
 - qa-evaluator bu düzeltme turunu dar kapsamda doğrulasın (yalnızca D25-D28 + mutasyon kanıtı);
   D20-D24 ve önceki turların onaylanan bölümleri yeniden açılmasın.
+
+---
+
+## 2026-09-05 — F-005 (proje kayıt + chokidar izleme + Ayarlar) GEÇTİ
+
+**Ne yapıldı**
+- Sözleşme: 3 developer + 2 QA turu, 14 bulgu + 2 regresyon **kod yazılmadan** kapandı.
+- Kod: kayıt defteri (`data/projects.json`, atomik), yol doğrulama, chokidar izleyici,
+  `GET/POST/DELETE /api/projects`, Ayarlar ekranı + dişli düğmesi, Origin korumasının **tüm
+  non-GET `/api/*` uçlarına** genelleşmesi.
+- QA kod turu **KALDI** (1 bloklayıcı) → düzeltme 1 → **KOŞULLU GEÇTİ** (2 önemli) → düzeltme 2 →
+  **GEÇTİ**. Puanlar: İşlevsellik 9 · Bütünlük 9 · Görsel/UX 8 · Kod kalitesi 8.
+
+**Nasıl doğrulandı**
+- `npm run verify` = 0 (**37 dosya / 437 test**) · `e2e` = 0 (15) · `e2e:dev` = 0 (1) · `npm audit` 0.
+- QA 6 bağımsız mutasyon koştu, 5'i kırmızı; tek yeşil kalan NOT seviyesinde (guard `fs.promises.unlink`
+  biçimine kör, dinamik manifest yakalıyor).
+- **Canlı doğrulama:** üretim build'i + izole veri dizini + gerçek geçici fixture ile ekle → canlı
+  `features` SSE → kaldır akışının tamamı tarayıcıdan koştu; kaldırma sonrası fixture'ın dosyaları ve
+  hash'leri değişmedi, `watchers` 1→0.
+
+**Bu feature'ın üç dersi**
+1. **Ölçüm, kâğıt üstündeki mantığı çürüttü.** Sözleşme "Windows-only olduğumuz için `chokidar`
+   gereksiz, `node:fs.watch` yeter" diyordu; savunulabilir görünüyordu. QA denedi: izlenen dizin
+   silinip yeniden oluşturulunca `fs.watch` **sessizce ve kalıcı olarak ölüyor** (2 olay → 0), dizin
+   silinmiş kalırsa 1 sn'de **112.535** olay üretiyor. Bu bir `git checkout` desenidir ve ürün tam
+   olarak proje depolarını izliyor. chokidar aynı senaryolarda: sinyal geri geliyor, fırtına
+   **0 olay/sn**. Karar geri alındı, ADR-012 ölçümlerle yazıldı.
+2. **Yakalanmamış yazma hatası sunucuyu öldürdü — ikinci kez.** F-002'de kuyruk zehirlenmesi,
+   burada kayıt defteri yazımı. İki çağrıyı sarmak yerine **HTTP dağıtıcısına üst düzey hata sınırı**
+   kondu (hangi handler fırlarsa fırlasın 500, süreç yaşar) ve sınırın **bağlandığı** davranışsal
+   testle çitlendi — çünkü ilk denemede sarmalayıcı silinince 430/430 yeşil kalıyordu.
+3. **Sessiz başarısızlık yine çıktı.** Yazma engelliyken "Kaldır" hiçbir geri bildirim vermiyordu;
+   "Ekle" ise doğru banner'ı gösteriyordu — desen vardı, uygulanmamıştı.
+
+**Kalan risk (hepsi NOT)**
+- `safelyNotify` closure granülerliği: `watcher.stop()` fırlarsa `watchers.delete(id)` atlanabilir.
+- `stopAll()` sarılmamış (çağıranı kapanış dinleyicisi).
+- `no-delete-guard` `fs.promises.unlink(` biçimine kör (dinamik manifest yakalıyor).
+- vitest worker fork kararsızlığı ara sıra tekrarlıyor (zincir duruyor, sessiz yeşil değil).
+- 375px'te marka adı kırpılıyor — F-007'ye taşındı.
+
+**Sonraki adım**
+- **F-006 yazma kapısı** (F-007'den ÖNCE bitmek zorunda), sonra **F-007 kanban**, sonra **G4-1**.
+- F-006 sözleşmesinde **kullanıcı kararı gerekiyor:** ADR-008 ekindeki artık risk (aynı makinedeki
+  başka bir yerel sayfa panele istek atabiliyor) yeniden değerlendirilecek — F-006 sunucuya kullanıcı
+  adına diske yazdırdığı için tehdit modeli değişiyor.

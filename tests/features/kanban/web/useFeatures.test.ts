@@ -25,11 +25,17 @@ function card(overrides: Partial<FeatureCard> = {}): FeatureCard {
   }
 }
 
+// Mutasyon kanıtı (F-007 kod turu, D42): önceki hâl `data: cards` aynı dizi/nesne referansını
+// her çağrıda döndürüyordu — bu, `mergeCards`'ın hash-bazlı birleştirmesi TAMAMEN kaldırılsa
+// bile "aynı REFERANSI korur" testinin sahte biçimde YEŞİL kalmasına yol açıyordu (mock zaten
+// aynı referansı veriyordu, üretim kodu hiç çalışmasa da assert geçerdi). Her çağrıda kartların
+// SIĞ KOPYASI üretilerek (`{...c}`) gerçek bir referans farkı yaratılıyor — artık yalnızca
+// `mergeCards` gerçekten önceki referansı koruyorsa test YEŞİL kalır.
 function fetchReturning(cards: FeatureCard[]): typeof fetch {
   return vi.fn(async () => ({
     ok: true,
     status: 200,
-    json: async () => ({ success: true, data: cards }),
+    json: async () => ({ success: true, data: cards.map((c) => ({ ...c })) }),
   })) as unknown as typeof fetch
 }
 

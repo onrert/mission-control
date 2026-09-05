@@ -1,7 +1,7 @@
 ---
 id: F-003
 title: SSE akışı + canlı zaman çizelgesi ekranı + filtreler
-status: qa
+status: done
 owner: developer
 deps: [F-002]
 sprint: 1

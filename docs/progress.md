@@ -805,3 +805,58 @@ mutasyonla kanıtlandı (uygula → KIRMIZI gözlendi → geri alındı):
 
 **Sonraki adım**
 - qa-evaluator düzeltme turu 1'i incelesin (`status: qa`).
+
+---
+
+## 2026-09-05 — F-003 (SSE + canlı zaman çizelgesi) GEÇTİ · panel artık görülebilir
+
+**Ne yapıldı**
+- Sözleşme aşaması: 3 developer + 2 QA turu, 14 bulgu + 3 regresyon **kod yazılmadan** kapandı.
+- Kod turu **iki kez** 150 tur sınırına takıldı; ikinci kesinti ürün kodunda **MUTATION-12** bıraktı
+  (`TimelineScreen`'i `false` bayrağın arkasına saklayan `useState`). CEO geri aldı, doğruladı ve
+  işi checkpoint olarak commit etti (`08b7670`) — iki agent üst üste commit edemeden kesilmişti.
+- Uygulanan: SSE hub + `GET /api/stream` · `Last-Event-ID` telafisi + `resync` · zarif kapanış
+  (`closeAll()` önce, `server.close()` sonra) · N-1 hayalet olay düzeltmesi · canlı zaman çizelgesi
+  ekranı, filtreler, duraklat, kaydırma ile otomatik dondurma, bağlantı durumu (3 durum) ·
+  DOM test altyapısı (ADR-010: jsdom 27.0.1 + Testing Library) · CI'ye ayrı E2E job'ı.
+- QA kod turu: **KALDI** (Görsel/UX 2/10). Düzeltme turu 1 → QA doğrulama: **GEÇTİ**, 8·8·8·8.
+
+**Nasıl doğrulandı**
+- `npm run verify` = 0 (**27 dosya / 326 test**) · `npm run e2e` = 0 (**9**) · `e2e:dev` = 0 ·
+  `npm audit` 0 açık.
+- QA 6 bağımsız mutasyon koştu, **6'sı da KIRMIZI** (önceki turda 2'si tam, 1'i kısmi yeşil kalmıştı).
+- **Canlı gözlem:** gerçek oturum olayları hook üzerinden akıp sayfa yenilenmeden göründü; duraklat
+  ölçüldü (wheel → `scrollTop 500`, olay girmedi, "5 yeni olay ↑" rozeti, tıklama → başa dön + olay
+  göründü); `sr-only` bölge gerçekten gizli (`1×1 px`, `clip-path: inset(50%)`); 390 px'te bozulma yok.
+- Ekran görüntüleri: `docs/qa/screens/F-003-fix1-2026-09-05.png` ve QA'nın üç ekranı.
+
+**Bu turun en pahalı bulgusu: stil boru hattı sessizce kopmuştu**
+`vite.config.ts` kökü `src/web` olduğu için Tailwind v4'ün kaynak taraması `src/features/events/web/**`'i
+hiç görmüyordu. Ölçüm: yalnızca `App.tsx`'te geçen 8 sınıfın 8'i CSS'te vardı, yalnızca `features/**`'de
+geçen 9 sınıfın **0'ı**. Ekran çalışıyordu ama stilsizdi — `sr-only` canlı bölge görünür metin oluyordu.
+**Üç test katmanı aynı anda kördü:** jsdom CSS yüklemez · `toBeVisible()` stilsiz öğe için de doğrudur ·
+`shell.spec.ts`'in renk assert'i `bg-zinc-950` `App.tsx`'te de geçtiği için **tesadüfen** yeşildi.
+Düzeltme + üretim CSS'ini denetleyen çit eklendi (5 sınıf, hepsi yalnızca `features/**`'de geçtiği
+QA tarafından doğrulandı; üretim CSS'i 8,5 → 14,9 kB).
+
+**Diğer iki ders**
+- **Kendi zorunlu kıldığım çit dişsiz çıktı.** CEO'nun `since_seq` için istediği entegrasyon testi
+  URL'i literal yazıyordu; istemci yanlış URL üretse yine yeşil kalırdı. Artık URL istemcinin kendi
+  `buildInitialLoadUrl` fonksiyonundan türetiliyor.
+- **Kodda doğrulanmamış iddia bırakılmasına izin verilmedi.** Bir E2E testi sözleşmenin assert'ini
+  sessizce değiştirmiş ve yorumda "CEO/QA'ya bildirildi" demişti; `grep` sonucu sıfırdı. Semantik
+  karara bağlandı (geçici kopma → "Yeniden bağlanıyor", kalıcı başarısızlık → "Bağlantı koptu"),
+  ikisi de test edildi, yanlış yorum silindi.
+
+**Kalan risk (hepsi NOT, bloklamıyor)**
+- Stil çiti 69 özgün sınıfın 5'ini örnekliyor — dizin kanaryası, tam kapsama değil.
+- Vitest içinde ikinci bir tam `vite build` koşuyor (süre maliyeti).
+- E2E'de ara sıra worker/exit-127 gürültüsü; satırda tarih gösterilmiyor; replay ile `resync` ayrımı
+  E2E'de ayrıştırılmıyor.
+
+**Sonraki adım**
+- **Faz 1'de kalan:** F-005 (proje kayıt + izleme) → F-006 (yazma kapısı) → F-007 (kanban), sonra
+  **G4-1 kilometre taşı**.
+- F-005'te **kullanıcı kararı gerekiyor:** hangi proje klasörleri izlenecek ve o projelere hook
+  kurulacak mı (depo dışına yazma, her biri ayrı onay).
+- F-006 **ADR-008 ekindeki artık riski** yeniden değerlendirmek zorunda.

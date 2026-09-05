@@ -56,6 +56,15 @@ Dar "düzeltme turu doğrulaması" briefinde şu üç kontrol her seferinde iş 
    (tablist/tabpanel yok) axe `aria-required-parent` ihlalidir; ayrıca tıklaması no-op olan bir
    buton, projenin kendi "iş yapmayan buton yasağı"na girer. Sadeleştirme önerirken UX doc'un
    gezinme + erişilebilirlik bölümlerini (ekran envanteri, kısayollar, odak sırası) birlikte oku.
+12. **Derleme çıktısını denetleyen bir çit eklendiyse üç şeyi ayrı ayrı sına.** (a) Çitin
+   örneklediği sınıfların/simgelerin YENİ dizinde ve **yalnızca** orada geçtiğini `grep` ile
+   doğrula — önceki turda çiti tesadüfen yeşil bırakan sınıf (F-003'te `bg-zinc-950`, iki
+   dizinde birden) listede olmamalı. (b) **Bayat artık totolojisi**: çit `dist/` içindeki tüm
+   dosyaları okuyorsa, mutasyonlu koşuda eski doğru çıktı orada kalıp yeşil bırakabilir —
+   mutasyonu uygulayıp çıktı dizinini kendi gözünle say (`emptyOutDir: true` gerçekten
+   çalışıyor mu). (c) **Kapsama oranını ölç**: F-003 fix1'de çit, yeni dizindeki 69 özgün
+   sınıfın 5'ini örnekliyordu — dizin seviyesinde kanarya, tek sınıf düşmesine kör. Bu NOT'tur,
+   KALDI değil; ama "yeni ekran eklenince çit de elle güncellenmeli" uyarısını rapora yaz.
 
 **Why:** Düzeltme turları dar tutulduğu için yeniden inceleme yapılmaz; kaçan kusur bir daha
 bakılmayan bölgede kalır. **How to apply:** Kapanış tablosunu yazmadan önce bu üç kontrolü

@@ -1,349 +1,181 @@
-# F-003 QA raporu — kod turu (qa-evaluator, 2026-09-05)
+# F-003 QA raporu — düzeltme turu 1 doğrulaması (qa-evaluator, 2026-09-05)
 
-KARAR: KALDI
+KARAR: GEÇTİ
 ESKALE: false
 
 Feature: F-003 — SSE akışı + canlı zaman çizelgesi ekranı + filtreler
-İncelenen commit: `cc33199` (öncesi: `08b7670`, `f3b4bd4`, `e8e031a`)
-Bağlayıcı ölçütler: `docs/features/F-003-sse-zaman-cizelgesi.md` 6 AC · `docs/qa/F-003-contract.md`
-(CEO düzeltmesi → CEO onayı → D1-D10 → gövde §1-§9 → tur 2 NOT'ları)
+İncelenen commit: `084b5e5` (düzeltme turu: `1b4ff8f`, `7f5a711`, `325b0a9`, `cb0b096`, `084b5e5`)
+Önceki tur: `docs/qa/F-003-2026-09-05.md` (KALDI — B1, B2, Ö1-Ö4)
+Kapsam: **dar doğrulama turu** — yalnızca B1/B2/Ö1/Ö2/Ö3/Ö4 + M4/M5/M6 kapanışı ve düzeltmenin
+ürettiği regresyon. Önceki turda onaylanan bölümler (kapsam denetimi, güvenlik taraması,
+`role="tab"`, CI job'ı, `MC_DATA_DIR` izolasyonu, 3 zayıf testin düzeltmesi) yeniden açılmadı.
 
 ## Puanlar
 
-| Boyut | Puan | Gerekçe |
-|---|---|---|
-| İşlevsellik | 6 | Sunucu tarafı (SSE hub, resync, N-1, zarif kapanış) sağlam ve canlı doğrulandı; duraklat çalışıyor. Ama **kaydırma ile otomatik dondurma üretimde hiç çalışamıyor** (B2). |
-| Özellik bütünlüğü | 5 | AC1-AC4 ve AC6'nın duraklat yarısı karşılanıyor. AC5'in rozet davranışı sözleşmenin sert assert'inin tersi (Ö2); AC6'nın kaydırma yarısı ne uygulanabilir durumda ne test edilmiş (B2). |
-| Görsel/UX | 2 | Ekranın **tüm** Tailwind stilleri üretim derlemesinde eksik (B1). G3 onaylı `docs/03-ux.md` ekran-1 tasarımı teslim edilmemiş; `sr-only` canlı bölge ekranda görünüyor. |
-| Kod kalitesi | 5 | 314 test, gerçek fault-injection, sağlam deps/host guard'ları. Ama CEO'nun **zorunlu** çiti totoloji (Ö1), yeni `/api/stream` güvenlik çitinin testi yok (Ö3), kaydırma kodunun sıfır testi var, ve CSS regresyonunu yakalayacak hiçbir görsel çit yok. |
+| Boyut | Önceki | Şimdi | Gerekçe |
+|---|---|---|---|
+| İşlevsellik | 6 | **8** | Kaydırma ile oto-dondurma artık **üretimde gerçekten çalışıyor** — kendi tarayıcımda ölçtüm: `scrollHeight 1590 > clientHeight 508`, `mouse.wheel` sonrası `scrollTop 500`, olay listeye girmedi, "7 yeni olay ↑ En üste git" rozeti çıktı, rozete tıklayınca `scrollTop 0` + olay göründü. AC1-AC6 altı kriterin altısı da bağımsız kanıtlı. |
+| Özellik bütünlüğü | 5 | **8** | AC5'in **iki yolu da** kanıtlandı: geçici kopma → "Yeniden bağlanıyor" (gerçek süreç kill/restart) ve kalıcı başarısızlık → "Bağlantı koptu" + bir daha denememe (gerçek Chromium ağ katmanında 403). AC6'nın kaydırma yarısı gerçek `mouse.wheel`/`scrollTop` ile E2E'de. Feature notu AC5/AC6 metinleri kanıtla uyumlu hâle getirilmiş. |
+| Görsel/UX | 2 | **8** | Üretim CSS'i 8.5 kB → **14.9 kB**; önceki turda 0/9 olan `features/**` sınıflarının **9/9'u** üretiliyor. `sr-only` bölge gerçekten gizli (`1×1 px`, `clip-path: inset(50%)`), `overflow-y: auto` hesaplanıyor. Çipler/sütunlar/aralıklar UX doc ekran-1 düzeninde. Düşülen 2 puan: NOT-D (satırda tarih yok) ve mobil genişlikte üst çubuğun yatay kaydırmaya düşmesi. |
+| Kod kalitesi | 5 | **8** | 326 test / 27 dosya. **Altı mutasyonumun altısı da KIRMIZI** — geçen turda tam yeşil kalan M5 ve M6 dahil, kısmi kalan M4 dahil. Stil çiti gerçek `vite build` çıktısını denetliyor (kaynak metnini değil). Düşülen 2 puan: NOT-A (çit 69 sınıftan 5'ini örnekliyor) ve NOT-B (çit vitest içinde ikinci bir tam build koşturuyor). |
 
-Dört boyutun üçü < 7 → **KALDI**.
+Dört boyutun dördü de ≥ 7, açık BLOKLAYICI/ÖNEMLİ yok → **GEÇTİ**.
 
-## 1. Komutlar ve gerçek çıktılar
+## 1. Komutlar ve gerçek çıktılar (hepsini kendim koşturdum)
 
 | Komut | Çıkış kodu | Sonuç |
 |---|---|---|
-| `npm run verify` | **0** | `Test Files 26 passed (26)` / `Tests 314 passed (314)`, `vite build ✓ built in 980ms` |
-| `npm run e2e` | **0** | `7 passed (11.5s)` |
-| `npm run e2e:dev` | **0** | `1 passed (4.6s)` |
-| `npm audit` | 0 | `found 0 vulnerabilities` |
+| `npm run verify` (mutasyon öncesi) | **0** | `Test Files 27 passed (27)` / `Tests 326 passed (326)` / `vite build ✓ built in 1.00s` |
+| `npm run e2e` | **0** | `9 passed (15.6s)` — 9/9 test adı çıktıda listelendi |
+| `npm run e2e:dev` | **0** | `1 passed (4.8s)` |
+| `npm run verify` (tüm mutasyonlar geri alındıktan sonra) | **0** | `Test Files 27 passed (27)` / `Tests 326 passed (326)` / `✓ built in 1.03s` |
+| `npm run e2e` (kapanış) | **0** | `9 passed (15.7s)` |
+| `npm run e2e:dev` (kapanış) | **0** | `1 passed (4.4s)` |
 
-Developer'ın bildirdiği 314 test / 26 dosya, e2e 7, e2e:dev 1 sayıları **doğrulandı**.
+CEO'nun bildirdiği 27 dosya / 326 test / 9 e2e sayıları **doğrulandı**. `verify` çıktısındaki
+`EISDIR ... 503` satırları önceki turda olduğu gibi kasıtlı fault-injection'dan geliyor.
+Üretim CSS'i `dist/web/assets/index-QUhkDr8K.css` **14.92 kB** (önceki tur: 8545 bayt) —
+JS paketi 211.33 kB, önceki turla aynı sınıfta; stil düzeltmesi JS'i büyütmedi.
 
-`verify` çıktısındaki `EISDIR ... 503 storage_unavailable` satırları kasıtlı fault-injection
-testlerinden geliyor (F-002 B1 hata yolu) — hata değil, hata yolunun gerçekten koşturulduğunun
-kanıtı.
+## 2. Bulgu kapanış tablosu
 
-Gözlem (NOT-3): `npm run e2e` ilk denemede **exit 127** verdi (`playwright` shim'i bulunamadı,
-hiçbir hata mesajı basılmadan). Aynı komut ikinci denemede sorunsuz koştu; `npx playwright
---version` ve `./node_modules/.bin/playwright --version` her zaman 0 döndü. Tekrarlanabilir
-değil, ama CI'da sessiz bir kırmızıya yol açabilir.
-
-## 2. AC → kanıt tablosu
-
-| AC | Durum | Bağımsız kanıtım |
-|---|---|---|
-| AC1 — olay ≤2 sn, sayfa yenilenmeden görünür | **KARŞILANDI** | Canlı gözlem: `npm start` + tarayıcı; kendi araç çağrılarım F-004 hook'u üzerinden 7333'e POST edildi ve zaman çizelgesinde **yenileme olmadan** belirdi (rozet "Bağlı", "12 olay/dk"). E2E `timeline.spec.ts:49` `toBeVisible({ timeout: 2000 })` — tavan gerçekten 2000 ms'ye kısılmış, Playwright varsayılanı (5 sn) devre dışı. Ekran görüntüsü: `docs/qa/screens/F-003-timeline-live-2026-09-05.png` |
-| AC2 — zaman/proje/agent/araç/özet | **KARŞILANDI (görsel çekinceyle)** | E2E `timeline.spec.ts:65-68` beş alanı ayrı ayrı `data-testid` ile assert ediyor. Canlıda beş alan da veride ve DOM'da doğru (`seq 20 … project_name 'mission-control', agent_type 'qa-evaluator', tool_name 'mcp__playwright__browser_snapshot'`). **Ama** B1 yüzünden sütunlar ekranda bitişik render ediliyor ("23:05:02mission-control—Bash—"), UX doc'un satır düzeni görsel olarak teslim edilmemiş. |
-| AC3 — tüm tipler; filtre yalnızca görünümü etkiler | **KARŞILANDI** | `useEventStream.test.ts` sahte `fetch`'in tam URL eşitliğini ve filtre parametresi olmadığını ölçüyor — M4 mutasyonumla bu testin **gerçekten** ölçtüğü kanıtlandı (URL değişince KIRMIZI). Sunucu tarafında `query.ts`'e filtre parametresi eklenmemiş (kapsam denetimi §5). E2E filtre uygulanıp kaldırılınca verinin geri geldiğini gösteriyor. |
-| AC4 — çoklu seçim proje/agent/tip | **KARŞILANDI** | E2E `timeline.spec.ts:106-135` iki ayrı proje ile daraltmayı ölçüyor; canlıda üç filtre grubu (Proje/Agent/Tip) ve "Filtreleri temizle" mevcut. |
-| AC5 — kopma → gösterge → otomatik yeniden bağlanma → `Last-Event-ID` telafisi | **KISMEN — bkz. Ö2, Ö4** | Yeniden bağlanma ve kayıpsızlık gerçek süreç kill/restart ile E2E'de doğrulanıyor (koştu, geçti). **Ama** (a) rozet assert'i sözleşmenin sert şartının tersi; (b) E2E `Last-Event-ID` telafisini yapısal olarak ölçmüyor. Telafinin kendisi entegrasyon katmanında gerçekten ölçülüyor (M1 kanıtı). |
-| AC6 — duraklat: yeni olaylar kaydırmaz, devamda görünür | **KISMEN — bkz. B2** | Duraklat yarısı canlı doğrulandı (aşağıda ölçüm). Kaydırma yarısı **üretimde çalışmıyor ve hiç test edilmemiş.** |
-
-### AC1 + AC6 (duraklat) canlı ölçümü
-
-Gerçek sunucu (`npm start`, 7333) + gerçek tarayıcı üzerinde, kendi POST'umla:
-
-```
-{ paused: true, before: 6, during: 6, probeVisibleWhilePaused: 0,
-  badge: "1 yeni olay ↑ En üste git", probeAfterResume: 1 }
-```
-
-Duraklatken satır sayısı sabit kaldı, olay görünmedi, bekleyen rozeti belirdi, "Devam et"te olay
-göründü. AC6'nın duraklat yarısı **gerçekten çalışıyor.**
-
-## 3. Kendi mutasyon turum (developer'ın 14'ünden bağımsız)
-
-| # | Mutasyon | Dosya:satır | Beklenen | Gerçek |
-|---|---|---|---|---|
-| M1 | `hello` çerçevesine `id: ringBounds?.to` geri kondu | `src/server/sse/stream.ts:71-77` | KIRMIZI | **KIRMIZI** — `sse-stream.test.ts:90` `expected "0" to be undefined` |
-| M2 | `shutdown()`'da `closeAll()` ile `server.close()` sırası ters çevrildi | `src/server/index.ts:305-306` | KIRMIZI | **KIRMIZI** — `graceful-shutdown.test.ts:58` çağrı sırası dizisi, 2 test |
-| M3 | `ring.push` yazma denemesinden ÖNCEye alındı (N-1 hayalet olay) | `src/server/store/jsonl-store.ts:218-224` | KIRMIZI | **KIRMIZI** — `jsonl-store.test.ts` + `events-api.test.ts`, 2 test |
-| M4 | İlk yükleme URL'ine `since_seq=-1` geri kondu | `src/web/lib/useEventStream.ts:124` | KIRMIZI (CEO şartı) | **KISMİ** — mock'lu birim testi kırmızı (1/314); **CEO'nun zorunlu kıldığı entegrasyon çiti YEŞİL kaldı**; E2E 7/7 kırmızı. Bkz. **Ö1** |
-| M5 | `handleScroll` → `stream.setScrolledAway(false)` (kaydırma-dondurma tamamen devre dışı) | `src/features/events/web/TimelineScreen.tsx:114` | KIRMIZI | **YEŞİL** — 314/314 unit + 7/7 e2e + 1/1 e2e:dev. Bkz. **B2** |
-| M6 | `/api/stream` Host/DNS-rebinding kontrolünden muaf tutuldu | `src/server/index.ts:237` | KIRMIZI | **YEŞİL** — 314/314. Bkz. **Ö3** |
-
-Her mutasyon uygulandıktan hemen sonra yedekten birebir geri alındı; her geri alma sonrası
-`git diff --stat` boş doğrulandı.
-
-## 4. Developer'ın "düzelttiği" 3 zayıf testin denetimi
-
-| Mutasyon | Yeniden uyguladım mı | Sonuç |
-|---|---|---|
-| 7 — `hello` çerçevesine `id:` | Evet (= M1) | **Gerçekten KIRMIZI.** Yeni test bağlantıyı ring **dolu** iken açıyor (`ringBounds.to = 0`), bu yüzden `id` artık `undefined` olmaktan çıkıyor. Düzeltme geçerli. |
-| 11 — `ring.push` başarı dalından hata dalına | Evet | **Gerçekten KIRMIZI, geniş kapsamlı**: `events-api.test.ts` 4 test (yeni yarış testi dahil) + `jsonl-store.test.ts` 5 test. Düzeltme geçerli. |
-| 13 — `ScreenErrorBoundary` kaldırıldı, kullanılmayan `import` bırakıldı | Evet | **Gerçekten KIRMIZI** — `App.interaction.test.tsx:73` `Error: boom (mutasyon 13 testi)` yakalanmadan fırladı. Test artık kaynak metni değil davranışı ölçüyor: `vi.doMock` ile `TimelineScreen` fırlatacak şekilde mock'lanıyor, `App` dinamik `import()` ile yükleniyor, "Bu ekran yüklenemedi." + kabuğun ayakta kalması assert ediliyor. Düzeltme geçerli. |
-
-Üç düzeltme de gerçek. Bu turdaki bulgular bu üçünden değil, **hiç mutasyon planlanmamış**
-kod yollarından (kaydırma, Host çiti, CSS üretimi) çıktı.
-
-## 5. Ürün kodunda mutasyon artığı denetimi
-
-`grep -rn "useState(false)\|mutasyon\|MUTATION\|TODO\|FIXME\|HACK" src/` →
-kalan üç `useState(false)` meşru (`staleData`, `pausedByUser`, `scrolledAway`,
-`src/web/lib/useEventStream.ts:109-111`). `src/web/App.tsx` hiç `useState` içermiyor;
-MUTATION-12 artığı (`timelineVisible`) **yok**. Ürün kodu temiz.
-
-## 6. Bulgular
-
-### BLOKLAYICI
-
-#### B1 — Zaman Çizelgesi ekranının TÜM Tailwind stilleri üretim derlemesinde üretilmiyor
-
-**Tekrar üretme:**
-1. `npm run build` (veya `npm run verify`)
-2. `npm start`
-3. Tarayıcıda `http://127.0.0.1:7333`
-
-**Beklenen:** `docs/03-ux.md` ekran-1: koyu temalı, sütunlu satır düzeni, çerçeveli filtre
-çipleri, gizli (`sr-only`) canlı bölge.
-**Gerçek:** Ekran büyük ölçüde stilsiz. Ekran görüntüsü:
-`docs/qa/screens/F-003-timeline-live-2026-09-05.png` ve
-`docs/qa/screens/F-003-timeline-stil-bozuk-2026-09-05.png`
-- `aria-live` **`sr-only`** canlı bölgesi ekranda görünür metin olarak render ediliyor ("Bağlı",
-  sol üst) — hem görsel hata hem erişilebilirlik hatası.
-- Filtre çipleri bitişik: `Agent:ceoqa-evaluator`, `Tip:PostToolUsePreToolUseunknown`
-- `12 olay/dkDuraklat` — etiket ve buton arasında boşluk yok; "Duraklat" butonunun çerçevesi/
-  dolgusu yok.
-- Satır sütunları bitişik: `23:05:02mission-control—Bash—`
-
-**Ölçüm (kesin):** Üretilen `dist/web/assets/index-CR2QSlEX.css` (8545 bayt) içinde sınıf arama:
-
-| Yalnızca `src/web/App.tsx`'te kullanılan | CSS'te | Yalnızca `src/features/events/web/**`'de kullanılan | CSS'te |
+| # | Bulgu | Durum | Kanıt |
 |---|---|---|---|
-| `gap-6`, `px-4`, `h-14`, `text-amber-400`, `border-b`, `shrink-0`, `ml-auto`, `whitespace-nowrap` | **8/8 VAR** | `sr-only`, `gap-3`, `px-3`, `rounded-full`, `overflow-y-auto`, `animate-pulse`, `text-amber-300`, `min-h-8`, `bg-amber-950` | **0/9 YOK** |
+| **B1** | `features/**` Tailwind sınıfları üretilmiyor | **KAPANDI** | `src/web/index.css:8` `@source "../features/events/web";` · üretilen CSS'te `sr-only`/`gap-3`/`overflow-y-auto`/`rounded-full`/`text-amber-300`/`min-h-8`/`animate-pulse`/`bg-amber-950`/`px-3` = **9/9 VAR** (önceki tur 0/9) · canlı: `getComputedStyle(list).overflowY === "auto"`, `sr-only` bölge `1×1 px`, `clip-path: inset(50%)` · regresyon çiti `tests/build-css.test.ts` |
+| **B2** | Kaydırma ile oto-dondurma üretimde çalışmıyor + sıfır test | **KAPANDI** | Canlı ölçüm (1280×800, 43 satır): `scrollHeight 1590 / clientHeight 508`, wheel → `scrollTop 500`, POST edilen olay `probeVisible 0`, rozet `"5 yeni olay ↑ En üste git"`, rozete tıklama → `scrollTop 0`, `probeVisible 1`, rozet kayboldu · E2E `tests/e2e/timeline.spec.ts:170-231` gerçek `page.mouse.wheel(0,400)` + `el.scrollTop` + `expect(scrollHeight).toBeGreaterThan(clientHeight)` |
+| **Ö1** | `since_seq` çiti totoloji (URL literal) | **KAPANDI** | `src/web/lib/useEventStream.ts:24-26` `export function buildInitialLoadUrl` · `tests/integration/events-api.test.ts:493-494` URL'i **istemciden türetiyor** (`buildInitialLoadUrl('/api/events')`), literal değil |
+| **Ö2** | AC5 rozet assert'i ters + yanlış "CEO/QA'ya bildirildi" yorumu | **KAPANDI** | Yorum silinmiş: `grep -rn "bildirildi" src/ tests/` → **0 eşleşme** · yeni `tests/e2e/timeline.spec.ts:429-448` kalıcı yolu (`page.route` ile 403 → "Bağlantı koptu" + `streamRequestCount === 1`) ölçüyor · feature notu `docs/features/F-003-sse-zaman-cizelgesi.md:26-38` iki yolu ayrı ayrı yazıyor ve doğru testleri kanıt gösteriyor |
+| **Ö3** | `/api/stream` Host çitinin testi yok | **KAPANDI** | `tests/integration/sse-stream.test.ts:229-233` ham `node:http` soketiyle `Host: evil.com` → 403 `forbidden_origin`; `:235-239` pozitif regresyon testi |
+| **Ö4** | AC5 E2E'si `Last-Event-ID` telafisini ölçmüyor | **KAPANDI** | `tests/e2e/timeline.spec.ts:388-399` kesinti **sırasında** aynı `MC_DATA_DIR`'e yazan geçici (`createServer(0, tempDir)`) sunucuyla gerçek bir olay üretiliyor; yeniden başlatmadan sonra o olayın satırı assert ediliyor. Bu olay istemcinin belleğinde YOK — yalnızca sunucu telafisiyle gelebilir (mutasyon E kanıtı) |
+| **M4** | `since_seq` mutasyonu kısmi yeşildi | **KAPANDI** | Mutasyon D → `AssertionError: expected 400 to be 200`, `verify` içindeki entegrasyon testi artık KIRMIZI |
+| **M5** | Kaydırma mutasyonu tam yeşildi | **KAPANDI** | Mutasyon B → E2E KIRMIZI |
+| **M6** | `/api/stream` Host mutasyonu tam yeşildi | **KAPANDI** | Mutasyon C → entegrasyon testi KIRMIZI |
 
-**Muhtemel kök neden:** `vite.config.ts:11` `root: 'src/web'`. Tailwind v4'ün
-(`@tailwindcss/vite`, `vite.config.ts:3,12`) otomatik kaynak taraması Vite kökünden başlıyor;
-`src/features/events/web/**` bu kökün **dışında** kaldığı için o dosyalardaki hiçbir sınıf
-üretilmiyor. F-001/F-002'de tüm UI `src/web/` altındaydı, bu yüzden sorun ilk kez F-003 ile
-görünür oldu.
+Ayrıca önceki turun **NOT-1**'i (aria-live testi yok) da kapandı:
+`tests/features/events/web/TimelineScreen.test.tsx:259-275` — tek `aria-live="polite"` bölge +
+`sr-only` sınıfı + 4 durumun metin eşlemesi.
 
-**Neden hiçbir test yakalamadı:** jsdom testleri CSS yüklemiyor; E2E `toBeVisible()`/metin
-assert'i kullanıyor ve stilsiz öğe de görünürdür; `shell.spec.ts`'in üçüncü renk ölçüm noktası
-`timeline-screen` kökünün `bg-zinc-950`'sini ölçüyor — o sınıf `App.tsx`'te de geçtiği için
-**tesadüfen** üretiliyor ve assert yeşil kalıyor.
+## 3. Kendi mutasyon turum (6/6 KIRMIZI)
 
-#### B2 — Kaydırma ile otomatik dondurma üretimde hiç çalışamıyor ve sıfır test kapsamı var
+| # | Mutasyon | Dosya:satır | Kırmızı veren test | Hata mesajının ilk satırı | Geri alındı |
+|---|---|---|---|---|---|
+| A | `@source "../features/events/web";` satırı silindi (B1 düzeltmesinin iptali) | `src/web/index.css:8` | `tests/build-css.test.ts` — **5/5 test** | `AssertionError: expected '/*! tailwindcss v4.3.3 | MIT License …' to contain 'text-amber-300'` | Evet |
+| B | `stream.setScrolledAway(el.scrollTop > 0)` → `setScrolledAway(false)` (özelliğin tam iptali) | `src/features/events/web/TimelineScreen.tsx:114` | `timeline.spec.ts:170` AC6 (kaydırma) | `Error: expect(locator).toHaveCount(expected) failed … Expected: 0 Received: 1` | Evet |
+| C | `/api/stream` Host kontrolünden muaf tutuldu | `src/server/index.ts:237` | `sse-stream.test.ts` D13 | `FAIL … D13: yabancı Host başlığıyla GET /api/stream 403 forbidden_origin döner` (13 passed / 1 failed) | Evet |
+| D | `buildInitialLoadUrl`'a `since_seq=-1` geri kondu | `src/web/lib/useEventStream.ts:25` | `events-api.test.ts` CEO çiti | `AssertionError: expected 400 to be 200 // Object.is equality` | Evet |
+| E | `Last-Event-ID` replay dalı devre dışı (`false &&`) | `src/server/sse/stream.ts:84` | `timeline.spec.ts:327` AC5 | `Error: expect(locator).toBeVisible() failed … hasText: 'ac5-during-outage-…' … element(s) not found` | Evet |
+| F | `readyState === CLOSED → 'disconnected'` dalı tamamen silindi | `src/web/lib/useEventStream.ts:159` | `timeline.spec.ts:429` AC5 (kalıcı hata) | `Expected substring: "Bağlantı koptu" / Received string: "Yeniden bağlanıyor"` | Evet |
 
-**Tekrar üretme (canlı, gerçek tarayıcı, 900×400 görünüm, ~30 olay):**
-```
-{ metrics: { scrollHeight: 888, clientHeight: 888 }, scrollTopAfter: 0,
-  pauseBtn: "Duraklat", frozenProbeVisible: 1, badge: null }
-```
-**Beklenen:** liste kaydırılabilir; yukarı kaydırınca `scrolledAway` → `frozen`, yeni olay listeye
-girmez, "N yeni olay ↑ En üste git" rozeti belirir (`TimelineScreen.tsx:150-159`).
-**Gerçek:** `scrollHeight === clientHeight` — liste kabı **hiç kaydırılamıyor**; `scrollTop` 200'e
-set edilse bile 0 kalıyor, `onScroll` hiç ateşlenmiyor, rozet çıkmıyor, yeni olay anında görünüyor.
-**Kök neden:** B1'in doğrudan sonucu — `overflow-y-auto` (`TimelineScreen.tsx:215`) ve
-`h-full`/`min-h-0` zinciri üretilen CSS'te yok, kap içeriği kadar büyüyor.
+Mutasyonlar önceden alınan yedeklerden birebir geri alındı; her geri alma sonrası
+`git diff --stat` boş doğrulandı. Önceki turda **tam yeşil** kalan M5 (=B) ve M6 (=C) ile
+**kısmi** kalan M4 (=D) artık kırmızı veriyor. Kendi mutasyonlarımda **yeşil kalan yok.**
 
-**Bağımsız ikinci kusur — test kapsamı:** M5 mutasyonu (`TimelineScreen.tsx:114`
-`stream.setScrolledAway(el.scrollTop > 0)` → `stream.setScrolledAway(false)`, yani özelliğin
-tamamen iptali) **322 testin tamamını yeşil bıraktı** (314 unit + 7 e2e + 1 e2e:dev).
-`grep -rn "scrollTop\|mouse.wheel\|onScroll" tests/` → hiçbir test dosyasında yok.
+Ek gözlem (A mutasyonu): çitin "eski dist'ten kalan CSS'i okuyup tesadüfen yeşil kalma"
+totolojisi **yok** — mutasyonlu koşuda `dist/web/assets` içinde tek dosya vardı ve içeriği
+yalnızca `App.tsx` sınıflarını taşıyordu (`vite.config.ts:12` `emptyOutDir: true` gerçekten
+çalışıyor).
 
-Bu, sözleşmenin **açık taahhüdünü** ihlal ediyor — §5 AC6 satırı: *"'Kaydırınca oto-dondurma',
-'N yeni olay ↑ En üste git' rozetinin belirmesi ve 'Devam et'te listenin sıçramadan başa dönmesi
-**yalnızca** gerçek layout'un olduğu `timeline.spec.ts`'te (Playwright, gerçek `mouse.wheel`/
-`Page.evaluate(() => list.scrollTop)`) doğrulanır."* Bu test hiç yazılmadı; jsdom'da da yok
-(orası doğru — CEO kararı D4), yani davranışın **hiçbir katmanda** kanıtı yok.
+## 4. Stil çiti denetimi
 
-Not: CEO kararı D4'ün endişesi ("jsdom'da kalmış kaydırma assert'i") **gerçekleşmemiş** —
-jsdom'da yanlış yere konmuş bir `scrollTop` assert'i yok. Sorun tam tersi: assert hiçbir yere
-konmamış.
+`tests/build-css.test.ts:42-48` beş sınıf denetliyor. Her birinin **yalnızca**
+`src/features/events/web/**`'de geçtiğini kendim doğruladım
+(`grep -rn <sınıf> src/web/` → **hepsi 0 eşleşme**):
 
-### ÖNEMLİ
+| Sınıf | `src/web/**` (Vite kökü) | `src/features/events/web/**` | Tesadüfi yeşil riski |
+|---|---|---|---|
+| `sr-only` | 0 eşleşme | `TimelineScreen.tsx` | Yok |
+| `gap-3` | 0 eşleşme | `ScreenErrorBoundary.tsx`, `TimelineRow.tsx`, `TimelineScreen.tsx` | Yok — `src/web`'de `gap-3*` ön ekli hiçbir sınıf yok (`gap-4`/`gap-6` var, alt dize eşleşmesi olmaz) |
+| `overflow-y-auto` | 0 eşleşme | `EventDetailPanel.tsx`, `TimelineScreen.tsx` | Yok — `src/web`'de yalnızca `overflow-x-auto` var |
+| `rounded-full` | 0 eşleşme | `FilterChips.tsx`, `TimelineScreen.tsx` | Yok |
+| `text-amber-300` | 0 eşleşme | `FilterChips.tsx`, `projectColor.ts`, `TimelineRow.tsx`, `TimelineScreen.tsx` | Yok — `src/web` `text-amber-400` kullanıyor; tema değişkeni `--color-amber-300` farklı dize |
 
-#### Ö1 — CEO'nun "zorunlu ek çit"i ölçmüyor (totoloji)
+Önceki turda çiti tesadüfen yeşil bırakan `bg-zinc-950` (hem `App.tsx` hem
+`TimelineScreen.tsx`'te geçiyordu) **listede yok** — doğru seçim. Sınıf örneklemesi geçerli.
 
-CEO düzeltmesi şunu şart koşuyordu: *"Mutasyon: URL'e `since_seq=-1` geri koy → bu test
-**KIRMIZI** vermeli."*
+Sınırı: `src/features/events/web/**` 83 farklı sınıf kullanıyor, bunların **69'u** `src/web`'de
+hiç geçmiyor; çit bu 69'un 5'ini örnekliyor. Yani çit **dizin seviyesinde** bir kanaryadır
+(gerçekleşen arıza modu buydu), tek bir sınıfın düşmesini yakalamaz. Bkz. NOT-A.
 
-`tests/integration/events-api.test.ts:489`:
-```ts
-const res = await fetch(`${handle.baseUrl}/api/events?limit=200`)
-```
-URL literal olarak testin içine yazılmış; `useEventStream.ts`'in kurduğu URL'den türetilmiyor.
-M4 ile `src/web/lib/useEventStream.ts:124` `?since_seq=-1&limit=200` yapıldığında bu test
-**YEŞİL kaldı** (`Test Files 1 passed`, `Tests 15 passed`). Yani çit, "sunucu `?limit=200`'ü kabul
-ediyor" diyor; "sunucu istemcinin gönderdiği URL'i kabul ediyor" **demiyor**. Bu, mutasyon 13'ün
-(kaynak-metni testi) tam olarak aynı sınıfı.
+## 5. Görsel teyit (gerçek sunucu + gerçek tarayıcı)
 
-Hafifletici: E2E aynı mutasyonda 7/7 KIRMIZI verdi ve `npm run e2e` artık CI'da ayrı bir job'da
-koşuyor. Bu yüzden bloklayıcı saymadım — ama CEO'nun istediği **hızlı** (`verify` içi) çit
-mevcut değil.
+`npm run build` + `npm start` (7333, gerçek `data/`), kendi POST'larım ve F-004 hook'unun canlı
+olaylarıyla. Ekran görüntüleri:
 
-Canlı doğrulama (gerçek sunucu):
-`GET /api/events?limit=200` → **HTTP 200**; `GET /api/events?since_seq=-1&limit=200` → **HTTP 400**.
-Düzeltmenin kendisi doğru.
+- `docs/qa/screens/F-003-fix1-qa-2026-09-05.png` (1280×800, normal durum)
+- `docs/qa/screens/F-003-fix1-qa-kaydirma-dondurma-2026-09-05.png` (dondurulmuş durum + rozet)
+- `docs/qa/screens/F-003-fix1-qa-mobil-2026-09-05.png` (390×780)
 
-#### Ö2 — AC5 E2E'si sözleşmenin sert assert'ini ters çevirdi; "CEO/QA'ya bildirildi" iddiası yanlış
+Gözlem:
+- Üst çubuk: `MISSION CONTROL` marka adı **kaynakta literal büyük harf** (CSS `uppercase` yok),
+  Türkçe locale bozulması yok. `Zaman Çizelgesi` vurgulu, `Kanban`/`Ayarlar` sönük.
+- `CANLI` göstergesi, `18 olay/dk` sayacı ve **çerçeveli/dolgulu "Duraklat" butonu** ayrı ayrı,
+  aralarında boşlukla. Önceki turdaki `12 olay/dkDuraklat` bitişikliği gitmiş.
+- Filtre çipleri yuvarlak, çerçeveli, aralıklı; `Proje: / Agent: / Tip:` etiketleri ayrı satırda;
+  "Filtreleri temizle" bağlantısı ortada.
+- Satır düzeni sütunlu: saat · renkli proje çipi · agent · araç · özet. Proje başına renk
+  ayrımı çalışıyor. Grup başlıkları ("qa-evaluator → 12 araç çağrısı (…)") açılır üçgenle.
+- `sr-only` canlı bölge **ekranda görünmüyor** (önceki turda sol üstte "Bağlı" yazıyordu);
+  DOM'da metni doğru (`"Bağlı"`).
+- Sağda gerçek kaydırma çubuğu var — kap kaydırılabilir.
+- Türkçe sözlük UX doc'la uyumlu: "Duraklat", "Devam et", "N yeni olay ↑ En üste git",
+  "Filtreleri temizle", "Bağlı"/"Yeniden bağlanıyor"/"Bağlantı koptu".
+- 390 px'te çipler sarıyor, üst çubuk yatay kaydırmaya düşüyor, satırlar kırpılıyor —
+  okunabilir, bozulma yok (PRD'de mobil hedefi yok).
 
-Sözleşme §5 "AC5 E2E tasarımı" adım 4: *"rozetin `\"Bağlantı koptu\"`'ya döndüğü assert edilir
-(`\"Yeniden bağlanıyor\"` ara durumu bu senaryoda **best-effort** gözlemlenir — sert bir assert'e
-bağlanmaz … sert olan tek şey nihai \"Bağlantı koptu\" durumudur)."*
+Not: ekran görüntüsündeki `— unknown —` satırları **benim** bozuk JSON gönderen curl
+denememden geldi (kabuk `\d` kaçışını bozdu); sunucu bunları F-002 tasarımı gereği
+`flags: ["parse_error"]`, `hook_event_name: "unknown"` olarak kaydetti. Ürün kusuru değil.
 
-`tests/e2e/timeline.spec.ts:292` bunun **tam tersini** yapıyor:
-```ts
-await expect(shellBadge).toContainText('Yeniden bağlanıyor', { timeout: 10000 })
-```
-"Bağlantı koptu" hiç assert edilmiyor.
-
-Developer'ın teknik gerekçesi (`timeline.spec.ts:282-291`) **muhtemelen doğru**: WHATWG spec'inde
-`readyState = CLOSED` yalnızca "fail the connection" adımında oluşur; basit ECONNREFUSED'da
-tarayıcı `CONNECTING`'de kalır. Canlı doğrulamamda da `disconnected` durumuna hiç ulaşılmadı.
-Sorun kararın kendisi değil, **süreç**:
-- Kod yorumu "bkz. `docs/progress.md` F-003 bölümü, CEO/QA'ya bildirildi" diyor.
-  `grep -n "Yeniden bağlanıyor\|Bağlantı koptu\|readyState" docs/progress.md` → **hiç eşleşme yok**
-  (yalnızca satır 625'te alakasız bir "D1" geçiyor). Bildirim yapılmamış.
-- Sözleşmede bu sapmayı kaydeden bir CEO kararı (D11 vb.) yok.
-- Feature notu AC5 hâlâ `[x]` ve metni "panel **'bağlantı koptu'** durumunu gösterir" diyor;
-  kanıt olarak `timeline.spec.ts` AC5 gösteriliyor — o test bunu ölçmüyor.
-
-Sonuç: `disconnected` ("Bağlantı koptu", kırmızı, `WifiOff`) durumunun **yalnızca sahte
-`EventSource` ile birim testi var**; gerçek bir senaryoda ulaşılabilirliği hiç gösterilmemiş.
-
-#### Ö3 — `/api/stream` Host/DNS-rebinding çitinin regresyon testi yok
-
-M6 (`src/server/index.ts:237` → `if (pathname !== '/api/stream' && !isAllowedHost(...))`)
-→ **314/314 YEŞİL**. `grep -rn "api/stream" tests/` → hiçbir test kötü `Host` başlığıyla
-`/api/stream`'e istek atmıyor.
-
-Koruma bugün **çalışıyor** (canlı ölçüm):
-```
-curl -H "Host: evil.example.com" http://127.0.0.1:7333/api/stream
-{"success":false,"error":{"code":"forbidden_origin","message":"İstek kaynağı reddedildi."}}
-```
-Ama F-003 uzun ömürlü, yeni bir saldırı yüzeyi (`/api/stream`) ekledi ve ADR-008 kararı için
-bu rotada hiçbir çit yok. Sözleşme §3 madde 3 "otomatik miras alıyor, kod değişikliği yok" diyor;
-miras doğru ama test edilmemiş.
-
-#### Ö4 — AC5 E2E'si `Last-Event-ID` telafisini yapısal olarak ölçmüyor
-
-`timeline.spec.ts:311-313`:
-```ts
-// kayıpsız + çiftsiz: "önceki" olay hâlâ tam olarak bir kez görünüyor.
-await expect(rowBefore).toHaveCount(1)
-```
-Senaryoda kesinti **sırasında hiç olay üretilmiyor**. Yeniden başlatmadan sonra ring
-`{from: 0, to: 0}`, tarayıcının `Last-Event-ID`'si `0` → `computeResyncDecision` `replay` der,
-`store.read(0, ringSize)` **boş** döner. Yani sunucu hiçbir telafi çerçevesi göndermez ve
-`rowBefore`'un 1 kalmasını sağlayan şey istemcinin **bellekteki** state'idir; `Last-Event-ID`
-hiç gönderilmese de assert yeşil kalırdı.
-
-Gerçek telafi kanıtı entegrasyon katmanında var ve **gerçekten ölçüyor** (M1: `hello`'ya `id:`
-eklendiğinde `sse-stream.test.ts` KIRMIZI). Bulgu, E2E'nin fazladan bir güvence verdiği
-izleniminde — feature notu AC5 kanıtı olarak E2E'yi sayıyor.
-
-### NOT (GEÇTİ'yi engellemez)
-
-- **NOT-1:** `aria-live="polite"` canlı bölgesinin (`TimelineScreen.tsx:134-136`) hiç testi yok.
-  Sözleşme §1 madde 4 ve §3 madde 10 erişilebilirlik kapsamına alıyor. `aria-current="page"`,
-  `role="tab"`/`aria-selected` negatif assert'leri ve grup klavye alternatifi (Enter/Boşluk)
-  **iyi çitlenmiş** (`App.test.tsx:42-49`, `shell.spec.ts:46-50`,
-  `TimelineScreen.test.tsx:182-204`).
-- **NOT-2:** `tests/integration/sse-stream.test.ts` bir kez vitest worker çökmesiyle düştü
-  (`Worker exited unexpectedly with exit code 3221226505` = `0xC0000409`). Aynı komut 3 kez
-  tekrarlandığında üretilemedi (3/3 yeşil, 45/45 test). Flaky risk olarak kaydedildi.
-- **NOT-3:** `npm run e2e` bir kez sessizce **exit 127** verdi (bkz. §1).
-- **NOT-4:** Satırda yalnızca saat gösteriliyor, tarih yok (`row-time`, `TimelineRow.tsx`).
-  Canlıda dünkü 23:05 olayları bugünkü 08:20 olaylarıyla aynı biçimde görünüyor. UX doc bunu
-  açıkça istemiyor; ileriki bir tur için not.
-
-## 7. Kapsam denetimi
-
-`git diff edc9a86..HEAD --stat` → 44 dosya, +4451/-64.
-
-Sızma **yok**. Kontrol edilenler:
-- F-005/F-006/F-007/F-008 veya Faz 2 ekranı: yok. `App.tsx:6` Kanban/Ayarlar hâlâ statik
-  `<span>` placeholder.
-- Sunucu taraflı filtreleme: `src/features/events/server/query.ts` diff'te **yok** — CEO kararı F
-  korunmuş.
-- Sanallaştırma / `react-window`: yok.
-- Yeni durum yönetimi kütüphanesi: yok. `package.json` yalnızca sözleşme §2.2'de taahhüt edilen
-  4 devDependency'yi ekliyor (`jsdom@27.0.1` tam sabit, `@testing-library/{react,dom,user-event}`).
-- `EventDetailPanel.tsx`, `groupEvents.ts`, `icons.tsx`, `projectColor.ts` — dördü de sözleşme
-  §2.1 yeni-dosya tablosunda **açıkça taahhüt edilmiş**; kapsam dışı değil.
-
-## 8. Güvenlik denetimi
+## 6. Regresyon taraması
 
 | Kontrol | Sonuç |
 |---|---|
-| Sabit kodlanmış sır | Yok (`src/` taraması temiz) |
-| `127.0.0.1` dışı ağ literali | `tests/no-external-host.test.ts` `src/server/**` + `src/features/**` (`.ts`/`.tsx`) glob'unu yürüyor; yeni dosyalar otomatik kapsamda, test yeşil |
-| `/api/stream` Host koruması | **Kodda var** (`index.ts:235-240`, `/api/` öneki route dispatch'ten önce), **canlıda çalışıyor** (403 ölçüldü) — ama **testi yok**, bkz. Ö3 |
-| `/api/stream` Origin koruması | Kasıtlı olarak yok — Origin kontrolü yalnızca `POST /api/events`'te (`index.ts:241-246`). SSE için tarayıcının kendi CORS'u koruyor; ADR-008 eki bunu genişletmiyor |
-| Yeni bağımlılıklar `tests/deps.test.ts` guard'ını bozdu mu | Hayır — guard `hasInstallScript` beyaz listesi + native derleme aracı taraması yapıyor, `verify` yeşil |
-| `npm audit` | `found 0 vulnerabilities` |
+| `npm run verify` | 0 — 27/27 dosya, 326/326 test |
+| `npm run e2e` / `e2e:dev` | 0 / 0 — 9 + 1 |
+| Mevcut renk assert'leri (`shell.spec.ts` tema testi) | Geçiyor — stil düzeltmesi bozmadı |
+| Paket boyutu | CSS 8.5 → 14.9 kB (beklenen artış, eksik sınıfların üretilmesi); JS 211.33 kB değişmedi |
+| `src/features/events/server/query.ts` | Düzeltme diff'inde **yok** — sunucu tarafı filtreleme sızmadı |
+| Düzeltme kapsamı | `git diff cc33199..HEAD` → 15 dosya; ürün kodunda yalnızca `src/web/index.css` (+7) ve `src/web/lib/useEventStream.ts` (+21/-7). Gerisi test + doküman + ekran görüntüsü. Kapsam dışı ürün değişikliği **yok**. |
+| Mutasyon artığı | `git diff HEAD` boş; `grep -rn "mutasyon\|TODO\|FIXME\|HACK" src/` yalnızca açıklayıcı yorumlar |
 
-## 9. CI denetimi
+## 7. NOT'lar (GEÇTİ'yi engellemez)
 
-`.github/workflows/ci.yml`: `verify` job'ı (satır 6-19) değişmemiş; yeni bağımsız `e2e` job'ı
-(satır 21-32, `needs` yok, `windows-latest`, `npx playwright install chromium`, `npm run e2e`)
-eklenmiş. `tests/ci-workflow.test.ts:30-45` hem job'ın varlığını hem de `verify:` bloğunun
-`npm run e2e` **içermediğini** dize-dilimleme ile assert ediyor. CEO kararı D2 **karşılanmış**.
+- **NOT-A (yeni):** `tests/build-css.test.ts` `features/**`'te kullanılan 69 özgün sınıfın
+  yalnızca 5'ini örnekliyor. Dizin seviyesindeki arızayı (gerçekleşen kusur) yakalar; tek bir
+  sınıfın düşmesini yakalamaz. Yeni bir `src/features/<x>/web/` dizini eklendiğinde `@source`
+  satırı **ve** bu çit elle güncellenmeli — aksi hâlde aynı hata bir sonraki ekranda sessizce
+  tekrarlanır. İleride: sınıf listesi yerine kaynaktaki `className` dizelerinden türetilen
+  otomatik bir çit.
+- **NOT-B (yeni):** `tests/build-css.test.ts` `beforeAll` içinde `execFileSync` ile **tam bir
+  `vite build`** koşturuyor (60 sn timeout). `npm run verify` böylece iki kez build ediyor
+  (`test` içinde + `build` adımında). Şu an ucuz (~1 sn) ama `dist/web`'i paylaşan başka bir
+  komut aynı anda koşarsa yarış riski var; `emptyOutDir: true` bu dizini siliyor.
+- **NOT-C (devam, önceki turdan):** NOT-2 (vitest worker çökmesi `0xC0000409`) ve NOT-3
+  (`npm run e2e` sessiz `exit 127`) bu turda **hiç tekrarlanmadı** (6 tam koşu). Kapatılmadı,
+  flaky risk olarak açık kalıyor.
+- **NOT-D (devam, önceki turdan):** Satırda yalnızca saat gösteriliyor, tarih yok. Canlıda
+  dünkü `08:23` olayları bugünküyle aynı biçimde görünüyor. UX doc bunu açıkça istemiyor.
+- **NOT-E (yeni, düşük):** AC5 E2E'si "kesinti sırasındaki olay geldi" diyor; bu, telafinin
+  `Last-Event-ID` **replay** yoluyla mı yoksa `resync` → tam yeniden yükleme yoluyla mı geldiğini
+  ayırt etmiyor (ikisi de kayıpsızdır). Mutasyon E replay dalını kapatınca test kırmızı verdiği
+  için çit gerçek; yapısal ayrım entegrasyon katmanında (`sse-stream.test.ts`) zaten var.
 
-`playwright.config.ts:9-10,23` — CEO kararı **D10** karşılanmış: paylaşılan `webServer`'a
-`createTempDataDir()` ile geçici `MC_DATA_DIR` veriliyor, `process.on('exit')` ile temizleniyor.
-AC5 bloğu (`timeline.spec.ts:239`) kendi ayrı geçici dizinini kullanıyor. Bu, F-004 hook'unun
-testler koşarken canlı olay üretmesine karşı gerçek izolasyon sağlıyor.
-
-## 10. Sekme deseni / erişilebilirlik denetimi
-
-- `role="tab"` / `aria-selected` / `tablist`: `src/` içinde **hiç yok** (CEO kararı D8 uygulanmış).
-- `shell.spec.ts` "üst çubukta tıklanabilir öğe = 0" assert'i **korunmuş ve hâlâ doğru** —
-  `App.tsx:28` Zaman Çizelgesi `<span aria-current="page">`, buton değil.
-- `aria-current="page"` tam olarak bir kez var (`App.test.tsx:49` sayıyı da assert ediyor).
-- `role="tab"`/`aria-selected` negatif assert'leri hem birim (`App.test.tsx:46-47`) hem E2E
-  (`shell.spec.ts:50`) katmanında.
-- Grup klavye alternatifi (Enter/Boşluk) `TimelineRow.tsx:31-32,89-90` + testi var.
-- Eksik: `aria-live` testi (NOT-1) ve B1 yüzünden `sr-only` içeriğin görünür olması.
-
-## 11. Çalışma ağacı ve süreç temizliği
+## 8. Çalışma ağacı, süreç ve port kanıtı
 
 ```
-git diff HEAD --stat  -> (bos)
-git status --porcelain -> ?? docs/qa/screens/F-003-timeline-live-2026-09-05.png
-                          ?? docs/qa/screens/F-003-timeline-stil-bozuk-2026-09-05.png
+git diff HEAD --stat   -> (bos)
+git status --porcelain -> ?? docs/qa/screens/F-003-fix1-qa-2026-09-05.png
+                          ?? docs/qa/screens/F-003-fix1-qa-kaydirma-dondurma-2026-09-05.png
+                          ?? docs/qa/screens/F-003-fix1-qa-mobil-2026-09-05.png
 ```
-Ürün kodunda **hiçbir kalıcı değişiklik yok**; yalnızca bu raporun ekran görüntüsü kanıtları
-eklendi. `npm run verify` mutasyonlar geri alındıktan sonra tekrar 0 / 314 test.
 
-Süreç ve port kontrolü:
-- Başlangıç taban çizgisi: 2 `node.exe` (PID 28136, 25032 — Claude/MCP), hiçbir port LISTENING.
-- Tüm koşular ve canlı sunucu (`npm start`, PID 5552) sonrası `taskkill /F /T` ile kapatıldı.
-- Kapanış: `netstat` → 7333/7334/7335/7433/7434 hiçbirinde **LISTENING yok** (yalnızca
-  `TIME_WAIT`); `tasklist` → yine tam olarak aynı 2 taban `node.exe`.
+Ürün kodunda **kalıcı hiçbir değişiklik yok**; yalnızca bu raporun ekran görüntüsü kanıtları
+ve rapor dosyaları eklendi. Commit atılmadı, `git push` çalıştırılmadı, `install-hook`
+çalıştırılmadı.
+
+Süreç ve port:
+- Taban çizgisi (tur başı): 2 `node.exe` (PID **11152**, **9472** — Claude/MCP), hiçbir port LISTENING.
+- Görsel teyit sunucusu (`npm start`, PID 20172, 7333) `taskkill /F /T` ile kapatıldı: `SUCCESS`.
+- Kapanış: `tasklist` → yine tam olarak aynı 2 `node.exe` (11152, 9472);
+  `netstat` → **7333/7334/7335/7433/7434 hiçbirinde LISTENING yok**.
 - **Yetim süreç bırakılmadı.**
-
-## 12. Düzeltme turu için istenenler
-
-1. **B1** — `src/features/events/web/**`'in Tailwind kaynak taramasına dahil edilmesi
-   (ör. `src/web/index.css`'e `@source` yönergesi veya Vite kökü/plugin yapılandırması).
-   Düzeltmeyle birlikte **regresyon çiti**: E2E'de üretilen CSS'in ekran sınıflarını içerdiğini
-   veya hesaplanmış stil ölçümünü (`getComputedStyle` ile `overflow-y`/`position` gibi kritik
-   birkaç değer) assert eden bir test. Aksi hâlde aynı hata bir sonraki ekranda tekrarlanır.
-2. **B2** — B1 düzeltildikten sonra sözleşme §5'in taahhüt ettiği kaydırma E2E'sini yaz
-   (gerçek `mouse.wheel`/`scrollTop`, oto-dondurma + "N yeni olay ↑" rozeti + "Devam et"te
-   başa dönme). Mutasyon kanıtı: `setScrolledAway(el.scrollTop > 0)` → `setScrolledAway(false)`
-   **KIRMIZI** vermeli.
-3. **Ö1** — Entegrasyon çitini `useEventStream.ts`'in kurduğu URL'den türet (ör. URL kurucuyu
-   dışa aktar ve testte onu çağır). Mutasyon: `since_seq=-1` geri konunca **bu test** KIRMIZI.
-4. **Ö2** — CEO kararı gerekiyor: AC5'in rozet metni "Yeniden bağlanıyor" olarak mı sabitlenecek
-   (feature notu AC5 metni + sözleşme §5 adım 4 güncellenir), yoksa `disconnected` durumunun
-   gerçek bir senaryoda ulaşılabilirliği mi gösterilecek. Feature notu AC5 kanıt satırı düzeltilmeli.
-5. **Ö3** — `/api/stream`'e kötü `Host` başlığıyla 403 bekleyen bir entegrasyon testi.
-   Mutasyon: kontrolü bu rota için atla → KIRMIZI.
-6. **Ö4** — AC5 E2E'sinin "kayıpsız" iddiasını ya gerçekten ölçülebilir hâle getir
-   (kesinti sırasında olay üret) ya da iddiayı kaldırıp telafiyi entegrasyon katmanına bırak.

@@ -158,6 +158,75 @@ test.describe('Zaman Çizelgesi — AC1-AC4 ve AC6 (duraklat yarısı)', () => {
     await page.getByText('Devam et', { exact: true }).click()
     await expect(row).toBeVisible({ timeout: 2000 })
   })
+
+  // QA düzeltme turu 1, D12 (B2): sözleşme §5 AC6 satırının taahhüt ettiği kaydırma yarısı —
+  // GERÇEK `mouse.wheel` + `Page.evaluate(() => list.scrollTop)` ile ölçülür (jsdom'da bu
+  // mümkün değil, layout yapmaz). Mutasyon: `TimelineScreen.tsx` `handleScroll`'daki
+  // `stream.setScrolledAway(el.scrollTop > 0)` -> `stream.setScrolledAway(false)` bu testi
+  // KIRMIZI vermeli (B1 düzeltilmeden önce bu senaryo hiç kaydırılamadığı için de KIRMIZI verirdi
+  // — bu test aynı zamanda B1'in de canlı bir regresyon çitidir).
+  test('AC6 (kaydırma): listeyi yukarı kaydırınca oto-dondurma devreye girer, "N yeni olay ↑" rozeti çıkar, Devam et/rozet ile başa döner', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 900, height: 500 })
+    await page.goto('/')
+    await waitForConnected(page)
+
+    const projectPath = 'C:\\dev\\apps\\ac6-scroll-proje'
+    // Liste kabını taşıracak kadar satır (~30) — B2 canlı ölçümüyle aynı miktar.
+    for (let i = 0; i < 30; i++) {
+      await postEvent(page, {
+        hook_event_name: 'PreToolUse',
+        project_path: projectPath,
+        tool_name: 'Bash',
+        tool_input: { command: uniqueMarker(`ac6-scroll-fill-${i}`) },
+      })
+    }
+
+    const list = page.locator('[data-testid="timeline-list"]')
+    await expect(list.locator('[data-testid="timeline-row"]').first()).toBeVisible({
+      timeout: 5000,
+    })
+
+    // Kap gerçekten kaydırılabilir mi (B1'in dolaylı kanıtı) — B2 canlı ölçümünde
+    // `scrollHeight === clientHeight` idi (hiç kaydırılamıyordu).
+    const { scrollHeight, clientHeight } = await list.evaluate((el) => ({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    }))
+    expect(scrollHeight).toBeGreaterThan(clientHeight)
+
+    const box = await list.boundingBox()
+    if (!box) throw new Error('timeline-list için boundingBox alınamadı')
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.wheel(0, 400)
+
+    await expect(async () => {
+      const scrollTop = await list.evaluate((el) => el.scrollTop)
+      expect(scrollTop).toBeGreaterThan(0)
+    }).toPass({ timeout: 2000 })
+
+    const marker = uniqueMarker('ac6-scroll-frozen')
+    await postEvent(page, {
+      hook_event_name: 'PreToolUse',
+      project_path: projectPath,
+      tool_name: 'Bash',
+      tool_input: { command: marker },
+    })
+
+    const row = page.locator('[data-testid="timeline-row"]', { hasText: marker })
+    await expect(row).toHaveCount(0)
+    const pendingBadge = page.locator('[data-testid="pending-events-badge"]')
+    await expect(pendingBadge).toBeVisible({ timeout: 2000 })
+    await expect(pendingBadge).toContainText('1 yeni olay ↑ En üste git')
+
+    await pendingBadge.click()
+    await expect(row).toBeVisible({ timeout: 2000 })
+    await expect(async () => {
+      const scrollTop = await list.evaluate((el) => el.scrollTop)
+      expect(scrollTop).toBe(0)
+    }).toPass({ timeout: 2000 })
+  })
 })
 
 // --- AC5: bağlantı kopması ve toparlanma (izole alt sunucu, gerçek kill/restart) ---

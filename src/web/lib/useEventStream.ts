@@ -11,6 +11,20 @@ export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'di
 const MAX_EVENTS = 1000
 const INITIAL_LOAD_LIMIT = 200
 
+/**
+ * İlk yükleme / tam yeniden yükleme (`resync`) URL'ini kurar (CEO düzeltmesi — ilk yükleme
+ * URL'i, `docs/qa/F-003-contract.md`). Saf ve dışa aktarılır: QA düzeltme turu 1 (D14) —
+ * `tests/integration/events-api.test.ts`'in "CEO'nun zorunlu ek çiti" bu fonksiyonun kurduğu
+ * URL'i TÜRETEREK gerçek sunucuya sorar; böylece istemcinin gerçekten ürettiği URL'in sunucu
+ * tarafından kabul edildiği kanıtlanır (önceki hâli URL'i testin içine literal yazıyordu —
+ * istemci yanlış URL üretse bile test yeşil kalırdı). `since_seq` KASITLI olarak HİÇ eklenmez:
+ * `query.ts`'in `parseSinceSeq`'i yalnızca parametre TAMAMEN YOKSA -1 (tüm ring) varsayıyor —
+ * literal `since_seq=-1` sorgu dizgesi negatif sayı olarak reddedilip 400 döner.
+ */
+export function buildInitialLoadUrl(eventsUrl: string): string {
+  return `${eventsUrl}?limit=${INITIAL_LOAD_LIMIT}`
+}
+
 interface EventsState {
   byId: Map<number, EventRecord>
 }
@@ -116,12 +130,7 @@ export function useEventStream(
 
   const loadEvents = useCallback(async () => {
     try {
-      // `since_seq` KASITLI olarak HİÇ gönderilmiyor: `query.ts`'in `parseSinceSeq`'i (F-002,
-      // bu feature'ın dosya sahipliği dışında) yalnızca parametre TAMAMEN YOKSA -1 (tüm ring)
-      // varsayıyor — literal `since_seq=-1` sorgu dizgesi negatif sayı olarak reddedilip 400
-      // döner (bkz. `tests/integration/events-api.test.ts` AC-1). CEO kararı A'nın "ilk
-      // yükleme ring'den" istediği tam geçmiş bu yüzden parametresiz istekle elde edilir.
-      const res = await fetchImpl(`${eventsUrl}?limit=${INITIAL_LOAD_LIMIT}`)
+      const res = await fetchImpl(buildInitialLoadUrl(eventsUrl))
       if (!res.ok) throw new Error(`http_${res.status}`)
       const body = (await res.json()) as { data: EventRecord[] }
       dispatch({ type: 'RESET_EVENTS', records: body.data })

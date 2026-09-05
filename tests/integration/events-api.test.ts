@@ -6,6 +6,7 @@ import http from 'node:http'
 import { createServer } from '../../src/server/index'
 import { dayFileName } from '../../src/server/store/jsonl-store'
 import { createTempDataDir, removeTempDataDir } from '../helpers/temp-data-dir'
+import { buildInitialLoadUrl } from '../../src/web/lib/useEventStream'
 
 interface ServerHandle {
   server: http.Server
@@ -482,11 +483,15 @@ describe("CEO düzeltmesi: istemcinin gerçek ilk yükleme URL'i sunucuda 200 d�
   })
 
   it('useEventStream.loadEvents ile birebir aynı URL (`?limit=200`, since_seq YOK) gerçek sunucudan 200 döner', async () => {
-    // Mock yok: gerçek createServer + gerçek istek. Bu test, useEventStream.ts'in kurduğu
-    // URL'i (INITIAL_LOAD_LIMIT=200, since_seq parametresiz) sunucunun kabul ettiğini kanıtlar.
-    // Mutasyon: bu satırdaki URL'e `since_seq=-1` eklenirse sunucu 400 invalid_body döner ve
-    // bu test KIRMIZI olur (bkz. docs/qa/F-003-contract.md "CEO düzeltmesi — ilk yükleme URL'i").
-    const res = await fetch(`${handle.baseUrl}/api/events?limit=200`)
+    // QA düzeltme turu 1 (D14): URL literal yazılmıyor, `useEventStream.ts`'in dışa aktardığı
+    // `buildInitialLoadUrl`'DAN türetiliyor — istemci gerçekten yanlış bir URL üretirse bu test
+    // artık YEŞİL KALAMAZ (önceki hâli totolojiydi: sunucunun `?limit=200`'ü kabul ettiğini
+    // kanıtlıyordu, istemcinin bunu ürettiğini değil).
+    // Mock yok: gerçek createServer + gerçek istek. Mutasyon: `buildInitialLoadUrl`'a
+    // `since_seq=-1` geri konursa sunucu 400 invalid_body döner ve bu test KIRMIZI olur
+    // (bkz. docs/qa/F-003-contract.md "CEO düzeltmesi — ilk yükleme URL'i").
+    const url = buildInitialLoadUrl('/api/events')
+    const res = await fetch(`${handle.baseUrl}${url}`)
     expect(res.status).toBe(200)
     const body = (await res.json()) as { success: boolean; data: unknown[] }
     expect(body.success).toBe(true)

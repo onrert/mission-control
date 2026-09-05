@@ -1,5 +1,12 @@
 @import 'tailwindcss';
 
+/* QA düzeltme turu 1 (B1): `@tailwindcss/vite` otomatik kaynak taraması `vite.config.ts`'in
+   `root: 'src/web'` ayarını temel alıyor, bu yüzden `src/features/events/web/**` (Vite kökünün
+   dışında) hiç taranmıyordu ve o dosyalardaki sınıflar üretilen CSS'ten tamamen düşüyordu.
+   `@source` bu dizini açıkça ekler (yol bu dosyaya göre görelidir). Regresyon çiti:
+   `tests/build-css.test.ts` (gerçek `vite build` çalıştırıp çıktı CSS'i denetler). */
+@source "../features/events/web";
+
 @theme {
   --font-display: 'Departure Mono', ui-monospace, monospace;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;

@@ -79,6 +79,21 @@ describe('createProjectsRegistry', () => {
 
     expect(() => registry.add('C:\\dev\\apps\\demo2', undefined)).toThrow()
 
+    // QA düzeltme turu 1 (BLOKLAYICI-1 eki): bellek diskten ÖNCE güncellenmemeli — yazma
+    // başarısız olduğu için AYNI registry örneğinin belleği hâlâ yalnızca ilk kaydı göstermeli
+    // (önceden `projects = [...projects, record]` writeAtomic'ten ÖNCE atanıyordu, bu yüzden
+    // fırlatma sonrası bellek 2 kayıt gösterip diskle çelişiyordu).
+    expect(registry.list()).toHaveLength(1)
+    expect(registry.list()[0]?.path).toBe('C:\\dev\\apps\\demo')
+
+    // QA düzeltme turu 1 (BLOKLAYICI-1 eki): rename başarısız olsa bile `.tmp` artığı diskte
+    // kalmamalı (`fs.rmdirSync(filePath)` çağrısından ÖNCE, `dataDir`'in geri kalanını okuyarak
+    // ölçülür — `filePath` hâlâ dizin, ama `.tmp` dosyası ayrı bir isimde).
+    const leftoverTmp = fs
+      .readdirSync(dataDir)
+      .filter((name) => name.startsWith('.projects.') && name.endsWith('.tmp'))
+    expect(leftoverTmp).toHaveLength(0)
+
     fs.rmdirSync(filePath)
     fs.writeFileSync(filePath, before)
     const registry2 = createProjectsRegistry(dataDir)

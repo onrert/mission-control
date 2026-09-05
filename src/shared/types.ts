@@ -41,6 +41,10 @@ export type ErrorCode =
   | 'invalid_path'
   | 'conflict'
   | 'not_found'
+  /** QA düzeltme turu 1 (BLOKLAYICI-1) — dağıtıcının sistemik hata sınırının (`src/server/
+   *  index.ts` `withDispatchErrorBoundary`) döndürdüğü genel 500 kodu; herhangi bir handler
+   *  öngörülemeyen bir hata fırlattığında kullanılır. */
+  | 'internal_error'
 
 export interface ApiResponse<T> {
   success: boolean

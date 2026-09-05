@@ -13,9 +13,20 @@ export interface AddProjectResult {
 
 export interface AddProjectError {
   ok: false
-  code: 'invalid_body' | 'invalid_path' | 'conflict'
+  code: 'invalid_body' | 'invalid_path' | 'conflict' | 'storage_unavailable'
   message: string
 }
+
+/**
+ * QA düzeltme turu 1 (BLOKLAYICI-1) — `registry.remove()` bir disk yazma hatasında fırlayabilir
+ * (ör. `projects.json` salt-okunur/dizin hâline gelmiş). Bu durum `ok:false` ile UX'in istediği
+ * "Liste kaydedilemedi, tekrar deneyin." mesajına çevrilir; süreç asla ölmez, çağıran her zaman
+ * bir sonuç alır.
+ */
+export type RemoveProjectResult =
+  | { ok: true; removed: true }
+  | { ok: true; removed: false }
+  | { ok: false; code: 'storage_unavailable'; message: string }
 
 export interface ProjectsListResult {
   items: ProjectListItem[]
@@ -25,12 +36,31 @@ export interface ProjectsListResult {
 export interface ProjectsService {
   list(): ProjectsListResult
   addProject(pathInput: unknown, label: string | undefined): AddProjectResult | AddProjectError
-  /** Bulunamazsa `false`. */
-  removeProject(id: string): boolean
+  removeProject(id: string): RemoveProjectResult
   /** `server.on('close', ...)`'a bağlanır (sözleşme §2.2). Tüm aktif `project-watcher` `stop()`'larını çağırır. */
   stopAll(): void
   /** `/api/health`'in `watchers` alanı için (sözleşme §7 "izleyici sayacı"). */
   getActiveWatcherCount(): number
+}
+
+/**
+ * QA düzeltme turu 1 (BLOKLAYICI-1) — kayıt defteri bir disk yazma hatasında fırlar
+ * (`registry.ts`'in `writeAtomic`'i). Bu, o fırlatmayı `addProject`/`removeProject` seviyesinde
+ * yakalayıp UX'in tanımladığı davranışa çeviren tek, paylaşılan nokta: istemci HER ZAMAN bir
+ * yanıt alır (500 `storage_unavailable`), süreç asla `uncaughtException` ile ölmez. Bu, `ingest.
+ * ts`'in `storage_unavailable` desenindeki "hata kaynağında yakalanır" ilkesiyle aynı katman —
+ * `process.on('uncaughtException')` DEĞİL (CLAUDE.md dersi: o asıl çözüm olamaz).
+ */
+function storageUnavailableError(err: unknown): {
+  ok: false
+  code: 'storage_unavailable'
+  message: string
+} {
+  const message = err instanceof Error ? err.message : String(err)
+  process.stderr.write(
+    `Hata: proje kayıt defterine yazılamadı, istemciye 500 dönülüyor: ${message}\n`
+  )
+  return { ok: false, code: 'storage_unavailable', message: 'Liste kaydedilemedi, tekrar deneyin.' }
 }
 
 /**
@@ -70,11 +100,24 @@ export function createProjectsService(dataDir: string, hub: SseHub): ProjectsSer
     pathInput: unknown,
     label: string | undefined
   ): AddProjectResult | AddProjectError {
-    const validated = resolveProjectPath(pathInput)
+    // `resolveProjectPath`'in senkron `fs` çağrıları teorik olarak bir yarış durumunda (§3
+    // madde 4 D17 notu — `.native()` çağrısından hemen önce dosya harici bir aktör tarafından
+    // silinirse) fırlayabilir; QA düzeltme turu 1 BLOKLAYICI-1'in istediği gibi bu da sarılır.
+    let validated: ReturnType<typeof resolveProjectPath>
+    try {
+      validated = resolveProjectPath(pathInput)
+    } catch (err) {
+      return storageUnavailableError(err)
+    }
     if (!validated.ok) {
       return { ok: false, code: validated.code, message: validated.message }
     }
-    const added = registry.add(validated.path, label)
+    let added: ReturnType<typeof registry.add>
+    try {
+      added = registry.add(validated.path, label)
+    } catch (err) {
+      return storageUnavailableError(err)
+    }
     if (!added.ok) {
       return { ok: false, code: 'conflict', message: 'Bu proje zaten izleniyor.' }
     }
@@ -83,16 +126,21 @@ export function createProjectsService(dataDir: string, hub: SseHub): ProjectsSer
     return { ok: true, item: toProjectListItem(added.record) }
   }
 
-  function removeProject(id: string): boolean {
-    const removed = registry.remove(id)
-    if (!removed) return false
+  function removeProject(id: string): RemoveProjectResult {
+    let removed: boolean
+    try {
+      removed = registry.remove(id)
+    } catch (err) {
+      return storageUnavailableError(err)
+    }
+    if (!removed) return { ok: true, removed: false }
     const watcher = watchers.get(id)
     if (watcher) {
       watcher.stop()
       watchers.delete(id)
     }
     hub.broadcast('projects', currentList())
-    return true
+    return { ok: true, removed: true }
   }
 
   function stopAll(): void {

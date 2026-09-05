@@ -127,6 +127,50 @@ export function isAllowedOrigin(originHeader: string | undefined): boolean {
   return LOOPBACK_ORIGIN_HOSTNAMES.has(hostname)
 }
 
+/**
+ * QA düzeltme turu 1 (BLOKLAYICI-1) — sistemik hata sınırı: dağıtıcıdan (`createServer`'ın
+ * `http.createServer` geri çağrımı) SENKRON olarak fırlayan herhangi bir hatayı ("hangi handler
+ * olursa olsun") yakalar, istemciye genel bir 500 döner, süreç ASLA `uncaughtException` ile
+ * ölmez. Bu, `process.on('uncaughtException')` DEĞİLDİR (CLAUDE.md dersi: o "asıl çözüm olamaz",
+ * `src/server/index.ts:19`'daki `unhandledRejection` güvenlik ağı yorumuyla aynı ders) — hata
+ * kaynağın kendisinde (dağıtıcıda) yakalanır. Yalnızca dağıtıcının ÇAĞRI YIĞINI içinde senkron
+ * fırlayan hataları kapsar; bir istek işleyicisinin kendi olay dinleyicisi (`req.on('end', ...)`
+ * gibi, ayrı bir çağrı yığını/event-loop turu) içinde fırlayan asenkron hatalar bu sınırın
+ * KAPSAMI DIŞINDADIR — o yol handler'ın kendi kaynağında yakalanır (`handlers.ts`'in
+ * `handleAddProject`'i `service.addProject`'i çağırmadan önce `service.ts` bu hatayı zaten
+ * yakalayıp asla fırlatmıyor; bu iki katman birlikte hem senkron hem asenkron yolu kapatır,
+ * QA düzeltme turu 1 bulgusu). Doğrudan birim testlenebilmesi için export edilir
+ * (`isSupportedNodeVersion` emsaliyle aynı stil).
+ */
+export function withDispatchErrorBoundary(
+  handler: (req: http.IncomingMessage, res: http.ServerResponse) => void
+): (req: http.IncomingMessage, res: http.ServerResponse) => void {
+  return (req, res) => {
+    try {
+      handler(req, res)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      process.stderr.write(
+        `Hata: istek işlenirken beklenmeyen hata oluştu, 500 dönülüyor: ${message}\n`
+      )
+      if (res.headersSent) {
+        res.end()
+        return
+      }
+      res.writeHead(500, { 'content-type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          success: false,
+          error: {
+            code: 'internal_error',
+            message: 'Beklenmeyen bir sunucu hatası oluştu. Tekrar deneyin.',
+          },
+        })
+      )
+    }
+  }
+}
+
 function sendForbidden(res: http.ServerResponse): void {
   res.writeHead(403, { 'content-type': 'application/json' })
   res.end(
@@ -241,77 +285,79 @@ export function createServer(port: number, dataDir?: string): ServerWithHub {
   const hub = createSseHub()
   const projectsService = createProjectsService(resolvedDataDir, hub)
 
-  const server = http.createServer((req, res) => {
-    const pathname = (req.url ?? '/').split('?')[0]
+  const server = http.createServer(
+    withDispatchErrorBoundary((req, res) => {
+      const pathname = (req.url ?? '/').split('?')[0]
 
-    if (pathname?.startsWith('/api/')) {
-      // Host/Origin koruması route dispatch'ten önce, en başta çalışır (sözleşme §3 madde 11).
-      if (!isAllowedHost(req.headers.host)) {
-        sendForbidden(res)
-        return
+      if (pathname?.startsWith('/api/')) {
+        // Host/Origin koruması route dispatch'ten önce, en başta çalışır (sözleşme §3 madde 11).
+        if (!isAllowedHost(req.headers.host)) {
+          sendForbidden(res)
+          return
+        }
+        // F-005 sözleşme §3 madde 9: Origin kontrolü artık `POST /api/events` özel-durumundan
+        // TÜM non-GET `/api/*` yazma uçlarına genelleşti (F-002 döneminde tek yazma ucu vardı,
+        // özel-durum yeterliydi — ikinci/üçüncü yazma ucu eklenince sessizce delinirdi).
+        if (req.method !== 'GET' && !isAllowedOrigin(req.headers.origin)) {
+          sendForbidden(res)
+          return
+        }
       }
-      // F-005 sözleşme §3 madde 9: Origin kontrolü artık `POST /api/events` özel-durumundan
-      // TÜM non-GET `/api/*` yazma uçlarına genelleşti (F-002 döneminde tek yazma ucu vardı,
-      // özel-durum yeterliydi — ikinci/üçüncü yazma ucu eklenince sessizce delinirdi).
-      if (req.method !== 'GET' && !isAllowedOrigin(req.headers.origin)) {
-        sendForbidden(res)
-        return
-      }
-    }
 
-    if (pathname === '/api/health') {
-      handleHealth(
-        res,
-        port,
-        instanceId,
-        () => store.getCorruptLines(),
-        () => store.getWriteErrors(),
-        () => projectsService.getActiveWatcherCount()
-      )
-      return
-    }
-    if (pathname === '/api/events' && req.method === 'GET') {
-      handleQuery(req, res, store)
-      return
-    }
-    if (pathname === '/api/events' && req.method === 'POST') {
-      handleIngest(req, res, store, maxPayload, hub)
-      return
-    }
-    if (pathname === '/api/stream' && req.method === 'GET') {
-      handleStream(req, res, store, hub, ringSize)
-      return
-    }
-    if (pathname === '/api/projects' && req.method === 'GET') {
-      handleListProjects(res, projectsService)
-      return
-    }
-    if (pathname === '/api/projects' && req.method === 'POST') {
-      handleAddProject(req, res, projectsService)
-      return
-    }
-    if (pathname?.startsWith('/api/projects/') && req.method === 'DELETE') {
-      const id = pathname.slice('/api/projects/'.length)
-      if (id === '' || id.includes('/')) {
-        res.writeHead(404, { 'content-type': 'application/json' })
-        res.end(
-          JSON.stringify({
-            success: false,
-            error: { code: 'not_found', message: 'Proje bulunamadı.' },
-          })
+      if (pathname === '/api/health') {
+        handleHealth(
+          res,
+          port,
+          instanceId,
+          () => store.getCorruptLines(),
+          () => store.getWriteErrors(),
+          () => projectsService.getActiveWatcherCount()
         )
         return
       }
-      handleRemoveProject(res, projectsService, id)
-      return
-    }
-    if (pathname?.startsWith('/api/')) {
-      res.writeHead(404, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ ok: false, error: 'not_found' }))
-      return
-    }
-    serveStatic(req, res)
-  })
+      if (pathname === '/api/events' && req.method === 'GET') {
+        handleQuery(req, res, store)
+        return
+      }
+      if (pathname === '/api/events' && req.method === 'POST') {
+        handleIngest(req, res, store, maxPayload, hub)
+        return
+      }
+      if (pathname === '/api/stream' && req.method === 'GET') {
+        handleStream(req, res, store, hub, ringSize)
+        return
+      }
+      if (pathname === '/api/projects' && req.method === 'GET') {
+        handleListProjects(res, projectsService)
+        return
+      }
+      if (pathname === '/api/projects' && req.method === 'POST') {
+        handleAddProject(req, res, projectsService)
+        return
+      }
+      if (pathname?.startsWith('/api/projects/') && req.method === 'DELETE') {
+        const id = pathname.slice('/api/projects/'.length)
+        if (id === '' || id.includes('/')) {
+          res.writeHead(404, { 'content-type': 'application/json' })
+          res.end(
+            JSON.stringify({
+              success: false,
+              error: { code: 'not_found', message: 'Proje bulunamadı.' },
+            })
+          )
+          return
+        }
+        handleRemoveProject(res, projectsService, id)
+        return
+      }
+      if (pathname?.startsWith('/api/')) {
+        res.writeHead(404, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: 'not_found' }))
+        return
+      }
+      serveStatic(req, res)
+    })
+  )
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
       process.stderr.write(`Hata: ${port} portu zaten kullanımda. Sunucu başlatılamadı.\n`)

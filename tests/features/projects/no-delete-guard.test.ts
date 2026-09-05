@@ -19,25 +19,42 @@ function walk(dir: string, extensions: string[], out: string[] = []): string[] {
 
 // CEO kararı B/C — savunma katmanı (mimari §11.4b'nin genel guard'ı henüz yok, F-006'da gelecek).
 // İzlenen proje köklerine hiçbir şeyin silinmediğini/yazılmadığını statik olarak doğrular.
-const FORBIDDEN_SUBSTRINGS = ['unlink', 'rmSync', 'rmdirSync', 'fs.rm(']
+// QA düzeltme turu 1 (ÖNEMLİ-2): önceden yalnızca silme alt dizgeleri taranıyordu, yorum "yazma"
+// da diyordu ama tarama listesi yazmayı hiç kapsamıyordu — şimdi ikisi de taranıyor.
+const DELETE_SUBSTRINGS = ['unlink', 'rmSync', 'rmdirSync', 'fs.rm(']
+const WRITE_SUBSTRINGS = ['writeFileSync', 'appendFileSync', 'mkdirSync']
 
-const files = [
+const watchedProjectFiles = [
   ...walk(path.join(ROOT, 'src', 'features', 'projects'), ['.ts', '.tsx']),
   ...walk(path.join(ROOT, 'src', 'server', 'watch'), ['.ts']),
 ]
-// `projects-registry.ts` da bu dosyalar listesine dahil (kendi projects.json'ını tmp+rename ile
-// yazar, `unlink`/`rm` hiç kullanmaz — ama izlenen proje köklerine değil).
-files.push(path.join(ROOT, 'src', 'server', 'store', 'projects-registry.ts'))
+
+// `projects-registry.ts` bu tarama listesinde DEĞİL — kendi `projects.json`/`.tmp` dosyasını
+// (izlenen proje kökleri değil, bu veri dizini) `writeFileSync`/`mkdirSync`/tek dosya
+// `unlinkSync` ile yazar/temizler (QA düzeltme turu 1 BLOKLAYICI-1 eki, bkz. registry.ts'in
+// kendi dokümantasyonu). Bu istisna ayrı, dar bir testle güvence altına alınır: registry.ts
+// yine de tehlikeli/özyinelemeli silme çağrılarını (`rmSync`/`rmdirSync`/`fs.rm(`) kullanamaz.
+const registryFile = path.join(ROOT, 'src', 'server', 'store', 'projects-registry.ts')
 
 describe('no-delete-guard (CEO kararı B/C)', () => {
   it("taranan dosya sayısı > 0 (körlük assert'i, QA Bulgu 13a)", () => {
-    expect(files.length).toBeGreaterThan(0)
+    expect(watchedProjectFiles.length).toBeGreaterThan(0)
   })
 
-  it.each(files)('%s yasaklı silme/yazma alt dizgesi içermiyor', (file) => {
-    const content = fs.readFileSync(file, 'utf8')
-    for (const forbidden of FORBIDDEN_SUBSTRINGS) {
-      expect(content.includes(forbidden)).toBe(false)
+  it.each(watchedProjectFiles)(
+    '%s izlenen proje köklerine silme/yazma alt dizgesi içermiyor',
+    (file) => {
+      const content = fs.readFileSync(file, 'utf8')
+      for (const forbidden of [...DELETE_SUBSTRINGS, ...WRITE_SUBSTRINGS]) {
+        expect(content.includes(forbidden)).toBe(false)
+      }
     }
+  )
+
+  it('projects-registry.ts: özel istisna dışında (kendi tmp/json dosyası) tehlikeli özyinelemeli silme çağrısı kullanmaz', () => {
+    const content = fs.readFileSync(registryFile, 'utf8')
+    expect(content.includes('rmSync')).toBe(false)
+    expect(content.includes('rmdirSync')).toBe(false)
+    expect(content.includes('fs.rm(')).toBe(false)
   })
 })

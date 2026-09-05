@@ -25,31 +25,47 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col bg-zinc-950 text-zinc-100">
-      <header className="flex h-14 shrink-0 items-center gap-6 overflow-x-auto border-b border-zinc-800 px-4">
-        <span
-          data-testid="app-title"
-          className="shrink-0 whitespace-nowrap font-display tracking-wide text-lg"
-        >
-          MISSION CONTROL
-        </span>
-        <nav className="flex shrink-0 items-center gap-4">
-          {/* F-003 CEO kararı D8 (YENİ-1) + F-005 CEO kararı (sekme deseninin ertelenmesi):
-              gerçek bir tablist/tab deseni kurulmuyor — Zaman Çizelgesi/Kanban `role`/`onClick`
-              taşımayan statik öğeler kalır (F-007'nin işi, Kanban gerçek ikinci sekmeyi
-              getirdiğinde). Ayarlar bunların dışında, sağda sabit bir dişli düğmesidir. */}
-          <span aria-current="page" className="whitespace-nowrap text-sm font-mono text-amber-400">
-            Zaman Çizelgesi
+      <header className="flex h-14 shrink-0 items-center gap-4 border-b border-zinc-800 px-4">
+        {/* QA düzeltme turu 1 (ÖNEMLİ-3): yalnızca başlık+nav bölgesi yatay kaydırılır
+            (`overflow-x-auto`) — Ayarlar dişlisi bu kaydırma alanının DIŞINDA, `shrink-0` ile
+            sağda sabit kalır (`docs/03-ux.md:17` dar panel senaryosu / `:21` "sağda sabit dişli
+            ikonu"). Önceden tüm başlık tek bir `overflow-x-auto` satırıydı ve dar genişlikte
+            dişli, başlık+nav ile birlikte ekran dışına kayıyordu. `minWidth:0` satır içi stille
+            verilir (eşdeğer bir Tailwind yardımcı sınıfı DEĞİL — `tests/build-css.test.ts` o
+            sınıf adını `projects/web`'e özgü bir @source-çiti parmak izi olarak kullanıyor,
+            çakışmayı önlemek için burada inline style tercih edildi): flex öğesinin varsayılan
+            `min-width:auto`'su
+            aksi hâlde bu öğenin içerik genişliğine küçülmesini engelleyip DIŞ `<header>`'ı
+            taşırırdı. */}
+        <div className="flex flex-1 items-center gap-6 overflow-x-auto" style={{ minWidth: 0 }}>
+          <span
+            data-testid="app-title"
+            className="shrink-0 whitespace-nowrap font-display tracking-wide text-lg"
+          >
+            MISSION CONTROL
           </span>
-          <span className="whitespace-nowrap text-sm font-mono text-zinc-400">Kanban</span>
-        </nav>
-        <div className="ml-auto flex shrink-0 items-center gap-4">
+          <nav className="flex shrink-0 items-center gap-4">
+            {/* F-003 CEO kararı D8 (YENİ-1) + F-005 CEO kararı (sekme deseninin ertelenmesi):
+                gerçek bir tablist/tab deseni kurulmuyor — Zaman Çizelgesi/Kanban `role`/`onClick`
+                taşımayan statik öğeler kalır (F-007'nin işi, Kanban gerçek ikinci sekmeyi
+                getirdiğinde). Ayarlar bunların dışında, sağda sabit bir dişli düğmesidir. */}
+            <span
+              aria-current="page"
+              className="whitespace-nowrap text-sm font-mono text-amber-400"
+            >
+              Zaman Çizelgesi
+            </span>
+            <span className="whitespace-nowrap text-sm font-mono text-zinc-400">Kanban</span>
+          </nav>
+        </div>
+        <div className="flex shrink-0 items-center gap-4">
           <ConnectionBadge status={stream.connectionStatus} variant="shell" />
           <button
             type="button"
             aria-label="Ayarlar"
             aria-pressed={activeScreen === 'settings'}
             onClick={() => setActiveScreen((s) => (s === 'settings' ? 'timeline' : 'settings'))}
-            className="whitespace-nowrap text-sm font-mono text-zinc-400 aria-pressed:text-amber-400"
+            className="shrink-0 whitespace-nowrap text-sm font-mono text-zinc-400 aria-pressed:text-amber-400"
           >
             ⚙ Ayarlar
           </button>

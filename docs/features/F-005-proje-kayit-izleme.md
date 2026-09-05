@@ -22,7 +22,18 @@ Mutasyon kanıtı ve chokidar ölçümleri: `docs/qa/F-005-contract.md` "Mutasyo
 2026-09-05)" bölümü. Mimari karar kaydı: `docs/decisions/ADR-012-proje-izleme-mekanizmasi.md`.
 
 ## Dosya sahipliği (bu feature yalnızca şu dosyalara dokunur)
-`src/features/projects/**`, `src/server/watch/**`, `src/server/store/projects-registry.ts`, ilgili testler.
+`src/features/projects/**`, `src/server/watch/**`, `src/server/store/projects-registry.ts`, ilgili
+testler.
+
+Ayrıca (paylaşılan, sözleşme §2.2'de gerekçeli — QA düzeltme turu 1 NOT-2c/D24 kapanışı):
+`src/shared/types.ts`, `src/server/index.ts`, `src/web/App.tsx`, `src/web/index.css`,
+`src/web/lib/useEventStream.ts`, `package.json`, `playwright.config.ts`,
+`tests/e2e/shell.spec.ts`, `tests/web/App.test.tsx`, `tests/web/App.interaction.test.tsx`,
+`tests/build-css.test.ts`.
 
 ## Notlar / kararlar
 - Yol karşılaştırmaları `node:path` ile yapılır; yol için elle regex yasak.
+- Düzeltme turu 1 (2026-09-05): QA'nın KALDI kararındaki 1 BLOKLAYICI + 4 ÖNEMLİ bulgusu kapatıldı
+  (registry yazma hatasında süreç ölmüyor artık, iki katmanlı hata sınırı, izleyici sayacı
+  kaldırma çiti, no-delete-guard yazma taraması, dar genişlikte Ayarlar dişlisi, manifest boş
+  dizin çiti). Detay: `docs/qa/F-005-2026-09-05.md` (KALDI raporu) + `docs/progress.md`.

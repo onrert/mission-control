@@ -940,3 +940,99 @@ QA tarafından doğrulandı; üretim CSS'i 8,5 → 14,9 kB).
 - qa-evaluator F-005'i değerlendirsin (feature notu `status: qa`).
 - Sıradaki feature: **F-006** (yazma kapısı) — Faz 1 sırası F-005 → F-006 → F-007, sonra G4-1
   kilometre taşı. F-006 ADR-008 ekindeki Origin/Host artık riskini yeniden değerlendirmek zorunda.
+
+---
+
+## 2026-09-05 — F-005 düzeltme turu 1: QA KALDI kararının 1 BLOKLAYICI + 4 ÖNEMLİ bulgusu kapatıldı
+
+**Karar geçmişi**: qa-evaluator kod turunu **KALDI** verdi (`docs/qa/F-005-2026-09-05.md` =
+`docs/qa/latest.md`) — İşlevsellik 6, Kod kalitesi 6, bir bloklayıcı. Bu turda o raporun "Düzeltme
+turu için istenenler" bölümündeki 5 madde ele alındı.
+
+**Ne yapıldı**
+
+- **D20 (BLOKLAYICI-1) — kayıt defteri yazma hatası artık süreci öldürmüyor, iki katmanlı savunma:**
+  1. *Yerel katman* (`src/features/projects/server/service.ts`): `addProject`/`removeProject`
+     artık `resolveProjectPath`/`registry.add`/`registry.remove`'un fırlatabileceği her hatayı
+     `try/catch` ile yakalar, UX'in istediği `storage_unavailable` / "Liste kaydedilemedi, tekrar
+     deneyin." sonucuna çevirir (`handlers.ts` bunu 500'e eşler). Bu, `ingest.ts`'in mevcut
+     `storage_unavailable` desenindeki "hata kaynağında yakalanır" ilkesiyle aynı katman.
+  2. *Sistemik katman* (`src/server/index.ts`): yeni `withDispatchErrorBoundary` — dağıtıcının
+     `http.createServer` geri çağrımını sarar, **hangi handler olursa olsun** senkron fırlayan
+     her hatayı yakalayıp genel bir `500 internal_error` döner (yeni `ErrorCode` üyesi,
+     `src/shared/types.ts`). Bu `process.on('uncaughtException')` DEĞİL — hata dağıtıcının kendi
+     çağrı yığınında yakalanıyor (CLAUDE.md dersi: uncaughtException "asıl çözüm olamaz").
+     Asenkron yol (`req.on('end')` içi, POST) bu sınırın kapsamı dışında kalır — onu yerel katman
+     kapatıyor; iki katman birlikte hem senkron (DELETE, sistemik) hem asenkron (POST, yerel)
+     yolu kapatıyor.
+  - Ek: `projects-registry.ts`'in `writeAtomic`'i artık (a) bellek disk yazımı BAŞARILI
+    olduktan SONRA güncelleniyor (önceden önce güncelleniyordu → bellek-disk ayrışması), (b)
+    başarısız `renameSync` sonrası artakalan `.tmp` dosyasını `unlinkSync` ile temizliyor (tek
+    istisna, no-delete-guard'a ayrı dar bir testle tanıtıldı — izlenen proje köklerine değil).
+- **D21 (ÖNEMLİ-1)** — `tests/integration/projects-api.test.ts`'e "kaldırma sonrası
+  `/api/health.watchers === N-1`" testi eklendi (QA'nın M7 mutasyonu artık kırmızı verir).
+- **D22 (ÖNEMLİ-2)** — `no-delete-guard.test.ts` artık yazma alt dizgelerini de tarıyor
+  (`writeFileSync`/`appendFileSync`/`mkdirSync`), `projects-registry.ts` için ayrı dar bir
+  istisna testi var (yalnızca tehlikeli/özyinelemeli silme çağrıları — `rmSync`/`rmdirSync`/
+  `fs.rm(` — hâlâ yasaklı). Yorum artık gerçekle tutarlı.
+- **D23 (ÖNEMLİ-3)** — `src/web/App.tsx`'te başlık iki bölgeye ayrıldı: yalnızca
+  başlık+nav `overflow-x-auto` ile kayar, Ayarlar dişlisi `shrink-0` ile bu kaydırma alanının
+  **dışında**, sağda sabit kalır (`docs/03-ux.md:17`/`:21`). Yeni E2E testi 375px viewport'ta
+  düğmenin `boundingBox()`'ının viewport sınırları içinde kaldığını (kaydırmaya gerek kalmadan)
+  ölçüyor.
+- **D24 (ÖNEMLİ-4 + NOT)** — manifest testi (`tests/integration/projects-api.test.ts`) artık
+  boş dizinleri de `(relPath, kind)` olarak kaydediyor, böylece bir dizin silinse `after.length`
+  sapması yakalanır. Feature notunun dosya sahipliği listesi sözleşme §2.2'deki paylaşılan
+  dosyalarla güncellendi.
+- **Ele alınmayanlar (gerekçeli):** NOT-1 (`feature_count` canlı tazelenmiyor) hiçbir AC
+  istemiyor, F-007'nin `features` tüketimiyle doğal kapanacak. NOT-2a/b (test sayısı/yol
+  dokümantasyon sapmaları) kapsam sızması değil, davranışı etkilemiyor — düzeltilmedi.
+
+**Nasıl doğrulandı**
+
+- `npm run verify` = 0 (**36 dosya / 430 test**, +5 yeni test — 2 BLOKLAYICI-1 HTTP testi
+  (POST/DELETE), 2 sistemik sınır birim testi, 1 izleyici N-1 testi; typecheck+lint+build dahil).
+- `npm run e2e` = 0 (**15 geçti**, +1 — 375px dar genişlik testi).
+- `npm run e2e:dev` = 0 (1 geçti).
+- **Mutasyon kanıtı (uygula → KIRMIZI → birebir geri al, her biri ayrı ayrı koşuldu):**
+
+  | # | Mutasyon | Test | Kırmızı kanıt |
+  |---|---|---|---|
+  | D20-yerel | `service.ts`: `registry.add` çağrısındaki `try/catch` kaldırıldı | HTTP POST testi | Test 5s timeout ile patladı, Vitest "Uncaught Exception: EPERM... rename" yakaladı — QA'nın orijinal çökme izini birebir üretti |
+  | D20-sistemik | `withDispatchErrorBoundary`'nin `try/catch`'i devre dışı bırakıldı | 2 birim testi | `expected [Function] to not throw an error but 'Error: boom' was thrown` |
+  | D20-sistemik (dolaylı) | Yalnızca yerel katman (`removeProject`) kaldırıldı, sistemik katman sağlam bırakıldı | HTTP DELETE testi | `expected 'internal_error' to be 'storage_unavailable'` — sistemik katmanın gerçekten devreye girdiğinin kanıtı |
+  | D20-tmp temizliği | `writeAtomic`'teki `.tmp` temizleme bloğu kaldırıldı | registry birim testi | `expected [ '.projects.....tmp' ] to have a length of +0 but got 1` |
+  | D20-bellek sırası | `projects = [...projects, record]` yazımdan ÖNCEye taşındı | registry birim testi | `expected [...] to have a length of 1 but got 2` (bellek-disk ayrışması yeniden üretildi) |
+  | D21 | `service.ts`: `watchers.delete(id)` kaldırıldı | yeni N-1 testi | `expected 2 to be 1` |
+  | D22 | `service.ts`'e geçici `fs.appendFileSync(...)` eklendi | no-delete-guard | `expected true to be false` — artık STATİK olarak yakalanıyor (önceden yalnızca dinamik manifest testi yakalıyordu) |
+  | D23 | Header eski tek-`overflow-x-auto` yapısına geri alındı | 375px E2E testi | `Expected: <= 375, Received: 593.98` |
+  | D24 | `removeProject`'e geçici boş dizin silme (`docs/approvals`) eklendi | AC2 manifest testi | `expected 11 to be 12` |
+
+  Her mutasyondan sonra `git diff` ile birebir geri alma doğrulandı; tüm mutasyonlar geri
+  alındıktan sonra `npm run verify` + `npm run e2e` + `npm run e2e:dev` tekrar 0/430/15/1 verdi.
+- **Görsel doğrulama:** `npm run build` + izole `MC_DATA_DIR` + gerçek fixture proje ile
+  `tsx src/server/index.ts` (port 7433) çalıştırıldı, Playwright ile 375px viewport'ta
+  Ayarlar ekranı ekran görüntüsü alındı: `docs/qa/screens/F-005-fix1-2026-09-05.png`. Ayarlar
+  dişlisi (amber, aktif durumda) başlığın kesilmesine rağmen tam görünür ve sağda sabit —
+  ÖNEMLİ-3 gözle de kapandı.
+- Yetim süreç kontrolü: `tasklist`'te bırakılan `node`/`tsx` yok, 7333/7334/7335/7433/7434'te
+  `LISTENING` yok (yalnızca kapanmış bağlantıların `TIME_WAIT` kayıtları).
+
+**Kalan bilinen sınırlamalar**
+
+- Sistemik hata sınırının (`withDispatchErrorBoundary`) kendisi yalnızca izole, deterministik bir
+  birim testle kanıtlandı (gerçek bir `uncaughtException`'ı canlı `createServer` üzerinden
+  tetiklemek Vitest worker'ının kendisini çökertme riski taşıdığı için tercih edilmedi — bkz.
+  D20-sistemik mutasyonunun "dolaylı" kanıtı, DELETE HTTP testi üzerinden). Üretimde iki katman
+  birlikte çalışıyor; yalnızca sistemik katmanın gerçek bir HTTP isteğiyle canlı ölçümü yapılmadı.
+  Bu, önceki QA turunun "genel 500 yolu" iddiasının artık **gerçek** olduğunu değiştirmiyor.
+  - **Not:** Bunun için tarayıcı DELETE testinde yerel katmanı geçici olarak kaldırdığımda
+    sistemik katmanın devreye girdiği (`internal_error`) doğrudan gözlemlendi — dolaylı ama
+    canlı bir kanıt.
+- QA'nın NOT-1/NOT-2 maddeleri bilinçli olarak ele alınmadı (gerekçe yukarıda).
+- Kod turunda önceki ajanın devrettiği diğer bilinen sınırlamalar (chokidar `EBUSY` senaryosu
+  test edilmedi, otomatik yeniden izleme yok, `features` payload'ı `cards` içermiyor,
+  `EventRecord.project_id` boş) değişmedi — bu turun kapsamı yalnızca QA'nın KALDI bulgularıydı.
+
+**Sonraki adım**
+- qa-evaluator bu düzeltme turunu değerlendirsin (feature notu `status: qa`).

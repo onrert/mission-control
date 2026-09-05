@@ -1,6 +1,6 @@
 ---
 name: kod-turu-kontrolleri
-description: Kod turu QA'sında en çok bulgu üreten dört teknik — hata yolu fault injection, "çitin testi var mı" mutasyonu, durum dosyası yazar/okur semantiği, ve derleme çıktısını (CSS/bundle) sınıf sınıf ölçme
+description: Kod turu QA'sında en çok bulgu üreten teknikler — hata yolu fault injection (her yeni yazma yolunda tekrarla), "çitin testi var mı" mutasyonu, checkpoint yazar/okur semantiği, derleme çıktısını sınıf sınıf ölçme, statik guard'ın yorumu vs. taradığı, UX'in birincil viewport'unda ölçme
 metadata:
   type: feedback
 ---
@@ -39,8 +39,28 @@ Kod turunda (sözleşme turu değil) şu kontroller, testlerin hiç ölçmediği
    ölçüp "özellik gerçekten çalışıyor mu" diye bak — kod yolu var olabilir ama layout yoksa
    `onScroll` hiç ateşlenmez.
 
+5. **Her YENİ yazma yolunda F-002'nin fault injection'ını birebir tekrarla — ders taşınmıyor.**
+   F-005'te kayıt defteri (`projects.json`, tmp+rename) için hedef dosyayı dizin yapmak / salt-okunur
+   yapmak (`chmod 444`) `renameSync`'i `EPERM` ile düşürdü; çağrı zinciri `req.on('end')` dinleyicisinin
+   içinden geçtiği için **tüm sunucu süreci exit 1 ile öldü** — F-002'nin B1 bloklayıcısının aynısı,
+   üstelik dersin yorumu aynı dosyanın tepesinde yazılıyken. İki ek ipucu: (a) birim testi
+   `expect(() => store.write()).toThrow()` diyorsa tasarım fırlatmayı BİLİYOR demektir — üst katmanda
+   `try/catch` var mı diye bak; (b) sözleşme "handler genel 500 yoluna düşer" gibi bir cümle
+   içeriyorsa o yolu `grep` ile ARA, genelde hiç yoktur (`uncaughtException` handler'ı yok).
+   Ayrıca hata dalında geçici dosya (`.tmp`) temizliği ve bellek-disk ayrışması de kontrol edilir.
+6. **Statik guard'ın YORUMU ile TARADIĞI dizgeleri karşılaştır.** F-005'in `no-delete-guard`'ı
+   "silinmediğini/**yazılmadığını** doğrular" diyordu ama yalnızca `unlink|rmSync|rmdirSync|fs.rm(`
+   tarıyordu; `appendFileSync` ile izlenen projeye yazan mutasyonum guard'dan geçti (yalnızca dinamik
+   manifest testi yakaladı). Guard iddiasının yarısını yapıyorsa yanlış güven üretir.
+7. **Yeşil kalan mutasyon her zaman "eksik test" demektir, "önemsiz" değil — ama şiddeti kodun
+   doğruluğuna bakarak ver.** F-005'te `watchers.delete(id)`'yi kaldırmak 425/425 yeşil bıraktı:
+   ürün kodu doğruydu (tarayıcıda 1→0 ölçtüm), eksik olan çitti → ÖNEMLİ, bloklayıcı değil.
+8. **UX dokümanının BİRİNCİL viewport'unu oku ve orada ölç.** F-005 UX'i paneli 320-480px'lik VS Code
+   Simple Browser panelinde tanımlıyordu; 1280px'te kusursuz görünen `ml-auto` + `overflow-x-auto`
+   başlık, 375px'te tek Ayarlar girişini ekran dışına itiyordu ve hiçbir test dar genişlikte ölçmüyordu.
+
 **Why:** F-002 kod turunda bloklayıcı ve 3 önemli bulgunun tamamı ilk üç teknikten çıktı;
-F-003'te iki bloklayıcının ikisi de dördüncüden çıktı. Developer'ın kendi mutasyonları bunların
+F-003'te iki bloklayıcının ikisi de dördüncüden çıktı; F-005'in tek bloklayıcısı beşincidendi. Developer'ın kendi mutasyonları bunların
 hiçbirini yakalamamıştı çünkü hepsi "test var mı" sorusunu değil "kod doğru mu" sorusunu ölçüyordu.
 
 **How to apply:** Kendi mutasyon setini seçerken developer'ın listesini kopyalama; onun

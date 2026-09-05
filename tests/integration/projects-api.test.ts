@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import http from 'node:http'
-import { createServer, type ServerWithHub } from '../../src/server/index'
+import { createServer, withDispatchErrorBoundary, type ServerWithHub } from '../../src/server/index'
 import { createTempDataDir, removeTempDataDir } from '../helpers/temp-data-dir'
 import { connectSse } from '../helpers/sse-client'
 import type { ProjectListItem } from '../../src/shared/types'
@@ -62,22 +62,28 @@ function createFixtureProject(): string {
 
 interface ManifestEntry {
   relPath: string
-  size: number
-  sha256: string
+  /** QA düzeltme turu 1 (ÖNEMLİ-4): boş dizinler de manifeste girer (öncesinde yalnızca dosyalar
+   *  taranıyordu — `docs/approvals/` gibi boş bir dizin silinse manifest bunu hiç yakalamazdı). */
+  kind: 'file' | 'dir'
+  size?: number
+  sha256?: string
 }
 
-/** `(göreli yol, boyut, sha256)` manifesti — CEO kararı C, sözleşme §7. */
+/** `(göreli yol, [dosyaysa boyut+sha256])` manifesti — CEO kararı C, sözleşme §7. */
 function snapshotManifest(root: string): ManifestEntry[] {
   const out: ManifestEntry[] = []
   function walk(dir: string): void {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name)
+      const relPath = path.relative(root, full)
       if (entry.isDirectory()) {
+        out.push({ relPath, kind: 'dir' })
         walk(full)
       } else {
         const content = fs.readFileSync(full)
         out.push({
-          relPath: path.relative(root, full),
+          relPath,
+          kind: 'file',
           size: content.length,
           sha256: crypto.createHash('sha256').update(content).digest('hex'),
         })
@@ -290,6 +296,32 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
     expect(health.watchers).toBe(2)
   })
 
+  // QA düzeltme turu 1 (ÖNEMLİ-1): M7 mutasyonu (`watchers.delete(id)` kaldırılması) önceden
+  // 425/425 yeşil kalıyordu — hiçbir test kaldırma SONRASI sayacın AZALDIĞINI ölçmüyordu.
+  it('izleyici sayacı: kaldırma sonrası /api/health.watchers === N-1 (QA M7 çiti)', async () => {
+    const projects = [createFixtureProject(), createFixtureProject()]
+    const ids: string[] = []
+    for (const p of projects) {
+      const res = await fetch(`${handle.baseUrl}/api/projects`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ path: p }),
+      })
+      const body = (await res.json()) as { data: ProjectListItem }
+      ids.push(body.data.id)
+    }
+    const beforeRes = await fetch(`${handle.baseUrl}/api/health`)
+    expect(((await beforeRes.json()) as { watchers: number }).watchers).toBe(2)
+
+    const removeRes = await fetch(`${handle.baseUrl}/api/projects/${ids[0]}`, {
+      method: 'DELETE',
+    })
+    expect(removeRes.status).toBe(200)
+
+    const afterRes = await fetch(`${handle.baseUrl}/api/health`)
+    expect(((await afterRes.json()) as { watchers: number }).watchers).toBe(1)
+  })
+
   it('Host/Origin: GET /api/projects de isAllowedHost çitine tabi (QA Bulgu 13b)', async () => {
     // `fetch` (undici) `Host` başlığının elle ayarlanmasına izin vermiyor (forbidden header) —
     // bu yüzden ham `node:http` kullanılır (events-api.test.ts'in `postJson` deseniyle aynı).
@@ -413,5 +445,173 @@ describe('İzleyici yaşam döngüsünün gerçek kapanışı (sözleşme §7, m
     } finally {
       removeTempDataDir(dataDir)
     }
+  })
+})
+
+// QA düzeltme turu 1 (BLOKLAYICI-1) — QA'nın birebir ölçtüğü senaryo: `projects.json`'ın
+// rename hedefi bir dizinle işgal edilir (registry unit testindeki teknikle aynı, ölçülmüş ve
+// güvenilir), böylece `writeAtomic` fırlar. Önceden bu, `req.on('end')`/dağıtıcı çağrı yığınında
+// yakalanmadığı için süreç `uncaughtException` ile ölüyordu — düzeltme (`service.ts`'in kendi
+// try/catch'i, "yerel" katman) bu istisnayı asla dışarı sızdırmaz.
+describe('BLOKLAYICI-1 düzeltmesi: kayıt defteri yazma hatasında istemci 500 alır, süreç yaşar (D20)', () => {
+  let dataDir: string
+  let handle: ServerHandle
+  let filePath: string
+
+  beforeEach(async () => {
+    dataDir = createTempDataDir()
+    handle = await startServer(dataDir)
+    filePath = path.join(dataDir, 'projects.json')
+  })
+
+  afterEach(async () => {
+    // Engel hâlâ ayaktaysa (bir test başarısız olup erken çıkarsa) temizliği garanti et.
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+      fs.rmdirSync(filePath)
+    }
+    await stopServer(handle)
+    removeTempDataDir(dataDir)
+  })
+
+  it('POST: rename hedefi dizinle işgal edilirse 500 storage_unavailable döner, süreç yaşar, engel kalkınca sonraki istek başarılı olur, bellek diskle tutarlı kalır', async () => {
+    const project = createFixtureProject()
+    // `projects.json` henüz hiç yok (init() dosya yoksa yazmaz) — rename hedefini BAŞTAN bir
+    // dizinle işgal ediyoruz (registry unit testindeki `mkdirSync(filePath)` deseniyle aynı).
+    fs.mkdirSync(filePath)
+
+    const res = await fetch(`${handle.baseUrl}/api/projects`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: project }),
+    })
+    expect(res.status).toBe(500)
+    const body = (await res.json()) as { error: { code: string; message: string } }
+    expect(body.error.code).toBe('storage_unavailable')
+    expect(body.error.message).toBe('Liste kaydedilemedi, tekrar deneyin.')
+
+    // Süreç yaşıyor mu?
+    const health = await fetch(`${handle.baseUrl}/api/health`)
+    expect(health.status).toBe(200)
+
+    // `.tmp` artığı temizlenmiş mi?
+    const leftovers = fs
+      .readdirSync(dataDir)
+      .filter((name) => name.startsWith('.projects.') && name.endsWith('.tmp'))
+    expect(leftovers).toHaveLength(0)
+
+    // Bellek diskten ÖNCE güncellenmedi mi? Liste hâlâ boş görünmeli.
+    const listRes = await fetch(`${handle.baseUrl}/api/projects`)
+    const listBody = (await listRes.json()) as { data: unknown[] }
+    expect(listBody.data).toHaveLength(0)
+
+    // Engel kalkınca sonraki istek başarılı olur.
+    fs.rmdirSync(filePath)
+    const retryRes = await fetch(`${handle.baseUrl}/api/projects`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: project }),
+    })
+    expect(retryRes.status).toBe(201)
+  })
+
+  it('DELETE: başarılı ekleme sonrası projects.json bir dizinle işgal edilirse 500 storage_unavailable döner, süreç yaşar, bellek diskle tutarlı kalır', async () => {
+    const project = createFixtureProject()
+    const addRes = await fetch(`${handle.baseUrl}/api/projects`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: project }),
+    })
+    expect(addRes.status).toBe(201)
+    const addBody = (await addRes.json()) as { data: ProjectListItem }
+
+    // Şimdi `projects.json` gerçek bir dosya — onu bir dizinle DEĞİŞTİRİYORUZ (rename hedefi
+    // yine bir dizin olacak, `writeAtomic` yine fırlayacak).
+    fs.rmSync(filePath)
+    fs.mkdirSync(filePath)
+
+    const removeRes = await fetch(`${handle.baseUrl}/api/projects/${addBody.data.id}`, {
+      method: 'DELETE',
+    })
+    expect(removeRes.status).toBe(500)
+    const removeBody = (await removeRes.json()) as { error: { code: string; message: string } }
+    expect(removeBody.error.code).toBe('storage_unavailable')
+    expect(removeBody.error.message).toBe('Liste kaydedilemedi, tekrar deneyin.')
+
+    // Süreç yaşıyor mu?
+    const health = await fetch(`${handle.baseUrl}/api/health`)
+    expect(health.status).toBe(200)
+
+    // `.tmp` artığı temizlenmiş mi?
+    const leftovers = fs
+      .readdirSync(dataDir)
+      .filter((name) => name.startsWith('.projects.') && name.endsWith('.tmp'))
+    expect(leftovers).toHaveLength(0)
+
+    // Bellek diskten ÖNCE güncellenmedi mi? Kayıt hâlâ listede görünmeli (silinmiş sayılmamalı).
+    fs.rmdirSync(filePath)
+    const listRes = await fetch(`${handle.baseUrl}/api/projects`)
+    const listBody = (await listRes.json()) as { data: ProjectListItem[] }
+    expect(listBody.data.find((p) => p.id === addBody.data.id)).toBeDefined()
+
+    // Engel kalkınca sonraki istek başarılı olur.
+    const retryRes = await fetch(`${handle.baseUrl}/api/projects/${addBody.data.id}`, {
+      method: 'DELETE',
+    })
+    expect(retryRes.status).toBe(200)
+  })
+})
+
+// QA düzeltme turu 1 (BLOKLAYICI-1) — sistemik katman: dağıtıcının kendi çağrı yığınında senkron
+// fırlayan HERHANGİ bir handler'ı (yukarıdaki `service.ts`'in "yerel" katmanından bağımsız
+// olarak) 500'e çevirir, exception dışarı sızmaz. Gerçek HTTP/süreç riski almadan (bir
+// `uncaughtException`'ın vitest worker'ının kendisini çökertme ihtimaline karşı) doğrudan,
+// deterministik bir birim testle kanıtlanır.
+describe('sistemik hata sınırı: withDispatchErrorBoundary (D20)', () => {
+  it('senkron olarak fırlayan herhangi bir handler 500 internal_error döner, exception dışarı sızmaz', () => {
+    const throwingHandler = (): void => {
+      throw new Error('boom')
+    }
+    const wrapped = withDispatchErrorBoundary(throwingHandler)
+
+    let statusCode = 0
+    let endedBody = ''
+    const fakeRes = {
+      headersSent: false,
+      writeHead(status: number) {
+        statusCode = status
+      },
+      end(body?: string) {
+        endedBody = body ?? ''
+      },
+    } as unknown as import('node:http').ServerResponse
+
+    expect(() => wrapped({} as import('node:http').IncomingMessage, fakeRes)).not.toThrow()
+    expect(statusCode).toBe(500)
+    const parsed = JSON.parse(endedBody) as { success: boolean; error: { code: string } }
+    expect(parsed.success).toBe(false)
+    expect(parsed.error.code).toBe('internal_error')
+  })
+
+  it('headers zaten gönderilmişse yalnızca res.end() çağrılır, ikinci writeHead denenmez', () => {
+    const throwingHandler = (): void => {
+      throw new Error('boom, ama başlıklar zaten yazıldı')
+    }
+    const wrapped = withDispatchErrorBoundary(throwingHandler)
+
+    let writeHeadCalls = 0
+    let endCalls = 0
+    const fakeRes = {
+      headersSent: true,
+      writeHead() {
+        writeHeadCalls += 1
+      },
+      end() {
+        endCalls += 1
+      },
+    } as unknown as import('node:http').ServerResponse
+
+    expect(() => wrapped({} as import('node:http').IncomingMessage, fakeRes)).not.toThrow()
+    expect(writeHeadCalls).toBe(0)
+    expect(endCalls).toBe(1)
   })
 })

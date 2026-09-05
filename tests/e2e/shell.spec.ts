@@ -122,3 +122,31 @@ test('kabuk açılır, başlık görünür, konsol hatası yok, tıklanabilir ö
   expect(bodyText).not.toContain('Thread')
   expect(bodyText).not.toContain('Token')
 })
+
+// QA düzeltme turu 1 (ÖNEMLİ-3) — `docs/03-ux.md:17` panelin birincil senaryosunu
+// ≈320-480px (VS Code Simple Browser) olarak tanımlıyor, `:21` Ayarlar'ın "sağda sabit bir
+// dişli ikonu" olduğunu söylüyor. Düzeltmeden önce 375px'te dişli, başlık+nav ile birlikte
+// `overflow-x-auto` şeridinin dışına kayıyordu (bkz. `docs/qa/screens/F-005-2026-09-05-mobil.
+// png`). Bu test dişlinin viewport SINIRLARI İÇİNDE kaldığını (yatay kaydırma GEREKMEDEN)
+// ölçer — yalnızca `.click()`'in kendisini kullanmak yetmez, Playwright gerekirse otomatik
+// kaydırıp tıklayabilir; asıl kanıt kaydırmadan ÖNCEKİ `boundingBox()` konumudur.
+test('375px viewport (VS Code Simple Browser genişliği): Ayarlar dişlisi yatay kaydırma olmadan görünür ve tıklanabilir kalır', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 700 })
+  await page.goto('/')
+
+  const button = page.getByRole('button', { name: 'Ayarlar' })
+  await expect(button).toBeVisible()
+
+  const box = await button.boundingBox()
+  expect(box).not.toBeNull()
+  // Düğme, hiçbir kaydırma yapılmadan (goto sonrası, click'ten ÖNCE) viewport'un içinde:
+  // sıfırın solunda değil, 375px'in sağında değil.
+  expect(box!.x).toBeGreaterThanOrEqual(0)
+  expect(box!.x + box!.width).toBeLessThanOrEqual(375)
+
+  await button.click()
+  await expect(button).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('[data-testid="settings-screen"]')).toBeVisible()
+})

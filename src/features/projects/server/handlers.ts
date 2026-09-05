@@ -66,7 +66,10 @@ export function handleAddProject(
       typeof body.label === 'string' && body.label.trim() !== '' ? body.label : undefined
     const result = service.addProject(body.path, label)
     if (!result.ok) {
-      const status = result.code === 'conflict' ? 409 : 400
+      // QA düzeltme turu 1 (BLOKLAYICI-1): `storage_unavailable` bir disk yazma hatası —
+      // istemci 500 alır, sunucu ayakta kalır (`service.ts` bu fırlatmayı zaten yakalamıştı).
+      const status =
+        result.code === 'conflict' ? 409 : result.code === 'storage_unavailable' ? 500 : 400
       sendJson(res, status, {
         success: false,
         error: { code: result.code, message: result.message },
@@ -84,8 +87,17 @@ export function handleRemoveProject(
   service: ProjectsService,
   id: string
 ): void {
-  const removed = service.removeProject(id)
-  if (!removed) {
+  const result = service.removeProject(id)
+  if (!result.ok) {
+    // QA düzeltme turu 1 (BLOKLAYICI-1): kayıt defteri yazılamadı — istemci 500 alır, sunucu
+    // ayakta kalır (`service.ts` bu fırlatmayı zaten yakalamıştı).
+    sendJson(res, 500, {
+      success: false,
+      error: { code: result.code, message: result.message },
+    })
+    return
+  }
+  if (!result.removed) {
     sendJson(res, 404, {
       success: false,
       error: { code: 'not_found', message: 'Proje bulunamadı.' },

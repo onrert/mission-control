@@ -128,3 +128,19 @@ uygula; kanıtı komut çıktısı + dosya:satır ile ver. Ayrıca arşivleme ya
 zaten tarihli bir kopyası var mı diye bak (`diff -q`) — ikinci kez yanlış adla kopyalama.
 
 İlgili: [[kod-turu-kontrolleri]], [[sozlesme-turu-kontrolleri]]
+
+22. **Geri getirilen bir çalışma-zamanı deseni (regex allowlist) ile o adı ÜRETEN kodu birlikte
+    çalıştır.** F-006 tur 2: QA'nın istediği "işlem/yol eşleşmesi" geri geldi ama arşiv deseni
+    `[0-9-]+` idi, ad üreteci ise `toISOString().replace(/[:.]/g,'-')` ile `T`/`Z` içeren bir
+    damga üretiyordu → her arşivleme `write_denied` (scratchpad'de 30 saniyede ölçüldü:
+    `archive rx: false`). Sözleşmedeki her regex'i, aynı sözleşmenin başka bir bölümündeki
+    üreteciyle besleyip node ile koştur.
+23. **Genişletilen statik tarama listesini GERÇEK depoda grep'le.** "DENIED'a `truncate` ekle"
+    dendiğinde liste `content.includes()` ile kullanılıyorsa Tailwind `truncate` sınıfı,
+    `Math.trunc`, `truncateSummary` gibi meşru satırlara çarpar (F-006'da 4 dosya, 9 satır) ve
+    çit doğuştan kırmızı doğar. Kural: her yeni desen için `grep -rn <desen> src` çalıştır;
+    çağrı biçimi (`desen(`) ile çıplak alt dizge arasındaki farkı sözleşmeye yazdır.
+24. **"Dışa açık değil" + "test doğrudan çağırır" ikilisini ara.** Aynı turda hem export
+    yüzeyini `toEqual([tam liste])` ile kilitleyip hem de iç yardımcıyı test/mutasyondan
+    doğrudan çağırmayı planlayan sözleşme kendi kendini yener; düşen taraf her zaman sessizce
+    çit olur (F-006 adım 8).

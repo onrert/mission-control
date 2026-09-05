@@ -4,7 +4,7 @@ title: Yazma kapısı + sınır testleri
 author: developer
 status: draft
 date: 2026-09-05
-revision: tur 2 (QA tur 1 bulgularına göre düzeltildi — 4 bloklayıcı + 8 önemli + 2 not kapatıldı)
+revision: tur 3 (QA tur 2 doğrulamasına göre düzeltildi — 1 bloklayıcı + 3 önemli + 1 kısmi + 2 not kapatıldı)
 ---
 
 # F-006 Sözleşmesi — yazma kapısı + sınır testleri
@@ -186,7 +186,11 @@ const OPERATION_PATTERNS: Record<Operation, RegExp> = {
   featureStatus: /^docs\/features\/[A-Za-z0-9._-]+\.md$/,
   approval: /^docs\/approvals\/(G[0-6](-\d{1,3})?|ASSETS)\.ok$/,
   denial: /^docs\/approvals\/(G[0-6](-\d{1,3})?|ASSETS)\.deny\.md$/,
-  archive: /^docs\/approvals\/archive\/(G[0-6](-\d{1,3})?|ASSETS)-[0-9-]+\.deny\.md$/,
+  // R1 düzeltmesi: önceki [0-9-]+ deseni §3 madde 6'nın ürettiği ISO zaman damgasındaki
+  // harfleri (T, Z) kapsamıyordu ("G2-2026-09-05T14-58-24-375Z.deny.md" ile eşleşmiyordu,
+  // her archiveDenial çağrısı write_denied dönüyordu) — scratchpad'de ölçülüp doğrulandı, §6'daki
+  // yeni whitelist satırına bakın.
+  archive: /^docs\/approvals\/archive\/(G[0-6](-\d{1,3})?|ASSETS)-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.deny\.md$/,
 }
 
 function resolveInsideRoot(
@@ -401,6 +405,12 @@ archive/` dizini `mkdirSync({recursive:true})` ile (yoksa) oluşturulur, hedef a
 `` `${gate}-${timestamp}.deny.md` `` (`timestamp = new Date().toISOString().replace(/[:.]/g,'-')`
 — Windows dosya adlarında `:` yasak, `.` çakışmayı önlemek için de değiştirilir — bu bir yol
 regex'i değil bir **dosya adı** sanitizasyonudur, `path` API'siyle ilgisi yok, S6 kapsamı dışı).
+**R1 kanıtı (elle eşleştirme, scratchpad'de çalıştırıldı):** bu üretim gerçek bir çağrıda örneğin
+`G2-2026-09-05T14-58-24-375Z.deny.md` üretir; §3 madde 2'deki
+`OPERATION_PATTERNS.archive = /^docs\/approvals\/archive\/(G[0-6](-\d{1,3})?|ASSETS)-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.deny\.md$/`
+bu adla `docs/approvals/archive/G2-2026-09-05T14-58-24-375Z.deny.md` için `test() === true` döner
+(node ile çalıştırılıp doğrulandı; eski `[0-9-]+` deseni aynı ad için `false` dönüyordu — R1'in
+kök nedeni buydu). `G4-2` (gruplu gate) ve `ASSETS` varyantları da aynı yöntemle `true` döndü.
 Çakışma ihtimali (aynı milisaniyede iki çağrı) — tek kullanıcılı, elle tetiklenen bir akışta
 pratikte imkânsız; oluşursa `renameSync` üzerine yazar (kabul edilebilir, PRD hiçbir AC bunu
 sorgulamıyor). `unlink`/`rm` **hiç çağrılmaz** — kaynak dosya `renameSync` ile taşınır, iki
@@ -518,9 +528,9 @@ yok, o yüzden E2E'ye de gerek yok — ağırlık tamamen birim + entegrasyon'da
 | `writeGateApproval` | `gate='G7'` | regex reddeder → `invalid_body` ✗ |
 | `writeGateApproval` | `gate='G2/../../x'` | regex reddeder (`/` içeriyor) → `invalid_body` ✗ |
 | `writeGateApproval` | `gate='ASSETS'` | `docs/approvals/ASSETS.ok` yazılır ✓ |
-| **`writeGateApproval`** | **içsel olarak `docs/features/*` şablonuna eşleşecek bir yol üretmeye zorlansa (test yardımcı fonksiyonu `resolveInsideRoot`'u `operation='featureStatus'` etiketiyle ama approval şablonuyla çağırır)** | **adım 8 işlem/yol eşleşmesi reddeder → `write_denied` ✗ — QA Bulgu 3 + §8 mutasyon 9'un artık koşulsuz çalışma-zamanı karşılığı** |
 | `writeGateDenial` | `gate='G4-2'` | `docs/approvals/G4-2.deny.md` yazılır ✓ (mimari §6.4 gruplaması) |
 | `archiveDenial` | `.deny.md` mevcut | `docs/approvals/archive/G2-<ts>.deny.md`'ye rename, kaynak yok olur ✓ |
+| **`archiveDenial`** | **üretilen arşiv adı (`` `${gate}-${timestamp}.deny.md` ``, ör. `G2-2026-09-05T14-58-24-375Z.deny.md`)** | **kendi `OPERATION_PATTERNS.archive` desenine uyar → adım 8'de reddedilmez, `renameSync` çalışır ✓ — R1 kapatıldı, kanıt §3 madde 6 sonunda** |
 | `archiveDenial` | `.deny.md` yok | no-op, `{ok:true, path:''}` |
 | (hepsi) | `root` kendisi bir symlink (kayıt sonrası değiştirilmiş) | gerçek hedefi çözer, kök dışıysa `write_denied` (ADR-005 risk maddesi) |
 | (hepsi) | Windows ayracıyla karışık girdi zaten `root`'tan geliyor (fileName/gate'te ayraç yok) | regex zaten `/`/`\` ikisini de reddediyor (karakter sınıfında yok) |
@@ -528,6 +538,17 @@ yok, o yüzden E2E'ye de gerek yok — ağırlık tamamen birim + entegrasyon'da
 | **(hepsi)** | **`root` verilmemiş / boş dizge** | **adım 0 → `write_denied` ✗ — QA Bulgu 11** |
 | **(hepsi)** | **`root` bir dosya (dizin değil)** | **adım 0 → `write_denied` ✗ — QA Bulgu 11** |
 | **(hepsi)** | **`root` göreli bir yol (`path.isAbsolute` false)** | **adım 0 → `write_denied` ✗ — QA Bulgu 11** |
+
+**Adım 8'in (işlem/yol eşleşmesi) tek doğrulama yolu — R3 düzeltmesi:** `operation` etiketi dışa
+açık değil (§4) ve AC2'nin `toEqual` listesi tam dört export'a kilitli — bu ikisi bozulmadan, adım
+8'i test dosyasından `resolveInsideRoot`'u doğrudan çağırarak (yanlış `operation` vererek) sınamak
+**mümkün değil**. Dört genel fonksiyonun her biri kendi sabit şablonunu kendi sabit `operation`
+etiketiyle çağırdığı için, normal genel-API kullanımıyla da bu ikisi asla uyuşmaz hâle gelemez —
+adım 8'in kendisi yalnızca **kaynak kodu bozulursa** (bir fonksiyon yanlış etiket kullanırsa)
+devreye girer. Bu yüzden adım 8'in **tek** kanıtı §8 mutasyon 11'dir: kaynakta bir fonksiyonun
+`operation` argümanı geçici olarak yanlışla değiştirilir ve o fonksiyonun **genel API üzerinden**
+zaten var olan mutlu-yol testinin (yukarıdaki tablo) KIRMIZI'ye döndüğü ölçülür. Ayrı bir whitelist
+tablo satırı veya internal export gerekmiyor.
 
 **Symlink testlerinin Windows'ta çalıştırılabilirliği (QA Bulgu 3'ün kendi notu):** dizin-seviyesi
 vaka (`docs/features` → başka dizin) `fs.symlinkSync(target, link, 'junction')` ile kurulur —
@@ -553,7 +574,8 @@ izlenen bir proje köküne (yanlışlıkla) yazan bir mutasyon iki guard'a da g�
 DENIED = ['writeFileSync','writeFile(','appendFileSync','appendFile(',
           'renameSync','rename(','mkdirSync','mkdir(',
           'unlinkSync','unlink(','rmSync','rmdirSync','fs.rm(',
-          'copyFile','cp(','cpSync','createWriteStream','truncate','ftruncate',
+          'copyFile','cp(','cpSync','createWriteStream',
+          'truncate(','truncateSync(','ftruncate(','ftruncateSync(',
           'openSync','writeSync','promises.open(']
 
 files = walk('src', ['.ts','.tsx'])
@@ -563,11 +585,34 @@ files = walk('src', ['.ts','.tsx'])
                                                     // unlinkSync(tmp)) burada meşru.
 ```
 
+**R4 düzeltmesi (çıplak `truncate`/`ftruncate` yanlış pozitif üretiyordu):** ölçüldü —
+çıplak `'truncate'` `normalize.ts:78` (`truncateSummary`), `:133` (`truncated: true`), `:137`
+(`raw_truncated`), `:154` (`truncateSummary(...)`), `query.ts:21-24` (`Math.trunc`/`truncated`
+değişkeni), `TimelineRow.tsx:56` ve `ProjectRow.tsx:75`'teki Tailwind `truncate` sınıfına çarpıyordu
+— bunların hiçbiri bir dosya sistemi çağrısı değil. Çağrı-biçimli `'truncate('`/`'truncateSync('`/
+`'ftruncate('`/`'ftruncateSync('` bu dokuz satırın **hiçbiriyle** eşleşmez (`truncateSummary(`,
+`Math.trunc(`, JSX sınıf dizgesi `truncate ` — hepsinde `truncate`'ten hemen sonra `(` gelmiyor)
+ama gerçek bir `fs.truncateSync(...)`/`fs.ftruncateSync(...)` çağrısını hâlâ yakalar (`truncate`
+kelimesinin hemen ardından `(` gelir). **Aynı sınıf kontrol edildi:** listedeki diğer çıplak
+desenler (`writeFileSync`, `appendFileSync`, `renameSync`, `mkdirSync`, `unlinkSync`, `rmSync`,
+`rmdirSync`, `copyFile`, `cpSync`, `createWriteStream`, `openSync`, `writeSync`) `src/**` genelinde
+(write-gate.ts ve üç store dosyası dışında) grep'lendi — hiçbirinde ilgisiz bir eşleşme bulunamadı;
+yanlış pozitif yalnızca `truncate`/`ftruncate` sınıfındaydı çünkü bunlar aynı zamanda proje içi
+yardımcı fonksiyon adı (`truncateSummary`) ve CSS/JS sözcüğü (`truncate`, `Math.trunc`) olarak da
+kullanılıyor.
+
+**NOT-1 (aynı düzeltmeyle kapanıyor):** `projects-registry.ts:52` bir **yorum satırı** olup içinde
+`renameSync`/`unlinkSync` sözcükleri geçiyor. Üç store dosyasının dizge-seviyesi kontrolü zaten
+`no-delete-guard.test.ts`'in çağrı-biçimli deseniyle (`unlinkSync\([^)]*\)` vb.) çalışır, düz
+`content.includes(forbidden)` **değildir** — bu yüzden yorum satırındaki düz metin eşleşmeyi tetiklemez.
+Bu netlik önceki turda gövdeye açıkça yazılmamıştı; şimdi burada sabitleniyor, ek kod/test gerekmiyor.
+
 Üç store dosyası artık dosya-seviyesinde **muaf değil** — `no-delete-guard.test.ts`'in
-`unlinkSync(tmpPath)` emsaliyle **aynı, dizge-seviyesi** yaklaşım genelleştirilip bu testin içine
-taşınıyor: her store dosyasının içeriği okunur, DENIED listesindeki her desenin **her geçtiği yer**
-aşağıdaki izinli tam-çağrı kümesiyle karşılaştırılır — izinli kümede olmayan herhangi bir eşleşme
-testi kırar:
+`unlinkSync(tmpPath)` emsaliyle **aynı, çağrı-biçimli (regex, ör. `unlinkSync\([^)]*\)`), dizge-seviyesi**
+yaklaşım genelleştirilip bu testin içine taşınıyor (naif `content.includes(...)` **değil** —
+NOT-1'in yorum-satırı yanlış pozitifini bu ayrım zaten engeller): her store dosyasının içeriği
+okunur, DENIED listesindeki her desenin **çağrı biçiminde eşleşen her geçtiği yer** aşağıdaki
+izinli tam-çağrı kümesiyle karşılaştırılır — izinli kümede olmayan herhangi bir eşleşme testi kırar:
 
 ```
 İZİNLİ (yalnızca bu tam çağrılar, ✓ VERIFIED kaynak satırlarından alındı):
@@ -628,9 +673,12 @@ hiçbir yazma olmadığında da doğru çıkardı (QA "Ölçmeyen test riski" ma
 4. manifestAfter = snapshotDir(fixtureRoot)
 5. İDDİA A: değişen/eklenen relPath kümesi ⊆ { docs/features/F-001.md, docs/approvals/G1.ok,
    docs/approvals/G3.deny.md, docs/approvals/archive/, docs/approvals/archive/G2-*.deny.md }
-   İDDİA B: manifestBefore'daki HER relPath (G2.deny.md hariç — arşivlendi, taşındı) manifest
-   After'da AYNI (relPath,size,sha256) ile var (içerik değişikliği de yakalanır, yalnızca dosya
-   listesi değil — F-005 dersi)
+   İDDİA B (R2 düzeltmesi): manifestBefore'daki, İDDİA A'nın değişen/eklenen kümesinde **OLMAYAN**
+   her relPath (yani `docs/features/F-001.md`, `docs/approvals/G1.ok` VE arşivlenip taşınan
+   `docs/approvals/G2.deny.md` **hariç**) manifestAfter'da AYNI (relPath,size,sha256) ile var
+   (içerik değişikliği de yakalanır, yalnızca dosya listesi değil — F-005 dersi). (Önceki metin
+   yalnızca `G2.deny.md`'yi hariç tutuyordu; F-001.md ve G1.ok de senaryoda kasıtlı olarak
+   değiştiği için bu hâliyle İDDİA A/E ile çelişip kaçınılmaz KIRMIZI veriyordu.)
    İDDİA C: G2.deny.md before'da var, after'da YOK (silinmedi, taşındı) — archive hedefinde
    AYNI İÇERİKLE (size/sha256 eşit) var
    İDDİA D: manifestAfter uzunluğu manifestBefore uzunluğundan yalnızca beklenen kadar farklı
@@ -765,11 +813,16 @@ korunuyor, korumasız değil. Gerekçenin tam zinciri (D1-D6) yukarıda; CEO'nun
    (§6, spy-tabanlı zorunlu test) KIRMIZI vermeli.
 10. **(D30, yeni)** `resolveInsideRoot`'un adım 3 (ata dizin `lstatSync` döngüsü) kaldırılır →
     "`docs/features` ata dizini symlink" whitelist satırı (junction fixture'lı) KIRMIZI vermeli.
-11. **(D30, yeni)** `resolveInsideRoot`'un adım 8 (işlem/yol eşleşmesi `OPERATION_PATTERNS` testi)
-    kaldırılır → §6'daki "yanlış `operation` etiketiyle çağrı" satırı artık yakalanmaz, KIRMIZI
-    (bu, eski mutasyon 9'un kaçış kapısını **kapatır** — kontrol artık çalışma zamanında olduğu
-    için TypeScript private erişim numarasına gerek yok, doğrudan `resolveInsideRoot`'un kendisi
-    test dosyasından `operation` parametresi kasıtlı yanlış verilerek çağrılabiliyor).
+11. **(D30, yeni — R3 ile düzeltildi)** Kaynakta `writeGateApproval`'ın `resolveInsideRoot`
+    çağrısındaki `operation: 'approval'` etiketi geçici olarak `'featureStatus'` ile değiştirilir.
+    (Önceki metin bunu "test dosyasından `resolveInsideRoot`'u doğrudan, yanlış `operation`
+    parametresiyle çağırarak" tanımlıyordu — bu, `operation`'ın dışa açık olmadığı §4 iddiasıyla
+    ve AC2'nin dört-export `toEqual` sabidiyle çelişiyordu, R3. Düzeltme: internal fonksiyona
+    hiç erişilmiyor, yalnızca kaynak kodun kendisi mutasyonlanıyor.) Adım 8 artık
+    `docs/approvals/G2.ok` hedefini `featureStatus` şablonuyla (`docs/features/*.md`)
+    karşılaştırır, uyuşmaz → §6'daki `writeGateApproval` mutlu-yol testi (`gate='G2'` →
+    `docs/approvals/G2.ok` yazılır ✓, **genel API üzerinden**) `write_denied` döner, KIRMIZI.
+    Adım 8'in tek kanıtı budur.
 12. **(D31, yeni, Bulgu 4'ün mutasyonu — a)** `atomicWriteOnce` içindeki `mkdirSync`'i `try`
     dışına taşı (eski konumuna geri al) VE `docs/approvals`'ı önceden bir **dosya** olarak kur
     (test fixture'ında) → dört fonksiyonun tümü artık `ENOTDIR` **fırlatır** (throw), "asla
@@ -794,6 +847,15 @@ korunuyor, korumasız değil. Gerekçenin tam zinciri (D1-D6) yukarıda; CEO'nun
     KIRMIZI vermeli — `manifest.ts`'in kendi özyinelemeliliğinin test edildiğinin kanıtı.
 18. **(§6 mutasyon 11, tekrar)** `writeGateApproval`'ın hedefi test içinde `README.md`'ye
     yönlendirilir → manifest testinin İDDİA B'si KIRMIZI vermeli.
+19. **(R1, yeni)** `OPERATION_PATTERNS.archive` deseni daraltılır (ör. tekrar eski
+    `-[0-9-]+\.deny\.md$` biçimine, harfleri `T`/`Z` kabul etmeyecek şekilde) → `archiveDenial`'ın
+    kendi mutlu-yol testi (§6, `.deny.md` mevcut → rename) `write_denied` döner, KIRMIZI; manifest
+    testinin `archiveDenial` pozitif assert'i ve İDDİA C de KIRMIZI verir.
+20. **(Bulgu 9 KISMİ'nin kapanışı, yeni)** `atomicWrite`'taki `delaysMs` dizisi `[]`'e (sıfır
+    yeniden deneme, tek deneme) düşürülür → EPERM/EBUSY enjekte edilen retry birim testi
+    (§2.1 `write-gate.test.ts`, "3. denemede de `EPERM` → `write_failed`" vakası) ilk denemeden
+    sonra beklenenden erken `write_failed` döner, KIRMIZI — 50/100/200 ms'lik 3-deneme döngüsünün
+    gerçekten çalıştığının kanıtı.
 
 ---
 
@@ -826,8 +888,26 @@ saydı — CEO şimdi karara bağladı, aşağıdaki iki madde KAPALI):**
 4. **`sleepSyncMs` (Atomics.wait) event loop'u bloklar** (§3 madde 4) — kabul edilen davranış
    (senkron API'nin doğal sonucu), ama en kötü senaryoda (3 deneme, hepsi EPERM) tek bir yazma
    çağrısı ~350 ms boyunca sunucuyu bloklar. Dakikada birkaç yazma olan bu araç için ölçülemez
-   (ADR-005 "realpath maliyeti" riskiyle aynı sınıf); yalnızca kayıt için yazıldı, çitlenmiyor.
-5. **İçerik-tipi allowlist'in artık riski (D6):** tarayıcı olmayan yerel bir süreç `Content-Type:
+   (ADR-005 "realpath maliyeti" riskiyle aynı sınıf); **bu turda** kabul edilebilir çünkü
+   `write-gate.ts` henüz hiçbir HTTP handler'a bağlı değil (§1 madde 7), dolayısıyla bugün hiçbir
+   isteği geciktirmiyor (QA tur 2 doğrulaması, D31). **F-007'ye devredilen taahhüt:** F-007,
+   `write-gate.setFeatureStatus`'u `PATCH /api/features` handler'ına bağladığı gün bu ~350 ms'lik
+   senkron bekleme **tüm istekleri** (SSE akışı dahil) durdurur; F-007'nin kendi sözleşmesi
+   `Atomics.wait` tabanlı yeniden denemeyi asenkron bir yaklaşımla değiştirmek **zorundadır** —
+   bugünden bu değişikliği yapmıyoruz (Karpathy §1, henüz gerçekleşmeyen bir bağlanma için
+   asenkron karmaşıklık eklemek erken olur).
+5. **Desen karşılaştırması harf duyarlı, adım 5'in harf-büyüklüğü kanonikleştirmesiyle tam
+   örtüşmeyebilir (QA NOT-2):** `resolveInsideRoot` adım 5 `fs.realpathSync.native` ile diskteki
+   **gerçek** harf büyüklüğünü döndürür, adım 8'in `OPERATION_PATTERNS`'ı ise harf duyarlı
+   (`docs/features/…`, küçük harf). Bu depoda ve F-006'nın kendi test fixture'larında dizin adları
+   zaten küçük harf olduğu için bugün hiçbir vakayı etkilemiyor; izlenen bir projede `Docs/Features`
+   gibi büyük harfli bir dizin **varsa** tüm yazmalar sessizce `write_denied` olurdu. **Karar:**
+   bu turda desen karşılaştırmasını harf duyarsız yapmıyoruz — gerçekleşmeyen bir senaryo için
+   savunma eklemek Karpathy §2 ihlali olurdu; kayıt için burada yazılı, çitlenmiyor. Windows'ta
+   proje dizinleri tipik olarak kurulum sırasında sabit/küçük harfli oluşturulduğu için pratik
+   olasılığı düşük; F-007/F-008 kendi projelerinde büyük harfli dizinle karşılaşırsa o tur
+   yeniden değerlendirir.
+6. **İçerik-tipi allowlist'in artık riski (D6):** tarayıcı olmayan yerel bir süreç `Content-Type:
    application/json` başlığını da taklit edip `/api/events`'e sahte olay yazabilir. ADR-013'ün
    tehdit modeli tarayıcıyla sınırlı olduğu için kabul edilen bir risktir, çitlenmiyor.
 
@@ -1051,3 +1131,181 @@ güncellenmesi (§2 "Sahiplik genişletme talebi") — bunlar kod turunu bloklam
 (symlink + işlem/yol eşleşmesi delikleri) doğrudan sonucu ve zorunlu — ama kod turunda bu
 fonksiyonun kendi birim testlerinin (whitelist tablosu, ~28 vaka) her adımı ayrı ayrı kapsadığından
 emin olunmalı, tek büyük "mutlu yol" testi yeterli olmayacaktır.
+
+---
+
+## QA doğrulama — tur 2 (qa-evaluator, 2026-09-05)
+
+**KARAR: DÜZELTME** · **ESKALE: false**
+
+Kapanmayan: 1 BLOKLAYICI (regresyon) + 3 ÖNEMLİ (üçü de regresyon) + 1 KISMİ · 2 NOT.
+Tur 1'in 14 bulgusunun 13'ü KAPANDI, 1'i KISMİ. **Yeni kusurların tamamı bu turun düzeltmelerinin
+ürettiği regresyonlardır** — kapsam dışına çıkılmadı; CEO kararları A-G / Karar 1-2, niyet
+fonksiyonu adları, kapsam denetimi ve biçim yeniden açılmadı.
+
+**Yöntem (dar tur):** §1-§9 gövdesi CEO kararları + D29-D33'e karşı okundu; iddialar
+`src/server/index.ts:288-356`, `src/server/store/jsonl-store.ts`,
+`src/server/store/projects-registry.ts`, `src/server/store/retention.ts`, `src/shared/types.ts:38-39`,
+`tests/features/projects/no-delete-guard.test.ts`, `docs/02-architecture.md:176/532/535/545`,
+`ADR-005 madde 5` **okunarak** doğrulandı. `OPERATION_PATTERNS` ile junction/`lstat` davranışı
+scratchpad'de **çalıştırıldı** (aşağıda). Hiçbir proje dosyası değiştirilmedi; yalnızca bu bölüm
+eklendi.
+
+### Tur 1 bulgularının kapanış tablosu
+
+| # | Şiddet | Durum | Kanıt |
+|---|---|---|---|
+| 1 | BLOKLAYICI | **KAPANDI** | CEO Karar 1 gövdeye yayıldı: §1 madde 7 (s.55-70) + "İçerik tipi allowlist'i" alt bölümü (s.71-90), §2.1 `adr-013-write-header.test.ts` amacı, §2.2 (`send-event.cjs:153` artık ✓ VERIFIED), §4 "API sözleşmesi notu" (s.472-478), §7 tamamen yeniden yazıldı, §8 mutasyon 7-8, §9 madde 1-2 "KARAR VERİLDİ". §7'de **düz muafiyet kalmadı** (s.730-737 muafiyeti içerik tipine devrediyor). Gövde ile sondaki karar bölümleri arasında çelişki bulunamadı. |
+| 2 | BLOKLAYICI | **KAPANDI** | §7 s.662-676 kod bloğu + s.680-697 kural listesi: allowlist, `;` öncesi + `trim().toLowerCase()`, başlıksız → red, yalnızca `POST /api/events`, dağıtıcı seviyesi, 400 `invalid_body`. §1 s.71-90 ile **birebir aynı** ifade (bir yerde denylist / başka yerde allowlist çelişkisi yok). `invalid_body` mevcut `ErrorCode` (`src/shared/types.ts:38`) ✓. |
+| 3 | BLOKLAYICI | **KAPANDI** (→ R1, R3 doğurdu) | §3 madde 2 s.168-227: adım 2 hedef `lstatSync`, adım 3 ata segment döngüsü, adım 5'te realpath artık **güvenlik sınırı değil** (s.207-209, yalnızca harf kanonikleştirme), adım 8 `OPERATION_PATTERNS` çalışma zamanında (s.185-190, 214-218). §6 tabloya üç satır, §8 mutasyon 9-11. Tasarım doğru; iki uygulanamaz nokta aşağıda (R1, R3). |
+| 4 | BLOKLAYICI | **KAPANDI** | §3 madde 4 s.239-305: `mkdirSync` `try` **içinde** (s.268), `finally`'deki `unlinkSync` kendi `try/catch`'inde (s.283-288), `readFileSync`/`realpathSync` `write_failed`'a düşürülüyor (s.302-306), `resolveInsideRoot` dış `try/catch` (s.219-221). §4 s.458-470 invaryant + mutasyon 12 (ENOTDIR fırlatma) ve 13 (`withDispatchErrorBoundary` bağlantısı). |
+| 5 | ÖNEMLİ | **KAPANDI** (→ R4) | §6 s.553-555 `DENIED`: `copyFile`, `cp(`, `cpSync`, `createWriteStream`, `truncate`, `ftruncate`, `openSync`, `writeSync`, `promises.open(` eklendi; `0.0.0.0`/`MC_HOST` tekrarı `no-external-host.test.ts`'e bırakıldı. Listenin **biçimi** ayrı sorun (R4). |
+| 6 | ÖNEMLİ | **KAPANDI** | §6 s.557-582: üç store dosyası dosya-seviyesi istisnadan çıkarıldı, dizge-seviyesi izinli küme yazıldı. İzinli dizgelerin **hepsi gerçekten kaynakta var** (✓ VERIFIED): `jsonl-store.ts:119,187,218` · `projects-registry.ts:76,78,79,83` · `retention.ts:52` (dosyanın gerçek yolu `src/server/store/retention.ts`). |
+| 7 | ÖNEMLİ | **KAPANDI** | §7 s.699-714: 12 satırlık rota tablosu — `POST`/`DELETE /api/projects` (`DELETE` dalı `index.ts:338` ile eşleşiyor), 5 içerik-tipi varyantı (`text/plain`, eksik, `multipart/form-data`, `application/json`, `; charset=utf-8`), 3 GET regresyon satırı. |
+| 8 | ÖNEMLİ | **KAPANDI** | §3 madde 5 s.317-392: BOM yalnızca karşılaştırmada soyuluyor (`parts[0]` değişmiyor), arama `[2, closingIdx)` aralığında, `/^status\s*:/` sabitlendi, 17 fixture isim isim (s.375-391). `...` kapanışı **mimari s.535'in kendi ifadesi** ("sonraki `---` veya `...` satırı kapanıştır") — kapsam genişletmesi değil. QA'nın 11 kenar durumunun 10'u fixture'larda birebir; "status anahtarı hiç yok" vakası fixture 17'nin içinde örtülü. |
+| 9 | ÖNEMLİ | **KISMİ** | Döngü + `sleepSyncMs` §3 madde 4'te (s.246-252, 291-303), retry testi §2.1'de — ama tur 1'in açıkça istediği **"denemeleri 1'e düşür → KIRMIZI" mutasyonu §8'de yok** (18 maddenin hiçbiri retry'ı mutasyonlamıyor). Developer bunu kendi tablosunda kabul ediyor (s.1029: "çitlenmiyor"). Ölçülmeyen katman riski sürüyor. |
+| 10 | ÖNEMLİ | **KAPANDI** (→ R2) | §6 s.608-658: fixture'a `.claude/settings.json`, `docs/qa/latest.md`, `package.json` eklendi; `archive/` **bilinçli olarak oluşturulmuyor**; İDDİA E pozitif assert (s.639); mutasyon 18 / §6 mutasyon 11 (README.md hedefi). İDDİA B'nin metni artık İDDİA A/E ile çelişiyor (R2). |
+| 11 | ÖNEMLİ | **KAPANDI** | §3 madde 1 s.163-167 adım 0 (`root` mutlak + `isDirectory`); §6 tabloda önek tuzağı + `root` yok/dosya/göreli satırları (s.526-530). Önek tuzağı gerekçesi mimari s.176 ile uyumlu. |
+| 12 | ÖNEMLİ | **KAPANDI** | §5 AC5 satırı s.491: tarama hedefi tek dosya (`write-gate.ts`), yasak desen (elle ayraç bölme/kurma), `timestamp.replace(/[:.]/g,'-')` istisnası adıyla beyaz listelendi. |
+| 13 | NOT | **KAPANDI** | §2 s.112-121 "Sahiplik genişletme talebi" — dört dosya + gerekçe + CEO/PM'e görev. |
+| 14 | NOT | **KAPANDI** | §1 "Kapsam DIŞI" s.104-107 echo bastırma satırı. |
+| Ölçmeyen 1 | — | KAPANDI (→ R2) | İDDİA E (s.639). |
+| Ölçmeyen 2 | — | KAPANDI (→ R3) | §5 AC2 `toEqual([4 ad])` (s.488). |
+| Ölçmeyen 3 | — | KAPANDI | §5 AC5 somut desenler (s.491). |
+| Ölçmeyen 4 | — | KAPANDI (→ R3) | Mutasyon 9-11 koşulsuz; "yorumla belgelenip atlanır" kaçış kapısı kalktı. |
+| Ölçmeyen 5 | — | KAPANDI | §6 s.593-601: negatif-kontrol fixture'ı mutasyondan **kalıcı teste** taşındı. |
+
+### D29-D33 uyum kontrolü
+
+| Karar | Uyum | Kanıt / kalan |
+|---|---|---|
+| **D29** içerik tipi allowlist | **Tam** | Kuralın beş parçası da eksiksiz ve §1 s.71-90 ile §7 s.680-697'de **aynı** yazılmış. **Delik aranışı — bulunamadı:** §7 s.667-675'teki if/else zinciri bilinmeyen veya küçük harfli metodu (`post`) `else if (req.method !== 'GET' …)` dalına düşürüyor → `x-mc-write` ister, **fail-closed**; `HEAD` de aynı dala düşer; rotalar `index.ts:318-339`'da **tam eşleşme** olduğundan `/api/events/` allowlist'i atlayamaz (403 alır, 404'e bile gitmez); `content-type` yinelendiğinde Node ilk değeri korur, `typeof raw === 'string'` varsayımı geçerli. Kalan (yeni değil, D6'nın içinde): doğru `Content-Type` + JSON olmayan gövde `ingest.ts`'te `parse_error` bayrağıyla yine kaydedilir — tarayıcı bu isteği preflight olmadan atamadığı için kabul edilmiş artık risk. Çit tablosu 5 içerik-tipi varyantını, hook'un tam biçimini ve 3 GET regresyonunu ölçüyor. |
+| **D30** symlink savunması | **Tasarım tam, iki uygulama noktası kırık** | `lstatSync` hem hedefe hem her var olan ata segmentine uygulanıyor; realpath açıkça "güvenlik sınırı değil" (s.207-209) — ölçümle de desteklendi (aşağıda realpath junction'ı çözüp gizliyor). `OPERATION_PATTERNS` gerçekten geri geldi (s.185-190) ve adım 8 çalışma zamanı kontrolü, "yapısal garanti" iddiası kalmadı. "Atlanabilir test GEÇTİ'ye katkı saymaz" kuralı **yazılı** (§6 s.538 + §9 risk 3 s.821). Ama `OPERATION_PATTERNS.archive` hiçbir gerçek arşiv adını kabul etmiyor (**R1**) ve adım 8'in tek testi/mutasyonu erişilemez bir fonksiyona dayanıyor (**R3**). |
+| **D31** asla fırlatmaz | **Tam** (retry mutasyonu KISMİ) | Bulgu 4 satırındaki kanıtlar. **`Atomics.wait` değerlendirmesi:** Node'da ana iş parçacığında izinlidir (tarayıcının aksine) ve gerçekten bloklar; ancak `write-gate.ts` bu turda **hiçbir HTTP handler'a bağlı değil** (§1 madde 7, §4 s.463-470), dolayısıyla bugün hiçbir isteği geciktirmiyor — seçim kabul edilebilir ve §9 risk 4 (s.826) en kötü hâli (~350 ms) adıyla yazmış. Kayda geçsin: **F-007 write-gate'i `PATCH /api/features`'a bağladığı gün bu 350 ms sunucunun tüm isteklerini durdurur**; o turun sözleşmesi bunu yeniden değerlendirmeli (bugün bulgu değil). Dağıtıcı sınırının **bağlı** olduğunu ölçen mutasyon 13 var. |
+| **D32** statik tarama | **İçerik tam, biçim kırık** | Liste ADR-005 madde 10 / mimari §11.4b ile eş; istisnalar dize seviyesinde (F-005'in kazanımı geri alınmamış); körlük assert'i + kalıcı negatif kontrol duruyor. Desenlerin **çıplak alt dizge** biçimi çiti doğuştan kırmızı yapıyor (**R4**). |
+| **D33** arama sınırı | **Tam** | Arama açılış `---` ile kapanış arasında (`[2, closingIdx)`); kapanış yoksa `invalid_body`, gövdeye asla inilmiyor. `...` kapanışı mimari s.535 ile **doğrulandı** — gereksiz genişletme değil; yanlış tarafa hata yapsa bile "yazmayı reddet" yönünde, güvenli. BOM iddiası tutarlı: yalnızca `parts[0]`'ın kopyası soyuluyor, eleman değişmiyor, `join('')` baytları koruyor. `/^status\s*:/` `status : x`'i yakalıyor, girintili `  status:`'ü satır başı çapasıyla atlıyor. 17 fixture tur 1'in 11 vakasını karşılıyor. |
+
+### Junction ölçümü (görev maddesi 3 — bu makinede, yönetici hakkı olmadan çalıştırıldı)
+
+Scratchpad'de geçici dizin açılıp `node` ile ölçüldü; dizin `fs.rmSync` ile temizlendi, artık dosya
+veya süreç kalmadı.
+
+| Ölçüm | Sonuç |
+|---|---|
+| `fs.symlinkSync(hedef, link, 'junction')` yönetici izni olmadan | **başarılı** (`created: true`) |
+| `fs.lstatSync(junction).isSymbolicLink()` | **`true`** — sözleşmenin adım 2/3 kontrolü junction'ı yakalar |
+| `fs.lstatSync(junction).isDirectory()` | `false` (reparse point, `lstat` izlemiyor) |
+| `fs.statSync(junction).isDirectory()` | `true` (izliyor) — `existsSync`/`statSync` tabanlı bir kontrol deliği **gizlerdi** |
+| `fs.realpathSync.native(junction) !== junction` | `true` — **realpath junction'ı çözüp deliği gizliyor**; "realpath güvenlik sınırı değil" gerekçesi ölçümle doğrulandı |
+| Ata segment senaryosu: `lstat(path.dirname(<junction>/F-001.md))` | `true` → adım 3 gerçekten ölçebiliyor |
+| `fs.symlinkSync(dosya, link, 'file')` (dosya-seviyesi) | **`EPERM`** — yönetici/Geliştirici Modu olmadan oluşmuyor |
+
+**Sonuç:** developer'ın ikili tasarımı doğru ve junction beklendiği gibi davranıyor. Dizin-seviyesi
+vaka determinist olarak kurulabiliyor; dosya-seviyesi vaka bu makinede fiilen `EPERM` veriyor, yani
+**zorunlu `vi.spyOn(fs, 'lstatSync')` testi taşıyıcı testtir** ve fırsatçı gerçek symlink denemesi
+bu ortamda atlanacaktır (sözleşme onu GEÇTİ'ye saymıyor — doğru).
+
+### YENİ (regresyon) — bu turun düzeltmelerinin ürettiği kusurlar
+
+| # | Şiddet | Bölüm/satır | Bulgu | İstenen düzeltme |
+|---|---|---|---|---|
+| **R1** | **BLOKLAYICI** | §3 madde 2 s.189 (`OPERATION_PATTERNS.archive`) vs. §3 madde 6 s.399-402 | **Geri getirilen adım 8, `archiveDenial`'ı tamamen kilitliyor.** Arşiv adı `` `${gate}-${new Date().toISOString().replace(/[:.]/g,'-')}.deny.md` `` → `G2-2026-09-05T14-58-24-375Z.deny.md`; desendeki `[0-9-]+` `T` ve `Z` karakterlerini kabul etmiyor. **Ölçüldü** (aynı regex + aynı zaman damgası üretimi scratchpad'de çalıştırıldı): `archive → false`, `G4-2` varyantı → `false`; diğer üç desen (`approval`/`denial`/`featureStatus`) → `true`. Sonuç: her `archiveDenial` çağrısı `write_denied` döner → §6 tablosunun `archiveDenial | .deny.md mevcut | ✓` satırı (s.524), §6 manifest senaryosunun `archiveDenial` pozitif assert'i (s.626-628) ve İDDİA C (s.635) **yapısal olarak KIRMIZI** doğar; AC3'ün arşiv yolu karşılanamaz. | `archive` desenini gerçek zaman damgası alfabesine göre yaz (ör. `-\d{4}-\d{2}-\d{2}T[\d-]+Z\.deny\.md$` ya da en azından `[0-9TZ-]+`) **ve** §6 tablosuna "üretilen arşiv adı kendi `OPERATION_PATTERNS.archive` desenine uyar" satırını ekle — yoksa iki bölüm yeniden birbirinden kayar. |
+| **R2** | **ÖNEMLİ** | §6 manifest s.629-641 (İDDİA A ↔ İDDİA B/E) | **İDDİA B, aynı turda eklenen İDDİA E ile çelişiyor.** İDDİA A `docs/features/F-001.md` ve `docs/approvals/G1.ok`'u "değişebilir" sayıyor, İDDİA E bu dosyaların sha256'sının **değiştiğini zorunlu kılıyor**, İDDİA B ise "`manifestBefore`'daki HER relPath (**yalnızca** `G2.deny.md` hariç) aynı (relPath,size,sha256) ile var" diyor. Fixture'da F-001.md ve G1.ok **önceden var** (s.612-615) → İDDİA B kaçınılmaz KIRMIZI. Tur 1'de İDDİA E yokken çelişki görünmüyordu; pozitif assert eklenince açığa çıktı. | İDDİA B'nin istisnasını "İDDİA A'nın izinli kümesi + `G2.deny.md`" olarak yaz (tek cümle). |
+| **R3** | **ÖNEMLİ** | §5 AC2 s.488 (`toEqual` 4 ad) ↔ §4 s.455 ↔ §6 s.521 + §8 mutasyon 11 s.768-772 | **Adım 8'in tek testi ve tek mutasyonu erişilemez bir fonksiyona dayanıyor.** §4 s.455 `operation` etiketinin "dışa açık olmadığını", AC2 testi de export yüzeyinin **tam olarak dört ad** olduğunu (`toEqual`) sabitliyor; §6 s.521'in "yanlış `operation` etiketiyle çağrı" satırı ve mutasyon 11 ise `resolveInsideRoot`'un test dosyasından **doğrudan çağrılabildiğini** varsayıyor ("TypeScript private erişim numarasına gerek yok"). İkisi aynı anda doğru olamaz: kod turunda ya AC2 testi ya adım 8'in çiti düşer ve düşen taraf sessizce adım 8 olur — tur 1'in "Ölçmeyen test riski 4"ü geri gelir. | Birini seç ve yaz: (a) `resolveInsideRoot`'u `@internal` olarak export et ve AC2 `toEqual` listesini bu beşinci adla **açıkça** genişlet (gerekçesiyle), ya da (b) adım 8'i genel API üzerinden gözlemleyen bir vaka tanımla ve mutasyon 11'i ona bağla. |
+| **R4** | **ÖNEMLİ** | §6 s.553-555 (`DENIED`) | **Genişletilen liste çıplak alt dizge olarak yazıldığı için tarama doğuştan KIRMIZI.** Emsal (`no-delete-guard.test.ts:49`) `content.includes(forbidden)` kullanıyor; yeni `'truncate'` deseni `src/**` içinde fs ile ilgisi olmayan **9 satırı** yakalıyor (ölçüldü): `src/features/events/server/normalize.ts:78,133,137,154` (`truncateSummary`, `raw_truncated`), `src/features/events/server/query.ts:21-24` (`Math.trunc` → `truncated`), `src/features/events/web/TimelineRow.tsx:56` ve `src/features/projects/web/ProjectRow.tsx:75` (Tailwind `truncate` sınıfı). AC3/AC5'in guard'ı ilk koşusunda kırmızı olur ve düzeltme kod turunda doğaçlanır. | Desenleri **çağrı biçiminde** sabitle (`truncateSync(`, `ftruncateSync(`, `copyFileSync(`, `cpSync(`, `createWriteStream(`, `openSync(`, `writeSync(`…) veya eşleşmeyi `fs.`/`promises.` öneki + `(` ile sınırla; §6'ya "desenler çağrı biçiminde eşleşir" cümlesini ekle. |
+| **NOT-1** | NOT | §6 s.557-560 | Dizge-seviyesi kontrol "her desenin **her geçtiği yer**" diye yazılmış; `projects-registry.ts:52` bir **yorum satırı** ve içinde `renameSync`/`unlinkSync` geçiyor (izinli tam-çağrı kümesinde yok). F-005'in çağrı biçimli deseni (`no-delete-guard.test.ts:69`, `unlinkSync\([^)]*\)`) bunu doğal olarak eler, düz `includes` elemez. R4'ün düzeltmesiyle aynı cümlede kapanır. |
+| **NOT-2** | NOT | §3 madde 2 adım 5-8 (s.207-218) | Adım 5 `realpathSync.native` diskteki **gerçek harf büyüklüğünü** döndürür, adım 8 desenleri ise harf duyarlıdır (`docs/features/…`). Bu depoda dizinler küçük harf olduğu için sorun yok; ama izlenen bir projede `Docs/Features` varsa **tüm yazmalar sessizce `write_denied`** olur. Desen karşılaştırmasını harf duyarsız yapmak ya da bu sınırlamayı §9 risklerine yazmak yeterli. |
+
+### Kod turuna başlamadan önce kapatılması gereken
+
+**R1** tek bloklayıcı: iki bölümün birbirine bakmamasından doğuyor, düzeltmesi tek desen.
+R2/R3/R4 de kod yazılmadan kapatılmalı — üçü de "kod turunda bakarız" denirse ya yapısal KIRMIZI
+test ya sessizce ölçmeyen katman üretir (projenin on kez tekrarlanan kalıbı). Bulgu 9'un eksik
+mutasyonu (§8'e "`delaysMs`'i tek denemeye düşür → EPERM retry testi KIRMIZI") aynı düzeltmeyle
+tek satırda eklenebilir. Bunlar dışında sözleşme kod turuna hazır: D29 zincirinde delik
+bulunamadı, D30'un ölçüm tasarımı bu makinede fiilen doğrulandı, D31 ve D33 tam.
+
+---
+
+## Developer düzeltme yanıtı — tur 3 (2026-09-05)
+
+Bu turda **yalnızca bu sözleşme dosyası** değiştirildi; `src/`, `tests/`, `scripts/`, `.claude/`,
+`.github/`, `docs/**` (bu dosya hariç) dokunulmadı, kod yazılmadı, commit atılmadı. QA'nın
+KAPANDI dediği 13 bulgu, D29-D33 ve içerik-tipi zinciri (D1-D6) **yeniden açılmadı** — yalnızca
+aşağıdaki 7 kalem işlendi.
+
+| # | Ne değiştirdim | Nerede |
+|---|---|---|
+| R1 (BLOKLAYICI, arşiv deseni zaman damgasıyla uyuşmuyor) | `OPERATION_PATTERNS.archive` deseni `\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z` biçimine daraltıldı (gerçek `toISOString().replace(/[:.]/g,'-')` çıktısıyla harf harf eşleşecek şekilde). §3 madde 6 sonuna elle-eşleştirme kanıtı eklendi (örnek ad + `test()===true`, scratchpad'de node ile çalıştırıldı — aşağıda ayrıca gösteriliyor). §6 whitelist tablosuna "üretilen arşiv adı kendi deseniyle eşleşir ✓" satırı eklendi. §8'e mutasyon 19 eklendi (deseni eski/dar hâline daralt → `archiveDenial` mutlu-yol testi KIRMIZI). | §3 madde 2 (desen), §3 madde 6 sonu (kanıt), §6 (whitelist satırı), §8 mutasyon 19 |
+| R4 (ÖNEMLİ, çıplak `truncate` yanlış pozitif) | `DENIED` listesindeki çıplak `'truncate'`/`'ftruncate'` çağrı-biçimli `'truncate('`/`'truncateSync('`/`'ftruncate('`/`'ftruncateSync('`'e değiştirildi. Gerekçe paragrafı eklendi: hangi 9 satırın (normalize.ts:78,133,137,154; query.ts:21-24; TimelineRow.tsx:56; ProjectRow.tsx:75) artık eşleşmediği, gerçek `fs.truncateSync(...)` çağrısının hâlâ yakalandığı. Diğer 12 çıplak `DENIED` deseni aynı sınıf yanlış pozitif için `src/**` genelinde grep'lendi — başka örnek bulunamadı. | §6 `DENIED` listesi + gerekçe paragrafı |
+| R2 (ÖNEMLİ, İDDİA A↔B çelişkisi) | İDDİA B'nin istisna kümesi "yalnızca `G2.deny.md`"den "İDDİA A'nın değişen/eklenen kümesi (`F-001.md`, `G1.ok`, arşivlenen `G2.deny.md`)" olarak genişletildi — tek cümle. | §6 manifest testi, İDDİA B |
+| R3 (ÖNEMLİ, adım 8 testi erişilemez fonksiyona dayanıyor) | Seçenek (b): §6'daki internal-erişim varsayan whitelist satırı kaldırıldı, yerine "adım 8'in tek kanıtı §8 mutasyon 11'dir" açıklaması eklendi. §8 mutasyon 11 yeniden yazıldı: artık test dosyasından `resolveInsideRoot`'a doğrudan erişmiyor, kaynakta `writeGateApproval`'ın `operation` argümanı mutasyonlanıyor ve **genel API üzerinden** var olan mutlu-yol testinin KIRMIZI'ye döndüğü ölçülüyor. `operation`'ın dışa açık olmaması (§4) ve AC2'nin dört-export `toEqual` sabiti **bozulmadı**. | §6 (satır kaldırıldı + açıklama), §8 mutasyon 11 |
+| Tur 1 Bulgu 9 (KISMİ, retry mutasyonu eksik) | §8'e mutasyon 20 eklendi: `delaysMs`'i `[]`'e düşür → 3-deneme EPERM/EBUSY retry birim testi KIRMIZI. | §8 mutasyon 20 |
+| NOT-1 (çıplak `truncate` yorum satırına da çarpıyordu) | R4 ile aynı düzeltmeyle kapandı — üç store dosyasının dizge-seviyesi kontrolünün **çağrı-biçimli regex** (`unlinkSync\([^)]*\)` vb.) kullandığı, naif `includes` olmadığı gövdede açıkça yazıldı; `projects-registry.ts:52` yorum satırı bu nedenle hiç eşleşmiyor. Ek kod/test gerekmiyor. | §6 (dizge-seviyesi kontrol paragrafı) |
+| NOT-2 (harf duyarlılığı: adım 5 kanonikleştirme vs. adım 8 desenleri) | Yapılmayacak, gerekçeli: bu depoda ve fixture'larda dizin adları zaten küçük harf, büyük harfli bir proje dizini bugün gerçekleşmeyen bir senaryo (Karpathy §2 — gerçekleşmeyen senaryo için savunma eklenmez). §9'a risk maddesi olarak yazıldı, çitlenmiyor; F-007/F-008 ihtiyaç doğarsa yeniden değerlendirir. | §9 risk 5 |
+| CEO notu (Atomics.wait → F-007) | QA'nın "bu turda kabul edilebilir" değerlendirmesi onaylandı ve §9 risk 4'e "F-007'ye devredilen taahhüt" cümlesi eklendi: F-007 write-gate'i bir handler'a bağladığında `Atomics.wait` tabanlı retry'ı asenkron bir yaklaşımla değiştirmek zorunda. | §9 risk 4 |
+
+**R1 kanıtı (çalıştırılmış, scratchpad'de node ile ölçüldü — gerçek proje dizinine yazılmadı):**
+
+```js
+const OLD = /^docs\/approvals\/archive\/(G[0-6](-\d{1,3})?|ASSETS)-[0-9-]+\.deny\.md$/
+const NEW = /^docs\/approvals\/archive\/(G[0-6](-\d{1,3})?|ASSETS)-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.deny\.md$/
+const name = 'docs/approvals/archive/G2-2026-09-05T15-08-33-641Z.deny.md'   // gerçek üretimden
+OLD.test(name)  // => false  (R1'in kök nedeni — her archiveDenial write_denied dönüyordu)
+NEW.test(name)  // => true   (düzeltildi)
+// G4-2 (gruplu gate) ve ASSETS varyantları da NEW ile true; NEW, approval/denial/featureStatus
+// hedefleriyle çapraz eşleşmiyor (cross-check: false).
+```
+
+**R4 kanıtı (grep ile ölçüldü):** `grep -rn -i truncate src` yalnızca 4 dosya/9 satır buluyor
+(hepsi meşru — `truncateSummary`, `Math.trunc`/`truncated` değişkeni, Tailwind `truncate` sınıfı);
+`'truncate('`/`'truncateSync('`/`'ftruncate('`/`'ftruncateSync('` bu 9 satırın hiçbiriyle
+eşleşmiyor (hepsinde `truncate` sonrası `(` gelmiyor).
+
+**Gövdedeki kalan tutarsızlık:** Bulunamadı. §3/§4/§6/§7/§8/§9 CEO kararları A-G, Karar 1-2 ve
+D29-D33 ile yeniden karşılaştırıldı; yeni eklenen mutasyon numaraları (19, 20) mevcut 1-18
+listesini bozmadan sona eklendi, önceki QA metinlerindeki numara referansları (ör. "mutasyon 9-11")
+geçmiş turun kaydı olarak korundu ve değiştirilmedi.
+
+**Not (kapsam dışı gözlem):** `.claude/agent-memory/qa-evaluator/feedback_duzeltme-turu-kontrolleri.md`
+bu turdan bağımsız olarak zaten değişmiş görünüyor (başka bir ajan turunun kendi hafıza yazımı) —
+bu turda dokunulmadı, kısıtlar gereği dokunulmayacak.
+
+---
+
+## CEO onayı — sözleşme KAPANDI (2026-09-05)
+
+QA tur 2, tur 1'in 14 bulgusunun 13'ünü KAPANDI saydı ve D29-D33'ün **gövdeye yayıldığını**
+doğruladı; kalan yedi madde tur 3'te kapatıldı. Dördüncü bir tam QA turu yerine CEO doğruladı:
+
+- **R1 (bloklayıcı) — deseni kendim çalıştırdım.** `G2-…T15-08-33-641Z.deny.md`,
+  `G4-2-…` ve `ASSETS-…` üçü de **eşleşti**; zaman damgasız `G2-2026-09-05.deny.md` ve `evil.md`
+  **eşleşmedi**. Eski desen (`[0-9-]+`) `T`/`Z` harflerini kabul etmiyordu ve her `archiveDenial`
+  `write_denied` dönerdi — AC3 doğuştan kırmızı olurdu.
+- **R4** — `truncate` desenleri çağrı biçimine (`truncate(`, `truncateSync(`, …) daraltıldı;
+  `normalize.ts`/`query.ts`/`TimelineRow.tsx`/`ProjectRow.tsx`'teki kendi yardımcılarımız artık
+  yanlış pozitif üretmiyor. Diğer 12 desen için aynı sınıf arandı, bulunmadı.
+- R2, R3, Bulgu 9 ve iki NOT kapandı; NOT-2 bilinçli "yapmıyoruz" olarak §9'a geçti.
+
+**KARAR: ONAY.** Kod turu başlayabilir.
+Bağlayıcı sıra: bu bölüm → `## CEO kararları — §9'daki iki soruya cevap` → **D29-D33** →
+CEO kararları **A-G** → sözleşme gövdesi → QA tur 2'nin NOT'ları → feature notundaki 8 AC.
+
+**Sözleşme aşaması bilançosu:** 3 developer + 2 QA turu, 14 bulgu + 4 regresyon, **tek satır kod
+yazılmadan** kapandı. Üç yakalama tek başına turların parasını çıkardı:
+
+1. **Kök içi symlink AC1'i deliyordu.** İzlenen projede `docs/features/F-001.md` bir symlink olup
+   `src/index.ts`'i gösterse, "kök içinde mi" kontrolünden geçer ve yazma kapısı **kaynak dosyayı
+   değiştirirdi**. Sözleşme ADR-005'in çalışma-zamanı beyaz listesini düşürmüştü. QA ampirik ölçtü:
+   `junction` yönetici izni olmadan oluşuyor, `lstat` onu symlink görüyor, ama **`statSync` izliyor**
+   ve **`realpathSync.native` çözüp gizliyor** — yani "realpath ile doğrularım" refleksi deliği
+   kapatmak yerine **saklardı**.
+2. **Arşiv deseni kendi ürettiği adla eşleşmiyordu.** Desen yazılmış ama örneğe karşı hiç
+   çalıştırılmamıştı. Kod turunda bulunsa "neden hiçbir arşivleme çalışmıyor" diye aranırdı.
+3. **İçerik tipi zincirinde iki delik vardı:** denylist yazılsaydı `multipart/form-data` geçerdi
+   (o da CORS güvenli listesinde), ve **başlıksız** istek (tipsiz `Blob` ile `sendBeacon`) hiç
+   preflight tetiklemeden geçerdi. İkisi de allowlist + "başlık yoksa red" ile kapandı.
+
+**F-007'ye devredilen taahhüt:** `Atomics.wait` tabanlı senkron yeniden deneme bu turda kabul
+edilebilir (write-gate hiçbir handler'a bağlı değil), ama F-007 onu `PATCH /api/features`'a
+bağladığı gün ~350 ms **tüm istekleri** durdurur — asenkron bir yaklaşımla değiştirilmeli.

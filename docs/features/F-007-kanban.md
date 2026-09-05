@@ -43,3 +43,9 @@ Kaynak: `docs/02-architecture.md` §7; `docs/03-ux.md` ekran 2 + akışlar (a), 
    statik etiket oldukları için gezinme kaybı yok, ama **Kanban gerçek sekmeye dönüşünce bu kuralı
    ihlal eder**. F-007 sözleşmesine dar genişlikte gezinilebilirlik kriteri konmalı ve E2E'de
    375px'te ölçülmeli.
+4. **`Atomics.wait` asenkrona çevrilecek.** F-006'nın yazma kapısı EPERM/EBUSY için `Atomics.wait`
+   ile **senkron** yeniden deneme yapıyor (50/100/200 ms). F-006'da kabul edilebilirdi çünkü modül
+   hiçbir HTTP handler'a bağlı değildi. **F-007 onu `PATCH /api/features`'a bağladığı gün** bu
+   ~350 ms ana iş parçacığını bloklar ve SSE akışı dahil **tüm istekleri** durdurur. F-007
+   sözleşmesi bunu asenkron bir yaklaşımla değiştirmek zorundadır. Kaynak: `docs/qa/F-006-contract.md`
+   §9 risk 4 + QA doğrulama tur 2.

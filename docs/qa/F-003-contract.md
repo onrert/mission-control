@@ -1417,3 +1417,36 @@ yazılmadan** kapandı. En pahalı üç yakalama:
    tam ona düşmüştü.
 3. AC6'nın "duraklatılmışken liste kaymaz" iddiasının jsdom'da ölçülmesi — jsdom layout yapmaz,
    `scrollTop` hep 0; uygulama gerçekten zıplasa bile test yeşil kalırdı.
+
+---
+
+## CEO düzeltmesi — ilk yükleme URL'i (2026-09-05, kod turu sırasında bulundu)
+
+**Sözleşme hatalı:** §3/§4'te üç yerde (satır ~347, ~517, ~532) ilk yükleme ve `resync` için
+`GET /api/events?since_seq=-1&limit=200` yazıyor. Bu çağrı gerçek sunucudan **400 `invalid_body`**
+alır ve zaman çizelgesi **hiç yüklenmez**.
+
+**Kanıt:** `src/features/events/server/query.ts:9-14` —
+```
+export function parseSinceSeq(raw: string | null): number | 'invalid' {
+  if (raw === null) return -1
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < 0) return 'invalid'
+  return n
+}
+```
+`-1` yalnızca **parametre yokken** kullanılan iç varsayılandır; telde açıkça gönderilince
+`n < 0` dalına düşer ve `'invalid'` olur (`query.ts:42-47` 400 döndürür).
+
+**Karar:** İlk yükleme ve `resync` sonrası tam yeniden yükleme **`since_seq` parametresini hiç
+göndermez**: `GET /api/events?limit=200`. Sunucu parametre yokken zaten tüm ring'i kapsıyor —
+istenen davranış bu. `since_seq=0` **kullanma**: o "seq 0'dan sonrası" demektir ve ilk olayı atlar.
+
+**Bu hata neden 3 developer + 2 QA turundan sağ çıktı:** iki taraf da `-1`'i "iç varsayılan"
+olarak doğru okudu ama "tel değeri" olarak yazdı. Birim testi `fetch`'i mock'ladığı için gerçek
+sunucuya hiç sormadı; gerçek çağrıyı yapan tek test katmanı (E2E) ise henüz koşmamıştı.
+Ders: **mock'lanmış bir istemci testi, sunucunun o URL'i kabul ettiğini kanıtlamaz.**
+
+**Zorunlu ek çit:** ilk yükleme URL'inin gerçek sunucu tarafından kabul edildiğini kanıtlayan bir
+**entegrasyon** testi yaz (mock yok, gerçek `createServer` + gerçek istek → 200 bekle).
+Mutasyon: URL'e `since_seq=-1` geri koy → bu test **KIRMIZI** vermeli.

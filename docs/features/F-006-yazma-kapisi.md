@@ -34,6 +34,16 @@ Kaynak: `docs/02-architecture.md` §7, §11.4; ADR-005.
   F-005'in mevcut testleri (Ekle/Kaldır hata yolları dahil) **değişmeden** geçmeli.
 - `src/shared/types.ts` — başlık adı ve içerik tipi sabitleri.
 
+**İkinci genişletme (CEO onayı, 2026-09-05 — developer `blockers.md`'de sordu, doğru davrandı):**
+F-006'nın eklediği `x-mc-write` zorunluluğu, F-005'in **test** dosyalarını da kırıyor: onlar API'yi
+başlıksız çağırıyor. Düzeltme tamamen **mekanik** (çağrı sitelerine `{ headers: { 'x-mc-write': '1' } }`
+eklemek); hiçbir davranış veya assert değişmeyecek.
+- `tests/integration/projects-api.test.ts` (~13 çağrı sitesi)
+- `tests/features/projects/web/SettingsScreen.test.tsx` (1 assert)
+- `tests/e2e/settings.spec.ts` (2 çağrı sitesi)
+**Kısıt:** yalnızca başlık eklenecek. Bir testin *beklentisi* değişmesi gerekiyorsa bu, korumanın
+F-005'in davranışını bozduğu anlamına gelir → dur ve CEO'ya bildir.
+
 ## Notlar / kararlar
 - Bu feature bir güvenlik sınırıdır; QA KALDI verirse kapsam daraltılarak değil, düzeltilerek geçilir.
 

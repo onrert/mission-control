@@ -133,6 +133,20 @@ describe('no-write-gate-bypass — genel yazma kapısı statik taraması (F-006 
     }
   })
 
+  // D32/mutasyon 14 — QA Bulgu 5'in genişlettiği desenlerin HER BİRİ ayrı ayrı yakalanır
+  // (yalnızca ilk emsal olan mkdirSync değil) — bir desen yanlışlıkla listeden çıkarsa/yazım
+  // hatası içerirse bu test o deseni tek başına kırar.
+  it.each([
+    ['fs.copyFileSync(a, b)', 'copyFileSync('],
+    ['fs.cpSync(a, b)', 'cpSync('],
+    ['fs.createWriteStream(a)', 'createWriteStream('],
+    ['fs.truncateSync(a, 0)', 'truncateSync('],
+    ["fs.openSync(a, 'w')", 'openSync('],
+    ['fs.writeSync(fd, data)', 'writeSync('],
+  ] as const)('kalıcı negatif-kontrol: %s deseni (%s) yakalanır', (snippet) => {
+    expect(findCalls(snippet).length).toBeGreaterThan(0)
+  })
+
   it.each(scannedFiles.filter((f) => !(f in STORE_FILES)))(
     '%s yasak dosya sistemi çağrısı içermiyor',
     (file) => {

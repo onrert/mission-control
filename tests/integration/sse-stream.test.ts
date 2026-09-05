@@ -77,6 +77,23 @@ describe('GET /api/stream — SSE entegrasyonu', () => {
     client.close()
   })
 
+  it('AC1: hello çerçevesi ring dolu iken de id: taşımaz (mutasyon 7 hedefi — boş ringde ringBounds.to undefined olduğu için mutasyonu yakalamaz, dolu ring zorunlu)', async () => {
+    const postStatus = await postEvent(handle.baseUrl, {
+      hook_event_name: 'PreToolUse',
+      project_name: 'p',
+      session_id: 's',
+    })
+    expect(postStatus).toBe(202)
+
+    const client = await connectSse(handle.port)
+    const hello = await client.waitForFrame((f) => f.event === 'hello')
+    expect(hello.id).toBeUndefined()
+    const data = JSON.parse(hello.data) as { seq: number | null; ring_from: number | null }
+    expect(data.seq).toBe(0)
+    expect(data.ring_from).toBe(0)
+    client.close()
+  })
+
   it('AC1: POST sonrası event çerçevesi 2000 ms içinde gelir, id = seq', async () => {
     const client = await connectSse(handle.port)
     await client.waitForFrame((f) => f.event === 'hello')

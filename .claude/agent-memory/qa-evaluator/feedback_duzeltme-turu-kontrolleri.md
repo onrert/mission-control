@@ -80,6 +80,20 @@ Dar "düzeltme turu doğrulaması" briefinde şu üç kontrol her seferinde iş 
    bir sayaç)" gibi kaçış yolları bu tür imkânsızlıkları gizler; tek ve uygulanabilir gözlem
    yolunu sözleşmede sabitlet.
 
+15. **Yeni bir "sarmalayıcı/sınır" eklendiyse MANTIĞINI değil BAĞLANTISINI mutasyonla.** F-005
+   fix1'de `withDispatchErrorBoundary`'nin try/catch'i iki birim testiyle çitliydi (mutasyon
+   KIRMIZI), ama `http.createServer(withDispatchErrorBoundary(fn))` çağrısındaki sarmalayıcıyı
+   **silmek** 430/430 yeşil bıraktı — yani teslimat uygulamadan koparılabiliyordu. Kural: export
+   edilip doğrudan birim testlenen her sarmalayıcı/middleware için ayrıca "gerçek HTTP üzerinden
+   bağlı mı" mutasyonu çalıştır.
+16. **Aynı hata sınıfının SUNUCU yarısı kapandığında İSTEMCİ yarısını ayrıca ölç.** F-005 fix1
+   sunucuda 500 + `"Liste kaydedilemedi, tekrar deneyin."` döndürüyordu; `add` yolu bunu banner
+   olarak gösteriyor, `remove` yolu `if (!res.ok) return` ile sessizce yutuyordu (buton
+   "çalışmıyor" gibi görünüyor). Süreç eskiden çöktüğü için bu davranış hiç gözlemlenememişti.
+   Fault injection'ı **tarayıcıdan** da tekrarla, yalnızca curl'den değil.
+17. **`status: qa`/`fix` gibi frontmatter alanlarını rapordan sonra sen güncelle**; KOŞULLU
+   GEÇTİ'de `fix` bırak ve kapanış için istenen maddeleri raporun sonunda numaralı ver.
+
 **Why:** Düzeltme turları dar tutulduğu için yeniden inceleme yapılmaz; kaçan kusur bir daha
 bakılmayan bölgede kalır. **How to apply:** Kapanış tablosunu yazmadan önce bu üç kontrolü
 uygula; kanıtı komut çıktısı + dosya:satır ile ver. Ayrıca arşivleme yaparken önceki raporun

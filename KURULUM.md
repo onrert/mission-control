@@ -1,14 +1,5 @@
 # KURULUM.md — send-event.cjs hook kurulumu
 
-> Bu dosyanın önceki içeriği `C:\dev\app-factory` şablonundan kopyanın kalıntısıydı (App
-> Factory'nin kendi bootstrap talimatı — yeni bir proje klasörünü agent/hook/skill iskeletiyle
-> doldurmak için, bu projenin kendisiyle ilgisi yok; ne README.md ne başka bir Mission Control
-> dokümanı ona referans veriyordu). `docs/02-architecture.md` §16, `docs/decisions/
-> ADR-006-hook-tasima-bicimi.md` ve `docs/features/F-004-send-event-hook.md` bu dosyanın
-> **hook kurulum belgesi** olmasını bekliyordu (üçü de bu adı bu amaçla anıyor); F-001'de
-> `F-000-template.md`'nin silinmesiyle aynı gerekçeyle (kalıntı şablon içeriği gerçek amacıyla
-> karışmasın), içerik burada gerçek amacına göre değiştirildi.
-
 Bu belge, Mission Control'ün izlediği projelere `send-event.cjs` hook scriptini nasıl
 kuracağınızı ve kurulumu nasıl doğrulayacağınızı anlatır. Arka plan: `docs/02-architecture.md`
 §8, `docs/decisions/ADR-006-hook-tasima-bicimi.md`.
@@ -97,3 +88,26 @@ panele düştüğü **elle** doğrulanmalıdır — bu, otomatikleştirilemeyen 
 karşı bir kez çalıştırıldı (sözleşme §3 madde 7, önceden onaylı istisna) — panel artık kendi
 oturumlarını da izliyor. Yukarıdaki 5 adımı bu depoda bir Claude Code oturumu açarak
 tamamlayabilirsiniz.
+
+**Doğrulanmış sonuç (2026-09-05, CEO):** kullanıcı bu depoda `npm run install-hook -- .`
+çalıştırdı, panel açıldı ve gerçek oturumda araç çağrıları yapıldı — olaylar canlı düştü
+(dosya 4 satırdan 9 satıra çıktı, `GET /api/events` yeni olayları döndürdü). Örnek gerçek olay:
+`hook_event_name: PreToolUse` · `tool_name: Bash` · `session_id: b13e8d3f-…` ·
+`project_name: mission-control` · `transcript_path` dolu · `client_version: 1` · `flags: []`.
+`.seq` kayması yok (kurulum öncesi 4 → sonrası 9, satır sayısıyla tutarlı). Ayrıntı ve altı
+güvenlik hook'unun (`session-start`, `gate-check`, `block-dangerous`, `asset-guard`,
+`post-format`, `stop-check`) korunduğu denetim: `docs/features/F-004-send-event-hook.md`
+"AC5 doğrulama kanıtı" ve `docs/qa/F-004-2026-09-05.md` §3 (qa-evaluator'ın bağımsız denetimi).
+
+## Not (geliştirici notu, kod turu)
+
+Bu dosyanın önceki içeriği `C:\dev\app-factory` şablonundan kopyanın kalıntısıydı (App
+Factory'nin kendi bootstrap talimatı — yeni bir proje klasörünü agent/hook/skill iskeletiyle
+doldurmak için, bu projenin kendisiyle ilgisi yok; ne README.md ne başka bir Mission Control
+dokümanı ona referans veriyordu). `docs/02-architecture.md` §16, `docs/decisions/
+ADR-006-hook-tasima-bicimi.md` ve `docs/features/F-004-send-event-hook.md` bu dosyanın
+**hook kurulum belgesi** olmasını bekliyordu (üçü de bu adı bu amaçla anıyor); F-001'de
+`F-000-template.md`'nin silinmesiyle aynı gerekçeyle (kalıntı şablon içeriği gerçek amacıyla
+karışmasın), içerik burada gerçek amacına göre değiştirildi. Aynı gerekçe `docs/progress.md`'de
+de tutuluyor; bu not yalnızca dosya geçmişini merak eden biri için burada, kullanıcı akışının
+önünde değil (QA F-004 kod turu, bulgu N1).

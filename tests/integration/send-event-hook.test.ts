@@ -75,16 +75,35 @@ function startResetServer(): Promise<{ server: net.Server; port: number }> {
   })
 }
 
-/** Accepts a connection and never writes a single byte -> only the idle guard can save us. */
-function startSilentServer(): Promise<{ server: net.Server; port: number }> {
+/**
+ * Accepts a connection and never writes a single byte -> only the idle guard can save us.
+ * `socketLifetimeMs` resolves with the real wall-clock time between TCP accept and socket close
+ * (i.e. when the script's process exit closes its end of the connection) — measured from the
+ * connection itself, so it is unaffected by Node process-startup jitter. Used to tell the idle
+ * guard (~100ms) apart from the idle-independent total guard (~150ms) — bulgu Ö1. `socket.resume()`
+ * is required: an unconsumed (paused) incoming stream can delay/suppress the socket's own
+ * `'close'` event, independent of when the remote side actually closes the connection.
+ */
+function startSilentServer(): Promise<{
+  server: net.Server
+  port: number
+  socketLifetimeMs: Promise<number>
+}> {
   return new Promise((resolve) => {
+    let resolveLifetime: (ms: number) => void
+    const socketLifetimeMs = new Promise<number>((res) => {
+      resolveLifetime = res
+    })
     const server = net.createServer((socket) => {
+      const acceptedAt = Date.now()
       socket.on('error', () => {})
+      socket.resume()
+      socket.on('close', () => resolveLifetime(Date.now() - acceptedAt))
     })
     server.listen(0, '127.0.0.1', () => {
       const address = server.address()
       if (address === null || typeof address === 'string') throw new Error('beklenmeyen adres türü')
-      resolve({ server, port: address.port })
+      resolve({ server, port: address.port, socketLifetimeMs })
     })
   })
 }
@@ -95,11 +114,27 @@ function startSilentServer(): Promise<{ server: net.Server; port: number }> {
  * (40ms < 100ms idle threshold, so the idle guard never fires). Server-side `socket.on('error')`
  * is required (QA tur2 "Kod turuna devredilen notlar" madde 1): once the script exits it closes
  * its end, and further `socket.write()` calls would otherwise crash this test process.
+ *
+ * `socketLifetimeMs` resolves with the real wall-clock time between TCP accept and socket close
+ * (i.e. when the script's process exit closes its end of the connection) — measured from the
+ * connection itself, so it is unaffected by Node process-startup jitter. Used as a lower-bound
+ * proof that the script really lived until the total-time guard (~150ms), not until the orphaned
+ * stdin guard (~120ms) — bulgu B1.
  */
-function startDripServer(): Promise<{ server: net.Server; port: number }> {
+function startDripServer(): Promise<{
+  server: net.Server
+  port: number
+  socketLifetimeMs: Promise<number>
+}> {
   return new Promise((resolve) => {
+    let resolveLifetime: (ms: number) => void
+    const socketLifetimeMs = new Promise<number>((res) => {
+      resolveLifetime = res
+    })
     const server = net.createServer((socket) => {
+      const acceptedAt = Date.now()
       socket.on('error', () => {})
+      socket.resume()
       // A valid status line + an unterminated header keeps Node's HTTP parser waiting for
       // more (no parse error, no completed headers, no `response` event) while each written
       // byte still counts as socket activity for the idle guard. Raw non-HTTP bytes would
@@ -113,12 +148,15 @@ function startDripServer(): Promise<{ server: net.Server; port: number }> {
         }
         socket.write('x')
       }, 40)
-      socket.on('close', () => clearInterval(interval))
+      socket.on('close', () => {
+        clearInterval(interval)
+        resolveLifetime(Date.now() - acceptedAt)
+      })
     })
     server.listen(0, '127.0.0.1', () => {
       const address = server.address()
       if (address === null || typeof address === 'string') throw new Error('beklenmeyen adres türü')
-      resolve({ server, port: address.port })
+      resolve({ server, port: address.port, socketLifetimeMs })
     })
   })
 }
@@ -184,7 +222,7 @@ describe('AC2: sunucuya erişilemezse hata basmaz, oturumu bloklamaz, exit 0', (
   })
 
   it('sessiz sunucu (a) — yalnızca idle bekçisi tetiklenir', async () => {
-    const { server, port } = await startSilentServer()
+    const { server, port, socketLifetimeMs } = await startSilentServer()
     try {
       const result = await runHook(JSON.stringify({ hook_event_name: 'PreToolUse' }), {
         env: { MC_PORT: String(port) },
@@ -193,13 +231,20 @@ describe('AC2: sunucuya erişilemezse hata basmaz, oturumu bloklamaz, exit 0', (
       expect(result.stdout).toBe('')
       expect(result.stderr).toBe('')
       expect(result.elapsedMs).toBeLessThan(1000)
+      // Üst sınır (ayırt edici, bulgu Ö1): idle bekçisi (~100ms) toplam bekçiden (~150ms) ÖNCE
+      // ateşlemeli. `req.setTimeout(IDLE_TIMEOUT_MS, …)` kaldırılırsa yalnızca toplam bekçi
+      // kalır ve bağlantı ~150ms+ yaşar — eşik ikisini ayırır (QA F-004-2026-09-05.md §6:
+      // düzeltme yerinde 153-175ms ölçülmüştü; idle çalışıyorsa bundan belirgin şekilde erken
+      // kapanmalıdır).
+      const lifetimeMs = await socketLifetimeMs
+      expect(lifetimeMs).toBeLessThan(145)
     } finally {
       server.close()
     }
   })
 
   it('damla sunucu (b) — yalnızca toplam süre bekçisi tetiklenir', async () => {
-    const { server, port } = await startDripServer()
+    const { server, port, socketLifetimeMs } = await startDripServer()
     try {
       const result = await runHook(JSON.stringify({ hook_event_name: 'PreToolUse' }), {
         env: { MC_PORT: String(port) },
@@ -208,6 +253,15 @@ describe('AC2: sunucuya erişilemezse hata basmaz, oturumu bloklamaz, exit 0', (
       expect(result.stdout).toBe('')
       expect(result.stderr).toBe('')
       expect(result.elapsedMs).toBeLessThan(1000)
+      // Alt sınır (bulgu B1): bağlantı TCP kabulünden sokete kadar gerçekten toplam süre
+      // bekçisine (TOTAL_TIMEOUT_MS=150ms) kadar yaşamalı. `stdin.on('end', …)` içindeki
+      // `clearTimeout(stdinGuard)` satırı silinirse yetim stdin zamanlayıcısı süreci ~120ms'de
+      // erken sonlandırır — bu ölçüm (spawn'dan değil, TCP kabulünden itibaren) Node soğuk
+      // başlangıç jitter'ından bağımsızdır. QA'nın ölçtüğü ampirik dağılım (F-004-2026-09-05.md
+      // §6): düzeltme yerinde 153-175ms, mutasyonlu 118-141ms — 145ms eşiği ikisini ~8ms payla
+      // net ayırır.
+      const lifetimeMs = await socketLifetimeMs
+      expect(lifetimeMs).toBeGreaterThanOrEqual(145)
     } finally {
       server.close()
     }

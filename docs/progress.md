@@ -454,3 +454,72 @@ Her oturum sonu CEO/developer ekler: tarih · ne yapıldı · nasıl doğruland�
 - Kullanıcı: `npm run install-hook -- .` çalıştırıp AC5'i `KURULUM.md`'ye işlesin.
 - Sıradaki feature: **F-003** (SSE) — Faz 1 sırası F-001 → F-002 → F-004 → F-003 → F-005 →
   F-006 → F-007.
+
+## F-004 düzeltme turu 1 (developer, 2026-09-05)
+
+QA kod turu **KALDI** verdi (`docs/qa/F-004-2026-09-05.md`, 1 BLOKLAYICI + 2 ÖNEMLİ + 2 NOT).
+Ürün kodunda net değişiklik yok (`git diff` `.claude/hooks/send-event.cjs` boş) — QA'nın önerdiği
+gibi düzeltme tamamen test enstrümantasyonu + doküman oldu.
+
+**B1 (BLOKLAYICI) — `clearTimeout(stdinGuard)` düzeltmesi korumasızdı.**
+`tests/integration/send-event-hook.test.ts`'teki `startDripServer` yardımcısına, sunucunun
+bağlantıyı **kabul ettiği** andan **soketin kapandığı** ana kadar geçen gerçek süreyi ölçen
+`socketLifetimeMs` eklendi (spawn/Node soğuk başlangıcından bağımsız, TCP soketinin kendi
+yaşam süresi). "damla sunucu (b)" testine alt sınır assert'i eklendi:
+`expect(lifetimeMs).toBeGreaterThanOrEqual(145)`. Mutasyon kanıtı: `clearTimeout(stdinGuard)`
+satırı silinince test **KIRMIZI** verdi (`AssertionError: expected 128 to be greater than or
+equal to 145`), satır geri konunca yeşile döndü.
+
+**Ö1 (ÖNEMLİ) — idle soket bekçisi ölçülmüyordu.**
+Aynı `socketLifetimeMs` tekniği `startSilentServer`'a da eklendi. "sessiz sunucu (a)" testine
+üst sınır assert'i eklendi: `expect(lifetimeMs).toBeLessThan(145)` — idle bekçisi (~100ms)
+toplam bekçiden (~150ms) önce ateşlemeli. Mutasyon kanıtı: `req.setTimeout(IDLE_TIMEOUT_MS, …)`
+bloğu silinince test **KIRMIZI** verdi (`AssertionError: expected 165 to be less than 145`),
+blok geri konunca yeşile döndü. 145ms eşiği QA'nın kendi ölçtüğü ampirik dağılımdan (düzeltme
+153-175ms / mutasyon 118-141ms, F-004-2026-09-05.md §6) türetildi, ~8ms payla her iki mutasyonu
+da net ayırıyor.
+
+**Yan bulgu (enstrümantasyon sırasında keşfedildi):** her iki test sunucusunun soketinde
+`socket.resume()` çağrısı gerekti — istemciden gelen isteği hiç tüketmeyen (paused) bir gelen
+akış, Node'da soketin kendi `'close'` olayını süresiz geciktirebiliyor (istemci süreci çoktan
+çıkmış olsa bile). Bu, ürün davranışını etkilemiyor (yalnızca test sunucusu enstrümantasyonu),
+ama eklenmeden önce "sessiz sunucu" testi vitest'in 5000ms zaman aşımına kadar asılı kalıyordu.
+
+**Ö2 (ÖNEMLİ) — AC5'in "`KURULUM.md`'ye yazılır" yarısı karşılanmamıştı.**
+`KURULUM.md` "Doğrulama" bölümüne `docs/features/F-004-send-event-hook.md`'deki "AC5 doğrulama
+kanıtı"nın 3-4 satırlık özeti eklendi (tarih, gözlemlenen `PreToolUse`/`Bash` olayı,
+`transcript_path` dolu, `.seq` kayması yok).
+
+**N1 (NOT) — kabul edildi.** QA'nın gerekçesi doğruydu: geliştirici notu kullanıcı akışının
+önünde duruyordu. `KURULUM.md` başındaki blok kaldırıldı, dosya sonuna "## Not (geliştirici
+notu, kod turu)" başlığı altında taşındı — içerik korunuyor, yalnızca yeri değişti.
+
+**N2 (NOT) — işlem yapılmadı, gerekçe zaten QA raporunda.** BUG-001 F-002 kodundaki bir
+sözleşme ihlali (`normalize.ts` `deriveSummary` 200 karakter kırpmıyor); F-004'ün 6 AC'sinden
+hiçbiri `summary` uzunluğundan sorumlu değil. Bu turun kapsamı dışında, dokunulmadı.
+
+**Doğrulama:**
+- `npm run verify` → 0 (`Test Files 14 passed (14)`, `Tests 185 passed (185)`, `vite build ✓`).
+- `npm run e2e` → 0 (1 passed). `npm run e2e:dev` → 0 (1 passed).
+- Yeni assert'lerin bulunduğu `tests/integration/send-event-hook.test.ts` art arda 3 kez
+  çalıştırıldı, üçünde de 17/17 yeşil (kırılganlık yok).
+- `git diff .claude/hooks/send-event.cjs` boş — mutasyon turundan sonra dosya tam olarak eski
+  hâline döndü (ürün kodunda kalıcı değişiklik yok).
+- Süreç/port temizliği: `tasklist` içinde `node.exe` yok; 7333/7334/7433/7434 portlarında
+  yalnızca `TIME_WAIT` (kapanmış, dinlemeyen) kayıtlar var, aktif dinleyici yok.
+
+**Kalan risk:**
+- 145ms eşiği tek bir makinenin (bu geliştirme ortamı) ölçümüne dayanıyor; çok daha yavaş/hızlı
+  bir CI makinesinde iki dağılım (idle ~100-120ms / toplam ~150-175ms) kaymışsa eşik yeniden
+  kalibre edilmesi gerekebilir. 3x tekrar testi bu ortamda kırılganlık göstermedi ama farklı
+  donanımda gözlenmedi.
+- `docs/blockers.md`'deki "install-hook reddedildi" maddesi bu turdan önceki bir bilgilendirme;
+  AC5 kanıtı zaten toplanmış olduğu için (feature notu + şimdi `KURULUM.md`) bu blocker fiilen
+  çözülmüş durumda ama dosyadan silinmedi (bu turun kapsamı dışı, dokunulmadı).
+
+**Commit'ler:** `.claude/hooks/send-event.cjs` değişmedi; `KURULUM.md`,
+`tests/integration/send-event-hook.test.ts`, `docs/features/F-004-send-event-hook.md`
+(`status: qa`), `docs/progress.md` değişti.
+
+**Sonraki adım:** qa-evaluator düzeltme turu 1'i dar kapsamda doğrulasın (yalnızca B1/Ö1/Ö2 +
+mutasyon kanıtı); AC1-AC4/AC6, CEO kararları A/B/C/D, `install-hook` güvenliği yeniden açılmasın.

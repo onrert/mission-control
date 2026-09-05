@@ -43,10 +43,29 @@ F-001 ve F-002 bitti ve push edildi. **F-004 kod turu BİTTİ ve commit'lendi** 
 yalnızca gerçek hook payload'ıyla görünüyor; F-002'nin QA'sı elinde gerçek olay olmadığı için
 göremedi. **F-003 zaman çizelgesi satır düzenini bozar** — F-003'ten önce kapatılmalı.
 
-### Sıradaki adım: F-004 QA turu
-`qa-evaluator` aç: çalışan uygulamayı test etsin, **kendi bağımsız mutasyonlarını** koşsun
-(developer'ınkileri tekrarlamasın), GEÇTİ/KALDI versin. Ölçü: feature notundaki 6 AC
-(AC5 hariç — o kullanıcı adımı) + sözleşme §5 tablosu.
+### QA turu YAPILDI — KARAR: KALDI (2026-09-05)
+Rapor: `docs/qa/latest.md` (= `docs/qa/F-004-2026-09-05.md`). Feature notu `status: fix`.
+Puanlar: İşlevsellik 8 · Bütünlük 8 · Görsel/UX 8 · **Kod kalitesi 6** (<7 olduğu için de KALDI).
+QA agent'ı raporu yazdıktan sonra oturum limitine takıldı; **ürün kodu temiz** (`git diff HEAD`
+boş, mutasyon artığı yok, yetim süreç/port yok) — doğrulandı.
+
+**B1 (BLOKLAYICI):** developer'ın uygulama sırasında kendi bulduğu gerçek üretim hatasının
+düzeltmesi (`send-event.cjs:251` `clearTimeout(stdinGuard)`) **hiçbir test tarafından
+korunmuyor** — satır silinince 185 testin tamamı yeşil kalıyor. Yani yetim zamanlayıcı gerilemesi
+serbest: süreç başlangıcından 120 ms sonra uçuştaki isteği öldürüp ağ bekçilerini atlar,
+yavaş stdin'de **sessiz olay kaybı** (exit 0, boş stderr).
+**Ö1:** idle soket bekçisi (`send-event.cjs:172-175`) tamamen silinebiliyor, hiçbir test görmüyor —
+"sessiz sunucu" senaryosunu 150 ms'lik toplam bekçi de yakaladığı için iki katman ayırt edilmiyor.
+**Ö2:** AC5 doğrulama sonucu `KURULUM.md`'ye yazılmamış (kanıt feature notunda duruyor).
+
+**Düzeltme dar ve ucuz, ürün kodu değişmiyor:** damla senaryosuna **alt sınır** assert'i
+(ör. TCP bağlantısından çıkışa `>= 145 ms`) veya stdin bekçisinin `'end'` sonrası temizlendiğini
+doğrudan ölçen test · idle katmanı için ayırt edici bir ölçüm · `KURULUM.md`'ye üç satır.
+
+### Sıradaki adım: F-004 düzeltme turu 1
+Developer'a B1 + Ö1 + Ö2'yi ver. **Onaylanmış bölümleri yeniden açtırma:** AC1-AC4, AC6,
+CEO kararları A/B/C/D, `install-hook` güvenliği, kapsam denetimi, güvenlik taraması.
+Sonra dar bir QA doğrulaması. Tur sayacı: düzeltme 1/3.
 
 ### F-004'te unutulmaması gereken 5 şey
 - Uzantı **`.cjs`** — düz `.js` yasak (izlenen projede `type: module` varsa script sessizce ölür).
@@ -68,12 +87,13 @@ göremedi. **F-003 zaman çizelgesi satır düzenini bozar** — F-003'ten önce
   (hook kullanınca siler). Kullanıcı kararı: kapı kalıcı açılmayacak.
 
 ## Oturum nerede bitti (2026-09-05)
-Kullanıcı limit endişesi nedeniyle **temiz durakta durmayı** seçti: F-004 kodu bitti, test edildi,
-commit'lendi ve push edildi; **QA turu açılmadı**. Hiçbir agent çalışmıyor, çalışma ağacı temiz.
-Yeni oturumda yapılacak ilk iş: **F-004 QA turu** (yukarıdaki "Sıradaki adım" bölümü).
+F-004 QA turu koşturuldu ve **KALDI** verdi; kullanıcı "sadece QA yap sonra dur" dediği için
+düzeltme turu **açılmadı**. QA agent'ı raporu diske yazdıktan sonra oturum limitine takıldı
+(limit 04:00 Europe/Istanbul'da sıfırlanıyor). Ürün kodu temiz, hiçbir agent çalışmıyor.
+Yeni oturumda ilk iş: **F-004 düzeltme turu 1** (yukarıdaki "Sıradaki adım").
 
 ## Sıradaki
-F-004 QA → **F-003** (SSE zaman çizelgesi) → F-005 → F-006 → F-007.
+F-004 düzeltme + doğrulama → **F-003** (SSE zaman çizelgesi) → F-005 → F-006 → F-007.
 F-003 sözleşmesi açılırken iki taahhüt hazır: gerçek DOM test altyapısı ADR'si (jsdom +
 @testing-library/react) ve **N-1 hayalet olay** (503 dönen olay ring'de kalıp `GET /api/events`'te
 görünüyor; SSE yayımlarsa kalıcı hayalet satır olur).

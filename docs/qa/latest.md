@@ -1,189 +1,321 @@
-KARAR: GEÇTİ
+KARAR: KALDI
 ESKALE: false
 
-# F-002 QA — düzeltme turu 1 doğrulaması (qa-evaluator, 2026-09-04)
+# F-004 QA — kod turu (qa-evaluator, 2026-09-05)
 
-Dar doğrulama turu. Kapsam: B1 + Ö1-Ö4'ün kapanışı, düzeltmelerin ürettiği regresyon,
-gün sınırı/saat dilimi sorusu. Yeniden açılmayanlar (kapsam sızması, N1/N4, AC-7, AC-4
-fiziksel sıra, developer'ın mutasyon 2 düzeltmesi) ve tartışmaya kapalı olanlar
-(ADR-008 iki karar, CEO kararı R-1) **incelenmedi**.
+Kapsam: `.claude/hooks/send-event.cjs` · `scripts/install-hook.mjs` · `tests/helpers/emit-hook.ts` ·
+`tests/integration/send-event-hook.test.ts` · `tests/scripts/install-hook.test.ts` ·
+`tests/no-external-host.test.ts` genişletmesi · `KURULUM.md`.
+Ölçüt: `docs/features/F-004-send-event-hook.md` (6 AC + CEO kararları A/B/C/D + AC5 kanıtı) ·
+`docs/qa/F-004-contract.md` (öncelik: "CEO onayı — sözleşme KAPANDI" → "CEO kararı — DÜZELTME
+(zamanlama assert'i)" → "CEO kararı — zamanlama testlerinin kırılganlığı" 1. ve 3. madde → gövde) ·
+`docs/02-architecture.md` §8.1/§8.2/§8.3/§6.1/§5.1 · ADR-006 · `CLAUDE.md` öğrenilen kurallar.
 
-Değerlendirilen düzeltme commit'leri: `23fc2b7` · `262d57e` · `fb242b7` · `13f52ac` · `7c72858`.
-Kapsam dışı (yalnızca etkisi gözlemlendi): `9ae23bf`, `8cdd6de`, `1dde768`.
-
-**Karar gerekçesi (tek cümle):** Bloklayıcı B1 gerçekten kapandı — kendi kurduğum arıza
-senaryosunda istemci her seferinde yanıt aldı (503), süreç yaşadı, kuyruk zehirlenmedi ve
-engel kalkar kalkmaz sonraki istekler 202 ile diske yazıldı; Ö1-Ö4'ün dördü de artık
-**ölçen** testlerle çitleniyor (kendi 7 bağımsız mutasyonumun tamamı kırmızı verdi, geçen
-turda yeşil kalan Ö2/Ö3 çitleri dahil) ve geriye yalnızca NOT seviyesinde maddeler kaldı.
-
-**Arşiv notu:** Önceki tur raporunun içeriği zaten `docs/qa/F-002-2026-09-04.md` dosyasında
-birebir korunuyordu (`diff` ile doğrulandı: IDENTICAL). Bu yüzden onu ikinci kez "fix1" adıyla
-kopyalamak yerine, **bu** düzeltme turu raporu `F-002-fix1-2026-09-04.md` adını aldı;
-hiçbir içerik kaybolmadı.
+**Tek cümlelik karar:** Kod çalışıyor ve canlı hat kanıtlı, ama developer'ın kendi bulduğu gerçek
+üretim hatasının düzeltmesi **hiçbir test tarafından korunmuyor** — mutasyonu 185 testin tamamı
+yeşil geçiyor. Bu, brief'in önceden bloklayıcı ilan ettiği durumdur.
 
 ---
 
-## 1. Çalıştırdığım komutlar ve gerçek çıktıları
+## 1. Çalıştırdığım komutlar ve gerçek çıktılar
 
-| Komut | Çıkış kodu | Çıktı |
+| Komut | Çıkış kodu | Sonuç |
 |---|---|---|
-| `npm run verify` (tur başı) | **0** | `Test Files 12 passed (12)` · `Tests 146 passed (146)` · `vite build ✓ built in 919ms` |
-| `npm run e2e` | **0** | `1 passed (5.7s)` — `shell.spec.ts` |
-| `npm run e2e:dev` | **0** | `1 passed (4.7s)` — `dev-shell.spec.ts` |
-| `TZ=UTC npx vitest run` | **0** | `146 passed (146)` |
-| `TZ=Etc/GMT+12 npx vitest run` (UTC−12) | **0** | `146 passed (146)` |
-| `TZ=Pacific/Kiritimati npx vitest run` (UTC+14) | **0** | `146 passed (146)` |
-| `npm run verify` (tüm mutasyonlar geri alındıktan sonra) | **0** | `12/12 dosya · 146/146 test · built in 1.21s` |
+| `npm run verify` (typecheck + lint + test + build) | **0** | `Test Files 14 passed (14)` · `Tests 185 passed (185)` · `vite build ✓ built in 924ms` |
+| `npm run e2e` | **0** | `1 passed (5.5s)` — `tests\e2e\shell.spec.ts:9` |
+| `npm run e2e:dev` | **0** | `1 passed (3.5s)` — `tests\e2e\dev-shell.spec.ts:6` |
+| `npm audit` | **0** | `found 0 vulnerabilities` |
 
-Blockers'ta sorulan CI borcu **kendiliğinden kapanmış**: `tests/ci-workflow.test.ts`'in
-ADR-009 (Windows-only) uyumsuzluğu CEO'nun `1dde768` commit'iyle giderilmiş; `npm run verify`
-artık tam yeşil (12/12 dosya). Bu, F-002'nin kararına etki etmedi, yalnızca engel kalktı.
+Developer'ın bildirdiği **185 test / 14 dosya** teyit edildi (birebir aynı).
+Test koşusundaki `Uyarı: MC_PORT ... geçersiz` ve `Hata: ... EISDIR` satırları kasıtlı negatif
+senaryoların (geçersiz port toleransı, 503 `storage_unavailable`) beklenen çıktısıdır, bulgu değildir.
 
 ---
 
-## 2. B1 senaryosunun gerçek gözlemi (kendi kurduğum senaryo, testten bağımsız)
+## 2. AC1–AC6 kanıt tablosu
 
-Geçici `MC_DATA_DIR`, `createServer(0, dir)`, gün dosyası yolunda (`<dir>/events/2026-09-04.jsonl`)
-**gerçek bir dizin** oluşturuldu, `npx tsx` ile çalıştırıldı:
+| AC | Durum | Kanıt |
+|---|---|---|
+| **AC1** — stdin'den okur, alanları çıkarır, `POST /api/events`'e gönderir, `transcript_path` dahil | GEÇTİ | `send-event.cjs:147-156` (`path: '/api/events'`, `host: '127.0.0.1'`), `sendPayload` (`:197-218`) orijinal alanları **silmeden** iletir. Test: `send-event-hook.test.ts:127` gerçek `createServer` + gerçek çocuk süreç, 403 almıyor. **Canlı kanıt:** `data/events/2026-09-04.jsonl` seq 12 → `transcript_path` dolu. |
+| **AC2** — sunucu kapalıyken hata basmaz, bloklamaz, exit 0 | GEÇTİ | 6 alt senaryo (`:159` ECONNREFUSED, `:171` ECONNRESET, `:186` sessiz, `:201` damla, `:216` 503, `:241` stdin kapanmıyor); hepsinde `exitCode===0`, `stdout===''`, `stderr===''`. `send-event.cjs` içinde **hiç** `console.*`/`process.stdout`/`process.stderr` yok (grep: NONE) → mimari §8.1 "Asla stdout'a yazma" sağlanıyor. Ölçülen süreler §4'te. |
+| **AC3** — bilinmeyen/eksik alanda çökmez, bilinmeyenler ham iletilir | GEÇTİ | `:269` boş stdin, `:281` `x_custom_field` sunucudaki `raw`'da, `:297` bozuk JSON → `raw.raw_text`. `send-event.cjs:220-237` üç dalı da kapsıyor; `PARSE_ERROR_RAW_TEXT_CAP=2000` (`:29`) sözleşmeye uygun. |
+| **AC4** — `install-hook` kopyalar + kayıt ekler, bozmaz, çift kayıt yapmaz | GEÇTİ | §5'teki bağımsız sandbox denetimim + `install-hook.test.ts` 11 testi. İki koşu sonrası `send-event` esas sayısı **13** (çift yok), yabancı hook ve `permissions` korunuyor. |
+| **AC5** — gerçek oturumda elle doğrulama **+ `KURULUM.md`'ye yazılır** | **KISMİ** | Doğrulamanın kendisi GEÇTİ (denetimim §3). Ancak AC metninin ikinci yarısı ("`KURULUM.md`'ye yazılır") **karşılanmadı** — bkz. bulgu Ö2. |
+| **AC6** — smoke test: sahte payload → sunucuya ulaştığı otomatik doğrulanır | GEÇTİ | `send-event-hook.test.ts:313` (`emit-hook.ts` `runHook` ile gerçek çocuk süreç) → olay `GET /api/events`'te görünüyor. |
+
+### Ek (CEO kararları) kontrolü
+
+| Karar | Durum | Kanıt |
+|---|---|---|
+| **A** — `no-external-host` çiti `.claude/hooks/**` + `.cjs` kapsar | GEÇTİ | `tests/no-external-host.test.ts:33` `walk(path.join(ROOT,'.claude','hooks'), ['.cjs'])` + `:60` körlük kontrolü testi. Mutasyon M3 ile KIRMIZI verdiği doğrulandı. |
+| **B** — ≤400 ms bütçe | GEÇTİ | Sabitler `send-event.cjs:20-22` (120/100/150); ölçülen en kötü senaryo (damla) 153-175 ms. |
+| **C** — kompakt zarf `summary`'yi boş bırakmaz | GEÇTİ | `buildCompactEnvelope` (`:95-128`) `command`/`file_path`/`description` + `user_input`/`last_assistant_message`/`reason`/`notification_type`, her biri `truncate200`. Mutasyon M6 ile KIRMIZI. |
+| **D** — `install-hook` yalnızca geçici dizinlere / bu deponun köküne | GEÇTİ | Testler `os.tmpdir()` kullanıyor; ben yalnızca scratchpad sandbox'a çalıştırdım, bu deponun `.claude/settings.json`'ına **dokunmadım**. |
+
+---
+
+## 3. AC5 kanıtının denetimi (yeniden kurulum YAPILMADI)
+
+Feature notundaki "AC5 doğrulama kanıtı" bölümünün her iddiası diskte kontrol edildi:
+
+| İddia | Sonuç |
+|---|---|
+| `.claude/hooks/send-event.cjs` yerinde, 8246 bayt | ✓ `ls -l` → `8246 Sep 5 00:13 send-event.cjs` |
+| `.claude/settings.json` geçerli JSON, 13 olay tipi | ✓ `JSON.parse` başarılı, `Object.keys(hooks).length === 13` |
+| 6 orijinal güvenlik hook'unun **altısı da** duruyor | ✓ `session-start` (SessionStart + PostCompact), `gate-check` (PreToolUse `Edit\|Write`), `block-dangerous` (PreToolUse `Bash`), `asset-guard` (PreToolUse `mcp__higgsfield__.*`), `post-format` (PostToolUse `Edit\|Write`), `stop-check` (Stop) — hepsi kendi matcher'ıyla, `send-event.cjs` **yanlarına** eklenmiş |
+| `settings.json.bak` yedeği alınmış | ✓ 2124 bayt; `.gitignore:19-20` ile depo dışında tutuluyor, `git status` temiz |
+| `data/events/` içinde `transcript_path` dolu gerçek olay | ✓ seq 12: `PreToolUse` · `tool_name: Bash` · `session_id: b13e8d3f-…` (bu oturumun gerçek kimliği) · `project_name: mission-control` · `transcript_path: C:\Users\pc\.claude\projects\...jsonl` · `client_version: 1` · `flags: []` |
+| `.seq` kayması yok | ✓ `.seq = 13`, dosya 13 satır, son kayıt `seq 12` — tutarlı |
+
+**Ek canlı kanıt (bu turda kendiliğinden üretildi):** sandbox denetimim sırasında `rm -rf` komutum
+bu deponun kendi `block-dangerous.cjs` hook'u tarafından engellendi — yani 6 güvenlik hook'u
+`send-event.cjs` kurulumundan sonra da **fiilen çalışıyor**, yalnızca dosyada durmuyorlar.
+
+AC5'in **doğrulama** yarısı sağlam. Yazım yarısı için bulgu Ö2.
+
+---
+
+## 4. Zamanlama kanıtının denetimi
+
+| Gereklilik (CEO kararı — DÜZELTME) | Durum |
+|---|---|
+| (a) Dört senaryoda dış duvar saati **> 1000 ms → KIRILIR** | ✓ VAR. `toBeLessThan(1000)` altı senaryoda: `:169`, `:181`, `:195`, `:210`, `:232`, `:250` (sözleşmenin istediği dördün üstünde). |
+| (b) Zamanlayıcı sabitlerinin **saat kullanmayan** birim testi (120 · 100 · 150) | ✓ VAR. `send-event-hook.test.ts:465` kaynağı okuyup regex ile `STDIN_TIMEOUT_MS=120`, `IDLE_TIMEOUT_MS=100`, `TOTAL_TIMEOUT_MS=150` doğruluyor. Saat yok. |
+| Kırılgan tek kademeli `elapsedMs < 400` assert'i **olmamalı** | ✓ YOK. Tüm dosyada `400` yalnızca `'z'.repeat(400_000)` (test verisi) olarak geçiyor. |
+| `MC_TIMING_FILE` gibi test-amaçlı yan kanal **olmamalı** | ✓ YOK. `send-event.cjs`'te hiçbir dosya yazma/teşhis kanalı yok (`fs` yalnızca `realpathSync` için). |
+| Damla test sunucusu **istemci kapatana kadar** damlatmalı (sonlu sınır kaçak üretir) | ✓ DOĞRU KURULMUŞ. `startDripServer` (`:100-120`) `setInterval(…, 40)` ile **üst sınırsız** damlatıyor, yalnızca `socket.destroyed`/`'close'` ile duruyor. Ayrıca gerçek HTTP durum satırı + bitmemiş başlık (`'HTTP/1.1 200 OK\r\nX-Drip: '`) yazıyor — ham baytların Node HTTP parser'ında anında parse hatası üretip senaryoyu geçersiz kılması sorunu çözülmüş. |
+| (c) Her bekçi için ayrı mutasyon | **KISMİ** — bkz. bulgu Ö1: idle bekçisini ayırt eden bir test yok. |
+
+**Ölçtüğüm gerçek süreler** (damla sunucusuna karşı, TCP bağlantısından süreç çıkışına, 5 koşu):
+`[171, 166, 175, 153, 169]` ms → 150 ms'lik toplam bekçiyle tutarlı, 400 ms bütçesinin ve
+1000 ms sert kapısının altında. Developer'ın bildirdiği ~190-270 ms ile aynı büyüklük sırasında.
+
+**Kurulum doğru, kanıt gücü eksik:** (a) ve (b) yerinde ama her ikisi de yalnızca **üst sınır**
+ölçüyor. Hiçbir assert "hangi bekçinin ateşlediğini" ölçmüyor; bu, B1 ve Ö1'in kök nedeni.
+
+---
+
+## 5. `install-hook` güvenlik denetimi (bağımsız, yalnızca geçici sahte dizinlerde)
+
+Sandbox: `…\scratchpad\sb1` ve `…\scratchpad\sb2`. Bu deponun `.claude/settings.json`'ına ve
+depo dışına **hiç çalıştırılmadı** (CEO kararı D).
+
+| Kontrol | Sonuç |
+|---|---|
+| Temiz hedefte kurulum | ✓ `Kurulum tamamlandı: 13 eklendi, 0 zaten var.` exit 0 |
+| **İdempotentlik** (iki kez çalıştır) | ✓ 2. koşu `0 eklendi, 13 zaten var.` — `send-event` esası tam **13** kez, çift kayıt yok |
+| **Mevcut hook kayıtlarının korunması** | ✓ `PreToolUse` 2 gruba çıktı: yabancı `{matcher:"Bash", …my-security-hook.cjs}` **birebir duruyor**, `{matcher:"*", …send-event.cjs, async:true, timeout:5}` yanına eklendi |
+| `hooks` dışı anahtarların korunması | ✓ `permissions: {allow:["Bash(ls:*)"]}` aynen duruyor |
+| **Yedek** (`.bak`) | ✓ 1. koşuda oluştu ve `diff` ile kurulum-öncesi orijinalle **birebir aynı**; 2. koşuda üzerine yazılmadı |
+| **Bozuk JSON'da hiç yazmama** | ✓ exit 1 + Türkçe hata; `.claude/` içinde **yalnızca** orijinal `settings.json` kaldı — `hooks/` dizini oluşmadı, `send-event.cjs` kopyalanmadı, `.bak` alınmadı, `settings.json` `diff` ile değişmemiş |
+| **Adım sırası** (önce doğrula sonra yaz) | ✓ `install-hook.mjs:108-123` okuma+parse, `:150-155` ilk yazma — sözleşme §6'nın tur 2 düzeltmesi doğru uygulanmış |
+| Argüman doğrulama | ✓ argümansız / olmayan yol / **dizin yerine dosya** → üçü de exit 1, yazma yok |
+| Geçici dosya sızıntısı | ✓ `settings.json.tmp-<pid>` kalıntısı yok (atomik `rename`), `.gitignore:20` ayrıca çitliyor |
+
+---
+
+## 6. Kendi mutasyon turum (6 mutasyon, developer'ın 7'siyle çakışmayan)
+
+| # | Mutasyon | Kırmızı veren test | Hata mesajının ilk satırı | Geri alındı |
+|---|---|---|---|---|
+| **M1** | `send-event.cjs:251` `clearTimeout(stdinGuard)` kaldırıldı (developer'ın bulduğu gerçek üretim hatası) | **HİÇBİRİ — 185/185 YEŞİL** | — (kaçak) | ✓ `git checkout` |
+| **M2** | `install-hook.mjs:65` `existing.slice()` → `[]` (mevcut kayıtlar korunmuyor) | `install-hook.test.ts` › "iki kez çalıştırma → tek kayıt" **ve** "mevcut yabancı hook'lar korunur" | `AssertionError: expected 'Kurulum tamamlandı: 13 eklendi, 0 zat…' to contain '0 eklendi'` | ✓ |
+| **M3** | `no-external-host.test.ts:33` `.claude/hooks` tarama kökü kaldırıldı (CEO kararı A) | "taranan dosyalar arasında .claude/hooks kökünden en az biri var" | `AssertionError: expected false to be true // Object.is equality` | ✓ |
+| **M4** | `send-event.cjs:141` `finish()` içinde `process.exit(0)` → `exit(1)` (çıkış kodu 0 garantisi) | 15 test birden | `AssertionError: expected 1 to be +0 // Object.is equality` | ✓ |
+| **M5** | `send-event.cjs:172-175` idle soket bekçisi (`req.setTimeout`) tamamen kaldırıldı | **HİÇBİRİ — 185/185 YEŞİL** | — (kaçak) | ✓ |
+| **M6** | `send-event.cjs:98` kompakt zarftan `tool_input.command` düşürüldü (Karar C) | "200 KB tool_input (Bash) → … summary boş değil" **ve** "MC_MAX_PAYLOAD=0 → … summary yine dolu kalır" | `AssertionError: expected '' to be 'npm test' // Object.is equality` | ✓ |
+
+**4 yakalandı, 2 kaçtı.** İki kaçağın ikisi de featureın çekirdek güvenlik özelliğinde
+(bloklamama bekçileri) — yani en çok korunması gereken yerde.
+
+### M1'in kaçağı neden bloklayıcı (ölçülmüş kanıt)
+
+Brief bu mutasyonu önceden bloklayıcı ilan etti; ölçtüm ve gerçekten zararlı olduğunu doğruladım.
+
+1. **Hiçbir test görmüyor:** mutasyon uygulanmışken `npx vitest run` → `Test Files 14 passed (14)`,
+   `Tests 185 passed (185)`. Damla sunucu testi dahil hepsi yeşil.
+2. **Ağ bekçileri gerçekten atlanıyor** (damla sunucusuna karşı, TCP bağlantısından çıkışa, 5'er koşu):
+
+   | Kod | Ölçüm (ms) | Ateşleyen bekçi |
+   |---|---|---|
+   | Yayınlanan (düzeltme yerinde) | `171, 166, 175, 153, 169` | toplam süre bekçisi (150 ms) |
+   | M1 mutasyonlu | `141, 137, 126, 132, 118` | **yetim stdin zamanlayıcısı (120 ms)** |
+
+   İki dağılım örtüşmüyor; bir alt sınır assert'i (ör. bağlantıdan çıkışa `>= 145 ms`) bu
+   gerilemeyi kesin yakalardı. Mevcut assert yalnızca `elapsedMs < 1000` — 30 kat gevşek.
+3. **Sessiz olay kaybı gözlendi:** stdin'i ~110 ms'ye yayılmış parçalarla besleyen bir harness'ta
+   (büyük `tool_input`, gerçekçi bir yavaş hook çerçevesi) mutasyonlu kod
+   `EVENT_DELIVERED: false`, `exitCode: 0`, `stderr: ''` üretti — sunucu **tam istek almadı**
+   (`conns: 0`), yani olay hiç gönderilmeden süreç sonlandı. Hata sessiz: exit 0, boş stderr.
+
+Düzeltmenin kendisi kodda **doğru ve yerinde** (`send-event.cjs:250-256`, açıklayıcı yorumla).
+Sorun, `CLAUDE.md`'nin kendi kuralının ihlali: *"41 test geçiyor tek başına hiçbir şey kanıtlamaz"*.
+Bu hata bir kez zaten oluştu; onu yakalayan şey bir test değil, developer'ın elle enstrümantasyonuydu.
+Aynı satır yarın bir refactor'da silinirse hiçbir kapı çalmaz.
+
+---
+
+## 7. Bulgular (1 BLOKLAYICI · 2 ÖNEMLİ · 2 NOT)
+
+### BLOKLAYICI
+
+**B1 — stdin bekçisi `clearTimeout` düzeltmesinin hiçbir testi yok (yetim zamanlayıcı gerilemesi serbest)**
+- **Dosya:** `.claude/hooks/send-event.cjs:250-256` (düzeltme) · `tests/integration/send-event-hook.test.ts:201-215` (onu ölçmesi gereken damla testi)
+- **Tekrar üretme:** `send-event.cjs:251`'deki `clearTimeout(stdinGuard)` satırını sil → `npx vitest run`
+- **Beklenen:** en az bir test KIRMIZI (bekçi katmanı gerilemesi)
+- **Gerçek:** `Test Files 14 passed (14)` · `Tests 185 passed (185)` — tam yeşil
+- **Etki:** yetim zamanlayıcı, süreç başlangıcından 120 ms sonra uçuştaki isteği öldürüp ağ
+  bekçilerini (100 ms idle / 150 ms toplam) atlar; ölçülen kanıt §6. Yavaş stdin'de **sessiz olay
+  kaybı** (exit 0, boş stderr) — panelin tüm amacı olan görünürlüğü baltalar, `CLAUDE.md`'deki
+  "sessizce ölen hook" hata sınıfının aynısı.
+- **İstenen düzeltme:** damla senaryosuna **alt sınır** bir assert ekle (scriptin gerçekten toplam
+  bekçiye kadar yaşadığını ölçen, ör. TCP bağlantısından çıkışa `>= 145 ms`) **veya** stdin bekçisinin
+  `'end'` sonrası temizlendiğini doğrudan ölçen ayrı bir test. Assert, `clearTimeout` silindiğinde
+  KIRMIZI vermeli — düzeltmeyi geri alıp doğrulayın.
+- **Ekran görüntüsü:** yok (CLI bulgusu; ölçüm çıktıları §6'da tablolu).
+
+### ÖNEMLİ
+
+**Ö1 — idle soket bekçisi tamamen kaldırılabiliyor, hiçbir test görmüyor (sözleşmenin kanıt iddiası yanlış)**
+- **Dosya:** `.claude/hooks/send-event.cjs:172-175` · `tests/integration/send-event-hook.test.ts:186-200` ("sessiz sunucu (a)")
+- **Tekrar üretme:** `req.setTimeout(IDLE_TIMEOUT_MS, …)` bloğunu sil → `npx vitest run`
+- **Beklenen:** "sessiz sunucu (a)" KIRMIZI (sözleşme §3 madde 3 bu testin "yalnızca idle katmanının
+  varlığını kanıtladığını" açıkça iddia ediyor)
+- **Gerçek:** `Tests 185 passed (185)` — çünkü sessiz sunucuyu 150 ms'lik **toplam** bekçi de
+  yakalıyor; sessiz senaryo iki katmanı ayırt etmiyor.
+- **Etki:** İki katmanın bağımsızlık kanıtı **tek yönlü**: toplam bekçinin varlığı damla testiyle
+  kanıtlanmış (developer'ın mutasyon 3'ü), ama idle katmanı için hiçbir ayırt edici kanıt yok.
+  Davranışsal gerileme yok (toplam bekçi 150 ms sert sınırı koruyor), ama ölçülmeyen bir katman
+  ya çitlenmeli ya da Karpathy §2 uyarınca gerekçesi yazılmalı.
+- **İstenen düzeltme:** idle katmanını ayırt eden bir senaryo ekle (ör. bağlantı kurulup hiç bayt
+  yazılmayan sunucuda çıkışın ~100 ms'de, 150 ms'den **önce** olduğunu ölçen alt/üst sınır çifti);
+  ya da katmanın gereksiz olduğuna karar verilip kaldırılması sözleşmeye işlensin.
+
+**Ö2 — AC5'in "`KURULUM.md`'ye yazılır" yarısı karşılanmadı**
+- **Dosya:** `KURULUM.md:81-99` · AC metni `docs/features/F-004-send-event-hook.md:18`
+- **Beklenen:** AC5 iki şey istiyor: (1) gerçek oturumda elle doğrulama, (2) sonucun
+  `KURULUM.md`'ye yazılması. `KURULUM.md:93-94` kullanıcıya "Sonucu bu bölüme bir satırla ekleyin
+  (tarih + gözlemlenen olay tipi …)" diyor.
+- **Gerçek:** Doğrulama yapıldı (kanıtı denetledim, sağlam — §3) ama sonuç **feature notuna**
+  yazıldı; `KURULUM.md`'de gözlem satırı yok. `:96-99` yalnızca kurulumun yapıldığını söylüyor ve
+  5 adımı hâlâ kullanıcıya **yapılacak iş** olarak sunuyor.
+- **Etki:** AC kutusu işaretli ama AC metninin yarısı açık; `KURULUM.md`'yi tek başına okuyan biri
+  hattın gerçekten doğrulandığını göremiyor.
+- **İstenen düzeltme:** §3'teki kanıtın 2-3 satırlık özetini (tarih · `PreToolUse`/`Bash` ·
+  `session_id` · `transcript_path` dolu · `.seq` kayması yok) `KURULUM.md` "Doğrulama" bölümüne ekle.
+
+### NOT
+
+**N1 — `KURULUM.md` kullanıcı belgesi geliştirici notuyla açılıyor**
+- `KURULUM.md:3-10`: dosyanın önceki içeriğinin `C:\dev\app-factory` kalıntısı olduğunu anlatan
+  8 satırlık blok, kullanıcının gördüğü **ilk** içerik. Gerekçe meşru ve kararı doğru (eski içerik
+  hiçbir dokümandan referans almıyordu, doğruladım), ama yeri burası değil — `docs/progress.md`
+  zaten aynı gerekçeyi taşıyor. Belgenin gerisi (adımlar, env tablosu, geri alma, doğrulama)
+  net ve kullanıcı için yeterli.
+
+**N2 — BUG-001 F-004'ün kusuru değil (kapsam kararım aşağıda)**
+
+---
+
+## 8. BUG-001 kapsam kararı
+
+**Karar: BUG-001, F-004'ün GEÇTİ/KALDI kararını etkilememeli. CEO'nun görüşüne katılıyorum.**
+
+Bağımsız doğrulamam:
+- `data/events/2026-09-04.jsonl` 13 olayın **9'unda** `summary` > 200 karakter (234 · 234 · 487 ·
+  487 · 732 · 732 · 567 · 567 · 263). CEO'nun bildirdiği 234-732 aralığı teyit edildi.
+- Kaynak **F-002 kodu**: `src/features/events/server/normalize.ts:42-68` `deriveSummary`, dönüş
+  yollarının hiçbirinde kırpma yok (`stringField(toolInput,'command') ?? ''` ham dizgeyi döndürüyor).
+  Okudum, grep'e güvenmedim.
+- **F-004 kendi yolunda kurala uyuyor:** `send-event.cjs:42-44` `truncate200` ve
+  `buildCompactEnvelope` (`:95-128`) her alanı 200 karaktere kırpıyor. Yani hook, sınırı aşan
+  `summary`'nin **kaynağı değil**; sunucu normalizasyonu kırpmıyor.
+- F-004'ün 6 AC'sinin hiçbiri `summary` uzunluğundan söz etmiyor; sözleşme §3 madde 6 `summary`'yi
+  bilinçli olarak **sunucunun işi** sayıyor.
+
+Gerekçe: bir feature, başka bir feature'ın kodundaki sözleşme ihlalinden sorumlu tutulamaz;
+aksi hâlde "tek seferde tek feature" kuralı anlamını yitirir. **Ama kaydediyorum:** BUG-001'i
+görünür kılan şey tam olarak F-004'ün AC5'idir (gerçek olay üreten ilk hat) — bu, elle
+doğrulama adımının değerinin somut kanıtı. **F-003'ten (SSE zaman çizelgesi) önce kapatılmalı;**
+732 karakterlik bir özet, UX dokümanının 200 karakter varsayımıyla tasarlanmış satır düzenini bozar.
+Bu turda **düzeltmedim** (kapsamım dışı, kod düzenlemiyorum).
+
+---
+
+## 9. Kapsam denetimi
+
+`git diff 83a0f51..HEAD --stat` (sözleşme onayından bugüne), 15 dosya:
 
 ```
-[1] engel kuruldu, dayFile bir dizin: true
-[2.0] HATA YOLU status=503 body={"success":false,"error":{"code":"storage_unavailable","message":"Olay şu anda saklanamadı."}}
-[2.1] HATA YOLU status=503 ... (aynı)
-[2.2] HATA YOLU status=503 ... (aynı)
-[3] surec yasiyor mu? EVET (pid 15240)
-[4] engel kaldirildi
-[5] SAGLIKLI status=202 body={"success":true,"data":{"id":"3-a6c405","seq":3,...}}
-[6] SAGLIKLI-2 status=202 body={"success":true,"data":{"id":"4-f8f6f4","seq":4,...}}
-[7] EKSIK ALAN status=202 body={... "flags":["missing_fields"]}
-[8] JSON DEGIL status=202 body={... "flags":["parse_error"]}
-[9] DISKTEKI SATIR SAYISI = 4   (seq 3,4,5,6 — fiziksel sırayla)
-[10] health: {... "corrupt_lines":0,"write_errors":3}
+.claude/hooks/send-event.cjs   | 257 ++    scripts/install-hook.mjs                  | 176 ++
+.claude/settings.json          | 285 ++    tests/helpers/emit-hook.ts                |  65 ++
+.gitignore                     |   2 ++    tests/integration/send-event-hook.test.ts | 471 ++
+KURULUM.md                     |1283 +-    tests/scripts/install-hook.test.ts        | 236 ++
+docs/HANDOFF.md                |  80 ++    tests/no-external-host.test.ts            |  12 ++
+docs/blockers.md               |  32 ++    package.json                              |   3 +-
+docs/features/F-004-…          |  36 +-    docs/progress.md                          | 126 ++
+docs/qa/BUG-001-…              |  57 ++
 ```
 
-Sonuç, brifingin dört şartını da karşılıyor:
-1. **İstemci her zaman yanıt aldı** — üç arızalı istekte de 5 sn'lik timeout'a düşmedi (eski
-   davranış: `AbortError`, 6 sn asılı kalma).
-2. **Süreç yaşadı** — arızadan sonra health, GET ve dört yeni POST çalıştı; `unhandledRejection`
-   ile `exit(1)` yok.
-3. **Kuyruk zehirlenmedi** — arızadan **sonraki** istekler 202 aldı ve satırları **diskten**
-   okundu (4 satır, geçerli JSON, fiziksel sıra artan).
-4. **503 kararının yan etkisi yok** — eksik alanlı olay hâlâ `202 + missing_fields`, JSON
-   olmayan gövde hâlâ `202 + parse_error`. Bu, brifingin "bozulduysa BLOKLAYICI" dediği
-   noktadır; **bozulmamış**.
+- **`src/` altında sıfır değişiklik.** SSE (F-003), proje kayıt (F-005), yazma kapısı (F-006),
+  kanban, UI kodu — hiçbirine sızma yok. ✓
+- `package.json` değişikliği yalnızca `"install-hook": "node scripts/install-hook.mjs"` script satırı. ✓
+- `KURULUM.md`'nin 1242 satırlık silmesi kapsam sızması **değil**: dosya sözleşme §1'de F-004'ün
+  sahipliğinde; içerik App Factory şablon kalıntısıydı ve `docs/PROCESS.md` + `CLAUDE.md` olarak
+  zaten depoda materyalize edilmiş durumda (kontrol ettim, kayıp yok).
+- `.claude/settings.json`'ın 285 satırlık büyümesi = AC5 kurulumunun beklenen sonucu (13 kayıt),
+  sözleşme §3 madde 7'nin önceden onayladığı istisna. ✓
 
-**503 kararı savunulabilir mi → EVET, onaylıyorum.** Gerekçe: (a) PRD F1/AC5'in "5xx dönmez"
-kuralı payload toleransını korumak için vardır ve bu davranış kanıtlandığı gibi aynen duruyor;
-(b) olay gerçekten diske yazılamamışken 202 ("kabul edildi") dönmek istemciyi ve F-003'ün SSE
-tüketicisini yanıltırdı — sessiz veri kaybı, dürüst hata yolundan daha kötüdür; (c) 503 RFC 9110
-anlamıyla eşleşiyor (geçici kaynak sorunu) ve mevcut `ApiResponse`/`ErrorCode` zarfına
-`src/shared/types.ts:37`'de temiz biçimde eklenmiş; (d) karar `docs/qa/F-002-contract.md:987-1019`'a
-gerekçesiyle dokümante edilmiş, sözleşme §4.2'nin "asla 5xx" cümlesi açıkça daraltılmış.
+## 10. Güvenlik taraması
 
----
+| Kontrol | Sonuç |
+|---|---|
+| Sabit kodlanmış sır (`api_key`, `secret`, `token`, `password`, `bearer`, `sk-`) | ✓ YOK (`send-event.cjs`, `install-hook.mjs`, `KURULUM.md`) |
+| `127.0.0.1` dışı ağ literali | ✓ YOK — tek literal `send-event.cjs:148 host: '127.0.0.1'`; `no-external-host` çiti artık bu dosyayı da tarıyor |
+| `send-event.cjs` stdout/stderr sessizliği | ✓ Hiç `console.*` / `process.stdout` / `process.stderr` yok — mimari §8.1 kuralı sağlanıyor, testlerde de assert ediliyor |
+| `.bak` / geçici dosya depoya sızması | ✓ `.gitignore:19-20` çitliyor; `git status --porcelain` boş |
+| `npm audit` | ✓ `found 0 vulnerabilities` |
+| Yıkıcı davranış (`install-hook`) | ✓ Yalnızca ekleyici; silme/üzerine yazma yok (§5'te ampirik doğrulandı) |
 
-## 3. Kapanış tablosu
+## 11. Çalışma ağacı ve süreç temizliği
 
-| # | Durum | Kanıt |
-|---|---|---|
-| **B1** — kuyruk zehirlenmesi / yanıtsız istek / süreç ölümü | **KAPANDI** | Kod: `src/server/store/jsonl-store.ts:201-215` (`writeResult` ayrı izlenir, `queue` hata dalında hatayı yutup devam eder) + `src/features/events/server/ingest.ts:54-79` (`try/catch` → 503). Gözlem: §2'deki senaryo. Testler: `tests/integration/events-api.test.ts:314-349` (503 → engel kalkar → 202 → diskte 1 satır) ve `tests/server/store/jsonl-store.test.ts:205+`. Kendi M1/M2 mutasyonlarım ikisini de kırmızı verdirdi. |
-| **Ö1** — `.seq` semantiği / olaysız restart'ta kayma | **KAPANDI** | Tek semantik: "bir sonraki atanacak seq" — yazar `jsonl-store.ts:157` (init) ve `:216` (append), okur `jsonl-store.ts:155-156` (`Math.max(fileSeq + 1, dotSeq ?? 0)`). Kendi ölçümüm: 3 olay → **5 olaysız restart** → `.seq` her seferinde `3` (hiç değişmedi) → sonraki olayın seq'i **3** → diskteki dizi `[0,1,2,3]`. Ayrıca `.seq=50` elle yazıldığında yeni olay `50` (ileri `.seq` kazanıyor), `.seq` silindiğinde `51` (JSONL kazanıyor). Test: `jsonl-store.test.ts:185-203`. Repo'daki kirli `data/events/.seq` temizlenmiş (şu an tek baytlık `0`). |
-| **Ö2** — `DAY_FILE_PATTERN` çiti ölçülmüyordu | **KAPANDI** | Test `tests/server/store/retention.test.ts:123-143` (`notlar.txt` + `.seq` konur, `pruneByDays` sonrası ikisi de durur). Kendi M4 mutasyonum (çit hem `retention.ts:39`'dan hem `:48`'den kaldırıldı) → **kırmızı**: `expected [ '.seq', '2026-08-01.jsonl' ] to deeply equal [ '2026-08-01.jsonl' ]`. Geçen tur bu mutasyon 133/133 **yeşil** kalıyordu. |
-| **Ö3** — `check-ports` varsayılana düşme totolojisi | **KAPANDI** | Yeni testler `tests/scripts/check-ports.test.ts:71-98` gerçek 7333/7334'ü meşgul edip script'in o sabitlere düştüğünü kanıtlıyor. Kendi M5 mutasyonum (`scripts/check-ports.mjs:12-14` geçersizde `0` döner) → **iki test kırmızı** (`expected +0 not to be +0`). Geçen tur aynı mutasyon 4/4 yeşildi. |
-| **Ö4** — `no-external-host` çiti yeni kod köküne kör | **KAPANDI** | `tests/no-external-host.test.ts:24-29` artık `src/features/**` (`.ts/.tsx`) ve `scripts/**` (`.mjs`) yürüyor. Kendi M6 mutasyonum (iki köke birer dış host literali kondu) → **iki test kırmızı**, dosyalar geri alındı. `query.ts`'in taban URL'si `http://127.0.0.1`'e çevrilmiş (yanlış pozitif üretmiyor, davranış değişmedi). |
-
----
-
-## 4. Kendi mutasyon tablom (developer'ın listesinden bağımsız, 7 adet)
-
-| # | Mutasyon (dosya:satır) | Kırmızı veren test | Hata mesajının ilk satırı | Geri alındı |
-|---|---|---|---|---|
-| M1 | `jsonl-store.ts:203-214` — `queue`'nun hata dalı silindi (reddedilen promise zincirde kalır) | `events-api.test.ts` › B1 **ve** `jsonl-store.test.ts` › B1 | `AssertionError: expected 0 to be greater than or equal to 1` (+ vitest `Unhandled Rejection: EISDIR`) | ✅ evet |
-| M2 | `jsonl-store.ts:210` — hata dalı sayar+loglar ama `throw err` ile kuyruğu **yeniden zehirler** | `events-api.test.ts` › B1 | `AssertionError: expected 503 to be 202` | ✅ evet |
-| M3 | `jsonl-store.ts:216` — `append`'in `.seq` yazımı `nextSeq + 1` (semantik bir ileri kayar) | `jsonl-store.test.ts` › `.seq restart arasında ASLA artmaz` **ve** `events-api.test.ts` › AC-5 | `AssertionError: expected 4 to be 3` / `expected 151 to be 150` | ✅ evet |
-| M4 | `retention.ts:39,48` — `DAY_FILE_PATTERN` çiti hem listeden hem `safeDelete`'ten kaldırıldı | `retention.test.ts` › desen çiti (Ö2) | `AssertionError: expected [ '.seq', '2026-08-01.jsonl' ] to deeply equal [ '2026-08-01.jsonl' ]` | ✅ evet |
-| M5 | `check-ports.mjs:12-14` — geçersiz portta varsayılan yerine `0` | `check-ports.test.ts` › Ö3 × 2 | `AssertionError: expected +0 not to be +0` | ✅ evet |
-| M6 | `src/features/events/server/__qa_probe.ts` (yeni) + `scripts/check-ports.mjs` sonuna dış host literali | `no-external-host.test.ts` × 2 | `AssertionError: expected [ Array(1) ] to be null` | ✅ evet (dosya silindi, script `git checkout`) |
-| M7 | `jsonl-store.ts:19` — `dayFileName` UTC yerine **yerel** tarih (`getFullYear/getMonth/getDate`) | `jsonl-store.test.ts` › `UTC tarihinden YYYY-MM-DD.jsonl üretir` | `AssertionError: expected '2026-09-05.jsonl' to be '2026-09-04.jsonl'` | ✅ evet |
-
-**Yeşil kalan mutasyon: YOK (0/7).** Geçen turun iki "ölçmeyen test" bulgusu (Ö2, Ö3) artık
-gerçekten ölçüyor.
+- `git status --porcelain` → **boş**; `git diff HEAD` → **boş**. Altı mutasyonun tamamı
+  `git checkout --` ile geri alındı, her birinden sonra teyit edildi.
+- Commit atılmadı, `git push` çalıştırılmadı, `install-hook` bu depoya veya depo dışına
+  çalıştırılmadı (yalnızca scratchpad sandbox'larına).
+- **Portlar:** `netstat -ano | grep -E ":(7333|7334|7433|7434)\s"` → **dördü de boş**.
+- **Süreçler:** kalan iki `node.exe` (PID 19160, 33324) Playwright **MCP** araç sunucusudur
+  (oturum başında 00:39'da başladı, komut satırlarıyla doğrulandı) — uygulamadan kalan yetim
+  `npm run dev` / `tsx` / `vite` süreci **yok**.
 
 ---
 
-## 5. Gün sınırı / saat dilimi değerlendirmesi → **NOT (kusur bulunamadı)**
-
-Brifingin öncülü ("gün dosyası adı yerel tarihe göre üretiliyor") **doğrulanmadı — kod
-UTC kullanıyor**: `src/server/store/jsonl-store.ts:19` `date.toISOString().slice(0, 10)`.
-`grep -rn "toISOString|getFullYear|getMonth|getDate()|toLocaleDate"` taraması, `src/`,
-`tests/` ve `scripts/` altında **tek bir yerel-tarih çağrısı** göstermiyor; `normalize.ts:96,126`
-de `ts` alanını `toISOString()` ile yazıyor. Append, açılış taraması (`listDayFiles` +
-sözlük sırası), retention'ın aktif dosyası ve cutoff'u (`retention.ts:75-76`) aynı tek
-fonksiyondan (`dayFileName`) besleniyor — üç yer arasında saat dilimi ayrışması yok.
-
-Ampirik kanıt: tüm süit üç ayrı saat diliminde koştu — `TZ=UTC`, `TZ=Etc/GMT+12` (UTC−12) ve
-`TZ=Pacific/Kiritimati` (UTC+14) — üçünde de **146/146 yeşil** (yerel makine UTC+3,
-`getTimezoneOffset() = -180`). Ayrıca M7 mutasyonu (UTC → yerel) `jsonl-store.test.ts:26-29`'u
-kırmızı verdiriyor, yani UTC semantiği test tarafından **çitlenmiş**.
-
-Gün geçişinde kayıp/yanlış dosya riski: `append` gün adını çağrı anında hesaplar, yazma
-kuyrukta gecikse bile dosya yolu sabittir → olay kaybolmaz, yalnızca gecikmiş yazım bir önceki
-güne düşer (o dosya retention'da 30 gün korunur). Yeni günün ilk dosyası oluşana kadar
-`loadRingAndSeq` en yeni dosyanın son geçerli satırından, ona güvenemezse `.seq`'ten
-(`Math.max`) besleniyor → seq tekrarı yok. **Somut kusur bulunamadı; GEÇTİ bu maddeye
-takılmadı.** (CI'daki eski `expected 9 to be 10` Linux hatası, Ö1'in düzeltilen `.seq` kayma
-hatasının deseniyle birebir aynı karakterde; düzeltmeden sonra hiçbir TZ'de tekrar etmiyor.)
-
----
-
-## 6. Kalan bulgular (hepsi NOT seviyesi — bloklayıcı yok)
-
-| # | Şiddet | Bulgu | Kanıt / tekrar üretme | Dosya:satır |
-|---|---|---|---|---|
-| N-1 | **NOT (yeni — düzeltmenin görünür kıldığı tutarsızlık)** | Yazma başarısız olup istemciye **503** dönüldüğünde olay ring buffer'da **kalıyor** ve `GET /api/events` onu saklanmış gibi gösteriyor (`next_seq` de ilerliyor). Süreç yeniden başlayınca olay kaybolur → hayalet okuma. Veri **kaybı değil** (olay zaten hiç yazılmadı) ve hiçbir AC bunu ölçmüyor; developer `docs/progress.md`'de bilinçli olarak kapsam dışı bıraktığını bildirmiş. **F-003 (SSE) bunu ele almak zorunda:** aksi hâlde hiç saklanmamış bir olay canlı akışa yayınlanır. | Gün dosyası yolunda dizin → POST → `503`; hemen ardından `GET /api/events?limit=100` → `{"success":true,"data":[{...,"seq":0,...}],"meta":{"total":1,"next_seq":1}}` (diskte hiçbir şey yok). | `src/server/store/jsonl-store.ts:194-196` (`ring.push` yazmadan önce, optimistic) |
-| N-2 | NOT (kozmetik regresyon) | `23fc2b7` düzeltmesinde 5 satırlık açıklama bloğu **iki kez** yapıştırılmış (birebir tekrar). Zararsız ama kod hijyeni. | `grep -n "QA düzeltme turu 1 (B1): bu append" src/server/store/jsonl-store.ts` → `202` ve `207`. | `src/server/store/jsonl-store.ts:202-211` |
-| N-3 | NOT (bayat yorum) | `handleIngest`'in doküman bloğu hâlâ "Asla 5xx dönmez (PRD F1/AC5)" diyor; fonksiyon artık 503 dönebiliyor (aynı dosyanın `:64-77`'si bunu açıklıyor). Çelişkili yorum ileride yanlış yönlendirir. | `src/features/events/server/ingest.ts:17` | `src/features/events/server/ingest.ts:17` |
-| N-4 | NOT (önceki turdan devreden) | Retention'ın `EPERM`/`EBUSY` dalı (R4) hâlâ hiçbir test tarafından tetiklenmiyor; sözleşmede kabul edilmiş davranış. | `src/server/store/retention.ts:54-57`. | `src/server/store/retention.ts:54-57` |
-| N-5 | NOT (önceki turdan devreden, kabul edilmiş) | N-a (`::1` beyaz liste ölü girdisi), N-b (`eslint.config.js` sözleşme listesinde yok), N-c (`since_seq=-1` boş sonuçta `next_seq:0`), N-d (AC-4 "500 eşzamanlı" adlandırması) düzeltilmedi — brifing yalnızca B1/Ö1-Ö4'ü istediği için **doğru karar**. | `docs/progress.md` düzeltme turu kaydı. | — |
-
-Yazma hatasında tüketilen `seq`'in bir daha verilmemesi (JSONL'de seyrek boşluk) sözleşme ve
-`progress.md`'de açıkça kabul edilmiş bilinçli bir karardır; bulgu olarak açmıyorum.
-
----
-
-## 7. Puanlar
+## 12. Puanlar
 
 | Boyut | Puan | Gerekçe |
 |---|---|---|
-| İşlevsellik | **8** | B1'in üç belirtisi de (asılı istek, süreç ölümü, zehirli kuyruk) kendi senaryomda kapalı; `.seq` artık 5 olaysız restart'ta hiç kaymıyor, bir olayda tam bir artıyor; payload toleransı (202 + `missing_fields`/`parse_error`) bozulmamış; 146 test + iki e2e + üç saat diliminde yeşil. 10 değil: arıza anında ring/GET tutarsızlığı (N-1) duruyor. |
-| Özellik bütünlüğü | **8** | İstenen beş düzeltmenin **beşi de** kapandı, hiçbiri kapsam genişletmesine kaçmadı (NOT'lar bilinçli olarak elde bırakılmış), 503 kararı sözleşmeye gerekçesiyle işlenmiş, blockers'taki CI sorusu da kapanmış. Eksik: N-1 ve N-4 gibi kenar davranışlar hâlâ ölçüsüz. |
-| Görsel/UX | **8** | Yeni UI yüzeyi yok; e2e (1280 kabuk) ve dev-e2e yeşil, konsol hatası yok. Asıl kazanım API hata deneyiminde: istemci artık timeout'a düşmüyor, Türkçe ve dürüst bir 503 gövdesi alıyor; `/api/health.write_errors` ile arıza gözlemlenebilir. |
-| Kod kalitesi (test + hata yönetimi) | **8** | **7/7 bağımsız mutasyonum kırmızı verdi** — geçen turda ölçmeyen iki çit (Ö2, Ö3) artık gerçekten ölçüyor; hata yolu artık hem store hem handler seviyesinde yakalanıyor, sayaç + log + health alanı var. 10 değil: kopyala-yapıştır yorum tekrarı (N-2), bayat doküman bloğu (N-3), ring'in optimistic push'u ve `EPERM` dalı testsiz. |
+| **İşlevsellik** | **8** / 10 | Uçtan uca hat gerçekten çalışıyor (canlı olaylar, `transcript_path` dolu, `.seq` kaymasız). Bloklamama bekçileri ölçülen sürelerde bütçenin içinde. Fonksiyonel bir kusur bulamadım. |
+| **Özellik bütünlüğü** | **8** / 10 | 6 AC'nin 5'i tam; AC5'in "`KURULUM.md`'ye yazılır" yarısı açık (Ö2). CEO kararları A/B/C/D'nin dördü de uygulanmış. |
+| **Görsel / UX** (`KURULUM.md`) | **8** / 10 | Kullanıcı için gerçekten anlaşılır: tek komut, numaralı adımlar, env tablosu, geri alma yolu, doğrulama listesi, "yalnızca kendi projelerinize kurun" uyarısı. Eksi: geliştirici notuyla açılması (N1) ve doğrulama sonucunun yazılmamış olması (Ö2). |
+| **Kod kalitesi** (testler, hata yönetimi) | **6** / 10 | Hata yönetimi örnek düzeyde (her yol `exit(0)`, `uncaughtException`/`unhandledRejection` ağı, sessiz stdout/stderr, `install-hook`'ta doğrula-sonra-yaz sırası, atomik yazma, yalnızca-ekleyici birleştirme). Ama **altı mutasyonumun ikisi kaçtı ve ikisi de featureın çekirdek güvenlik özelliğinde**: developer'ın kendi bulduğu üretim hatasının düzeltmesi korumasız (B1) ve idle katmanı ölçülmüyor (Ö1). Zamanlama assert'leri yalnızca üst sınır ölçüyor; sözleşmenin "her bekçi ayrı mutasyonla kanıtlanır" ödevi kâğıtta kalmış. |
 
-**Karar kuralı:** Bloklayıcı yok, dört boyut da ≥ 7 → **GEÇTİ**. Feature notu `status: done`.
+**Karar gerekçesi (tek paragraf):** F-004'ün kodu iyi yazılmış, savunmacı ve gerçek dünyada
+çalıştığı kanıtlı — canlı oturumda olaylar panele düşüyor, `install-hook` bu deponun altı güvenlik
+hook'unu bozmadan 13 kayıt ekledi, kurulum scripti bozuk JSON'da hiçbir dosyaya dokunmuyor ve
+`npm run verify`/`e2e`/`e2e:dev`/`audit` dördü de temiz. Buna rağmen KALDI veriyorum, çünkü bu
+featureın **var oluş nedeni olan tek güvenlik özelliği** — "hook hiçbir koşulda oturumu bloklamaz
+ve olayı sessizce kaybetmez" — testlerle çitlenmemiş: developer'ın uygulama sırasında elle
+keşfettiği gerçek yetim-zamanlayıcı hatasını geri koyduğumda 185 testin tamamı yeşil kaldı, üstelik
+o hatanın sessiz olay kaybına yol açtığını ve ağ bekçilerini fiilen atladığını ölçerek gösterdim;
+ikinci bir kaçak (idle bekçisinin tamamen silinebilmesi) sözleşmenin "iki katman bağımsız olarak
+kanıtlanır" iddiasının yalnızca yarısının doğru olduğunu ortaya koydu. Kod kalitesi boyutu 6 (<7)
+olduğu için karar kuralı gereği de KALDI. Düzeltme dar ve ucuz: iki assert eklemek (damla
+senaryosuna alt sınır, idle katmanına ayırt edici ölçüm) ve AC5 kanıtının üç satırını
+`KURULUM.md`'ye yazmak; ürün kodunda değişiklik gerekmiyor. BUG-001 bu kararın dışındadır ama
+F-003'ten önce kapatılmalıdır.
 
 ---
 
-## 8. Çalışma ağacı ve süreç temizliği kanıtı
-
-```
-$ git diff HEAD -- src/ tests/ scripts/ package.json
-(bos = tek satir degisiklik yok)
-
-$ git status --porcelain
-?? .claude/launch.json        <- bu turun urunu DEGIL (QA oncesi mevcut, arac dosyasi)
-
-$ npm run verify   -> 12/12 dosya, 146/146 test, build OK, exit 0
-```
-
-Uyguladığım **7 mutasyonun tamamı geri alındı** (`git checkout --` ile birebir); M6'nın
-oluşturduğu `src/features/events/server/__qa_probe.ts` silindi; üç geçici `tsx` probe dosyası
-(`qa-b1-probe.mts`, `qa-seq-probe.mts`, `qa-ring-probe.mts`) silindi.
-
-**Yetim süreç kontrolü:** tur sonunda çalışan `node.exe` süreçleri yalnızca PID 34544 ve 29928 —
-`Win32_Process.CommandLine` ile doğrulandı: ikisi de bu QA oturumunun Playwright MCP aracı
-(başlangıç saati 22:29, ilk komutumdan önce), uygulama süreci değil. `netstat`'ta 7333/7334/
-7433/7434 portlarında **LISTENING yok** (yalnızca e2e koşusundan kalan TIME_WAIT girdileri).
-Başlattığım tüm sunucular probe script'lerinin sonunda `server.close()` + `process.exit(0)` ile
-kapandı, geçici `MC_DATA_DIR`'ler silindi.
+**Sonraki adım:** feature notu `status: fix`. Düzeltme turu B1 + Ö1 + Ö2'ye baksın; onaylanmış
+bölümler (AC1-AC4, AC6, CEO kararları A/B/C/D, `install-hook` güvenliği, kapsam, güvenlik taraması)
+yeniden açılmasın.

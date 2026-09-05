@@ -45,6 +45,12 @@ export interface JsonlStore {
   getCorruptLines(): number
   /** QA düzeltme turu 1 (B1): kalıcı disk yazma hatası sayacı — `corrupt_lines` deseniyle tutarlı. */
   getWriteErrors(): number
+  /**
+   * F-003 (SSE) — ring buffer'ın seq sınırları. Ring boşsa `null`. `stream.ts`'in
+   * `computeResyncDecision`'ı bu sınırlarla `Last-Event-ID`'yi karşılaştırır (sözleşme §3
+   * madde 8, §4).
+   */
+  getRingBounds(): { from: number; to: number } | null
   readonly dataRoot: string
   readonly eventsDir: string
   /**
@@ -192,9 +198,6 @@ export function createJsonlStore(dataDir: string, options: JsonlStoreOptions = {
     const id = `${seq}-${randomHex(3)}`
     const event: EventRecord = { ...input, seq, id }
 
-    ring.push(event)
-    if (ring.length > ringSize) ring.shift()
-
     const day = dayFileName(new Date())
     const line = `${JSON.stringify(event)}\n`
     const file = path.join(eventsDir, day)
@@ -204,14 +207,19 @@ export function createJsonlStore(dataDir: string, options: JsonlStoreOptions = {
     // `queue` ise HİÇBİR ZAMAN reddedilmiş durumda bırakılmaz: hata burada yutulup loglanır,
     // böylece bu append başarısız olsa bile SONRAKİ append'ler kuyrukta bekletilmeye devam eder
     // (zehirlenmiş kuyruk = tüm sonraki isteklerin de düşmesi, eski davranış).
-    // QA düzeltme turu 1 (B1): bu append'in disk yazması `writeResult`'ta izlenir ve çağırana
-    // (ingest.ts) olduğu gibi (başarı/hata) döner — yanıt dürüst olsun diye (§4.2, storage_unavailable).
-    // `queue` ise HİÇBİR ZAMAN reddedilmiş durumda bırakılmaz: hata burada yutulup loglanır,
-    // böylece bu append başarısız olsa bile SONRAKİ append'ler kuyrukta bekletilmeye devam eder
-    // (zehirlenmiş kuyruk = tüm sonraki isteklerin de düşmesi, eski davranış).
+    // F-003 CEO kararı C (N-1 hayalet olay düzeltmesi): `ring.push` artık yazma denemesinden
+    // ÖNCE değil, `writeResult`'ın BAŞARI geri çağrımının içinde (bu blok) çalışır — aynı
+    // promise üzerinde kayıtlı `.then()` geri çağrımları kayıt sırasına göre çalıştığı için
+    // (spec garantisi), bu, çağırana dönen `writeResult.then(...)` (aşağıda) tamamlanmadan
+    // ÖNCE ring'in güncel olmasını garanti eder — `POST` 202 yanıtından hemen sonraki bir
+    // `GET /api/events` bu olayı asla kaçırmaz. Yazma başarısız olursa olay ring'e HİÇ
+    // girmez (sözleşme §7) — `GET /api/events` ve SSE `event` kanalı yalnızca kalıcı yazılan
+    // olaylardan beslenir.
     const writeResult = queue.then(() => fs.promises.appendFile(file, line))
     queue = writeResult.then(
       () => {
+        ring.push(event)
+        if (ring.length > ringSize) ring.shift()
         lineCounts.set(day, (lineCounts.get(day) ?? 0) + 1)
       },
       (err: unknown) => {
@@ -239,12 +247,18 @@ export function createJsonlStore(dataDir: string, options: JsonlStoreOptions = {
     return { events, nextSeq: nextSeqOut }
   }
 
+  function getRingBounds(): { from: number; to: number } | null {
+    if (ring.length === 0) return null
+    return { from: ring[0]!.seq, to: ring[ring.length - 1]!.seq }
+  }
+
   return {
     init,
     append,
     read,
     getCorruptLines: () => corruptLines,
     getWriteErrors: () => writeErrors,
+    getRingBounds,
     dataRoot,
     eventsDir,
     lineCounts,

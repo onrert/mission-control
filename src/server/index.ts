@@ -7,6 +7,8 @@ import { createJsonlStore } from './store/jsonl-store'
 import { startRetentionScheduler } from './store/retention'
 import { handleIngest } from '../features/events/server/ingest'
 import { handleQuery } from '../features/events/server/query'
+import { createSseHub } from './sse/hub'
+import { handleStream } from './sse/stream'
 
 // QA düzeltme turu 1 (B1 madde f) — güvenlik ağı, ASIL çözüm değil: asıl çözüm `jsonl-store.ts`
 // `append`'in kendi hata yakalamasıdır (kuyruk artık asla reddedilmiş kalmaz, `ingest.ts` her
@@ -201,13 +203,22 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse): void 
  * JSONL deposunu ve retention zamanlayıcısını burada başlatabilmesi ve AC-5'in aynı veri
  * dizinine karşı iki ayrı sunucu örneği kurabilmesi için gereklidir (sözleşme §2.2/§3 madde 9).
  */
-export function createServer(port: number, dataDir?: string): http.Server {
+/**
+ * `createServer`'ın döndürdüğü sunucu, F-003'ün `shutdown()`'ının ihtiyaç duyduğu SSE hub'ını
+ * da taşır — `main()` (`isMainModule` dalı) bunu `SIGINT`/`SIGTERM`'de kullanır. Sıradan
+ * `createServer()` çağıranlar (testler) bu alanı görmezden gelebilir, tip genişlemesi
+ * mevcut hiçbir kullanımı bozmaz.
+ */
+export interface ServerWithHub extends http.Server {
+  readonly sseHub: import('./sse/hub').SseHub
+}
+
+export function createServer(port: number, dataDir?: string): ServerWithHub {
   const resolvedDataDir = dataDir ?? process.env.MC_DATA_DIR ?? path.join(process.cwd(), 'data')
   const instanceId = crypto.randomUUID()
 
-  const store = createJsonlStore(resolvedDataDir, {
-    ringSize: resolveEnvInt(process.env, 'MC_RING_SIZE', 2000),
-  })
+  const ringSize = resolveEnvInt(process.env, 'MC_RING_SIZE', 2000)
+  const store = createJsonlStore(resolvedDataDir, { ringSize })
   store.init()
 
   const stopRetention = startRetentionScheduler(resolvedDataDir, store, {
@@ -216,6 +227,7 @@ export function createServer(port: number, dataDir?: string): http.Server {
   })
 
   const maxPayload = resolveEnvInt(process.env, 'MC_MAX_PAYLOAD', 65536)
+  const hub = createSseHub()
 
   const server = http.createServer((req, res) => {
     const pathname = (req.url ?? '/').split('?')[0]
@@ -249,7 +261,11 @@ export function createServer(port: number, dataDir?: string): http.Server {
       return
     }
     if (pathname === '/api/events' && req.method === 'POST') {
-      handleIngest(req, res, store, maxPayload)
+      handleIngest(req, res, store, maxPayload, hub)
+      return
+    }
+    if (pathname === '/api/stream' && req.method === 'GET') {
+      handleStream(req, res, store, hub, ringSize)
       return
     }
     if (pathname?.startsWith('/api/')) {
@@ -270,7 +286,24 @@ export function createServer(port: number, dataDir?: string): http.Server {
     stopRetention()
   })
   server.listen(port, '127.0.0.1')
-  return server
+  return Object.assign(server, { sseHub: hub })
+}
+
+/**
+ * F-003 NOT-3 düzeltmesi: `hub.closeAll()`'ı gerçek bir kapanış yoluna bağlar (ölü kod
+ * bırakmamak için, Karpathy §3). `hub.closeAll()` HER ZAMAN `server.close()`'dan ÖNCE
+ * çağrılır — ters sıra, açık bir SSE soketi varken `server.close()`'un `'close'` olayını
+ * hiç ateşlememesine (dolayısıyla süresiz beklemeye) yol açardı (sözleşme §3 madde 2, Bulgu
+ * 1'in kaynağı). Saf/enjekte edilebilir tutulur (`exit` parametresi) — gerçek sinyal
+ * göndermeden birim testlenebilir (`tests/server/graceful-shutdown.test.ts`).
+ */
+export function shutdown(
+  server: { close(cb?: () => void): void },
+  hub: Pick<import('./sse/hub').SseHub, 'closeAll'>,
+  exit: (code: number) => void = process.exit
+): void {
+  hub.closeAll()
+  server.close(() => exit(0))
 }
 
 function main(): void {
@@ -283,6 +316,12 @@ function main(): void {
   server.once('listening', () => {
     process.stdout.write(`Mission Control API 127.0.0.1:${port} adresinde dinliyor.\n`)
   })
+  const onSignal = (): void => {
+    process.stdout.write(`Sunucu 127.0.0.1:${port} adresinde kapatılıyor...\n`)
+    shutdown(server, server.sseHub)
+  }
+  process.on('SIGINT', onSignal)
+  process.on('SIGTERM', onSignal)
 }
 
 const isMainModule = process.argv[1] === fileURLToPath(import.meta.url)

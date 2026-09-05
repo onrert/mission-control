@@ -24,6 +24,11 @@ async function startServer(dataDir: string): Promise<ServerHandle> {
 }
 
 async function stopServer(handle: ServerHandle): Promise<void> {
+  // F-003 Bulgu 1: `server.close()` tek başına, açık bir SSE bağlantısı varken asla
+  // tamamlanmaz (`'close'` olayı tüm bağlantılar bitene kadar ateşlenmez). `closeAllConnections`
+  // (Node >=18.2 native) tüm aktif soketleri (SSE dahil) anında yok eder, bu da her SSE
+  // bağlantısının kendi `req.on('close')` temizliğini (unsubscribe + keepalive) tetikler.
+  handle.server.closeAllConnections()
   handle.server.close()
   await once(handle.server, 'close')
 }
@@ -349,6 +354,50 @@ describe('B1 (QA düzeltme turu 1): disk yazma hatasında sunucu ölmez, kuyruk 
   })
 })
 
+describe('N-1 (F-003 CEO kararı C): 503 dönen olay GET /api/events üzerinde hiç görünmez', () => {
+  let dataDir: string
+  let handle: ServerHandle
+
+  beforeEach(async () => {
+    dataDir = createTempDataDir()
+    handle = await startServer(dataDir)
+  })
+
+  afterEach(async () => {
+    await stopServer(handle)
+    removeTempDataDir(dataDir)
+  })
+
+  it('503 dönen olay ring/GET sonucunda hayalet olarak kalmaz, sonraki geçerli olay görünür', async () => {
+    const eventsDir = path.join(dataDir, 'events')
+    const dayFilePath = path.join(eventsDir, dayFileName(new Date()))
+    fs.mkdirSync(dayFilePath)
+
+    const failRes = await fetch(`${handle.baseUrl}/api/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hook_event_name: 'PreToolUse' }),
+    })
+    expect(failRes.status).toBe(503)
+
+    const getAfterFail = await fetch(`${handle.baseUrl}/api/events`)
+    const afterFailBody = (await getAfterFail.json()) as { data: unknown[] }
+    expect(afterFailBody.data).toHaveLength(0)
+
+    fs.rmdirSync(dayFilePath)
+    const okRes = await fetch(`${handle.baseUrl}/api/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hook_event_name: 'PreToolUse' }),
+    })
+    expect(okRes.status).toBe(202)
+
+    const getFinal = await fetch(`${handle.baseUrl}/api/events`)
+    const finalBody = (await getFinal.json()) as { data: Array<{ seq: number }> }
+    expect(finalBody.data.map((e) => e.seq)).toEqual([1])
+  })
+})
+
 describe('AC-5: sunucu yeniden başlatılınca en az 100 olay geri döner', () => {
   let dataDir: string
 
@@ -401,5 +450,32 @@ describe('AC-5: sunucu yeniden başlatılınca en az 100 olay geri döner', () =
     } finally {
       await stopServer(secondHandle)
     }
+  })
+})
+
+describe("CEO düzeltmesi: istemcinin gerçek ilk yükleme URL'i sunucuda 200 döner", () => {
+  let dataDir: string
+  let handle: ServerHandle
+
+  beforeEach(async () => {
+    dataDir = createTempDataDir()
+    handle = await startServer(dataDir)
+  })
+
+  afterEach(async () => {
+    await stopServer(handle)
+    removeTempDataDir(dataDir)
+  })
+
+  it('useEventStream.loadEvents ile birebir aynı URL (`?limit=200`, since_seq YOK) gerçek sunucudan 200 döner', async () => {
+    // Mock yok: gerçek createServer + gerçek istek. Bu test, useEventStream.ts'in kurduğu
+    // URL'i (INITIAL_LOAD_LIMIT=200, since_seq parametresiz) sunucunun kabul ettiğini kanıtlar.
+    // Mutasyon: bu satırdaki URL'e `since_seq=-1` eklenirse sunucu 400 invalid_body döner ve
+    // bu test KIRMIZI olur (bkz. docs/qa/F-003-contract.md "CEO düzeltmesi — ilk yükleme URL'i").
+    const res = await fetch(`${handle.baseUrl}/api/events?limit=200`)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { success: boolean; data: unknown[] }
+    expect(body.success).toBe(true)
+    expect(body.data).toEqual([])
   })
 })

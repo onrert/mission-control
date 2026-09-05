@@ -35,9 +35,20 @@ test('kabuk açılır, başlık görünür, konsol hatası yok, tıklanabilir ö
   // (3) konsol/pageerror hatası yok
   expect(consoleErrors).toEqual([])
 
-  // (4) üst çubukta tıklanabilir öğe yok
+  // (4) üst çubukta tıklanabilir öğe yok (F-003 YENİ-1/CEO kararı D8: Zaman Çizelgesi de
+  // gerçek `tablist`/`tab` deseni kurmuyor, yalnızca statik `aria-current="page"` taşıyor —
+  // bu assert değişmeden doğru kalıyor).
   const clickableCount = await page.locator('header button, header a, header [role=button]').count()
   expect(clickableCount).toBe(0)
+
+  // (4b) Zaman Çizelgesi etiketi aria-current="page" taşır, Kanban/Ayarlar taşımaz; hiçbiri
+  // role="tab" değildir (geçersiz ARIA riskine hiç girilmiyor).
+  const ariaCurrentCount = await page.locator('header [aria-current="page"]').count()
+  expect(ariaCurrentCount).toBe(1)
+  const ariaCurrentText = await page.locator('header [aria-current="page"]').innerText()
+  expect(ariaCurrentText).toBe('Zaman Çizelgesi')
+  const tabRoleCount = await page.locator('header [role="tab"]').count()
+  expect(tabRoleCount).toBe(0)
 
   // (5) yükleme kanıtı (birincil) — font gerçekten yüklendi mi
   const fontLoaded = await page.evaluate(async () => {
@@ -56,30 +67,43 @@ test('kabuk açılır, başlık görünür, konsol hatası yok, tıklanabilir ö
   // çeviriyoruz — bu, tarayıcının kendi renk motorunu kullanan, biçimden bağımsız bir kanıttır.
   //
   // N1 (F-002 borcu) — bu ölçüm yalnızca `document.body`'ye kör kalmasın diye `#root > div`
-  // (App'in kök kabı, `src/web/App.tsx`) için de aynı teknikle tekrarlanır. F-002 kapsamında
-  // yeni bir panel yüzeyi olmadığı için genişletme yalnızca kök kap ile sınırlıdır; F-003
-  // gerçek bir panel yüzeyi getirdiğinde üçüncü bir ölçüm noktası eklenecektir.
-  const [bg, token, bgRgb, tokenRgb, rootBg, rootBgRgb] = await page.evaluate(() => {
-    function toRgb(colorStr: string): [number, number, number] {
-      const canvas = document.createElement('canvas')
-      canvas.width = 1
-      canvas.height = 1
-      const ctx = canvas.getContext('2d')
-      if (!ctx) throw new Error('2d context alınamadı')
-      ctx.fillStyle = colorStr
-      ctx.fillRect(0, 0, 1, 1)
-      const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
-      return [r ?? 0, g ?? 0, b ?? 0]
-    }
-    const bgValue = getComputedStyle(document.body).backgroundColor
-    const tokenValue = getComputedStyle(document.documentElement)
-      .getPropertyValue('--color-zinc-950')
-      .trim()
-    const rootEl = document.querySelector('#root > div')
-    if (!rootEl) throw new Error('#root > div bulunamadı')
-    const rootBgValue = getComputedStyle(rootEl).backgroundColor
-    return [bgValue, tokenValue, toRgb(bgValue), toRgb(tokenValue), rootBgValue, toRgb(rootBgValue)]
-  })
+  // (App'in kök kabı, `src/web/App.tsx`) için de aynı teknikle tekrarlanır. F-003 gerçek bir
+  // panel yüzeyi getirdiği için (`data-testid="timeline-screen"`) üçüncü bir ölçüm noktası da
+  // eklendi — F-002'nin devrettiği borç burada kapanıyor.
+  const [bg, token, bgRgb, tokenRgb, rootBg, rootBgRgb, timelineBg, timelineBgRgb] =
+    await page.evaluate(() => {
+      function toRgb(colorStr: string): [number, number, number] {
+        const canvas = document.createElement('canvas')
+        canvas.width = 1
+        canvas.height = 1
+        const ctx = canvas.getContext('2d')
+        if (!ctx) throw new Error('2d context alınamadı')
+        ctx.fillStyle = colorStr
+        ctx.fillRect(0, 0, 1, 1)
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+        return [r ?? 0, g ?? 0, b ?? 0]
+      }
+      const bgValue = getComputedStyle(document.body).backgroundColor
+      const tokenValue = getComputedStyle(document.documentElement)
+        .getPropertyValue('--color-zinc-950')
+        .trim()
+      const rootEl = document.querySelector('#root > div')
+      if (!rootEl) throw new Error('#root > div bulunamadı')
+      const rootBgValue = getComputedStyle(rootEl).backgroundColor
+      const timelineEl = document.querySelector('[data-testid="timeline-screen"]')
+      if (!timelineEl) throw new Error('timeline-screen bulunamadı')
+      const timelineBgValue = getComputedStyle(timelineEl).backgroundColor
+      return [
+        bgValue,
+        tokenValue,
+        toRgb(bgValue),
+        toRgb(tokenValue),
+        rootBgValue,
+        toRgb(rootBgValue),
+        timelineBgValue,
+        toRgb(timelineBgValue),
+      ]
+    })
   expect(bg).not.toBe('')
   expect(token).not.toBe('')
   expect(bgRgb).toEqual(tokenRgb)
@@ -87,6 +111,9 @@ test('kabuk açılır, başlık görünür, konsol hatası yok, tıklanabilir ö
   expect(rootBg).not.toBe('')
   expect(rootBgRgb).toEqual(tokenRgb)
   expect(relativeLuminance(rootBgRgb)).toBeLessThan(0.1)
+  expect(timelineBg).not.toBe('')
+  expect(timelineBgRgb).toEqual(tokenRgb)
+  expect(relativeLuminance(timelineBgRgb)).toBeLessThan(0.1)
 
   // Faz 2 ekranları hiç görünmez
   expect(bodyText).not.toContain('Kapılar')

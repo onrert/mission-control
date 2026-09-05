@@ -1,7 +1,8 @@
 import type http from 'node:http'
 import { normalizeEvent } from './normalize'
 import type { JsonlStore } from '../../../server/store/jsonl-store'
-import type { ApiResponse } from '../../../shared/types'
+import type { SseHub } from '../../../server/sse/hub'
+import type { ApiResponse, EventRecord } from '../../../shared/types'
 
 /** İstek gövdesi üst sınırı — sabit, env ile değiştirilemez (mimari §6.1). */
 const MAX_BODY_BYTES = 262144
@@ -20,7 +21,8 @@ export function handleIngest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   store: JsonlStore,
-  maxPayload: number
+  maxPayload: number,
+  hub: SseHub
 ): void {
   const chunks: Buffer[] = []
   let totalBytes = 0
@@ -56,6 +58,11 @@ export function handleIngest(
         const rawBody = Buffer.concat(chunks).toString('utf8')
         const normalized = normalizeEvent(rawBody, new Date(), maxPayload)
         const { seq, id } = await store.append(normalized)
+        // F-003 CEO kararı C (N-1): yayın yalnızca başarılı yazımda yapılır — `store.append`
+        // burada throw ETMEDİĞİ için (await geçti) olay kalıcı olarak yazılmış demektir; ring
+        // de zaten güncel (jsonl-store.ts'in başarı geri çağrımı bu noktadan önce çalıştı).
+        const record: EventRecord = { ...normalized, seq, id }
+        hub.broadcast('event', record, seq)
         const body: ApiResponse<{ id: string; seq: number; flags: string[] }> = {
           success: true,
           data: { id, seq, flags: normalized.flags },

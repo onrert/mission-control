@@ -227,6 +227,46 @@ describe('createJsonlStore', () => {
     expect(() => JSON.parse(lines[0]!)).not.toThrow()
   })
 
+  describe('N-1 (F-003 CEO kararı C): ring, yalnızca kalıcı yazılan olayları içerir', () => {
+    it('yazma başarısız olan olay ring/read sonucunda hiç görünmez; başarılı sonraki olay görünür', async () => {
+      const store = createJsonlStore(dataDir)
+      store.init()
+      const eventsDir = path.join(dataDir, 'events')
+      const day = dayFileName(new Date())
+      const dayFilePath = path.join(eventsDir, day)
+      fs.mkdirSync(dayFilePath)
+
+      await expect(store.append(makeEvent())).rejects.toThrow()
+      // Hayalet olay: seq 0 hiçbir yerde (ne ring'de ne getRingBounds'ta) görünmemeli.
+      expect(store.read(-1, 10).events).toHaveLength(0)
+      expect(store.getRingBounds()).toBeNull()
+
+      fs.rmdirSync(dayFilePath)
+      const result = await store.append(makeEvent())
+      expect(result.seq).toBe(1)
+      const { events } = store.read(-1, 10)
+      expect(events.map((e) => e.seq)).toEqual([1])
+      expect(store.getRingBounds()).toEqual({ from: 1, to: 1 })
+    })
+  })
+
+  describe('getRingBounds', () => {
+    it('ring boşken null döner', () => {
+      const store = createJsonlStore(dataDir)
+      store.init()
+      expect(store.getRingBounds()).toBeNull()
+    })
+
+    it('append sonrası from/to doğru sınırları verir', async () => {
+      const store = createJsonlStore(dataDir, { ringSize: 3 })
+      store.init()
+      for (let i = 0; i < 5; i++) {
+        await store.append(makeEvent())
+      }
+      expect(store.getRingBounds()).toEqual({ from: 2, to: 4 })
+    })
+  })
+
   it('200 eşzamanlı append — hepsi geçerli JSON, satır sayısı tam 200 (temel eşzamanlılık sağlığı)', async () => {
     const store = createJsonlStore(dataDir)
     store.init()

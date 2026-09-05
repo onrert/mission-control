@@ -344,7 +344,8 @@ sabitliyor (olay dizisi YOK) — ADR-004'ün düzyazısındaki "hello + son N ol
 gibi görünse de, CEO kararı A ("ilk yükleme ring buffer'dan/mevcut `GET /api/events`'ten gelir")
 bu çelişkiyi API tablosu lehine çözüyor: istemci `hello`'yu yalnızca "sunucu şu an seq X'te,
 ring Y'den başlıyor" bilgisi için okur (şu an kullanılmıyor bile — gelecekte teşhis/health amaçlı
-faydalı olabilir), gerçek ilk render **her zaman** ayrı bir `GET /api/events?since_seq=-1&limit=200`
+faydalı olabilir), gerçek ilk render **her zaman** ayrı bir `GET /api/events?limit=200` (since_seq PARAMETRESİ
+GÖNDERİLMEZ — CEO düzeltmesi, dosya sonu)
 çağrısıyla doldurulur (App/TimelineScreen mount olduğunda, `EventSource` açılışından bağımsız;
 `limit=200`, CEO kararı A uyum kontrolünün istediği somut değer — PRD F1/AC6'nın "≥100 olay"ını
 rahatça karşılıyor, `MC_RING_SIZE` varsayılanı 2000'in %10'u, keyfi ama makul bir yuvarlak sayı).
@@ -514,7 +515,8 @@ data: <EventRecord JSON>
 < event: resync
 < data: {"reason":"gap"}
 <
-  (istemci GET /api/events?since_seq=-1&limit=200 ile tam yeniden yükleme yapar; SSE bağlantısı
+  (istemci GET /api/events?limit=200 ile tam yeniden yükleme yapar — since_seq GÖNDERİLMEZ,
+   CEO düzeltmesi, dosya sonu; SSE bağlantısı
    KAPANMAZ, yalnızca REST çağrısı tetiklenir — reconnect döngüsü riski yok, bkz. §3 madde 8/9)
 ```
 
@@ -529,7 +531,7 @@ yeniden seq=0'dan başlamış (ring_from=0, ring_to=5):
 < event: resync
 < data: {"reason":"gap"}
 <
-  (istemci ADD_EVENTS ile GET /api/events?since_seq=-1&limit=200 sonucunu — seq 0-5 — yükler;
+  (istemci ADD_EVENTS ile GET /api/events?limit=200 sonucunu (since_seq GÖNDERİLMEZ) — seq 0-5 — yükler;
    Map<seq,EventRecord> tamamen bu yeni kümeyle güncellenir, hayalet seq=9999 hiç var olmadığı
    için bir "temizleme" adımına gerek yoktur — istemci sadece elindeki en güncel resmi baz alır)
 < event: event

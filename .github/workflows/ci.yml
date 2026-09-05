@@ -14,5 +14,19 @@ jobs:
           node-version: '22'
       - run: npm ci
       # Not: Playwright tarayıcısı burada kurulmaz — `npm run verify` E2E içermez (bilinçli
-      # kapsam sınırı, docs/qa/F-001-contract.md §4/AC9). E2E yerelde `npm run e2e` ile koşulur.
+      # kapsam sınırı, docs/qa/F-001-contract.md §4/AC9). E2E testleri yerelde çalıştırılabilir,
+      # ayrıca aşağıdaki bağımsız `e2e` job'ında CI'da da koşar.
       - run: npm run verify
+
+  e2e:
+    # Bağımsız job (needs yok) — verify'ı yavaşlatmaz, paralel koşar. F-003 CEO kararı D2:
+    # AC1/AC5'in tek kullanıcı-seviyesi kanıtı artık CI'da da doğrulanıyor.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm run e2e

@@ -25,9 +25,27 @@ describe('App (AC6 — DOMsuz statik render)', () => {
     expect(html).not.toContain('Token')
   })
 
-  it('üst çubukta gerçek <button>/<a> elemanı yok', () => {
-    expect(html).not.toContain('<button')
-    expect(html).not.toContain('<a ')
-    expect(html).not.toContain('<a>')
+  it('üst çubukta (header) gerçek <button>/<a> elemanı yok', () => {
+    // F-003: TimelineScreen artık koşulsuz mount edildiği için sayfanın GERİ KALANINDA
+    // (Duraklat, Tekrar dene, filtre çipleri gibi) gerçek butonlar var — bunlar beklenen ve
+    // işlevsel etkileşim öğeleridir. Bu iddia yalnızca üst çubuğa (header) daralır; F-001'in
+    // "iş yapmayan buton" yasağı yalnızca sekme çubuğu için geçerlidir (bkz. shell.spec.ts'in
+    // aynı kapsamlı `header button, header a` seçicisi).
+    const headerMatch = /<header[\s\S]*?<\/header>/.exec(html)
+    expect(headerMatch).not.toBeNull()
+    const headerHtml = headerMatch![0]
+    expect(headerHtml).not.toContain('<button')
+    expect(headerHtml).not.toContain('<a ')
+    expect(headerHtml).not.toContain('<a>')
+  })
+
+  it('Zaman Çizelgesi etiketi aria-current="page" taşır, Kanban/Ayarlar taşımaz; hiçbiri role="tab" değildir (YENİ-1)', () => {
+    const headerMatch = /<header[\s\S]*?<\/header>/.exec(html)
+    const headerHtml = headerMatch![0]
+    expect(headerHtml).toContain('aria-current="page"')
+    expect(headerHtml).not.toContain('role="tab"')
+    expect(headerHtml).not.toContain('aria-selected')
+    // yalnızca bir tane aria-current olmalı (Kanban/Ayarlar taşımıyor)
+    expect(headerHtml.match(/aria-current="page"/g)).toHaveLength(1)
   })
 })

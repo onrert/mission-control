@@ -187,6 +187,16 @@ export function useFeatures(options: UseFeaturesOptions = {}): UseFeaturesResult
           return { kind: 'success', card: body.data }
         }
 
+        if (res.status === 200 && body.success) {
+          // QA düzeltme turu 1 (D46 madde 2, yarı-başarı): sunucu yazmayı diske uyguladı ama
+          // güncel kartı okuyamadı (`data` YOK) — rollback YAPILMAZ, çünkü diskteki gerçek
+          // durum zaten `nextStatus`. İyimser görünüm (üstteki optimistic `setCards` çağrısı)
+          // KORUNUR; `content_hash` bayat kalır ama chokidar'ın `features` echo'su birkaç
+          // saniye içinde (AC3, ≤2sn) gerçek hâli getirip düzeltir.
+          setLastSyncedAt(Date.now())
+          return { kind: 'success', card: { ...previous, status: nextStatus } }
+        }
+
         if (res.status === 409 && body.data) {
           setCards((prev) => replaceCard(prev, key, body.data as FeatureCard))
           return {

@@ -186,6 +186,58 @@ describe('PATCH /api/features/:project_id/:file — yazma hatası (mutasyon 4: m
   })
 })
 
+describe('PATCH /api/features/:project_id/:file — yazma başarılı ama yeniden okuma başarısız (D46/B1, yarı-başarı)', () => {
+  it('rereadCard fırlarsa: yazma DİSKE UYGULANIR, istemci YANITSIZ KALMAZ (200, data yok), süreç ayakta kalır', async () => {
+    const filePath = path.join(projectDir, 'docs', 'features', 'F-001.md')
+    const hash = sha256(fs.readFileSync(filePath))
+    const originalReadFileSync = fs.readFileSync.bind(fs)
+    let matchingReadCalls = 0
+    // `rereadCard`'ın (handler seviyesi) ikinci okuması hedeflenir — write-gate'in yazmadan
+    // ÖNCEKİ ilk okuması (hash karşılaştırması) etkilenmez, böylece yazma GERÇEKTEN başarılı
+    // olur ve yalnızca yazmadan SONRAKİ okuma arızalanır (QA'nın ölçtüğü gerçek senaryo:
+    // AV programının dosyayı kısa süreliğine kilitlediği pencere).
+    const readSpy = vi
+      .spyOn(fs, 'readFileSync')
+      .mockImplementation((...args: Parameters<typeof fs.readFileSync>) => {
+        const target = args[0]
+        const isTargetFile =
+          typeof target === 'string' && path.resolve(target) === path.resolve(filePath)
+        if (isTargetFile) {
+          matchingReadCalls += 1
+          if (matchingReadCalls === 2) {
+            const err = new Error('EBUSY: fault injection (test, D46)') as NodeJS.ErrnoException
+            err.code = 'EBUSY'
+            throw err
+          }
+        }
+        return originalReadFileSync(...args)
+      })
+    try {
+      const res = await writeRequest(
+        handle.baseUrl,
+        'PATCH',
+        `/api/features/${projectId}/F-001.md`,
+        { status: 'qa', expected_hash: hash }
+      )
+      // Bloklayıcının özü: istemci bir yanıt ALIR (önceden `HTTP=000`/10sn zaman aşımı idi).
+      expect(res.status).toBe(200)
+      const body = res.json as { success: boolean; data?: unknown }
+      expect(body.success).toBe(true)
+      // Yarı-başarı dürüst raporlanır: `data` YOK (istemci bunu "yazıldı ama tazeleme
+      // yapılamadı" olarak yorumlar, `useFeatures.ts`).
+      expect(body.data).toBeUndefined()
+      // Yazma GERÇEKTEN diske uygulandı — sessizce "olmadı" denmiyor.
+      expect(fs.readFileSync(filePath, 'utf8')).toContain('status: qa')
+    } finally {
+      readSpy.mockRestore()
+    }
+
+    // Süreç/sunucu ayakta ve yanıt vermeye devam ediyor (B1'in ikinci iddiası).
+    const followUp = await request(handle.baseUrl, 'GET', `/api/features?project_id=${projectId}`)
+    expect(followUp.status).toBe(200)
+  })
+})
+
 describe('PATCH /api/features/:project_id/:file — write_denied (ata dizin symlink)', () => {
   it("docs/features gerçek kök dışına symlink'lenmişse write_denied (403)", async () => {
     const realDir = path.join(projectDir, 'real-features')

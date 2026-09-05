@@ -70,8 +70,14 @@ describe('useFeatures — echo no-op (§4.4 madde 3, hash-bazlı birleştirme)',
     const firstRef = result.current.cards[0]
 
     rerender({ signal: { project_id: 'p1' } })
-    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2))
-    expect(result.current.cards[0]).toBe(firstRef)
+    // QA düzeltme turu 1 (D49/Ö4) — `waitFor(fetch===2)` sonra assert'i AYRI/DIŞARIDA yapmak
+    // React'in ikinci state commit'ini beklemiyordu (QA ölçtü: 11 koşuda 8 yanlış-yeşil, %73).
+    // Assert'in KENDİSİ `waitFor` içine alınır — commit gerçekleşene kadar retry eder, hiç
+    // gerçekleşmezse (mutasyon: `mergeCards` sığ kopya dönerse) zaman aşımıyla KIRMIZI verir.
+    await waitFor(() => {
+      expect(fetchImpl).toHaveBeenCalledTimes(2)
+      expect(result.current.cards[0]).toBe(firstRef)
+    })
   })
 
   it('farklı content_hash ile gelen refetch YENİ referans üretir (mutasyon 5 emsali — beklenen davranış)', async () => {
@@ -212,6 +218,30 @@ describe('useFeatures — patchStatus (§3 madde 8, AC4/AC5)', () => {
     expect(outcome?.kind).toBe('error')
     expect(result.current.cards[0]).toEqual(c)
     expect(result.current.cards[0]?.status).toBe('todo')
+    expect(result.current.isPending(c)).toBe(false)
+  })
+
+  it('200 success ama data YOK (yarı-başarı, D46) → rollback YAPILMAZ, iyimser durum korunur', async () => {
+    // QA düzeltme turu 1 (BLOKLAYICI B1, CEO kararı D46 madde 2): sunucu yazmayı diske
+    // uyguladı ama `rereadCard` başarısız olduğu için `data` göndermedi. İyimser görünüm
+    // (zaten `nextStatus`'a ayarlanmış) rollback edilmemeli — disk zaten o durumda.
+    const c = card()
+    const fetchImpl = fetchReturning([c])
+    const writeFetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true }),
+    })) as unknown as typeof fetch
+
+    const { result } = renderHook(() => useFeatures({ fetchImpl, writeFetchImpl }))
+    await waitFor(() => expect(result.current.loadState).toBe('ready'))
+
+    let outcome: Awaited<ReturnType<typeof result.current.patchStatus>> | undefined
+    await act(async () => {
+      outcome = await result.current.patchStatus(c, 'qa')
+    })
+    expect(outcome?.kind).toBe('success')
+    expect(result.current.cards[0]?.status).toBe('qa')
     expect(result.current.isPending(c)).toBe(false)
   })
 

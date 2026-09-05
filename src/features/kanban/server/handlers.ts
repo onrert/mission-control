@@ -121,47 +121,97 @@ export function handlePatchFeatureStatus(
     }
 
     void (async () => {
-      const result = await setFeatureStatus(project.path, fileName, status, expectedHash)
+      // QA düzeltme turu 1 (BLOKLAYICI B1) — bu IIFE'nin GÖVDESİ tamamı `try/catch` içine
+      // alındı: `rereadCard` (senkron `fs` çağrıları) fırlatırsa `withDispatchErrorBoundary`
+      // (yalnızca SENKRON dağıtımı sarar) bunu YAKALAYAMIYORDU — istek sonsuza kadar yanıtsız
+      // kalıyor, istemcinin `pendingKeys`'i hiç temizlenmiyordu (QA'nın fault injection'ı,
+      // `docs/qa/F-007-2026-09-06.md` B1). Artık HANGİ HATA olursa olsun istemciye bir yanıt
+      // gider, süreç yaşamaya devam eder.
+      try {
+        const result = await setFeatureStatus(project.path, fileName, status, expectedHash)
 
-      if (result.ok) {
-        const data = rereadCard(project, fileName)
-        const body: ApiResponse<FeatureCard> = { success: true, data }
-        sendJson(res, 200, body)
-        return
-      }
-
-      if (result.code === 'conflict') {
-        const data = rereadCard(project, fileName)
-        const body: ApiResponse<FeatureCard> = {
-          success: false,
-          error: { code: 'conflict', message: 'Dosya değişti, güncel hali yüklendi.' },
-          data,
+        if (result.ok) {
+          try {
+            const data = rereadCard(project, fileName)
+            const body: ApiResponse<FeatureCard> = { success: true, data }
+            sendJson(res, 200, body)
+          } catch (rereadErr) {
+            // Yarı-başarı (CEO kararı D46 madde 2): disk yazması BAŞARILI oldu ama en güncel
+            // hâli okunamadı (ör. AV programı dosyayı kısa süreliğine kilitledi — tam da
+            // ADR-005 madde 5'in yazma tarafı için zaten kabul ettiği EPERM/EBUSY penceresinin
+            // okuma eşdeğeri). İstemciye sessizce 500 dönüp "olmadı" dedirtmek YANLIŞ olurdu —
+            // yazma gerçekten oldu. `data` OLMADAN `success:true` dönülür; istemci
+            // (`useFeatures.ts` `patchStatus`) bunu "yazıldı, iyimser görünüm korunur, chokidar
+            // `features` echo'su birkaç saniye içinde gerçek `content_hash`'i getirip
+            // düzeltecek" (AC3, ≤2sn) olarak yorumlar — rollback YAPILMAZ.
+            const message = rereadErr instanceof Error ? rereadErr.message : String(rereadErr)
+            process.stderr.write(
+              `Uyarı: durum yazıldı ama güncel kart okunamadı (${fileName}): ${message}\n`
+            )
+            sendJson(res, 200, { success: true } satisfies ApiResponse<FeatureCard>)
+          }
+          return
         }
-        sendJson(res, 409, body)
-        return
-      }
 
-      if (result.code === 'write_denied') {
-        sendJson(res, 403, {
-          success: false,
-          error: { code: 'write_denied', message: 'Dosyaya yazma izni reddedildi.' },
-        })
-        return
-      }
+        if (result.code === 'conflict') {
+          try {
+            const data = rereadCard(project, fileName)
+            const body: ApiResponse<FeatureCard> = {
+              success: false,
+              error: { code: 'conflict', message: 'Dosya değişti, güncel hali yüklendi.' },
+              data,
+            }
+            sendJson(res, 409, body)
+          } catch (rereadErr) {
+            const message = rereadErr instanceof Error ? rereadErr.message : String(rereadErr)
+            process.stderr.write(
+              `Hata: çakışma sonrası güncel kart okunamadı (${fileName}): ${message}\n`
+            )
+            sendJson(res, 500, {
+              success: false,
+              error: {
+                code: 'write_failed',
+                message: 'Dosya değişti ama güncel hâli okunamadı. Tekrar deneyin.',
+              },
+            })
+          }
+          return
+        }
 
-      if (result.code === 'write_failed') {
-        // write-gate'in ham `describeError()` metni istemciye SIZDIRILMAZ (mimari §6) — yalnızca
-        // sunucu stderr'ine loglanır, sabit UX metni döner.
-        process.stderr.write(`Hata: özellik durumu yazılamadı (${fileName}): ${result.message}\n`)
+        if (result.code === 'write_denied') {
+          sendJson(res, 403, {
+            success: false,
+            error: { code: 'write_denied', message: 'Dosyaya yazma izni reddedildi.' },
+          })
+          return
+        }
+
+        if (result.code === 'write_failed') {
+          // write-gate'in ham `describeError()` metni istemciye SIZDIRILMAZ (mimari §6) —
+          // yalnızca sunucu stderr'ine loglanır, sabit UX metni döner.
+          process.stderr.write(`Hata: özellik durumu yazılamadı (${fileName}): ${result.message}\n`)
+          sendJson(res, 500, {
+            success: false,
+            error: { code: 'write_failed', message: 'Dosyaya yazma izni reddedildi.' },
+          })
+          return
+        }
+
+        // result.code === 'invalid_body'
+        sendInvalidBody(res, 'Dosya biçimi tanınamadı.')
+      } catch (err) {
+        // Güvenlik ağı (CEO kararı D46 madde 1, BLOKLAYICI): `setFeatureStatus`'un kendisi
+        // veya yukarıdaki dallardan biri öngörülemeyen bir hata fırlatırsa istemci ASLA
+        // yanıtsız kalmaz — genel 500, ham hata metni sızmaz.
+        const message = err instanceof Error ? err.message : String(err)
+        process.stderr.write(
+          `Hata: özellik durumu güncellenirken beklenmeyen hata oluştu (${fileName}): ${message}\n`
+        )
         sendJson(res, 500, {
           success: false,
           error: { code: 'write_failed', message: 'Dosyaya yazma izni reddedildi.' },
         })
-        return
       }
-
-      // result.code === 'invalid_body'
-      sendInvalidBody(res, 'Dosya biçimi tanınamadı.')
     })()
   })
 }

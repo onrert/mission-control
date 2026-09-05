@@ -1,7 +1,7 @@
 ---
 id: F-007
 title: Kanban panosu + frontmatter status yazma + çakışma/echo yönetimi
-status: fix
+status: qa
 owner: developer
 deps: [F-005, F-006]
 sprint: 1
@@ -15,7 +15,7 @@ Kaynak: `docs/02-architecture.md` §7; `docs/03-ux.md` ekran 2 + akışlar (a), 
 - [x] Sürükleme YALNIZCA `status` alanını değiştirir; dosyanın geri kalanı karakter bazında aynı kalır (PRD F2/AC2) — diff testiyle kanıtlanır. Kanıt: `tests/server/write-gate.test.ts` bayt-koruma golden fixture'ları (F-006'dan miras, bu turda async imzaya uyarlandı), `kanban.spec.ts` AC9 gerçek dosya yazımı.
 - [x] Dosya dışarıdan değiştiğinde pano en geç 2 sn içinde günceli yansıtır (PRD F2/AC3). Kanıt: `tests/e2e/kanban.spec.ts:158` gerçek duvar-saati ölçümü (`elapsed < 2000ms`), gerçek chokidar + gerçek SSE.
 - [x] Çakışma: diskteki içerik beklenenden farklıysa yazma durur, "dosya değişti" uyarısı gösterilir, kart yeni duruma göre yeniden çizilir; sessizce üzerine yazılmaz (PRD F2/AC4). Kanıt: `tests/integration/features-api.test.ts` 409 testi, `useFeatures.test.ts` conflict testi, `kanban.spec.ts:261` gerçek yarış senaryosu; mutasyon 3 (`expected_hash` kontrolü atlandı) KIRMIZI verdi.
-- [x] Yazma hatasında kart eski sütununa döner, okunabilir hata gösterilir, panel çökmez (PRD F2/AC5). Kanıt: `useFeatures.test.ts` rollback testleri, `kanban.spec.ts:303` gerçek salt-okunur dizin; mutasyon 4 (ham hata mesajı sızması) KIRMIZI verdi.
+- [x] Yazma hatasında kart eski sütununa döner, okunabilir hata gösterilir, panel çökmez (PRD F2/AC5). Kanıt: `useFeatures.test.ts` rollback testleri, `kanban.spec.ts:303` gerçek salt-okunur dizin; mutasyon 4 (ham hata mesajı sızması) KIRMIZI verdi. **QA düzeltme turu 1 (B1) sonrası güncellendi:** yazma başarılı olup yeniden okuma (`rereadCard`) başarısız olduğunda istemci artık asla yanıtsız kalmaz — `handlers.ts`'teki async IIFE tamamı `try/catch`'e alındı, yarı-başarı durumunda `data` olmadan `200` döner. Kanıt: `tests/integration/features-api.test.ts` "D46/B1" fault-injection testi (gerçek HTTP yanıtı + süreç ayakta); mutasyon D46 (try/catch kaldırıldı) KIRMIZI verdi (`docs/qa/F-007-contract.md` "Mutasyon kanıtı — düzeltme turu 1").
 - [x] Tanımsız `status` değeri "Bilinmeyen durum" sütununda görünür ve buradan geçerli bir sütuna sürüklenebilir (PRD F2/AC6, ADR-001 karar 5). Kanıt: `parse-feature.test.ts` AC6 testi, `kanban.spec.ts:188` gerçek sürükleme.
 - [x] Karta tıklanınca id, title, owner, deps, sprint salt okunur görünür (PRD F2/AC7). Kanıt: `KanbanScreen.test.tsx` modal içerik/focus-trap testleri.
 - [x] Kendi yazımız chokidar üzerinden geri gelip sonsuz döngü veya yanıp sönme yaratmaz. Kanıt: `useFeatures.test.ts` echo/hash-birleştirme testleri (test bu turda güçlendirildi, bkz. kontrat "Mutasyon kanıtı"), `kanban.spec.ts:367` D42 render-sayacı ölçümü; mutasyon 5 (hash birleştirme kaldırıldı) KIRMIZI verdi.
@@ -33,7 +33,7 @@ Kaynak: `docs/02-architecture.md` §7; `docs/03-ux.md` ekran 2 + akışlar (a), 
 **Tümü kapatıldı (2026-09-06, kanıtlar `docs/qa/F-007-contract.md` "Mutasyon kanıtı" bölümünde):**
 - [x] Madde 1 (tablist) — `App.tsx` `role="tablist"/"tab"/"tabpanel"`, `App.test.tsx` kanıtlıyor; mutasyon 9 (`role="tablist"` kaldırıldı) KIRMIZI verdi.
 - [x] Madde 2 (AC1 görsel kanıt) — `kanban.spec.ts:140` T2 senaryosu, gerçek `POST /api/projects` + 5 sn içinde kart görünürlüğü.
-- [x] Madde 3 (dar genişlik) — `kanban.spec.ts:341` T3, 375px'te sekmeler+dişli erişilebilir; mutasyon 12 (`overflow-x-auto` kaldırılması, kontrat §8) ayrıca planlı.
+- [x] Madde 3 (dar genişlik) — `kanban.spec.ts:341` T3, 375px'te sekmeler+dişli erişilebilir. **QA düzeltme turu 1 (B2) sonrası güncellendi:** QA'nın ölçtüğü gibi eski tek-satırlık `overflow-x-auto` düzeni 375px'te her iki sekmenin de kırpılmış görünür genişliğini 0 px'e indiriyordu (`toBeVisible()` bunu yakalamıyordu). Sekme çubuğu artık <640px'te kendi tam genişlikli satırına iniyor; çit `toBeVisible()` yerine gerçek kırpılmış-görünür-genişlik (`getBoundingClientRect` + scroll kabı kırpması) ölçüyor, her iki sekme için de `>0` bekliyor. Kanıt: `tests/e2e/kanban.spec.ts:349-389` (`clippedVisibleWidth`); mutasyon D47 (eski düzene geri dönüş) KIRMIZI verdi.
 - [x] Madde 4 (`Atomics.wait`→async) — `write-gate.ts` `delay()` `setTimeout` tabanlı, `setFeatureStatus`/`writeGateApproval`/`writeGateDenial` async; `write-gate.test.ts` T4 mikro-görev testi, mutasyon 7 (senkron bekleme geri getirildi) KIRMIZI verdi.
 - [x] Madde 5 (`safeYamlValue` sertleştirme) — `YAML_INDICATOR_START` + `resolvesToNonString` (gerçek `yaml.parse()` tip kontrolü), 40/40 golden fixture; mutasyon 8/8b ikisi de KIRMIZI verdi.
 - [x] Madde 6 (`OPERATION_PATTERNS` koşulu) — bu turda `OPERATION_PATTERNS`'a dokunulmadı (grep ile doğrulandı, `write-gate.ts` diff'i yalnızca madde 4/5'in gerektirdiği satırları içeriyor) — koşul tetiklenmedi, kayıt olarak kalıyor (F-008'e devir).
@@ -68,3 +68,14 @@ Kaynak: `docs/02-architecture.md` §7; `docs/03-ux.md` ekran 2 + akışlar (a), 
    onları gölgeliyor; QA 28 varyantla doğruladı). Bugün kabul edilebilir. Ama F-007
    `OPERATION_PATTERNS`'a yeni bir desen eklerse veya mevcut birini gevşetirse, o gölge kalkar ve
    adım 3/6 **aynı turda** çitlenmek zorundadır.
+
+## QA kod turu (2026-09-06, KARAR: KALDI) — düzeltme turu 1 kapatıldı
+
+QA raporu: `docs/qa/F-007-2026-09-06.md` (2 bloklayıcı: B1, B2 · 5 önemli: Ö1-Ö5 · 4 not: N1-N4).
+Developer'ın kapsamındaki 7 madde (B1, B2, Ö1, Ö2, Ö3, Ö4, N1 — Ö5 CEO ödevi, kod sahipliğinde
+değil) kapatıldı, commit'ler: `7ebd29b` (D46/B1), `73faeea`+`f6b516b` (D47/B2), `fc4a1cf` (N1),
+`e8686f7` (D49/Ö4). Ö1/Ö2 (roving tabindex + ok tuşu testi) ve Ö3 (`aria-controls` ters yön çiti)
+`73faeea` ile aynı `App.tsx` diff'inde çözüldü (D50/D48). Mutasyon kanıtı: `docs/qa/F-007-contract.md`
+"Mutasyon kanıtı — düzeltme turu 1 (2026-09-06)" — D46/D47/D48a/D48b/D50/N1 birer kez, D49 beş kez
+ardışık koşuldu, hepsi KIRMIZI. Açık kalan: Ö5 ve N3 (CEO ödevi, `docs/03-ux.md` güncellemesi —
+`docs/blockers.md`'de kayıtlı, bu feature'ın dosya sahipliği dışında).

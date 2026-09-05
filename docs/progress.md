@@ -1449,3 +1449,110 @@ mutasyon planını gerçekten koşturmak, dokümanları kapatmaktı:
 - qa-evaluator F-007'yi değerlendirsin (feature notu `status: qa`).
 - GEÇTİ ise **G4-1 kilometre taşı** (Faz 1 tamamlandı, kullanıcı onayı) ve/veya Faz 2'ye geçiş
   kararı kullanıcıdan istenmeli.
+
+---
+
+## 2026-09-06 — F-007 QA kod turu KALDI, düzeltme turu 1 tamamlandı · `status: qa`
+
+**QA verdiği karar:** KALDI (2 bloklayıcı: B1, B2 · 5 önemli: Ö1-Ö5 · 4 not: N1-N4). Tam rapor
+`docs/qa/F-007-2026-09-06.md`. Puanlar 6-7 arası, iki bloklayıcı bulgu karar kuralını tetikledi.
+10/10 AC ve 728/728 test yeşildi ama iki devralınan taahhüt (T1 klavye/odak, T3 dar-genişlik
+gezinme) `[x]` işaretliydi ve **gerçekte** sağlanmıyordu — kanıtlanan testler ölçmüyordu.
+
+**Bloklayıcılar**
+- **B1 —** yazma başarılı olduktan SONRAKİ okuma (`rereadCard`) fırlarsa (`EBUSY`/AV kilidi
+  benzeri), `PATCH /api/features` yanıtı **sonsuza kadar askıda** kalıyordu (istemci `HTTP=000`,
+  10 sn zaman aşımı); `useFeatures.patchStatus`'un `await`'i hiç çözülmediği için kart kalıcı
+  "bekliyor" durumunda donuyordu. Kod, sürecin ayakta kalmasını yalnızca F-002'den kalan genel
+  `unhandledRejection` güvenlik ağına borçluydu — o ağın kendi yorumu zaten "asıl çözüm değil"
+  diyor. `rereadCard`'ın hiç testi yoktu (`grep -n "rereadCard" tests/` = 0). **F-002/F-005'in
+  "yeni yazma yolunda fault injection eksik" dersinin üçüncü tekrarı.**
+- **B2 —** 375px'te sekme çubuğunun kırpılmış görünür genişliği **her iki sekme için de 0 px**
+  idi — kullanıcı yalnızca kısaltılmış başlığı ve Ayarlar dişlisini görüyordu, ekranlar arası
+  geçiş ancak başlık şeridini yatay kaydırmayı **keşfederse** mümkündü. Çit bunu yakalamıyordu:
+  `kanban.spec.ts` sekmeler için `toBeVisible()` + `.click()` kullanıyordu — Playwright'ta bu,
+  kaydırılmış bir `overflow-x-auto` kabındaki öğe için **doğrudur** ve `.click()` öğeyi otomatik
+  görünür alana kaydırır, yani test kullanıcının hiç göremediği bir sekmede de yeşil kalıyordu.
+
+**Önemliler:** Ö1 (ok tuşu seçimde DOM odağı taşınmıyordu, roving tabindex ihlali), Ö2 (tablist
+klavye gezinmesinin hiçbir testi yoktu — `onKeyDown` bağlantısı tamamen silinince 728/728+23/23
+yeşil kalıyordu), Ö3 (`aria-controls` çiti yarımdı — iki sekmeyi de `panel-timeline`'a bağlayan
+mutasyon 728/728 yeşil kaldı), Ö4 (jsdom echo çiti flaky — QA'nın mutasyonu 11 koşuda 8 kez
+yanlış-yeşil, gerçek yanlış-yeşil oranı %73), Ö5 (sözleşmenin söz verdiği "Ayarlar açıkken
+tablist" testi hiç yazılmamış — CEO ödevi, kod sahipliği dışı). **N1:** 403 `write_denied` 500
+`write_failed` ile aynı metni döndürüyordu, kullanıcı güvenlik reddiyle disk hatasını ayırt
+edemiyordu.
+
+**Düzeltme turu 1'de yapılanlar (developer'ın kapsamındaki 7 madde — Ö5/N3 CEO ödevi, kod
+sahipliği dışında bırakıldı)**
+1. **B1 (`7ebd29b`) —** `handlePatchFeatureStatus`'un async IIFE'sinin GÖVDESİ tamamı `try/catch`'e
+   alındı (dış güvenlik ağı) + yazma-başarılı/okuma-başarısız yarı-başarı durumu dürüstçe `data`
+   olmadan `200` döner (rollback yapılmaz — yazma gerçekten oldu, chokidar echo'su birkaç saniye
+   içinde düzeltir). `rereadCard` fault-injection testi eklendi.
+2. **B2 (`73faeea`+`f6b516b`) —** sekme çubuğu artık <640px'te başlık/Ayarlar ile genişlik
+   yarışmayan kendi tam-genişlikli satırına iniyor; ≥640px'te eski tek-satırlı görünüm değişmedi.
+   Çit `toBeVisible()` yerine gerçek kırpılmış-görünür-genişlik (`getBoundingClientRect` + scroll
+   kırpması) ölçüyor.
+3. **Ö1/Ö2 (aynı `App.tsx` diffinde, D50/D48a) —** ok tuşu seçiminde `focusTab()` ile DOM odağı
+   yeni sekmeye taşınıyor (roving tabindex); gerçek `fireEvent.keyDown` + `document.activeElement`
+   ölçen jsdom testi eklendi (`App.interaction.test.tsx`).
+4. **Ö3 (D48b) —** her sekmenin `aria-controls`'unun KENDİ paneline işaret ettiği ayrı ayrı,
+   izole edilmiş bir testle doğrulandı (`App.test.tsx`) — önceki test yalnızca dizge varlığına
+   bakıyordu, ters yönü (Kanban sekmesi) hiç ölçmüyordu.
+5. **Ö4 (`e8686f7`, D49) —** jsdom echo assert'i `fetchImpl` çağrı SAYISI yerine `lastSyncedAt`
+   değişimini bekliyor — bu, `cards` state'inin AYNI React commit'inde güncellendiğini garanti
+   ediyor (senkronizasyon sinyali artık doğru).
+6. **N1 (`fc4a1cf`) —** 403 `write_denied` artık kendi sözlük metnini (`'Dosya biçimi
+   tanınamadı. Tekrar deneyin.'`) döndürüyor, 500 ile aynı metni paylaşmıyor.
+
+**Mutasyon kanıtı (bu turun kendi ölçümü, tam tablo `docs/qa/F-007-contract.md` "Mutasyon kanıtı —
+düzeltme turu 1")**
+
+| Bulgu | Mutasyon | Sonuç |
+|---|---|---|
+| D46/B1 | Async IIFE düzeltme-öncesi (try/catch'siz) haline geri döndürüldü | KIRMIZI — istemci 5 sn'de zaman aşımına uğradı, hiç yanıt gelmedi |
+| D47/B2 | `<header>` eski tek-satırlı `overflow-x-auto` düzenine geri döndürüldü | KIRMIZI — `clippedVisibleWidth('#tab-timeline')` → `0` |
+| D48a/Ö2 | `onKeyDown={onTabKeyDown}` sekme `span`'inden kaldırıldı | KIRMIZI — `ArrowRight` sonrası `aria-selected` değişmedi |
+| D48b/Ö3 | Her iki sekmenin `aria-controls`'u `"panel-timeline"`'a sabitlendi | KIRMIZI — `tab-kanban`'ın kendi `aria-controls`'u beklenenden farklı |
+| D50/Ö1 | `focusTab()` gövdesi no-op'a çevrildi | KIRMIZI — `document.activeElement` yeni sekmeye taşınmadı |
+| D49/Ö4 | `mergeCards`'ın hash-eşit dalı `{ ...prevCard }` (yeni referans) döndü | **5/5 KIRMIZI** (ardışık 5 ayrı `vitest run` süreci) |
+| N1 | 403 mesajı yeniden 500 ile aynı metne çevrildi | KIRMIZI — beklenen sözlük metni gelmedi |
+
+**Yeşil kalan mutasyon oldu mu?** Hayır — 7 mutasyonun hepsi (D49 dahil 5 kez) ilk koşuda KIRMIZI
+verdi; testi düzeltmek gerekmedi.
+
+**Nasıl doğrulandı**
+- `npm run verify` = 0 (typecheck + lint + **48 dosya / 732 test** + build). Bir koşuda vitest
+  worker fork kararsızlığı tekrar gözlendi (`tests/integration/projects-api.test.ts` çalışırken
+  worker exit code 3221226505) — hemen tekrar koşulduğunda 0/732/732, gerçek bir kod hatası değil
+  (bu sınıf daha önce de kayıtlı, CLAUDE.md).
+- `npm run e2e` = 0 (**23 passed**), `npm run e2e:dev` = 0 (**1 passed**).
+- 7 mutasyonun hepsi (D49 için 5 kez) canlı kaynakta uygulanıp KIRMIZI görüldü, `git checkout --`
+  ile birebir geri alındı; her revert sonrası `git diff HEAD -- src/` boş doğrulandı.
+- Süreç/port temizliği: `tasklist`'te node.exe yok; 7333/7334/7335/7433/7434'te LISTENING yok.
+- `git diff HEAD` bu belgeleme turunun başında ve sonunda boş (yalnızca doküman dosyaları
+  değişti).
+
+**Commit'ler (bu düzeltme turunda, önceki oturumlardan)**
+`7ebd29b` (D46/B1), `73faeea`+`f6b516b` (D47/B2), `fc4a1cf` (N1), `e8686f7` (D49/Ö4), `799fa8e`
+(ekran görüntüleri). Bu turun kendi commit'i (bu kayıttan sonra): `docs/qa/F-007-contract.md`
+mutasyon kanıtı bölümü + `docs/features/F-007-kanban.md` AC5/T3 kanıt güncellemesi + `status: qa`
++ bu progress.md kaydı — kod tarafında **ek değişiklik yok** (mutasyonlar geçici uygulanıp geri
+alındı).
+
+**Kalan risk**
+- CEO ödevleri hâlâ açık (Ö5, N3 — kod sahipliği dışında): `docs/03-ux.md:443` klavye akışının
+  güncellenmesi, `#panel-settings` metninin düzeltilmesi, "Ayarlar açıkken tablist" davranışı
+  için söz verilen testin yazılması, iki yeni hata metninin Türkçe sözlüğe eklenmesi.
+- N2/N4 (kayıt, düzeltme istenmedi): `shell.spec.ts` değişikliğinin davranış gevşetmesi
+  olmadığı QA tarafından doğrulandı; `setFeatureStatus`'un oku→karşılaştır→yeniden-adlandır
+  sırası kilitsiz (ADR-005 madde 7'nin bilinen sınırı, tek kullanıcılı yerel araçta kabul
+  edilebilir).
+- Vitest worker fork kararsızlığı üçüncü kez gözlendi (F-002 ve önceki F-007 turunda da kayıtlı)
+  — ortam sorunu, gerçek kod regresyonu değil; her kırmızıyı en az bir kez tekrar koşup
+  doğrulamak gerekiyor.
+
+**Sonraki adım**
+- qa-evaluator F-007'yi yeniden değerlendirsin (düzeltme turu 1 — B1, B2, Ö1-Ö4, N1 kapatıldı).
+- GEÇTİ ise **G4-1 kilometre taşı** (Faz 1 tamamlandı, kullanıcı onayı) ve/veya Faz 2'ye geçiş
+  kararı kullanıcıdan istenmeli.

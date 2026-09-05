@@ -4,7 +4,7 @@ title: Kanban panosu + frontmatter status yazma + çakışma/echo yönetimi
 author: developer
 status: draft
 date: 2026-09-05
-revision: tur 3
+revision: düzeltme turu 1 (2026-09-06)
 ---
 
 # F-007 Sözleşmesi — Kanban panosu + frontmatter `status` yazma + çakışma/echo yönetimi
@@ -1382,3 +1382,53 @@ round-trip'iyle geçiyor (`npx vitest run tests/server/write-gate.test.ts -t "T5
 **Komut çıkış kodları (bu turda yeniden koşturuldu):** `npm run verify` → 0 (48 dosya / 728 test,
 typecheck+lint+test+build) · `npm run e2e` → 0 (23 passed) · `npm run e2e:dev` → 0 (1 passed).
 `git diff HEAD` her mutasyon sonrası ve turun sonunda boş.
+
+---
+
+## Mutasyon kanıtı — düzeltme turu 1 (2026-09-06)
+
+QA kod turu raporunun (`docs/qa/F-007-2026-09-06.md`, KARAR: KALDI) istediği 7 kapatma maddesinden
+(B1, B2, Ö1/Ö2, Ö3, Ö4, N1 — Ö5 developer'ın işi değil, CEO ödevi) her düzeltme için: **mutasyonla
+eski (kırılmış) davranışa geri dön → ilgili test dosyasını koştur → KIRMIZI olduğunu gör → `git
+checkout --` ile diskteki gerçek kodu geri al**. Her mutasyondan sonra `git diff HEAD -- src/`
+**boş** olduğu doğrulandı (aşağıdaki her satırda ayrıca not edildi).
+
+| # | Mutasyon | Dosya | Koşturulan | Sonuç | Hata mesajının ilk satırı |
+|---|---|---|---|---|---|
+| D46/B1 | `handlePatchFeatureStatus`'un async IIFE'sini düzeltme-öncesi (try/catch'siz) haline geri döndürüldü (`git show 7ebd29b^:...` içeriği geçici olarak yapıştırıldı) | `src/features/kanban/server/handlers.ts` | `tests/integration/features-api.test.ts -t "D46"` | **KIRMIZI** | `Error: Test timed out in 5000ms.` (istemci hiç yanıt almadı, `rereadCard`'ın EBUSY fırlatması `withDispatchErrorBoundary`'nin yakalayamadığı asenkron IIFE'de kaldı) |
+| D47/B2 | `<header>`'ı düzeltme-öncesi tek satırlı `overflow-x-auto` düzenine geri döndürüldü (roving-tabindex/`aria-controls` düzeltmeleri KORUNARAK, yalnızca layout mutasyonlandı) | `src/web/App.tsx` | `npx playwright test -g "T3"` | **KIRMIZI** | `Error: expect(received).toBeGreaterThan(expected)` — `clippedVisibleWidth('#tab-timeline')` → `Received: 0` |
+| D48a/Ö2 | `onKeyDown={onTabKeyDown}` sekme `span`'inden tamamen kaldırıldı | `src/web/App.tsx` | `npx vitest run tests/web/App.interaction.test.tsx -t "ArrowRight"` | **KIRMIZI** | `AssertionError: expected 'false' to be 'true'` (`ArrowRight` sonrası `kanbanTab.aria-selected` hâlâ `'false'`) |
+| D48b/Ö3 | Her iki sekmenin `aria-controls`'u da sabit `"panel-timeline"`'a çevrildi | `src/web/App.tsx` | `npx vitest run tests/web/App.test.tsx` | **KIRMIZI** | `AssertionError: expected '<span role="tab" id="tab-kanban" ...>' to contain 'aria-controls="panel-kanban"'` |
+| D50/Ö1 | `focusTab()` gövdesi no-op'a çevrildi (`document.getElementById(...).focus()` çağrısı kaldırıldı), `onTabKeyDown`/layout KORUNDU | `src/web/App.tsx` | `npx vitest run tests/web/App.interaction.test.tsx -t "ArrowRight"` | **KIRMIZI** | `AssertionError: expected <span role="tab" ...Kanban> to be <span role="tab" ...Zaman Çizelgesi>` (`document.activeElement` yeni sekmeye taşınmadı) |
+| D49/Ö4 | `mergeCards`'ın hash-eşit dalı `return prevCard` yerine `return { ...prevCard }` (yeni referans, davranışsal olarak echo kimliğini bozar) | `src/features/kanban/web/useFeatures.ts` | `npx vitest run tests/features/kanban/web/useFeatures.test.ts -t "aynı content_hash"` — **5 kez ardışık** | **5/5 KIRMIZI** | `AssertionError: expected {…} to be {…} // Object.is equality` (`cards[0]` `firstRef`'e eşit değil) |
+| N1 | 403 `write_denied` mesajı yeniden 500 `write_failed` ile aynı metne (`'Dosyaya yazma izni reddedildi.'`) çevrildi | `src/features/kanban/server/handlers.ts` | `npx vitest run tests/integration/features-api.test.ts -t "write_denied"` | **KIRMIZI** | `AssertionError: expected 'Dosyaya yazma izni reddedildi.' to be 'Dosya biçimi tanınamadı. Tekrar deney…'` |
+
+**D49 — 5/5 kırmızı, flakiness kapandı (QA'nın ölçtüğü %73 yanlış-yeşil artık yok).** QA'nın kendi
+mutasyonu (`docs/qa/F-007-2026-09-06.md` Ö4) 11 koşuda 8 kez yanlış-yeşil vermişti çünkü eski assert
+`fetchImpl` çağrı SAYISININ 2'ye ulaşmasını senkronizasyon sinyali sayıyordu — bu sayı, React'in
+ikinci `setCards` commit'inden ÖNCE, `fetchImpl` senkron invoke edildiği anda zaten 2 olabiliyordu.
+Düzeltilmiş test (`ac40677`, bu turdan önce yazılmış) `lastSyncedAt` değişimini bekliyor —
+`setLastSyncedAt` her zaman `setCards` ile AYNI senkron blokta, `await`'ler çözüldükten SONRA
+çağrılıyor (`useFeatures.ts:91-94`), yani `lastSyncedAt` değiştiğini görmek `cards` state'inin de
+AYNI React commit'inde güncellendiğini garanti ediyor. Bu turda mutasyona karşı 5 ayrı süreçte
+(`npx vitest run` ayrı ayrı 5 kez başlatıldı, aynı worker'ı yeniden kullanmadı) koşturuldu — **5/5
+KIRMIZI**, hiç yanlış-yeşil yok. Çit artık kırılgan değil.
+
+**Yeşil kalan mutasyon oldu mu?** Hayır — yukarıdaki 7 mutasyonun hepsi ilk koşuda (D49 hariç, o da
+5 kez) KIRMIZI verdi; hiçbirini "testi düzeltmek" gerekmedi, kısıtın (KISITLAR §) izin verdiği
+"yalnızca bir mutasyon yeşil kalırsa kod değişir" durumu **hiç tetiklenmedi**.
+
+**Her mutasyondan sonra doğrulama:** `git diff HEAD -- src/` her defasında **boş** döndü (`git
+checkout -- <dosya>` ile tam geri alma), `git status --porcelain` turun sonunda temiz.
+
+**Kod tarafında düzeltme turu boyunca EK değişiklik yapılmadı** — yalnızca yukarıdaki geçici
+mutasyonlar uygulanıp geri alındı; kalıcı diff `git diff HEAD` bu belgeleme turunun başında ve
+sonunda **boş**.
+
+**Ö5 (kayıt, developer'ın işi değil):** QA'nın not ettiği `docs/03-ux.md:443` (`Enter`/`Boşluk`
+klavye sapması) ve `#panel-settings` metni hâlâ güncellenmedi — bu CEO ödevi olarak feature
+notunda ve `docs/blockers.md`'de kayıtlı kalmaya devam ediyor, bu turun kapsamı dışında (kod
+sahipliği `src/features/kanban/**` + testler, UX dokümanı değil).
+
+**Komutlar — bu turun sonunda son kez koşturuldu:** `npm run verify` → 0 (48 dosya / 732 test) ·
+`npm run e2e` → 0 (23 passed) · `npm run e2e:dev` → 0 (1 passed).

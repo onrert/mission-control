@@ -68,16 +68,21 @@ describe('useFeatures — echo no-op (§4.4 madde 3, hash-bazlı birleştirme)',
     )
     await waitFor(() => expect(result.current.loadState).toBe('ready'))
     const firstRef = result.current.cards[0]
+    const firstSyncedAt = result.current.lastSyncedAt
 
     rerender({ signal: { project_id: 'p1' } })
-    // QA düzeltme turu 1 (D49/Ö4) — `waitFor(fetch===2)` sonra assert'i AYRI/DIŞARIDA yapmak
-    // React'in ikinci state commit'ini beklemiyordu (QA ölçtü: 11 koşuda 8 yanlış-yeşil, %73).
-    // Assert'in KENDİSİ `waitFor` içine alınır — commit gerçekleşene kadar retry eder, hiç
-    // gerçekleşmezse (mutasyon: `mergeCards` sığ kopya dönerse) zaman aşımıyla KIRMIZI verir.
-    await waitFor(() => {
-      expect(fetchImpl).toHaveBeenCalledTimes(2)
-      expect(result.current.cards[0]).toBe(firstRef)
-    })
+    // QA düzeltme turu 1 (D49/Ö4) — `waitFor(fetch çağrı SAYISI === 2)` YANLIŞ bir senkronizasyon
+    // sinyaliydi: `vi.fn()` çağrı SAYISI, `fetchImpl` senkron olarak invoke edildiği anda artar —
+    // `await`'ler henüz çözülmeden, yani React'in ikinci `setCards` commit'inden ÖNCE zaten 2'ye
+    // ulaşabilir. Bu, assert'i `waitFor` içine almakla bile DÜZELMEZ (ölçüldü, bu turda): `waitFor`
+    // callback'i İLK kez SENKRON çalıştığı için, tam o anda "çağrı sayısı=2 AMA state HÂLÂ eski
+    // (`cards[0] === firstRef` triviyal doğru çünkü hiç değişmedi)" anını yakalayıp YANLIŞ-YEŞİL
+    // verebiliyordu. Doğru senkronizasyon sinyali: `lastSyncedAt` — yalnızca `setCards` ile AYNI
+    // senkron blokta, fetch+json ÇÖZÜLDÜKTEN SONRA güncellenir; değiştiğini görmek, `cards`
+    // state'inin de AYNI COMMIT'te güncellendiğini garanti eder (React state batching).
+    await waitFor(() => expect(result.current.lastSyncedAt).not.toBe(firstSyncedAt))
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(result.current.cards[0]).toBe(firstRef)
   })
 
   it('farklı content_hash ile gelen refetch YENİ referans üretir (mutasyon 5 emsali — beklenen davranış)', async () => {

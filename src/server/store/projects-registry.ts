@@ -41,8 +41,8 @@ function randomId(): string {
 
 /**
  * `data/projects.json` kayıt defterinin fabrika deseninde (jsonl-store ile aynı stil)
- * okunması/yazılması (sözleşme §4.1). `unlink`/`rm` hiç kullanılmaz — yalnızca kendi
- * `projects.json`'ını tmp+rename ile yazar (CEO kararı B/C guard'ı).
+ * okunması/yazılması (sözleşme §4.1). Hiçbir kaldırma/silme fs çağrısı kullanılmaz — yalnızca
+ * kendi `projects.json`'ını tmp+rename ile yazar (CEO kararı B/C guard'ı).
  */
 export function createProjectsRegistry(dataDir: string): ProjectsRegistry {
   const filePath = path.join(dataDir, 'projects.json')

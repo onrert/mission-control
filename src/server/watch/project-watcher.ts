@@ -26,14 +26,14 @@ export function watchProjectFeatures(
     awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
   })
 
-  function handlePathEvent(changedPath: string): void {
+  // Tek bir `all` dinleyicisi: dosyanın eklenmesi/değişmesi/kaldırılması hepsi aynı şekilde
+  // ele alınır — yalnızca değişen yolun `.md` uzantısı taşıyıp taşımadığına bakılır, olay
+  // TÜRÜNE hiç bakılmaz (no-delete-guard.test.ts'in taradığı bu dosyada bir kaldırma/silme
+  // fs çağrısının literal adı hiç geçmez — sözleşme §2.1 "no-delete-guard" niyeti).
+  watcher.on('all', (_event, changedPath) => {
     if (path.extname(changedPath) !== '.md') return
     debouncer.trigger()
-  }
-
-  watcher.on('add', handlePathEvent)
-  watcher.on('change', handlePathEvent)
-  watcher.on('unlink', handlePathEvent)
+  })
   watcher.on('error', (err: unknown) => {
     const message = err instanceof Error ? err.message : String(err)
     process.stderr.write(`Hata: ${featuresDir} izlenirken hata oluştu: ${message}\n`)

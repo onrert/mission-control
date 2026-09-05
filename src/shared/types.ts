@@ -34,11 +34,35 @@ export interface EventRecord {
  * içindir — gerçek depolama arızası bu kuralın kapsamı dışındadır (bkz. `docs/qa/
  * F-002-contract.md` "Kod turu notu — B1").
  */
-export type ErrorCode = 'invalid_body' | 'forbidden_origin' | 'storage_unavailable'
+export type ErrorCode =
+  | 'invalid_body'
+  | 'forbidden_origin'
+  | 'storage_unavailable'
+  | 'invalid_path'
+  | 'conflict'
+  | 'not_found'
 
 export interface ApiResponse<T> {
   success: boolean
   data?: T
   error?: { code: ErrorCode; message: string }
   meta?: { total?: number; next_seq?: number }
+}
+
+/** İzlenen proje kaydı (mimari §5.2, F-005). `data/projects.json`'daki `projects[]` şeması. */
+export interface ProjectRecord {
+  id: string
+  path: string
+  label: string
+  added_at: string
+  enabled: boolean
+}
+
+/**
+ * `GET /api/projects` ve `projects` SSE kanalının tel tipi. `exists`/`feature_count` sunucu
+ * tarafında her istekte canlı hesaplanır, kalıcı değildir (sözleşme §3 madde 5).
+ */
+export interface ProjectListItem extends ProjectRecord {
+  exists: boolean
+  feature_count: number
 }

@@ -9,6 +9,12 @@ import { handleIngest } from '../features/events/server/ingest'
 import { handleQuery } from '../features/events/server/query'
 import { createSseHub } from './sse/hub'
 import { handleStream } from './sse/stream'
+import { createProjectsService } from '../features/projects/server/service'
+import {
+  handleListProjects,
+  handleAddProject,
+  handleRemoveProject,
+} from '../features/projects/server/handlers'
 
 // QA düzeltme turu 1 (B1 madde f) — güvenlik ağı, ASIL çözüm değil: asıl çözüm `jsonl-store.ts`
 // `append`'in kendi hata yakalamasıdır (kuyruk artık asla reddedilmiş kalmaz, `ingest.ts` her
@@ -147,7 +153,8 @@ function handleHealth(
   port: number,
   instanceId: string,
   getCorruptLines: () => number,
-  getWriteErrors: () => number
+  getWriteErrors: () => number,
+  getWatcherCount: () => number
 ): void {
   const body = JSON.stringify({
     ok: true,
@@ -160,6 +167,8 @@ function handleHealth(
     corrupt_lines: getCorruptLines(),
     // QA düzeltme turu 1 (B1 madde e): kalıcı disk yazma hatası sayacı, gözlemlenebilir olsun.
     write_errors: getWriteErrors(),
+    // F-005 (sözleşme §7 "izleyici sayacı"): aktif project-watcher sayısı.
+    watchers: getWatcherCount(),
   })
   res.writeHead(200, { 'content-type': 'application/json' })
   res.end(body)
@@ -211,6 +220,8 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse): void 
  */
 export interface ServerWithHub extends http.Server {
   readonly sseHub: import('./sse/hub').SseHub
+  /** F-005 sözleşme §7: izleyici yaşam döngüsünün doğrudan (HTTP'siz) gözlemi için. */
+  readonly projectsService: import('../features/projects/server/service').ProjectsService
 }
 
 export function createServer(port: number, dataDir?: string): ServerWithHub {
@@ -228,6 +239,7 @@ export function createServer(port: number, dataDir?: string): ServerWithHub {
 
   const maxPayload = resolveEnvInt(process.env, 'MC_MAX_PAYLOAD', 65536)
   const hub = createSseHub()
+  const projectsService = createProjectsService(resolvedDataDir, hub)
 
   const server = http.createServer((req, res) => {
     const pathname = (req.url ?? '/').split('?')[0]
@@ -238,11 +250,12 @@ export function createServer(port: number, dataDir?: string): ServerWithHub {
         sendForbidden(res)
         return
       }
-      if (req.method === 'POST' && pathname === '/api/events') {
-        if (!isAllowedOrigin(req.headers.origin)) {
-          sendForbidden(res)
-          return
-        }
+      // F-005 sözleşme §3 madde 9: Origin kontrolü artık `POST /api/events` özel-durumundan
+      // TÜM non-GET `/api/*` yazma uçlarına genelleşti (F-002 döneminde tek yazma ucu vardı,
+      // özel-durum yeterliydi — ikinci/üçüncü yazma ucu eklenince sessizce delinirdi).
+      if (req.method !== 'GET' && !isAllowedOrigin(req.headers.origin)) {
+        sendForbidden(res)
+        return
       }
     }
 
@@ -252,7 +265,8 @@ export function createServer(port: number, dataDir?: string): ServerWithHub {
         port,
         instanceId,
         () => store.getCorruptLines(),
-        () => store.getWriteErrors()
+        () => store.getWriteErrors(),
+        () => projectsService.getActiveWatcherCount()
       )
       return
     }
@@ -266,6 +280,29 @@ export function createServer(port: number, dataDir?: string): ServerWithHub {
     }
     if (pathname === '/api/stream' && req.method === 'GET') {
       handleStream(req, res, store, hub, ringSize)
+      return
+    }
+    if (pathname === '/api/projects' && req.method === 'GET') {
+      handleListProjects(res, projectsService)
+      return
+    }
+    if (pathname === '/api/projects' && req.method === 'POST') {
+      handleAddProject(req, res, projectsService)
+      return
+    }
+    if (pathname?.startsWith('/api/projects/') && req.method === 'DELETE') {
+      const id = pathname.slice('/api/projects/'.length)
+      if (id === '' || id.includes('/')) {
+        res.writeHead(404, { 'content-type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            success: false,
+            error: { code: 'not_found', message: 'Proje bulunamadı.' },
+          })
+        )
+        return
+      }
+      handleRemoveProject(res, projectsService, id)
       return
     }
     if (pathname?.startsWith('/api/')) {
@@ -284,9 +321,10 @@ export function createServer(port: number, dataDir?: string): ServerWithHub {
   })
   server.on('close', () => {
     stopRetention()
+    projectsService.stopAll()
   })
   server.listen(port, '127.0.0.1')
-  return Object.assign(server, { sseHub: hub })
+  return Object.assign(server, { sseHub: hub, projectsService })
 }
 
 /**

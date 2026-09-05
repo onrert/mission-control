@@ -73,3 +73,44 @@ kullanıcı kendi Bash izinlerine sahiptir). AC5'in elle doğrulanması da bu ad
 **Durum:** F-004'ün geri kalan her şeyi tamamlandı ve doğrulandı (bkz. `docs/progress.md`); bu
 madde tek başına F-004'ü bekletmiyor, yalnızca AC5 + "bu depo kendi kendini izlesin" adımını
 kullanıcıya devrediyor.
+
+## 2026-09-05 — developer (F-006) — sözleşme boşluğu: ADR-013 `x-mc-write`, F-005'in DOĞRUDAN HTTP entegrasyon testlerini kırıyor
+
+**Görev:** F-006 sözleşmesi (§7, D29, CEO Karar 1) — dağıtıcıda (`src/server/index.ts`) tüm
+non-GET `/api/*` isteklerine `x-mc-write` başlığı zorunluluğu eklemek. Sözleşme bu değişikliğin
+F-005'in **React hook'unu** (`src/features/projects/web/useProjects.ts`) kıracağını öngörmüş ve
+CEO Karar 2 ile bu dosyayı `writeFetch`'e geçirmeyi **önceden onaylamıştı** (dosya sahipliği
+genişletmesi, sözleşme §2).
+
+**Engel:** Aynı kırılma, sözleşmenin **görmediği** ikinci bir yerde de oluşuyor:
+`tests/integration/projects-api.test.ts` (F-005'in kendi dosya sahipliği — `docs/features/
+F-005-*.md` "Dosya sahipliği": `src/features/projects/**` + "ilgili testler"). Bu dosya
+`useProjects.ts` hook'unu hiç kullanmıyor — sunucuya doğrudan `fetch('/api/projects', {method:
+'POST'|'DELETE', ...})` çağrıları atıyor (header'sız). Dağıtıcı değişikliğinden sonra bu
+çağrıların **13/17 testi** artık beklenen durum kodu yerine `403 forbidden_origin` alıyor
+(`npx vitest run tests/integration/projects-api.test.ts` → 13 failed, 4 passed). Örnek: "AC2:
+DELETE bilinmeyen id -> 404 not_found" artık 403 alıyor; "AC3/D17: aynı proje ikinci kez
+eklenirse 409 conflict" artık 403 alıyor.
+
+**Neden kendim düzeltmedim:** Sözleşme §2 "Dokunacağım dosyalar" listesi + CEO Karar 2 yalnızca
+`useProjects.ts`'i (F-005'in İSTEMCİ/hook katmanı) kapsıyor; bu test dosyası o listede yok ve
+F-005'in kendi dosya sahipliğinde. Aynı sınıf bir durumda (`2026-09-04` blocker maddesi, üstte)
+CEO "dosya sahipliği dışı olduğu için dokunmaman doğru davranıştı" diye onaylamıştı — aynı ilkeyi
+burada da uyguluyorum. Düzeltme mekanik (yalnızca ~13 `fetch` çağrısına `x-mc-write: '1'` header'ı
+eklemek, hiçbir assert/mantık değişmiyor) ama dosya benim sahipliğimde değil.
+
+**Denenenler:** Sorunu izole etmek için `tests/integration/projects-api.test.ts`'i tek başına
+çalıştırdım (yukarıdaki sayılar); kaynağı `grep -n "method: 'POST'\|method: 'DELETE'"` ile
+doğruladım — evil-origin testleri etkilenmiyor (Origin kontrolü `x-mc-write` kontrolünden önce
+çalışıyor, zaten 403 bekliyorlardı), yalnızca meşru add/remove/health/watcher testleri kırılıyor.
+
+**İstenen aksiyon (CEO'dan):** Ya (a) `tests/integration/projects-api.test.ts`'i F-006'nın dosya
+sahipliği genişletmesine (§2) tek satırlık gerekçeyle ekleyin ("Karar 2 ile aynı sınıf regresyon,
+farklı çağıran"), böylece POST/DELETE çağrılarına `x-mc-write: '1'` ekleyebileyim; ya da (b) F-005
+sahibi bir agent bu düzeltmeyi yapsın. Düzeltme mekanik ve düşük risk — CEO Karar 2'nin gerekçesi
+(`docs/qa/F-006-contract.md` "Karar 2") birebir bu dosya için de geçerli.
+
+**Durum:** F-006'nın geri kalanı (write-gate.ts + birim testleri, dağıtıcının kendi ADR-013
+testi `tests/server/adr-013-write-header.test.ts`) bu maddeden bağımsız ilerliyor ve yeşil.
+`npm run verify` bu tek dosya yüzünden KIRMIZI kalacak — CEO onayı gelene kadar `useProjects.ts`
+geçişini ve geri kalan F-006 işini tamamlayıp bu maddeyi tek blocker olarak bırakıyorum.

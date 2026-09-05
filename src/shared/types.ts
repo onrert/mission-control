@@ -70,3 +70,12 @@ export interface ProjectListItem extends ProjectRecord {
   exists: boolean
   feature_count: number
 }
+
+/**
+ * ADR-013 — dağıtıcı seviyesinde zorunlu yazma başlığı (F-006). Sunucu ve istemci aynı
+ * dizgeyi elle kopyalamasın diye burada tanımlanır (`src/server/index.ts` + `src/web/lib/
+ * write-fetch.ts` ikisi de bunu import eder). `POST /api/events` bu başlıktan muaftır —
+ * onun yerine `Content-Type: application/json` zorunludur (CEO Karar 1).
+ */
+export const WRITE_HEADER_NAME = 'x-mc-write'
+export const WRITE_HEADER_VALUE = '1'

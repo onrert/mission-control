@@ -15,6 +15,7 @@ import {
   handleAddProject,
   handleRemoveProject,
 } from '../features/projects/server/handlers'
+import { WRITE_HEADER_NAME, WRITE_HEADER_VALUE } from '../shared/types'
 
 // QA düzeltme turu 1 (B1 madde f) — güvenlik ağı, ASIL çözüm değil: asıl çözüm `jsonl-store.ts`
 // `append`'in kendi hata yakalamasıdır (kuyruk artık asla reddedilmiş kalmaz, `ingest.ts` her
@@ -181,6 +182,21 @@ function sendForbidden(res: http.ServerResponse): void {
   )
 }
 
+// ADR-013 + CEO Karar 1 (F-006 sözleşmesi §7): `POST /api/events` `x-mc-write`'tan MUAFTIR
+// ama bunun yerine bu içerik tipi zorunludur — allowlist, denylist DEĞİL (CORS güvenli
+// listesinin `multipart/form-data` üyesi sessizce geçmesin diye).
+const ALLOWED_EVENT_CONTENT_TYPE = 'application/json'
+
+function sendInvalidBody(res: http.ServerResponse): void {
+  res.writeHead(400, { 'content-type': 'application/json' })
+  res.end(
+    JSON.stringify({
+      success: false,
+      error: { code: 'invalid_body', message: 'İçerik tipi desteklenmiyor.' },
+    })
+  )
+}
+
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html',
   '.js': 'text/javascript',
@@ -299,6 +315,21 @@ export function createServer(port: number, dataDir?: string): ServerWithHub {
         // TÜM non-GET `/api/*` yazma uçlarına genelleşti (F-002 döneminde tek yazma ucu vardı,
         // özel-durum yeterliydi — ikinci/üçüncü yazma ucu eklenince sessizce delinirdi).
         if (req.method !== 'GET' && !isAllowedOrigin(req.headers.origin)) {
+          sendForbidden(res)
+          return
+        }
+        // ADR-013 (F-006 sözleşmesi §7) — tek yer, dağıtıcıda, route dispatch'ten önce.
+        // `POST /api/events` içerik-tipi allowlist'iyle korunur (CEO Karar 1); diğer tüm
+        // non-GET `/api/*` istekleri `x-mc-write` başlığını taşımak zorundadır.
+        if (req.method === 'POST' && pathname === '/api/events') {
+          const raw = req.headers['content-type']
+          const normalized =
+            typeof raw === 'string' ? raw.split(';')[0]?.trim().toLowerCase() : undefined
+          if (normalized !== ALLOWED_EVENT_CONTENT_TYPE) {
+            sendInvalidBody(res)
+            return
+          }
+        } else if (req.method !== 'GET' && req.headers[WRITE_HEADER_NAME] !== WRITE_HEADER_VALUE) {
           sendForbidden(res)
           return
         }

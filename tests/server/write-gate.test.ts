@@ -134,6 +134,23 @@ describe('setFeatureStatus — yol beyaz listesi', () => {
     expect(fs.readFileSync(path.join(realDir, 'F-001.md'), 'utf8')).toBe('---\nstatus: todo\n---\n')
   })
 
+  it('root kendisi bir symlink (kayıt sonrası değiştirilmiş) → gerçek hedefi çözer, kök dışıysa write_denied (ADR-005 risk maddesi)', () => {
+    const realRoot = `${root}-real`
+    fs.mkdirSync(path.join(realRoot, 'docs', 'features'), { recursive: true })
+    fs.writeFileSync(
+      path.join(realRoot, 'docs', 'features', 'F-001.md'),
+      '---\nstatus: todo\n---\n'
+    )
+    fs.rmSync(root, { recursive: true, force: true })
+    fs.symlinkSync(realRoot, root, 'junction')
+    try {
+      const result = setFeatureStatus(root, 'F-001.md', 'qa', 'herhangi')
+      expect(result).toMatchObject({ ok: false })
+    } finally {
+      fs.rmSync(realRoot, { recursive: true, force: true })
+    }
+  })
+
   it('önek tuzağı: root farklı bir dizinin öneki olsa bile write_denied (QA Bulgu 11)', () => {
     const trapRoot = `${root}-factory`
     fs.mkdirSync(path.join(trapRoot, 'docs', 'features'), { recursive: true })

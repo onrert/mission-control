@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ApiResponse, FeatureCard } from '../../../shared/types'
+import type { ApiResponse, FeatureCard, ProjectListItem } from '../../../shared/types'
 import { writeFetch } from '../../../web/lib/write-fetch'
 
 export type FeaturesLoadState = 'loading' | 'ready' | 'error'
@@ -24,6 +24,13 @@ export interface UseFeaturesOptions {
   /** `App.tsx`'in tek `useEventStream()` çağrısından gelen `features` sinyali (§3 madde 7/§4.4).
    *  Her olay YENİ bir nesne referansıdır — aynı `project_id` tekrarlansa bile effect tetiklenir. */
   featuresSignal?: { project_id: string } | null
+  /** F-005 AC1'in devraldığı görsel kanıt taahhüdü (feature notu madde 2, T2) — Karar 1'in
+   *  "aynı canlı kaynak" prensibiyle App'in mevcut `projects` SSE kanalından (`liveProjectsUpdate`
+   *  prop'u, ikinci bir bağlantı YOK). `project-watcher.ts` `ignoreInitial:true` ile kurulur
+   *  (§1 kapsam dışı, dokunulmuyor) — YENİ eklenen bir projenin ZATEN VAR OLAN dosyaları için
+   *  hiçbir `features` sinyali gelmez, bu yüzden kart 5 sn içinde görünsün diye proje KÜMESİ
+   *  BÜYÜDÜĞÜNDE (yalnızca çıkarmada değil) ayrıca bir refetch tetiklenir. */
+  projectsSignal?: ProjectListItem[] | null
 }
 
 export interface UseFeaturesResult {
@@ -107,6 +114,24 @@ export function useFeatures(options: UseFeaturesOptions = {}): UseFeaturesResult
     void refetch()
     // `options.featuresSignal` her olayda YENİ bir referans — bağımlılık dizisi bunu yakalar.
   }, [options.featuresSignal])
+
+  // T2 (F-005 AC1 görsel kanıtı) — proje listesi her değiştiğinde (`onProjects` akışı, aynı
+  // canlı kaynak) bir refetch tetiklenir. `project-watcher.ts` `ignoreInitial:true` ile
+  // kurulduğu için (§1 kapsam dışı, dokunulmuyor) YENİ eklenen bir projenin ZATEN VAR OLAN
+  // dosyaları için hiçbir `features` sinyali gelmez — bu yüzden proje listesi de bir tetikleyici
+  // olmak ZORUNDA (yalnızca "yeni id" farkını ayırt etmeye çalışmak — ör. mount'taki ilk canlı
+  // liste ile önceki durumu karşılaştırmak — mount effect'inin GET'i henüz dönmemişken/dönmüşken
+  // oluşan yarış durumlarında ilk gerçek eklemeyi kaçırıyordu; `featuresSignal` ile birebir aynı
+  // basit "her değişiklikte refetch" deseni tercih edildi, Karpathy §2).
+  useEffect(() => {
+    if (options.projectsSignal === undefined || options.projectsSignal === null) return
+    if (isDraggingRef.current) {
+      queuedProjectIdsRef.current.add('__projects_changed__')
+      return
+    }
+    void refetch()
+    // `options.projectsSignal` her `projects` yayınında YENİ bir dizi referansı.
+  }, [options.projectsSignal])
 
   const notifyDragStart = useCallback(() => {
     isDraggingRef.current = true

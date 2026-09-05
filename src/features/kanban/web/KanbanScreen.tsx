@@ -67,7 +67,7 @@ export function KanbanScreen({
     patchStatus,
     notifyDragStart,
     notifyDragEnd,
-  } = useFeatures({ featuresSignal })
+  } = useFeatures({ featuresSignal, projectsSignal: liveProjectsUpdate })
 
   const [deselectedProjects, setDeselectedProjects] = useState<Set<string>>(new Set())
   const [detailCard, setDetailCard] = useState<FeatureCard | null>(null)

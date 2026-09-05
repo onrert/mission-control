@@ -1,212 +1,345 @@
-KARAR: GEÇTİ
+# F-007 — QA kod turu raporu (qa-evaluator, 2026-09-06)
+
+KARAR: KALDI
 ESKALE: false
 
-# F-006 — yazma kapısı + sınır testleri · QA **düzeltme turu 1** doğrulaması (qa-evaluator, 2026-09-05)
+Puanlar (1-10): **İşlevsellik 7 · Özellik bütünlüğü 6 · Görsel/UX 6 · Kod kalitesi 6**
+Karar kuralı: üç boyut < 7 ve iki bloklayıcı bulgu var → KALDI.
 
-Kapsam (bağlayıcı, dar tur): B1, B2, Ö1-Ö5, D34-D39 ve düzeltmenin ürettiği regresyon.
-Yeniden açılmadı: delme denemelerinin sonucu, fazlalık iddiasının doğruluğu, F-005 regresyonu,
-kapsam denetimi, ADR-013/ADR-008 denetimi (hepsi `docs/qa/F-006-2026-09-05.md`'de duruyor).
-İncelenen commit'ler: `75eae40` · `ed53893` · `24298d2` · `25850c8`.
-
-Ürün kodu **kalıcı değiştirilmedi**: 12 mutasyonun tamamı uygulandıktan sonra geri alındı,
-`git diff HEAD -- src tests` **boş** (kanıt §7).
-
-## Puanlar
-
-| Boyut | Önceki | Şimdi | Gerekçe |
-|---|---|---|---|
-| İşlevsellik | 7 | **8** | Ö2'nin ölçülen frontmatter bozulması kapandı: `x⏎---⏎BODY`, `\r`, `\r\n` ve tek `\r` varyantlarının hepsi `invalid_body` alıyor ve **dosya bayt bayt değişmiyor** (ölçüldü, §4). Düşüren: `safeYamlValue` (`write-gate.ts:190`) hâlâ yalnızca `:#\r\n` görünce tırnaklıyor; `"x`, `[x`, `*x`, `!x` gibi YAML gösterge karakteriyle **başlayan** değerler ayrıştırılamaz bir `status:` satırı üretiyor (NOT-3 — bugün çağıranı yok). |
-| Özellik bütünlüğü | 5 | **8** | AC3 artık gerçekten çitli: `write-gate.ts`'e eklenen **5 farklı silme yolu** (unlinkSync / rmSync / promises.unlink / rmdir / fsp.rm) **beşi de KIRMIZI** (§3 M1-M5). AC7'nin taraması önceki turun **9 kaçağının 9'unu da** yakalıyor (§5). AC5'in yanlış "statik tarama doğrular" iddiası metinden çıkarıldı (Ö3). Düşüren: alıcı-takma-adı + belirsiz-ad birleşimi hâlâ kaçıyor (NOT-1) ve adım 6'nın bağımsız kapsaması sıfır (NOT-4). |
-| Görsel/UX (doküman + hata mesajları) | 7 | **7** | D38'in yeni mesajı ayırt edici ve Türkçe (`status değeri satır sonu içeremez.`); sözleşme/feature notu artık kendi sınırlarını dürüst yazıyor. Değişmedi: NOT-2'nin (harf duyarlılığı) teşhis edilemez `İşlem, hedef yolla eşleşmiyor.` mesajı ve F-006 için kullanıcıya dönük hiçbir not — CEO bunları bilinçli olarak N5'te kapsam dışı bıraktı, dolayısıyla önceki tur gerekçesi aynen ayakta. |
-| Kod kalitesi | 6 | **8** | İki tekrarlayan sınıf da kapandı: `archiveDenial`'ın hata dalı artık çitli (M8 KIRMIZI) ve guard'ın **yorumu ile taradığı** ayrışması giderildi (bare/scoped ikili tasarımın gerekçesi kodda yazılı ve doğru: `process.stderr.write(` gibi meşru kullanımlar bu yüzden yanlış pozitif üretmiyor — `src/features/events/server/ingest.ts:79`, `src/features/projects/server/service.ts:60,79`). Düşüren: `safeYamlValue` adı yaptığından fazlasını vaat ediyor (NOT-3); dizge-seviyesi izinli küme değişken adına duyarlı (NOT-2). |
-
-**Dört boyut da ≥ 7 → GEÇTİ.** Açık BLOKLAYICI/ÖNEMLİ bulgu yok; kalan 4 madde NOT.
+Kapsam: `docs/features/F-007-kanban.md` (10 AC + 6 devralınan taahhüt), `docs/qa/F-007-contract.md`
+(CEO onayı → CEO kararları → D40-D45 → A-F → gövde), `docs/03-ux.md` ekran 2 + akışlar,
+ADR-001 (karar 5/8), ADR-005, ADR-013.
 
 ---
 
-## 1. Komutlar — kendim çalıştırdım
+## 1. Komutlar ve gerçek çıktılar (hepsini kendim koşturdum)
 
-| Komut | Çıkış kodu | Gerçek çıktı |
+| Komut | Çıkış kodu | Sonuç |
 |---|---|---|
-| `npm run verify` | **0** | typecheck + lint + `Test Files 41 passed (41)` / `Tests 564 passed (564)` + `vite build ✓ built in 999ms` |
-| `npm run e2e` | **0** | `15 passed (15.2s)` |
+| `npm run verify` | **0** | typecheck + lint + `Test Files 48 passed (48)` / `Tests 728 passed (728)` + `vite build ✓ built in 1.15s` |
+| `npm run e2e` | **0** | `23 passed (27.4s)` (chromium, workers:1) |
 | `npm run e2e:dev` | **0** | `1 passed (4.4s)` |
+| `npm audit` | **0** | `found 0 vulnerabilities` |
 
-Developer'ın bildirdiği sayılar (**564** / 15 / 1) **birebir doğrulandı**; N1'in sayı sapması
-(`docs/progress.md:1288` artık "564/564 test, 41 dosya") kapandı.
+Vitest worker fork kararsızlığı bu turda **görülmedi**: `npx vitest run` bu turda toplam 9 kez
+koşturuldu (mutasyonlu koşular dahil), doğru kodda her seferinde 728/728.
 
 ---
 
-## 2. B1/B2/Ö1-Ö5/D34-D39 kapanış tablosu
+## 2. AC1-AC10 + T1-T6 kanıt tablosu (16/16 kutu işaretliydi — her birini ayrı doğruladım)
 
-| # | Karar | Durum | Bağımsız kanıtım |
+Doğrulama ortamı: **üretim derlemesi** (`npm run build` + `tsx src/server/index.ts`), izole
+`MC_DATA_DIR`, `MC_PORT=7433`, geçici fixture proje (11 dosya: 7 geçerli durum + CRLF/BOM/yorumlu
+dosya + tanımsız durum + bozuk frontmatter + `.txt`).
+
+| # | Kriter | Kanıt | Sonuç |
 |---|---|---|---|
-| **B2** | D34 | ✅ **KAPANDI** | `write-gate.ts` artık dosya-seviyesinde muaf **değil** (`no-write-gate-bypass.test.ts:130` `scannedFiles = allSourceFiles`, filtre yok; muafiyet `STORE_FILES:141-163`'te **tam çağrı metni** olarak). Beş ayrı silme mutasyonu (M1-M5) **beşi de KIRMIZI** ve hepsi aynı testten düşüyor: *"write-gate.ts: DENIED ile eşleşen her çağrı izinli kümedeki tam dizgelerden biriyle eşleşir"*. İstisna gerçekten **dize seviyesinde**. |
-| **B1** | D35 | ✅ **KAPANDI** | Önceki turun **9 kaçağının 9'u da yakalanıyor** (§5, gerçek `src/server/index.ts`'e enjekte edilip tarama koşturularak ölçüldü — desen listesine bakılarak değil). `'fs.rm('` nesne-öneki bağımlılığı giderildi: `fsp.rm(`, `promises.rm(`, `fs.promises.rm(` üçü de yakalanıyor. |
-| **Ö1** | D36 | ✅ **KAPANDI** | M8 (`mkdirSync`+`renameSync` `try` **dışına**) → **KIRMIZI, 10 test**; ilk düşen tam da yeni eklenen `arşiv hedef dizini bir dosyayla işgal edilmişse fırlamaz, write_failed döner (D36/Ö1)` testi. |
-| **Ö2** | D38 | ✅ **KAPANDI** (dar tanımıyla) | M7 (satır sonu kontrolü etkisizleştirildi) → **KIRMIZI, 3 test**. Çalışma zamanı ölçümü (§4): `\n`, `\r`, `\r\n`, tek `\r`, sondaki `\n` → hepsi `invalid_body` + **dosya UNCHANGED**. Test yalnızca dönen kodu değil, `expect(fs.readFileSync(full,'utf8')).toBe(before)` ile **dosyanın bozulmadığını** da assert ediyor (`write-gate.test.ts:212-224`). Kalıntı → NOT-3. |
-| **Ö3** | D39 | ✅ **KAPANDI** | AC5 metnindeki yanlış "(statik tarama testi doğrular)" ifadesi kaldırıldı, yerine "elle kod incelemesiyle doğrulandı" + neden otomatik çit yazılmadığının gerekçesi kondu (`F-006-yazma-kapisi.md` AC5). Yanlış güven üreten cümle gitti. |
-| **Ö4** | D37 | ✅ **KAPANDI** | M9 (arşiv deseni → `^docs\/approvals\/archive\/.*$`) → **KIRMIZI**. Gevşetme yönü artık çitli. |
-| **Ö5** | — | ✅ **KAPANDI** | M10 (ata döngüsü yalnızca son segmenti kontrol etsin) → **KIRMIZI, 1 test**, düşen test tam olarak `ata dizin lstatSync taraması TÜM üst segmentleri kontrol eder, yalnızca sonuncuyu değil (Ö5)`. Casus testi `docs` **ve** `docs/features` segmentlerinin ikisinin de `lstatSync`'lendiğini kanıtlıyor — önceki turda YEŞİL kalan MQ1 artık KIRMIZI. |
-| **D39** | — | ✅ **KAPANDI** | Sözleşme `F-006-contract.md` mutasyon 10 satırı düzeltilmiş: "geometrik olarak mümkün değil" argümanı YANLIŞ ilan edilmiş, yerine gerçek yapısal neden yazılmış (`path.relative(anc, candidate)` asla `..` içeremez → `resolvedAnc` kök dışındaysa adım 8'in çapası hiçbir hâlde tutmaz, `write-gate.ts:114`). **Adım 3 ve adım 6'nın bugün sıfır bağımsız test kapsaması olduğu açıkça yazılı** (sözleşme mutasyon 10 satırı + D39 bölümü). |
-| **N1** | — | ✅ | Test sayısı 564'e düzeltildi. |
-| **N2-N5** | — | ⏸ Bilinçli | Kod değişikliği almadı, feature notunda ve `progress.md`'de neden yazılı. Bu turda yeniden açılmadı. |
+| AC1 | Kart doğru sütunda | Tarayıcı: 7 sütunun her birinde beklenen kart; `parse-feature.test.ts` + M2b mutasyonum KIRMIZI | **GEÇTİ** |
+| AC2 | Yalnızca `status` baytı değişir | §4 bayt diff: 144→146 bayt, **tek fark** `status:   todo` → `status: contract`; BOM, CRLF, yorum satırı, gövde birebir korundu. M3b (`+ ' '`) 11 test KIRMIZI | **GEÇTİ** |
+| AC3 | Dış değişiklik ≤2 sn | Gerçek ölçüm: dosya yazımı `t=1788642797485`, DOM'da görünme `t=1788642797951` → **466 ms** | **GEÇTİ** |
+| AC4 | Çakışma: yazma durur, uyarı, yeniden çizim | §3'teki sessiz-üzerine-yazma denemesi: 409, disk korundu, Türkçe banner + kart eski sütunda. M1 (handler hash'i diskten yeniden hesaplasın) KIRMIZI | **GEÇTİ** |
+| AC5 | Yazma hatası: kart geri döner, panel çökmez | `chmod 444` ile gerçek EPERM: kart QA sütununda kaldı, `F-103 kaydedilemedi: Dosyaya yazma izni reddedildi.` + `[Tekrar dene]`, panel ayakta. M8 (rollback kaldır) KIRMIZI. **Ama:** `rereadCard` hata yolu kapsanmıyor → **B1** | **KOŞULLU** |
+| AC6 | "Bilinmeyen durum" + sürüklenebilir | 8. sütun render ediliyor (`kanban-column-unknown`); F-300 klavye ile Engelli'ye taşındı, diskte `status: blocked` | **GEÇTİ** |
+| AC7 | Kart detayı salt okunur | Modal: `F-100 — Kart todo`, Durum/Sahip (owner)/Bağımlılıklar (deps)/Sprint; ekran görüntüsü aşağıda | **GEÇTİ** |
+| AC8 | Echo döngü/yanıp sönme yok | E2E D42 render sayacı gerçek çit (M4 mutasyonumu KIRMIZI yakaladı). jsdom çiti flaky → **Ö4** | **KOŞULLU** |
+| AC9 | Klavye alternatifi | Gerçek tarayıcı: `Tab`→`Boşluk`→`ArrowRight`→`Enter` üç ayrı kartta diske yazdı. M5 (`keyboardCodes.end`→`['KeyQ']`) E2E'de KIRMIZI (birim testlerde YEŞİL) | **GEÇTİ** |
+| AC10 | "Etiket (kod)" başlıkları | DOM: `Yapılacak (todo)`, `Sözleşme (contract)`, `Geliştirme (dev)`, `QA (qa)`, `Düzeltme (fix)`, `Bitti (done)`, `Engelli (blocked)`, `Bilinmeyen durum` — ADR-001 karar 8 uyumlu | **GEÇTİ** |
+| T1 | Tam `tablist` deseni | Statik ARIA doğru (`role=tablist/tab/tabpanel`, roving `tabindex`, Ayarlar desen dışında). **Ok tuşu odağı taşımıyor (Ö1), klavye kodu tamamen çitsiz (Ö2), `aria-controls` yarım çitli (Ö3)** | **KALDI** |
+| T2 | F-005 AC1 görsel kanıtı | Canlı ölçüm: `POST /api/projects` → kart DOM'da **4,6 sn** içinde; proje çipi de eklendi | **GEÇTİ** |
+| T3 | 375px'te gezinme kaybolmaz | Ölçüm: her iki sekmenin **görünür piksel genişliği 0** → **B2** | **KALDI** |
+| T4 | `Atomics.wait`→async | `write-gate.ts:136` `delay()` `setTimeout` tabanlı; `Atomics.wait` grep=0; `setFeatureStatus`/`writeGateApproval`/`writeGateDenial` async | **GEÇTİ** |
+| T5 | `safeYamlValue` sertleştirme | `YAML_INDICATOR_START` + `resolvesToNonString` (`write-gate.ts:191-215`), 40 golden fixture yeşil | **GEÇTİ** |
+| T6 | `OPERATION_PATTERNS` koşulu | `git diff fec3aa2..HEAD -- src/server/write-gate.ts`: desenlere hiç dokunulmamış → koşul tetiklenmedi, kayıt doğru | **GEÇTİ (uygulanamaz)** |
 
 ---
 
-## 3. Kendi mutasyon tablom (12 mutasyon)
+## 3. Sessiz üzerine yazma denemesi (görev madde 4 — AC4'ün özü)
 
-Yöntem: mutasyon `src/server/write-gate.ts`'e uygulandı → `npx vitest run` (564 test) → sonuç
-kaydedildi → dosya orijinaline geri yazıldı (her turda `reverted: true` doğrulandı).
+**Senaryo:** Kanban açıkken F-102 kartında `Boşluk` ile klavye sürüklemesi başlatıldı (bu sırada
+`useFeatures.isDraggingRef` yeniden çekmeyi kuyruklar), sürükleme **açıkken** dosya diskten
+değiştirildi (`metin` → `DISARIDAN DEGISTIRILDI - KAYBOLMAMALI`), sonra `ArrowRight` + `Enter` ile
+bırakıldı.
 
-| # | Mutasyon | Beklenen | **Sonuç** | Düşen test |
-|---|---|---|---|---|
-| **M1** | `setFeatureStatus`'a `fs.unlinkSync(resolved.targetPath)` silme yolu | KIRMIZI | **KIRMIZI 1** | statik tarama, write-gate.ts izinli-küme testi |
-| **M2** | aynı yol `fs.rmSync(resolved.targetPath)` | KIRMIZI | **KIRMIZI 1** | aynı |
-| **M3** | aynı yol `fs.promises.unlink(resolved.targetPath)` | KIRMIZI | **KIRMIZI 1** | aynı |
-| **M4** | aynı yol `fs.rmdir(dirname(target), cb)` | KIRMIZI | **KIRMIZI 1** | aynı |
-| **M5** | `const fsp = fs.promises` + `fsp.rm(resolved.targetPath)` | KIRMIZI | **KIRMIZI 1** | aynı |
-| **M6** | `const tmp = resolved.targetPath` + `fs.unlinkSync(tmp)` (izinli dizgenin **değişken adıyla** yeniden kullanımı) | ? | **YEŞİL 564/564** | — → **NOT-2** |
-| **M7** | D38 satır sonu kontrolü etkisizleştirildi (`.test(nextStatus)` → `.test('')`) | KIRMIZI | **KIRMIZI 3** | `nextStatus satır sonu içeriyorsa … invalid_body` ×3 |
-| **M8** | `archiveDenial`'ın `mkdirSync`+`renameSync`'i `try` dışına | KIRMIZI | **KIRMIZI 10** | `arşiv hedef dizini bir dosyayla işgal edilmişse fırlamaz (D36/Ö1)` |
-| **M9** | `OPERATION_PATTERNS.archive` → `^docs\/approvals\/archive\/.*$` | KIRMIZI | **KIRMIZI** | `write-gate.test.ts` + `write-gate-manifest.test.ts` |
-| **M10** | ata `lstat` döngüsü `i = 0` → `i = len-2` (yalnızca son ata) | KIRMIZI | **KIRMIZI 1** | `ata dizin lstatSync taraması TÜM üst segmentleri… (Ö5)` |
-| **M11** | **ikinci savunma hattı sondası:** kaçan biçimle (`const w1 = fs.unlinkSync; w1(root/README.md)`) fixture dosyası silindi | ? | **KIRMIZI 24** | `write-gate-manifest.test.ts` "izin verilenler dışında hiçbir dosya değişmez" |
-| **M12** | (§5'teki 20 statik tarama enjeksiyonu — ayrı tabloda) | — | — | — |
+**Diskte gerçekte ne oldu (dönen koda değil, `od -c` çıktısına baktım):**
 
-**M11 önemli:** ADR-005'in *"Manifest testi ikinci savunma hattıdır ve dolaylı çağrıları da
-yakalar"* iddiası **kâğıt üzerinde değil, ölçülerek doğrulandı** — statik taramanın gördüğü hiçbir
-desen içermeyen bir silme bile manifest testini kırıyor. NOT-1'in şiddet değerlendirmesi buna dayanıyor.
+```
+status: dev            <- DEĞİŞMEDİ
+# Govde dev
+DISARIDAN DEGISTIRILDI - KAYBOLMAMALI   <- dış değişiklik KORUNDU
+```
 
----
+- HTTP: `409 Conflict` (tarayıcı konsolunda tek hata satırı bu).
+- UI: `F-102 panel açıkken dışarıdan değişti — güncel durum yüklendi (Geliştirme/dev). Az önceki
+  sürükleme uygulanmadı.` + `[Kapat]`; kart Geliştirme sütununda yeniden çizildi.
+- **Sessiz üzerine yazma YOK.** AC4 uçtan uca doğrulandı.
 
-## 4. Ö2 — frontmatter enjeksiyonu, çalışma zamanı ölçümü
+Ek olarak hash üretim noktasını ve handler seviyesini ayrı ayrı mutasyonladım (M1, M2b) — ikisi de
+KIRMIZI, yani çakışma yolu iki noktadan çitli.
 
-Harness: `scratchpad/inject.mts` + `inject2.mts`, gerçek `setFeatureStatus`, her vaka için ayrı
-`os.tmpdir()` fixture'ı, sonda silindi. Başlangıç dosyası `---⏎status: todo⏎owner: x⏎---⏎body⏎`.
+Kalan teorik pencere (bulgu değil, kayıt): `setFeatureStatus` oku-karşılaştır-yaz sırasını
+kilitsiz yapıyor (`write-gate.ts:255-302`); okuma ile `rename` arasındaki (~ms) pencerede yapılan
+bir dış yazım kaybolur. Tek kullanıcılı yerel araçta kabul edilebilir, ADR-005 madde 7 bunu zaten
+"hash karşılaştırması" seviyesinde tanımlıyor.
 
-| Girdi | Dönen | Diskte |
+## 4. AC2 bayt diff kanıtı
+
+Gerçek klavye sürüklemesi sonrası, BOM + CRLF + yorum satırı + fazladan boşluk içeren fixture:
+
+| | önce | sonra |
 |---|---|---|
-| `x⏎---⏎BODY` (QA'nın ölçtüğü girdi) | `ok:false invalid_body` | **UNCHANGED** |
-| `x<CR>---<CR>BODY` · `x<CRLF>---<CRLF>BODY` · `a<CR>b` · `done⏎` | `ok:false invalid_body` | **UNCHANGED** |
-| `---` (tek satır, satır sonu yok) | `ok:true` | `status: ---` — frontmatter **sağlam**, 2 anahtar satırı, tırnaklar dengeli |
-| `x --- y` | `ok:true` | `status: x --- y` — sağlam |
-| `a: b` · `a #c` | `ok:true` | `status: "a: b"` / `status: "a #c"` — doğru tırnaklanmış |
-| `"x` · `'x` · `[x` · `{x` · `&x` · `*x` · `!x` · `\|` · `>` | `ok:true` | `status: "x` / `status: [x` … — **tırnaklanmıyor**, ayrıştırılamaz YAML → **NOT-3** |
+| bayt | 144 | 146 |
+| farklı segment | `status:   todo` | `status: contract` |
+| BOM (`﻿`) | var | var |
+| satır sonları | tümü `\r\n` | tümü `\r\n` |
+| `# yorum satiri` / gövde | aynı | aynı |
 
-Ö2'nin raporlanan tanımı (satır sonu) **tam olarak** kapandı; gövde ve diğer anahtarlar her vakada
-bayt bayt korundu.
-
----
-
-## 5. Kaçak denemeleri (statik tarama)
-
-Yöntem: her parçacık gerçek `src/server/index.ts`'in sonuna eklendi →
-`npx vitest run tests/no-write-gate-bypass.test.ts` → sonuç → dosya geri yazıldı. **Desen listesine
-bakarak değil, taramayı koşturarak** ölçüldü.
-
-| # | Deneme | Yakalandı mı | İstismar edilebilir mi |
-|---|---|---|---|
-| E1 | `fs.open(p,'w',cb)` + `fs.write(fd,d)` (tam işlevsel yazma yolu) | ✅ **YAKALANDI** | — |
-| E2 | `fs.writevSync(fd,b)` | ✅ YAKALANDI | — |
-| E3 | `fs.promises.rm(p)` | ✅ YAKALANDI | — |
-| E4 | `fs.rmdir(p,cb)` | ✅ YAKALANDI | — |
-| E5 | `fs.promises.rmdir(p)` | ✅ YAKALANDI | — |
-| E6 | `fs.symlinkSync(a,b)` | ✅ YAKALANDI | — |
-| E7 | `fs.linkSync(a,b)` | ✅ YAKALANDI | — |
-| E8 | `const fsp = fs.promises` + `fsp.rm(p)` | ✅ YAKALANDI | — |
-| E9 | `const { promises } = fs` + `promises.rm(p)` | ✅ YAKALANDI | — |
-| **N-a** | `const w1 = fs.writeFileSync` + `w1(p,d)` (özellik ataması) | ❌ kaçtı | evet, ama **M11 ile ölçüldü: manifest testi yakalıyor** |
-| **N-b** | `(fs as any)['write'+'File'+'Sync'](p,d)` (dinamik erişim) | ❌ kaçtı | **ADR-005'te adıyla kabul edilmiş sınır** ("`fs['write'+'File']` gibi dolaylı çağrı … kasıtlı atlatmayı yakalamaz") |
-| N-c | `import * as fsAll from 'node:fs'` + `fsAll.writeFileSync(p,d)` | ✅ YAKALANDI | — |
-| **N-d** | `import * as fsAll2` + `fsAll2.rm(p,cb)` (namespace + belirsiz ad) | ❌ kaçtı | evet (bkz. NOT-1) |
-| N-e | `require('fs').writeFileSync(p,d)` | ✅ YAKALANDI | — |
-| **N-f** | `import fsPromises from 'node:fs/promises'` + `fsPromises.rm(p,{recursive:true})` | ❌ kaçtı | evet — **NOT-1'in en doğal biçimi** (Node'un kendi dokümantasyon adlandırması) |
-| **N-g** | `import fsP2 from 'node:fs/promises'` + `fsP2.open(p,'w')` + `h.write(d)` | ❌ kaçtı | evet |
-| **N-h** | `const fs2 = fs` + `fs2.rm(p,cb)` (alıcı takma adı) | ❌ kaçtı | evet |
-| **N-i** | `const { writeFileSync: wfs } = await import('node:fs')` + `wfs(p,d)` | ❌ kaçtı | evet |
-| N-j | `import fsP3 from 'node:fs/promises'` + `fsP3.writeFile(p,d)` | ✅ YAKALANDI | — (çıplak ad listesi alıcıdan bağımsız) |
-| N-k | `fs.appendFileSync(p,d)` (kontrol vakası, yakalanmalı) | ✅ YAKALANDI | — |
-
-**Örüntü:** kaçan her biçim ya (a) **dinamik/kasıtlı gizleme** (N-b, N-a, N-i) ya da (b) **standart
-dışı bir alıcı adı + 7 belirsiz addan biri** (`write`, `writev`, `open`, `rm`, `rmdir`, `symlink`,
-`link` — N-d, N-f, N-g, N-h). Çıplak ad listesi (`writeFileSync`, `unlink`, `rmSync`, `mkdir`, …)
-alıcıdan **bağımsız** çalışıyor, o yüzden en yaygın yazma API'leri her alıcı adıyla yakalanıyor.
-
-Belirsiz adların alıcıya bağlanması **gerekli bir tasarım**, keyfi değil: `src/` içinde meşru
-`process.stderr.write(` kullanımları var (`ingest.ts:79`, `service.ts:60,79`); çıplak `write(`
-taransaydı bunlar yanlış pozitif olurdu. **Yanlış pozitif ölçümü: yok** — 564/564 yeşil, Tailwind
-`truncate` sınıfı ve `truncateSummary`/`Math.trunc` de takılmıyor. Körlük assert'leri duruyor
-(`:234-236` `scannedFiles.length > 0` ve `:317` her store dosyası için `found.length > 0`).
+`\r\n` ayracını yakalama grubuyla bölüp segment segment karşılaştırdım: **`status` satırı dışında
+farklı segment yok.** Not: satır tamamen yeniden yazıldığı için `status:` sonrasındaki fazladan
+girinti normalleşiyor — ADR-005 madde 6 "yalnızca girintisiz ilk `status:` satırı değiştirilir"
+kapsamında, ihlal değil.
 
 ---
 
-## 6. Adım 6'nın çitsizliği hakkında görüşüm (görev maddesi 5)
+## 5. Kendi mutasyon tablom (9 mutasyon — developer'ın 14'ünü tekrarlamadım; biri kasıtlı tekrar)
 
-**Kabul edilebilir — çitlenmesini şart koşmuyorum.** Gerekçe:
+Her mutasyon: uygula → ölç → `git checkout --` ile geri al.
 
-1. Adım 6'yı **davranışsal olarak izole eden bir girdi yoktur.** `resolvedAnc` yalnızca zincirde bir
-   symlink/junction varsa kök dışına çıkabilir; o durumu adım 2 ve adım 3 zaten reddediyor. Symlink
-   yokken `realpathSync.native` yalnızca büyük/küçük harf ve 8.3 kısa ad kanonikleştirmesi yapar,
-   bunlar kökten **çıkamaz**. Yani adım 6 için yazılacak bir test, ancak diğer adımları devre dışı
-   bırakan bir mutasyonla anlam kazanır — yani "test" değil, mutasyon senaryosudur.
-2. Ö5 için eklenen casus testi de adım 3'ü **bağımsız yapmıyor**; yalnızca "bu satır gerçekten
-   koşuyor mu" sorusunu kapatıyor. Adım 6 için simetrik karşılığı `vi.spyOn(path, 'relative')` ile
-   ~10 satırda yazılabilir ve değeri **aynı derecede sınırlı** olur.
-3. Kritik olan şey **yapıldı**: sözleşme, adım 3 ve 6'nın sıfır bağımsız kapsaması olduğunu artık
-   açıkça yazıyor. Tehlike "çitin olmaması" değil, "çit var sanılarak adım 8'in bir gün
-   gevşetilmesi"ydi; D39 tam olarak bunu kapattı.
+| # | Mutasyon | Dosya:satır | Koşturulan | Sonuç |
+|---|---|---|---|---|
+| M1 | Handler istemcinin `expected_hash`'ini yok sayıp diskten yeniden hesaplasın (sessiz üzerine yazma) | `handlers.ts:124` | `features-api.test.ts` | **KIRMIZI** (409 testi) |
+| M2b | `content_hash` üretim noktası bozulsun (`sha256(buffer+'x')`) | `parse-feature.ts:48` | tam vitest | **KIRMIZI** (3 test) |
+| M3b | `newText = parts.join('') + ' '` (status DIŞINDA bayt ekle) | `write-gate.ts:300` | tam vitest | **KIRMIZI** (11 test, golden fixture'lar) |
+| M4 | `mergeCards` aynı referans yerine **sığ kopya** döndürsün | `useFeatures.ts:56` | `useFeatures.test.ts` ×11 | **YEŞİL 8/11** (bkz. Ö4) · E2E D42: **KIRMIZI** |
+| M4b | Developer'ın mutasyon 5'i birebir tekrar (`return next`) | `useFeatures.ts:56` | `useFeatures.test.ts` ×6 | **YEŞİL 1/6** (flaky doğrulandı) |
+| M5 | `keyboardCodes.end` = `['KeyQ']` (Enter/Boşluk/Tab onayı kaldırıldı) | `KanbanScreen.tsx:59` | tam vitest / E2E `-g AC9` | Birim **YEŞİL 728/728**, E2E **KIRMIZI** |
+| M6 | `aria-controls` = `panel-XX-<tab>` | `App.tsx:83` | `App.test.tsx` | **KIRMIZI** (1 test) |
+| M6b | Her iki sekme de `aria-controls="panel-timeline"` | `App.tsx:83` | tam vitest | **YEŞİL 728/728** (bkz. Ö3) |
+| M7 | `tests/e2e/zzz-qa-probe.spec.ts` eklendi (hiçbir config'te yok) | geçici dosya | `e2e-config-guard.test.ts` | **KIRMIZI**, dosya silindi |
+| M8 | `patchStatus` hata dalındaki `restore()` kaldırıldı | `useFeatures.ts:199` | tam vitest | **KIRMIZI** (1 test) |
+| M9 | `onKeyDown={onTabKeyDown}` tamamen kaldırıldı (tablist ok tuşları) | `App.tsx:87` | tam vitest **+ tam E2E** | **YEŞİL 728/728 + 23/23** (bkz. Ö2) |
 
-**Ama bir koşul yazıyorum:** adım 8'in regex'i (`OPERATION_PATTERNS`) ileride herhangi bir şekilde
-gevşetilirse (yeni bir yazma hedefi, yeni bir kapı deseni), adım 3 ve 6 o anda **tek kalan savunma**
-olur ve o değişiklikle **aynı** turda çitlenmeleri gerekir. Bu, F-007'nin sözleşmesine bir madde
-olarak girmelidir.
+**Yeşil kalan mutasyonlar: M4 (kısmen), M5 (birim katmanında), M6b, M9.**
 
----
-
-## 7. Bulgular (hepsi NOT — açık BLOKLAYICI/ÖNEMLİ yok)
-
-| # | Şiddet | Dosya:satır | Bulgu |
-|---|---|---|---|
-| **NOT-1** | NOT | `tests/no-write-gate-bypass.test.ts:67-71` | **Standart dışı alıcı adı + belirsiz ad birleşimi taramadan kaçıyor.** Tekrar üretme: `src/server/index.ts`'e `import fsPromises from 'node:fs/promises'` + `fsPromises.rm(p,{recursive:true})` ekle → `npx vitest run tests/no-write-gate-bypass.test.ts` → **YEŞİL**. `FS_RECEIVER` yalnızca `fs`/`fs.promises`/`fsp`/`promises` alıcılarını tanıyor. **Neden bloklayıcı değil:** (a) ADR-005 "Sonuçlar/riskler" bölümü statik guard'ın kaçak verebileceğini ve **kasıtlı atlatmayı yakalamadığını** adıyla kabul ediyor; (b) ikinci savunma hattı (manifest testi) bu sınıfı gerçekten yakalıyor — **M11 ile ölçüldü, 24 test KIRMIZI**; (c) `src/`'teki 9 dosyanın 9'u da tek konvansiyonu (`import fs from 'node:fs'`) kullanıyor, sapma göze batar. **Ucuz iyileştirme:** `FS_RECEIVER`'a `[A-Za-z_$][\w$]*[Ff]s[\w$]*` yerine, **`node:fs`/`node:fs/promises`'ten yapılan default/namespace import'un yerel adını dosyadan okuyup** alıcı listesine eklemek (import satırı zaten ayrıştırılıyor, `IMPORT_ALIAS_PATTERNS`). F-007'ye önerilir. |
-| **NOT-2** | NOT | `tests/no-write-gate-bypass.test.ts:141-163` | **Dizge-seviyesi izinli küme değişken adına duyarlı.** M6: `const tmp = resolved.targetPath` + `fs.unlinkSync(tmp)` → **564/564 YEŞİL**, çünkü `fs.unlinkSync(tmp)` izinli kümede (meşru tmp temizliği için) tam metin olarak var. Yani hedefi `tmp` adlı bir değişkene atayan bir silme yolu kaçar. Bu, önceki turda **benim önerdiğim** tasarımın (dizge-seviyesi tam-çağrı kümesi) doğal sınırı ve ADR-005'in "kasıtlı atlatma" muafiyetine giriyor; kaza eseri ihlali (`fs.unlinkSync(resolved.targetPath)`) yakalıyor — M1 KIRMIZI. Kayda geçiyorum ki gelecekte "bu çit her silmeyi yakalar" sanılmasın. |
-| **NOT-3** | NOT | `src/server/write-gate.ts:190` (`safeYamlValue`) | **Ö2'nin sınıfı tam kapanmadı: satır sonu dışındaki YAML gösterge karakterleri hâlâ tırnaklanmıyor.** Tekrar üretme: `setFeatureStatus(root,'F-001.md','"x',hash)` → `ok:true`, dosyada `status: "x` (kapanmamış tırnak = ayrıştırılamaz YAML). Aynısı `'x`, `[x`, `{x`, `&x`, `*x`, `!x` için de geçerli (§4). **Neden bloklayıcı değil:** `setFeatureStatus`'un `src/` içinde **hiç çağıranı yok** (`grep -rn 'setFeatureStatus' src/ | grep -v write-gate.ts` → 0 satır) — F-006 hiçbir rotayı bağlamadı, değer bugün ağdan ulaşılamıyor; gövde ve diğer frontmatter anahtarları her vakada bayt bayt korunuyor. **F-007 bu fonksiyonu bir handler'a bağlamadan ÖNCE kapatılmalı:** ya `safeYamlValue`'nun `needsQuoting` koşuluna baştaki gösterge karakterleri eklenmeli, ya da (tercihim, Karpathy §2) `nextStatus` için sabit bir sözcük dağarcığı allowlist'i (`todo\|doing\|qa\|fix\|done`) konmalı — fonksiyonun adı ("safe") bugün yaptığından fazlasını vaat ediyor. |
-| **NOT-4** | NOT | `src/server/write-gate.ts:106-111` | **Adım 6'nın bağımsız kapsaması sıfır** (adım 3'ünki Ö5 casus testiyle "satır koşuyor" düzeyine çıkarıldı). Sözleşmede açıkça yazılı olduğu için kabul ediyorum; §6'daki koşul geçerli: `OPERATION_PATTERNS` gevşetilirse aynı turda çitlenmeli. |
+Ayrıca hata yolu **fault injection** (mutasyon değil, arıza enjeksiyonu) — bkz. B1.
 
 ---
 
-## 8. Regresyon denetimi
+## 6. Bulgular (2 bloklayıcı · 5 önemli · 4 not)
 
-- `npm run verify` / `e2e` / `e2e:dev` → **0 / 0 / 0**; 564 + 15 + 1.
-- **Statik taramanın genişlemesi yanlış pozitif üretmiyor:** 564/564 yeşil; belirsiz adların
-  alıcıya bağlanması sayesinde `process.stderr.write(` (2 dosya, 3 çağrı), Tailwind `truncate`
-  sınıfı, `truncateSummary`, `Math.trunc` hiçbiri takılmıyor (§5).
-- **Körlük assert'leri duruyor:** `scannedFiles.length > 0` (`:234-236`) **ve** her STORE dosyası
-  için `found.length > 0` (`:317`) — ikincisi, izinli kümenin sessizce boşalmasına karşı ikinci
-  bir körlük çiti; yeni ve iyi.
-- Ürün kodunda düzeltme turunun dokunduğu tek satır kümesi: `write-gate.ts` +7 satır (D38 kontrolü
-  + yorum). Yeni ekran/rota/dışa açılan fonksiyon **yok** — `git show --stat 24298d2 ed53893`.
+### BLOKLAYICI
+
+**B1 — `PATCH /api/features` yanıtı, yazma başarılı olduktan sonraki bir okuma hatasında SONSUZA
+KADAR askıda kalıyor (istemci hiçbir yanıt almıyor).**
+`src/features/kanban/server/handlers.ts:123-165` — `void (async () => { … })()`; içindeki
+`rereadCard()` (`handlers.ts:43-48`, satır 128 ve 135'te çağrılıyor) `try/catch` içinde **değil**.
+`withDispatchErrorBoundary` (`src/server/index.ts:147`) yalnızca **senkron** dağıtımı sarıyor,
+bu asenkron IIFE'yi yakalayamaz.
+
+*Tekrar üretme (ölçüldü):* `rereadCard`'ın başına `MC_QA_FAULT=1` ile tetiklenen bir `EBUSY`
+fırlatması eklendi (geçici, geri alındı) → üretim derlemesi 7434'te başlatıldı → geçerli hash ile
+`PATCH` gönderildi.
+*Beklenen:* 500 + `{"code":"write_failed"}` (mimari §6 / `src/shared/types.ts:45`: "handler ne
+olursa olsun genel 500'e düşer").
+*Gerçek:* `HTTP=000 time=10.013` (curl 10 sn'de zaman aşımına uğradı, sunucu **hiç yanıt
+vermedi**), `server2.log`'da tek satır: `Beklenmeyen reddedilen promise (güvenlik ağı, B1): Error:
+EBUSY…`. **Yazma diskte gerçekleşmişti** (`status: dev`), yani veri yazıldı ama istemci hiçbir
+zaman haber almıyor.
+*İstemci etkisi:* `useFeatures.patchStatus`'un `await writeFetchForPatch(...)`'i hiç çözülmez →
+`pendingKeys` o kart için **hiç temizlenmez** (`useFeatures.ts:164-170` yalnızca yanıt/catch
+yolunda çağrılıyor), kart kalıcı olarak "bekliyor" durumunda donar; ne hata banner'ı ne rollback
+çalışır. Süreç yalnızca F-002'den kalan `unhandledRejection` **güvenlik ağı** sayesinde ayakta —
+o ağın kendi yorumu "ASIL çözüm değil" diyor (`src/server/index.ts:21-24`).
+*Neden gerçekçi:* ürün Windows-only (ADR-009); ADR-005 madde 5 aynı dosya için EPERM/EBUSY
+riskini **yazma** tarafında kabul edip 3 kademeli retry koymuş. Yazmadan hemen sonraki okuma, AV
+tarayıcısının dosyayı kilitlediği tam penceredir. Yani hata sınıfı sözleşmenin kendi kabul ettiği
+sınıf; kapatılan taraf yazma, açık kalan taraf okuma.
+*Sınıf tekrarı:* F-002 B1 ve F-005'in "yeni yazma yolunda fault injection" dersinin **üçüncü**
+tekrarı; bu turda hiçbir test bu yolu koşmuyor (`grep -n "rereadCard" tests/` = 0).
+
+**B2 — T3 (devralınan taahhüt 3) sağlanmıyor: 375px'te sekme çubuğunun görünür piksel genişliği
+SIFIR; çiti de bunu ölçmüyor.**
+*Ölçüm (gerçek Chromium, 375×720, `getBoundingClientRect`):*
+`header > div` (kaydırma kabı) `x=16, right=184, clientWidth=168, scrollWidth=395, scrollLeft=0`;
+`#tab-timeline` `x=219`, `#tab-kanban` `x=361` → **kırpılmış görünür genişlik: her ikisi de 0 px.**
+Kullanıcı `MISSION CONTRO…` başlığı ve Ayarlar dişlisinden başka bir şey görmüyor; ekranlar arası
+geçiş ancak başlık şeridini yatay kaydırmayı **keşfederse** mümkün.
+*Sözleşme ne diyor:* §6 madde 3 — "gezinme **hiçbir zaman tamamen gizlenmez**".
+`docs/03-ux.md:17` (G3 onaylı) — dar ekranda "yatay kaydırılabilir bir şerit halinde kalır —
+hamburger menüsü, **gizli navigasyon** veya ikinci bir tıklama katmanı gerektirmez".
+*Çit neden yakalamıyor:* `tests/e2e/kanban.spec.ts:353-362` sekmeler için yalnızca
+`toBeVisible()` + `.click()` kullanıyor. Playwright'ta `toBeVisible()` bir `overflow-x-auto`
+kabında kaydırılmış öğe için **doğrudur** ve `.click()` öğeyi otomatik olarak görünür alana
+kaydırır — yani test, kullanıcının hiç göremediği bir sekmede de yeşil kalır. Ayarlar düğmesi için
+gerçek bir `boundingBox` sınırı var (satır 348-351), sekmeler için **yok**.
+*Etki:* F-005'te aynı sınıf "statik etiket" olduğu için tolere edilmişti; F-007 sekmeleri **tek
+gezinme mekanizmasına** çevirdiği için taahhüt tam da bu yüzden devredilmişti. Taahhüt feature
+notunda `[x]` işaretli ve kanıt olarak bu ölçmeyen test gösteriliyor.
+*Not:* geniş ekranda (1280px) sorun yok.
+
+### ÖNEMLİ
+
+**Ö1 — Tablist ok tuşları DOM odağını taşımıyor (WAI-ARIA roving tabindex ihlali).**
+`src/web/App.tsx:45-59` `onTabKeyDown` yalnızca `selectTab(...)` çağırıyor; yeni seçili sekmeye
+`focus()` verilmiyor.
+*Ölçüm:* `#tab-kanban` odaktayken `ArrowLeft` → `aria-selected="true"` **tab-timeline**'a geçti,
+`tabIndex` 0/-1 yer değiştirdi, ama `document.activeElement` hâlâ **tab-kanban** (artık
+`tabIndex=-1` olan öğe). Ekran okuyucu odak taşınmadığı için sekme değişimini duyurmaz; sonraki
+`Tab` basışı beklenmedik yere düşer. Sözleşme §7 bunu açıkça "APG Tabs Pattern, roving tabindex"
+diye tanımlıyor.
+
+**Ö2 — Tablist klavye gezinmesinin HİÇBİR testi yok (M9 tam yeşil).**
+`onKeyDown={onTabKeyDown}` bağlantısı tamamen silindiğinde **728/728 birim + 23/23 E2E yeşil**
+kaldı. `grep -rn "ArrowLeft\|onTabKeyDown\|'End'" tests/` → tablist için 0 sonuç. Sözleşme §5 T1
+satırı "E2E (**gerçek ok tuşu, gerçek focus**)" vaat ediyordu; teslim edilen kanıt
+`tests/web/App.test.tsx:41-56`'daki **statik HTML dizge** assert'leri. `Home`/`End` (§7'de
+"tek satırlık ek" denen davranış) da hiç ölçülmüyor.
+
+**Ö3 — `aria-controls` eşleşmesi yarım çitli (M6b tam yeşil).**
+`App.test.tsx:50` yalnızca `aria-controls="panel-timeline"` dizgesini arıyor. Her iki sekmeyi de
+`panel-timeline`'a bağlayan mutasyon 728/728 yeşil kaldı — yani Kanban sekmesinin panel ilişkisi
+hiç ölçülmüyor (ekran okuyucu yanlış panele giderdi). Aynı test dosyası `panel-kanban` için
+`aria-labelledby`'yi kontrol ediyor ama ters yönü (`tab-kanban` → `panel-kanban`) atlamış.
+
+**Ö4 — Echo çiti (jsdom) flaky ve çoğunlukla ölçmüyor — ölçüldü.**
+`tests/features/kanban/web/useFeatures.test.ts:61-75`: assert, `fetchImpl` **çağrı sayısı** 2'ye
+ulaşır ulaşmaz koşuyor; React'in ikinci state commit'ini beklemiyor. Sonuç:
+kendi mutasyonum (`return { ...prevCard }`, davranışsal olarak referans kimliğini bozan en dar
+mutasyon) **11 koşuda 8 kez YEŞİL**; developer'ın mutasyon 5'i (`return next`) **6 koşuda 1 kez
+YEŞİL**. Developer bunu "bilinen kalıntı" olarak kaydetmiş ama sıklığı ölçmemiş — gerçek yanlış-
+yeşil oranı benim mutasyonumda %73. **Bloklayıcı değil**, çünkü ikinci savunma hattı gerçek:
+E2E D42 render sayacı (`kanban.spec.ts:367-405`) aynı mutasyonu deterministik olarak KIRMIZI
+verdi (`expect(after).toBe(before)`). Düzeltme yönü: assert'i `waitFor(() => expect(cards[0])
+.toBe(firstRef))` yerine, ikinci fetch'in state'e yansıdığını gösteren bir gözlemden (ör.
+`lastSyncedAt` değişimi) sonra yapmak.
+
+**Ö5 — Sözleşme §6 madde 1'in açıkça söz verdiği "Ayarlar açıkken tablist durumu" testi yazılmamış.**
+Sözleşme: "`KanbanScreen.test.tsx`/App testlerine bu üçüncü durumu … doğrulayan bir test eklenir."
+`grep -rn "lastTabScreen" tests/` = 0. Davranışı tarayıcıda elle doğruladım ve **doğru**
+(Ayarlar açıkken tam olarak bir `[role=tab][aria-selected=true]` kalıyor, `aria-pressed="true"`),
+ama çit yok → gelecek turda sessizce bozulabilir. (Ayrıca sözleşme "Ayarlar kendi
+`#panel-settings`'inde gösterilir" diyor; DOM'da böyle bir id yok — metin bayat.)
+
+### NOT (GEÇTİ'yi engellemez, kayıt)
+
+**N1 —** 403 `write_denied` istemciye §4.3 sözlüğündeki *"dosya biçimi tanınamadı. Tekrar
+deneyin."* yerine 500 ile **aynı** metni (`Dosyaya yazma izni reddedildi.`) döndürüyor
+(`handlers.ts:147` ve `:158`). Kullanıcı güvenlik reddi ile disk hatasını ayırt edemiyor; sözlük
+satırı uygulanmamış.
+
+**N2 —** Brief'in "`settings.spec.ts` ve `shell.spec.ts` assert'leri değişti" öncülü yarı yanlış:
+`git diff fec3aa2..HEAD --stat` yalnızca `tests/e2e/shell.spec.ts`'i (+31/-... ) gösteriyor,
+`settings.spec.ts`'e **hiç dokunulmamış**. `shell.spec.ts` değişikliği davranış gevşetmesi
+değil, yeni gerçeğe uyarlama: `clickableCount` 1→**3**, `aria-current` sayısı 1→**0**,
+`tabRoleCount` 0→**2** ve **yeni** bir "tam olarak bir `[role=tab][aria-selected=true]`, metni
+`Zaman Çizelgesi`" assert'i eklenmiş. Ölçme niteliği korunmuş, regresyon yok.
+
+**N3 —** CEO ödevleri hâlâ açık: `docs/03-ux.md:443` klavye akışı hâlâ "`Enter`/`Boşluk` ile
+seçili moda al" diyor (CEO onaylı sapma yansıtılmamış) ve §4.3'ün iki yeni hata metni UX Türkçe
+sözlüğüne eklenmemiş (`grep "sunucuya ulaşılamadı" docs/03-ux.md` = 0). Developer'ın işi değil,
+ama G4-1 öncesi kapanmalı.
+
+**N4 —** `setFeatureStatus` oku→karşılaştır→`rename` sırası kilitsiz; okuma ile yeniden adlandırma
+arasındaki milisaniyelik pencerede yapılan bir dış yazım sessizce kaybolur. Tek kullanıcılı yerel
+araçta kabul edilebilir; kayıt olarak duruyor (ADR-005 madde 7'nin sınırı).
 
 ---
 
-## 9. Temizlik kanıtı
+## 7. Görsel doğrulama (üretim derlemesi + izole veri dizini + geçici fixture)
 
-- `git diff HEAD -- src tests` → **boş** (0 satır). Uygulanan 12 mutasyon + 20 tarama enjeksiyonunun
-  tamamı geri alındı; her mutasyon betiği sonunda `reverted: true` doğrulandı.
-- `git diff HEAD` içindeki tek değişiklik **bu raporun** yazımı ve feature notunun
-  `status: qa → done` satırıdır (rol gereği QA yazar).
-- Portlar: `netstat -ano | grep LISTENING` → 7333/7334/7335/7433/7434 üzerinde **0 dinleyen soket**
-  (yalnızca kendi e2e koşumdan kalan TIME_WAIT girdileri).
-- Süreçler: `tasklist` → 2 `node.exe`; `Win32_Process` ile komut satırları okundu, **ikisi de
-  Playwright MCP** (pid 37600, 37592). Yetim `npm run dev`/`tsx` ağacı **yok**.
-- Fixture'lar yalnızca `os.tmpdir()` altında kuruldu ve her vakadan sonra `fs.rmSync` ile silindi;
-  gerçek proje klasörlerine yazılmadı.
+| Gözlem | Sonuç |
+|---|---|
+| 7 durum sütunu + "Bilinmeyen durum" | 8 sütun render ediliyor (`kanban-column-todo…unknown`) |
+| Sütun başlığı biçimi | `Geliştirme (dev)` — ADR-001 karar 8 uyumlu, hepsi Türkçe |
+| Kart sürüklenince dosya değişiyor mu | Evet (klavye ile 3 farklı kart, 3 farklı dosya diskte değişti) |
+| Kart detay modalı (AC7) | `id`, `title`, `Durum`, `Sahip (owner)`, `Bağımlılıklar (deps)`, `Sprint`; `Esc` kapatıyor |
+| Hata durumunda kart eski sütununa dönüyor mu (AC5) | Evet, `[Tekrar dene]` ile birlikte |
+| Ayrıştırılamayan dosyalar | `Ayrıştırılamayan dosyalar (1)` ayrı liste, sürüklenemez |
+| `.txt` dosyası | Kanbanda yok (doğru) |
+| 375px | **Sekmeler görünmüyor (B2)**; sütunlar ve uyarı banner'ları doğru sarıyor |
+| Konsol | Yalnızca beklenen 409/500 kaynak hataları; JS hatası/pageerror yok |
+
+Ekran görüntüleri:
+- `docs/qa/screens/F-007-2026-09-06-kanban-1280.png` (pano, 1280px)
+- `docs/qa/screens/F-007-2026-09-06-modal.png` (AC7 detay modalı)
+- `docs/qa/screens/F-007-2026-09-06-conflict.png` (AC4 çakışma banner'ı)
+- `docs/qa/screens/F-007-2026-09-06-write-error.png` (AC5 yazma hatası + kart geri döndü)
+- `docs/qa/screens/F-007-2026-09-06-375px.png` (**B2**: dar genişlikte sekmeler görünmüyor)
+
+## 8. Erişilebilirlik denetimi
+
+| Kontrol | Sonuç |
+|---|---|
+| `role="tablist"` / `tab` / `tabpanel` | Var, yapısal olarak geçerli |
+| `aria-controls`/`id` eşleşmesi | Doğru render ediliyor, **çiti yarım (Ö3)** |
+| Roving `tabindex` | Değerler doğru (0/-1), **odak taşınmıyor (Ö1)** |
+| Ok tuşları / `Home` / `End` | Seçimi değiştiriyor, **çitsiz (Ö2)** |
+| Ayarlar desene giriyor mu | **Hayır** — `aria-pressed` toggle butonu, `role=tab` değil (doğru) |
+| Ayarlar açıkken tablist | Tam olarak bir `aria-selected=true` kalıyor (doğru, çitsiz — Ö5) |
+| `aria-roledescription` | `"kart"` (Türkçe, dnd-kit'in `"draggable"`'ı geçersiz kılınmış) |
+| `screenReaderInstructions` | `DndDescribedBy-0`: *"Bu kartı taşımak için Boşluk tuşuna basın…"* — Türkçe ve **gerçek tuş tasarımıyla uyumlu** |
+| dnd-kit'in kendi `aria-live="assertive"` bölgesi | `DndLiveRegion-0` DOM'da var ama içeriği **boş** (susturma çalışıyor) |
+| Kendi canlı bölgemiz | `role="status" aria-live="polite" aria-atomic="true"`, sürükleme sırasında `Sözleşme (contract) sütununa taşınıyor` yazdı — Türkçe, `polite` |
+
+## 9. Kapsam, regresyon ve güvenlik denetimi
+
+- **Faz 2 sızıntısı yok:** `grep -rniE "kapılar|thread|token" src/features/kanban src/web/App.tsx`
+  → 0 (yalnızca `onNavigateSettings` eşleşti). `App.test.tsx` negatif çiti hâlâ yerinde.
+- **`src/features/kanban/**` içinde yazma çağrısı yok:** `writeFile|appendFile|unlink|rename|
+  rmSync|mkdir` → 0 sonuç. Yalnızca okuma (`readFileSync`/`statSync`/`readdirSync`/`existsSync`)
+  — ADR-005'e uygun; tüm yazmalar `write-gate.setFeatureStatus` üzerinden.
+- **`git diff fec3aa2..HEAD --stat`:** 38 dosya, +4093/-166. Kanban dizini + `write-gate.ts` (58
+  satır: yalnızca async dönüşümü ve `safeYamlValue`), `App.tsx`, `useEventStream.ts` (`onFeatures`),
+  `index.ts` (rota), `shared/*`. Sözleşme §2.1/§2.2 dosya listesinin dışına çıkılmamış (tek
+  istisna `tests/e2e/shell.spec.ts`, `docs/blockers.md`'de kayıtlı ve CEO talimatıyla).
+- **F-006 regresyonu:** `write-gate.test.ts` bayt-koruma golden fixture'ları ve
+  `write-gate-manifest.test.ts` hâlâ yeşil; async dönüşüm imzaları değiştirmiş ama garantileri
+  değiştirmemiş. `OPERATION_PATTERNS`'a dokunulmamış (T6 koşulu tetiklenmedi — doğrulandı).
+- **Güvenlik:** `x-mc-write` kontrolü tek yerde, dağıtıcıda (`src/server/index.ts:333`), yeni
+  `PATCH /api/features/...` rotası ondan **sonra** çözülüyor; regresyon çiti var
+  (`tests/integration/features-api.test.ts:285-297`: başlıksız PATCH → 403, GET muaf). Ham
+  write-gate hata metni istemciye sızmıyor (`handlers.ts:153-159`: stderr'e ham, istemciye sabit
+  Türkçe metin; developer mutasyon 4 KIRMIZI). `npm audit` = 0 açık.
+
+## 10. Temizlik kanıtı
+
+- `git diff HEAD` → **boş** (tüm mutasyonlar geri alındı; `git status --porcelain` yalnızca bu
+  raporun 5 ekran görüntüsünü untracked gösteriyor).
+- Geçici probe dosyası `tests/e2e/zzz-qa-probe.spec.ts` **silindi**; fixture dizinleri
+  (`scratchpad/qa007/**`) silindi; gerçek proje klasörlerine hiç yazılmadı.
+- Süreç/port: 7333/7334/7335/7433/7434 üzerinde **LISTENING süreç yok**. Kalan iki `node.exe`
+  Playwright MCP sunucusuna ait (komut satırı doğrulandı), uygulama süreci değil.
 
 ---
 
-## 10. F-007'ye devredilen (kapanış notları, bu turu bloklamaz)
+## 11. Puanların gerekçesi
 
-1. NOT-3 — `setFeatureStatus` bir handler'a bağlanmadan önce `status` değer doğrulaması.
-2. NOT-1 — tarama alıcı listesini `node:fs` import'unun yerel adından türetsin.
-3. §6 koşulu — `OPERATION_PATTERNS` gevşetilirse adım 3/6 aynı turda çitlensin.
-4. N2-N5 (önceki tur) — bilinçli olarak açık; feature notunda gerekçesi yazılı.
+- **İşlevsellik 7:** Mutlu yol, çakışma, hata, klavye, echo, canlı yansıma — hepsi gerçek
+  tarayıcıda çalışıyor. Kırılan tek işlevsel yol B1 (yanıtsız kalan istek) ve Ö1 (odak).
+- **Özellik bütünlüğü 6:** 10 AC'nin 10'u karşılanıyor, ama 6 devralınan taahhütten **T3 ihlal
+  edilmiş** ve **T1 yarım** (klavye davranışı hatalı + çitsiz); ikisi de `[x]` işaretli.
+- **Görsel/UX 6:** Geniş ekranda tasarım temiz, Türkçe metinler ve durum ikonları doğru; ama
+  UX dokümanının **birincil viewport'unda (320-480px) gezinme görünmüyor** (B2).
+- **Kod kalitesi 6:** 728 test + 23 E2E + iyi kurulmuş guard'lar; buna karşılık yeni yazma
+  yolunda hata yakalama yok (B1), 4 mutasyonum yeşil kaldı ve sözleşmede söz verilen üç test
+  (ok tuşu, Ayarlar durumu, `aria-controls` ters yönü) yazılmamış.
+
+## 12. KALDI'yı kapatmak için istenenler
+
+1. **B1:** `handlers.ts`'teki asenkron IIFE'yi `try/catch`'e al; hata dalında 500 +
+   `write_failed` metni dön ve stderr'e logla. Çit: `rereadCard`'ı fırlatan bir entegrasyon testi
+   (gerçek HTTP üzerinden yanıt geldiğini ve sürecin ayakta kaldığını ölçen), ayrıca mutasyon:
+   `try/catch` kaldırılınca test KIRMIZI.
+2. **B2:** 375px'te en az bir sekme her zaman görünür olsun (ör. başlığı kaydırma kabının dışına
+   almak veya dar genişlikte kısaltmak). Çit: `boundingBox()` **ve** kırpma hesabı ile "her iki
+   sekmenin görünür genişliği > 0" — `toBeVisible()` bu iddia için yeterli değil (bu turda
+   ölçüldü).
+3. **Ö1/Ö2:** Ok tuşu seçimde yeni sekmeye `focus()` verilsin; E2E'de `ArrowRight`/`ArrowLeft`/
+   `Home`/`End` sonrası `document.activeElement` ölçülsün. Mutasyon: `onKeyDown` bağlantısını
+   silmek KIRMIZI vermeli (bugün yeşil).
+4. **Ö3:** `aria-controls="panel-kanban"` de assert edilsin (veya iki sekmenin `aria-controls`
+   değerlerinin **farklı** ve kendi panel id'lerine eşit olduğu).
+5. **Ö4:** jsdom echo assert'i determinist hâle getirilsin; kabul ölçütü: `{ ...prevCard }`
+   mutasyonu 10/10 KIRMIZI.
+6. **Ö5:** `lastTabScreen` davranışı için söz verilen test yazılsın; sözleşmedeki
+   `#panel-settings` cümlesi gerçeğe göre düzeltilsin.
+7. **N1:** 403 için §4.3 sözlüğündeki metin kullanılsın (veya sözlük gerçeğe göre güncellensin).

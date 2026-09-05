@@ -1,6 +1,6 @@
 ---
 name: kod-turu-kontrolleri
-description: Kod turu QA'sında en çok bulgu üreten teknikler — hata yolu fault injection (her yeni yazma yolunda tekrarla), "çitin testi var mı" mutasyonu, checkpoint yazar/okur semantiği, derleme çıktısını sınıf sınıf ölçme, statik guard'ın yorumu vs. taradığı, UX'in birincil viewport'unda ölçme
+description: Kod turu QA'sında en çok bulgu üreten teknikler — hata yolu fault injection (her yeni yazma yolunda, asenkron IIFE dahil), "çitin testi var mı" mutasyonu, checkpoint yazar/okur semantiği, derleme çıktısını sınıf sınıf ölçme, statik guard'ın yorumu vs. taradığı, UX'in birincil viewport'unda kırpılmış görünür genişlik ölçme, flaky çitin yanlış-yeşil oranını ölçme
 metadata:
   type: feedback
 ---
@@ -69,3 +69,32 @@ mutasyon planlanmamış kod yollarını, (b) çok katmanlı savunmaların ikinci
 (c) hata/`catch` dallarını, (d) sözleşmenin "şu testte doğrulanır" dediği ama dosyada
 `grep` ile bulunamayan davranışları hedefle. Bkz. [[sozlesme-turu-kontrolleri]],
 [[duzeltme-turu-kontrolleri]].
+
+---
+
+## F-007 turunda eklenen üç teknik
+
+9. **`void (async () => { ... })()` gören her handler'da fault injection çalıştır.** F-007'de
+   `PATCH /api/features` yazma yolu senkron dağıtıcıdan asenkron bir IIFE'ye geçmişti;
+   `withDispatchErrorBoundary` yalnızca SENKRON dağıtımı sardığı için IIFE içindeki `readFileSync`
+   hatası hiçbir yere düşmüyordu. Sonuç: yazma diske uygulandı, istemci **hiç yanıt almadı**
+   (curl `HTTP=000`, 10 sn timeout), süreç yalnızca `unhandledRejection` güvenlik ağı sayesinde
+   yaşadı, istemcide `pendingKeys` hiç temizlenmediği için kart kalıcı "bekliyor"da dondu.
+   Teknik: hata dalını `process.env.MC_QA_FAULT` ile tetiklenen geçici bir `throw`la enjekte et,
+   üretim derlemesini ayrı portta başlat, `curl -m 10 -w "HTTP=%{http_code}"` ile ölç, sonra geri
+   al. F-002 → F-005 → F-007: bu sınıfın ÜÇÜNCÜ tekrarı; her yeni yazma ucunda tekrar et.
+10. **Playwright `toBeVisible()` + `.click()` kaydırma kabındaki öğeyi "görünür" sayar.**
+   `overflow-x-auto` bir kapta kaydırılıp ekran dışında kalan bir sekme için `toBeVisible()`
+   TRUE döner ve `.click()` öğeyi otomatik kaydırır — yani "dar genişlikte gezinme kaybolmaz"
+   çiti kullanıcının hiç göremediği bir arayüzde de yeşil kalır. Gerçek ölçüm: kabın ve öğenin
+   `getBoundingClientRect()`'ini al, kırpılmış görünür genişliği hesapla
+   (`min(el.right,box.right) - max(el.left,box.left)`), `> 0` iste. F-007'de iki sekmenin de
+   görünür genişliği **0 px**'ti ve E2E yeşildi.
+11. **Flaky bir çitin yanlış-yeşil ORANINI ölç, "bilinen kalıntı" notuna güvenme.** Developer
+   "mutasyona karşı test flaky" diye kaydetmişti; ölçtüm: kendi dar mutasyonum (`return prevCard`
+   yerine `return { ...prevCard }`) 11 koşuda **8 kez yeşil** (%73 yanlış-yeşil), developer'ın
+   kendi mutasyonu 6 koşuda 1 kez yeşil. Kök neden yapısaldı: assert `waitFor(fetch çağrı
+   sayısı === 2)` anında koşuyor, React'in state commit'ini beklemiyor. Aynı davranışın E2E
+   karşılığı (render sayacı, kesin eşitlik) deterministik KIRMIZI verdi → bulguyu ÖNEMLİ'ye
+   indirdim, BLOKLAYICI yapmadım. Kural: flaky çit bulunca (a) 6-11 koşuluk örneklem al,
+   (b) ikinci savunma hattı var mı diye bak, şiddeti ona göre ver.

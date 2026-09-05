@@ -1,7 +1,7 @@
 ---
 id: F-004
 title: send-event.cjs hook scripti + kurulum scripti + hook smoke testleri
-status: qa
+status: done
 owner: developer
 deps: [F-002]
 sprint: 1

@@ -523,3 +523,60 @@ hiçbiri `summary` uzunluğundan sorumlu değil. Bu turun kapsamı dışında, d
 
 **Sonraki adım:** qa-evaluator düzeltme turu 1'i dar kapsamda doğrulasın (yalnızca B1/Ö1/Ö2 +
 mutasyon kanıtı); AC1-AC4/AC6, CEO kararları A/B/C/D, `install-hook` güvenliği yeniden açılmasın.
+
+---
+
+## 2026-09-05 — F-004 (send-event hook + kurulum scripti) GEÇTİ · panel kendini izliyor
+
+**Ne yapıldı**
+- Sözleşme aşaması: 3 developer + 2 QA turu, 12 bulgu + 1 regresyon **tek satır kod yazılmadan**
+  kapandı (`docs/qa/F-004-contract.md`). En pahalı yakalama: tasarımın en kötü durumda **2,55 s**
+  yaşaması — mimari §8.1'in 400 ms tavanının 6 katı; `async: true` desteklenmeyen bir ortamda bu
+  süre **her araç çağrısına** eklenecekti. Zamanlayıcılar küçültüldü, en kötü durum ~389 ms'e indi,
+  ADR değişikliği gerekmedi.
+- Kod turu: `.claude/hooks/send-event.cjs` (bağımlılıksız, bloklamayan hook göndericisi),
+  `scripts/install-hook.mjs` (idempotent kurulum, yedekli, doğrula-sonra-yaz), smoke testleri,
+  `KURULUM.md`. 4 commit.
+- **AC5 kullanıcı tarafından yapıldı:** `npm run install-hook -- .` — panel artık **kendini izliyor**.
+- QA kod turu: **KALDI** (1 bloklayıcı). Düzeltme turu 1 → QA doğrulama: **GEÇTİ.**
+  Puanlar: İşlevsellik 8 · Bütünlük 9 · Görsel/UX 9 · Kod kalitesi 8 (6'dan yükseldi).
+
+**Nasıl doğrulandı**
+- `npm run verify` = 0 (**185 test / 14 dosya**) · `e2e` = 0 · `e2e:dev` = 0 · entegrasyon dosyası
+  ×10 art arda, hepsi yeşil.
+- **AC5 canlı kanıt:** gerçek oturumda `PreToolUse`/`Bash` olayları düştü, `transcript_path` dolu
+  geldi (Faz 2'nin bağımlı olduğu alan), `.seq` 4→9→15 kaymasız, 6 güvenlik hook'u bozulmadı.
+- QA kendi mutasyonlarını koştu; ikisi de KIRMIZI verdi ve iki bekçi katmanının gerçekten
+  **ayrıştığını** ölçtü (idle silinince sessiz senaryonun süresi 103-117 ms bandından 150-162 ms'e,
+  yani toplam bekçiye kaydı).
+
+**Bu turun iki dersi**
+- **Kod doğru olabilir ama korumasız olabilir.** Developer uygulama sırasında gerçek bir üretim
+  hatası buldu ve düzeltti (stdin bekçisinin `clearTimeout`'u eksikti; yetim `unref()`'li zamanlayıcı
+  120 ms'de uçuştaki isteği öldürüp ağ bekçilerini atlıyor, hook `exit 0` ve boş `stderr` ile
+  çıkıyordu → **sessiz olay kaybı**). QA o düzeltmeyi geri aldı ve **185 testin tamamı yeşil kaldı.**
+  Düzeltme testsizdi, yani gerileme serbestti. Bloklayıcı sayıldı ve kapatıldı.
+- **Zamanlama testini dışarıdan değil içeriden ölç.** Çözüm, süreyi test sunucusu tarafından
+  (TCP kabulünden soket kapanışına) ölçmek oldu; Node süreç doğuşunun jitter'ı ölçüme hiç girmiyor.
+  Çift taraflı eşik (damla `>= 145 ms`, sessiz `< 145 ms`) iki bekçi katmanını ayırıyor.
+  Ürün kodunda **kalıcı değişiklik gerekmedi** — sorun kodda değil kanıttaydı.
+
+**Kalan risk / açık borç**
+- **BUG-001 açık:** `summary` mimari §5.1'in 200 karakter sınırını aşıyor (gerçek olaylarda 234-732).
+  Kaynak F-002'nin `deriveSummary`'si. **F-003'ten önce kapatılmalı** — zaman çizelgesi satır
+  düzenini bozar. `docs/qa/BUG-001-summary-200-karakter.md`.
+- **N3 (QA notu):** 145 ms eşiğinin alt sınıra payı 2-3 ms. QA 70+ örnekle ölçtü, yük altında dahi
+  kırılganlık kanıtlanamadı (kayma yönü yukarı, yani eşikten uzağa) — ama eşiği 140'a çekmek veya
+  zamanlayıcı sabitlerinden türetmek daha sağlam olur.
+- **N4 (QA notu):** `await socketLifetimeMs` sınırsız; ağır doygunlukta soket `'close'` olayı
+  gelmeyip test asılabilir. `Promise.race` + açık zaman aşımı mesajı önerildi.
+- **İlginç:** QA'nın yük testinde kırılan tek şey, CEO'nun koyduğu eski `elapsedMs < 1000` sert
+  kapısı oldu (1042-1552 ms). Yeni assert'ler kırılmadı. Sert kapı, koruduğu şeyden daha kırılgan.
+- `send-event.cjs`'in `MC_PORT`/`MC_MAX_PAYLOAD` çözümü sunucudan ayrı kopya (script bağımlılıksız
+  olmalı); sürüklenme riski bilinçli kabul edildi.
+
+**Sonraki adım**
+- **BUG-001 düzeltmesi** (küçük, F-002 kodu) → sonra **F-003** (SSE zaman çizelgesi).
+- F-003 sözleşmesi iki taahhütle açılacak: gerçek DOM test altyapısı ADR'si (jsdom +
+  @testing-library/react) ve **N-1 hayalet olay** (503 dönen olay ring'de kalıyor).
+- Faz 1 sırası: F-001 ✓ → F-002 ✓ → F-004 ✓ → **F-003** → F-005 → F-006 → F-007.

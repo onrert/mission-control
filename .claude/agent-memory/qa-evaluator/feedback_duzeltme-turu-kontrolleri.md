@@ -30,6 +30,14 @@ Dar "düzeltme turu doğrulaması" briefinde şu üç kontrol her seferinde iş 
    eklenen kırpma zarfını tetikleyip `raw_text`'i düşürüyor ve yeni eklenen testi yapısal
    olarak kırmızı doğuruyordu.
 
+7. **Zamanlama eşiği doğrulaması: testi kopyala, depo dışında ölç.** Bir düzeltme "X ms eşiği"
+   getirdiyse test yardımcısını scratchpad'e birebir kopyalayıp 20+ örnek al — hem doğru kod hem
+   mutasyonlu kod için. Sonra eşik iki dağılımın **boşluğunun ortasında mı** diye bak (F-004 fix1:
+   doğru 147-184 / mutasyonlu 114-133, eşik 145 → üst uca 12 ms, alt uca 2 ms). Yükü de üret
+   (`node -e "busy loop"` ×CPU sayısı, kendini sonlandıran süreyle). Kırılmıyorsa NOT ver, KALDI
+   verme. Ayrıca **hangi assert'in önce geldiğine** bak: yük altında ilk kırılan eski
+   `elapsedMs < 1000` kapısıydı, yeni eşik değil.
+
 **Why:** Düzeltme turları dar tutulduğu için yeniden inceleme yapılmaz; kaçan kusur bir daha
 bakılmayan bölgede kalır. **How to apply:** Kapanış tablosunu yazmadan önce bu üç kontrolü
 uygula; kanıtı komut çıktısı + dosya:satır ile ver. Ayrıca arşivleme yaparken önceki raporun

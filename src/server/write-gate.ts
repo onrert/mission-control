@@ -5,7 +5,11 @@ import crypto from 'node:crypto'
 // Yazma kapısı (sözleşme `docs/qa/F-006-contract.md`, ADR-005). İzlenen bir proje köküne
 // yazan TEK modül. Genel amaçlı `write(path, content)` YOK — yalnızca dört niyet fonksiyonu
 // (`setFeatureStatus`, `writeGateApproval`, `writeGateDenial`, `archiveDenial`) dışa açılır.
-// Bu dosya `tests/no-write-gate-bypass.test.ts`'in TEK dosya-seviyesi istisnasıdır.
+// QA KALDI turu (D34/B2): bu dosya `tests/no-write-gate-bypass.test.ts`'te artık DOSYA-seviyesinde
+// muaf DEĞİL — üç store dosyasıyla aynı, ÇAĞRI-BİÇİMLİ + DİZGE-SEVİYESİ izinli tam-çağrı kümesiyle
+// taranıyor (yalnızca aşağıdaki `atomicWriteOnce`/`archiveDenial`'ın kendi tmp/rename çağrıları
+// izinli; hedef dosyayı silen YENİ bir çağrı eklenirse — meşru izinli kümede olmadığı için —
+// tarama KIRMIZI verir).
 
 export type WriteResult =
   | { ok: true; path: string; hash?: string }

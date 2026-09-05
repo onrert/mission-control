@@ -5,6 +5,8 @@ import type { EventRecord } from '../../../shared/types'
 export type NormalizedEvent = Omit<EventRecord, 'seq' | 'id'>
 
 const DEFAULT_MAX_PAYLOAD = 65536
+const SUMMARY_MAX_LENGTH = 200
+const SUMMARY_TRUNCATION_MARK = '…'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -65,6 +67,19 @@ function deriveSummary(payload: Record<string, unknown>, hookEventName: string):
     default:
       return ''
   }
+}
+
+/**
+ * Mimari §5.1 satır 254: `summary` ≤ 200 karakter, kırpma işareti dahil. `deriveSummary`
+ * ham alan uzunluğunu bilmediği için sınır burada, türetmeden sonra tek noktada uygulanır.
+ * BUG-001: gerçek hook payload'larında (ör. uzun Bash `command`) kırpma yapılmadan
+ * sınır aşılıyordu; testler/demo olayları `tool_input` içermediği için görülmemişti.
+ */
+function truncateSummary(value: string): string {
+  if (value.length <= SUMMARY_MAX_LENGTH) return value
+  return (
+    value.slice(0, SUMMARY_MAX_LENGTH - SUMMARY_TRUNCATION_MARK.length) + SUMMARY_TRUNCATION_MARK
+  )
 }
 
 /**
@@ -136,7 +151,7 @@ export function normalizeEvent(
     permission_mode: stringField(payload, 'permission_mode'),
     transcript_path: stringField(payload, 'transcript_path'),
     prompt_id: stringField(payload, 'prompt_id'),
-    summary: deriveSummary(payload, hookEventName),
+    summary: truncateSummary(deriveSummary(payload, hookEventName)),
     flags,
     raw,
   }

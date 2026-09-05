@@ -382,7 +382,7 @@ Hata kodu → HTTP eşlemesi: `invalid_body|invalid_path` 400 · `forbidden_orig
 - Gövde JSON değilse: `202 { success: true, data: { id, seq, flags: ['parse_error'] } }` — olay `raw_text` ile kaydedilir. (Veri kaybetmemek 400 dönmekten değerlidir.)
 
 **`GET /api/events`**
-- Sorgu: `project_id`, `type` (çoklu, virgüllü), `agent`, `session_id`, `since_seq`, `before_seq`, `limit` (varsayılan 200, max 1000), `q` (summary alt dizgesi).
+- Sorgu: `project_id`, `type` (çoklu, virgüllü), `agent`, `session_id`, `since_seq`, `before_seq`, `limit` (varsayılan 200, max 1000), `q` (summary alt dizgesi). Not (BUG-001): `summary` 200 karakterde kırpıldığından kırpılan kuyruk `q` ile aranamaz — veri kaybı yok, `raw` tam metni tutar.
 - Yanıt: `200 { success: true, data: EventRecord[], meta: { total, next_seq } }` — `seq` artan sırada.
 
 **`GET /api/stream`** — SSE. Detay: ADR-004.

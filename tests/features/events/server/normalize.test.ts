@@ -47,10 +47,7 @@ describe('normalizeEvent', () => {
   it('cwd erişilemez bir yolsa ham değer korunur, throw etmez', () => {
     const fakePath = path.join(os.tmpdir(), 'mc-normalize-does-not-exist-xyz')
     expect(() =>
-      normalizeEvent(
-        JSON.stringify({ cwd: fakePath, hook_event_name: 'SessionStart' }),
-        NOW
-      )
+      normalizeEvent(JSON.stringify({ cwd: fakePath, hook_event_name: 'SessionStart' }), NOW)
     ).not.toThrow()
     const result = normalizeEvent(
       JSON.stringify({ cwd: fakePath, hook_event_name: 'SessionStart' }),
@@ -184,6 +181,35 @@ describe('normalizeEvent', () => {
         NOW
       )
       expect(result.summary).toBe('permission_needed')
+    })
+
+    it('BUG-001: 200 karakteri aşan tool_input.command kırpma işaretiyle 200 karaktere kısaltılır', () => {
+      const longCommand = 'echo '.padEnd(800, 'a')
+      const result = normalizeEvent(
+        JSON.stringify({
+          project_path: 'C:\\dev\\apps\\demo',
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_input: { command: longCommand },
+        }),
+        NOW
+      )
+      expect(result.summary.length).toBeLessThanOrEqual(200)
+      expect(result.summary.endsWith('…')).toBe(true)
+    })
+
+    it('BUG-001: 200 karakter veya altındaki tool_input.command aynen korunur, kırpılmaz', () => {
+      const shortCommand = 'npm test'
+      const result = normalizeEvent(
+        JSON.stringify({
+          project_path: 'C:\\dev\\apps\\demo',
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_input: { command: shortCommand },
+        }),
+        NOW
+      )
+      expect(result.summary).toBe(shortCommand)
     })
   })
 })

@@ -580,3 +580,38 @@ mutasyon kanıtı); AC1-AC4/AC6, CEO kararları A/B/C/D, `install-hook` güvenli
 - F-003 sözleşmesi iki taahhütle açılacak: gerçek DOM test altyapısı ADR'si (jsdom +
   @testing-library/react) ve **N-1 hayalet olay** (503 dönen olay ring'de kalıyor).
 - Faz 1 sırası: F-001 ✓ → F-002 ✓ → F-004 ✓ → **F-003** → F-005 → F-006 → F-007.
+
+---
+
+## 2026-09-05 — BUG-001 düzeltildi (summary 200 karakter sınırı)
+
+**Ne yapıldı**
+- `src/features/events/server/normalize.ts`: `SUMMARY_MAX_LENGTH = 200` +
+  `SUMMARY_TRUNCATION_MARK = '…'` sabitleri ve `truncateSummary()` eklendi. `deriveSummary`'nin
+  türetme mantığına dokunulmadı; `normalizeEvent` içindeki tek çağrı noktası
+  `truncateSummary(deriveSummary(...))` oldu. Kırpma işareti dahil toplam ≤ 200 karakter; kısa
+  değerler aynen korunuyor.
+- `docs/02-architecture.md` §6.1 `q` parametresi satırına tek cümlelik not: kırpılan kuyruk `q`
+  ile aranamaz, veri kaybı yok (`raw` tam metni tutuyor).
+- Sözleşme: `docs/qa/BUG-001-contract.md`. Detaylı düzeltme kaydı: `docs/qa/BUG-001-summary-200-karakter.md`
+  → "## Düzeltme (developer, 2026-09-05)".
+
+**Nasıl doğrulandı**
+- `tests/features/events/server/normalize.test.ts`'e iki test eklendi (800 karakterlik komut
+  → `summary.length <= 200` + `…` ile bitiyor; kısa komut → aynen korunuyor). 19/19 test yeşil.
+- **Mutasyon kanıtı:** `truncateSummary` geçici olarak `return value` yapıldı → test KIRMIZI
+  (`expected 800 to be less than or equal to 200`), sonra orijinal geri kondu, tekrar yeşil.
+- **Gerçek veri doğrulaması:** `data/events/2026-09-04.jsonl` içindeki 200 karakteri aşan 9
+  gerçek `tool_input.command` (234-732 karakter) düzeltilmiş `normalizeEvent`'ten geçirildi
+  (dosya değiştirilmedi, yalnızca okundu) — hepsi tam 200 karakterde ve `…` ile bitiyor.
+- `npm run verify` = 0 (187 test / 14 dosya) · `npm run e2e` = 0 · `npm run e2e:dev` = 0.
+
+**Kalan risk**
+- `data/` altındaki mevcut uzun `summary` kayıtları geriye dönük düzeltilmedi (CEO kararı,
+  bilinçli) — retention zamanla düşürecek.
+- `q` alt dizge araması artık kırpılan kuyrukta çalışmıyor; bilinen ve kabul edilmiş bir takas
+  (`raw` tam veriyi koruyor).
+
+**Sonraki adım**
+- qa-evaluator BUG-001 düzeltmesini incelesin (`status: qa`).
+- Ardından **F-003** (SSE zaman çizelgesi) başlayabilir.

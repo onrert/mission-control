@@ -4,7 +4,7 @@
 - **Bulan:** CEO
 - **Şiddet:** ÖNEMLİ (bloklayıcı değil; veri kaybı yok)
 - **Sahibi:** F-002 kodu (`src/features/events/server/normalize.ts`, `deriveSummary`)
-- **Durum:** açık — F-004 QA turunda ele alınacak
+- **Durum:** qa — düzeltme yapıldı, qa-evaluator onayı bekleniyor
 
 ## Belirti
 
@@ -55,3 +55,38 @@ geçemediğinin somut kanıtıdır.
 Gerçek olay örneği (seq 8): `hook_event_name: PreToolUse`, `tool_name: Bash`,
 `session_id: b13e8d3f-6bd6-42d4-bf89-f239841462ba`, `summary` uzunluğu **732**.
 Ölçüm komutu `data/events/2026-09-04.jsonl` üzerinde her satırın `summary.length` değerini yazdırır.
+
+## Düzeltme (developer, 2026-09-05)
+
+**Ne değiştirildi:** `src/features/events/server/normalize.ts` içine `SUMMARY_MAX_LENGTH = 200`
+ve `SUMMARY_TRUNCATION_MARK = '…'` sabitleri ile `truncateSummary()` yardımcı fonksiyonu
+eklendi. `deriveSummary`'nin türetme mantığına dokunulmadı; `normalizeEvent` içindeki tek
+çağrı noktası `summary: truncateSummary(deriveSummary(payload, hookEventName))` olarak
+güncellendi. 200 karakteri aşan değerler `197` karaktere kesilip `…` eklenir (toplam ≤ 200,
+işaret dahil); 200 karakter veya altındaki değerler aynen korunur.
+
+**Çitleyen test:** `tests/features/events/server/normalize.test.ts` →
+"BUG-001: 200 karakteri aşan tool_input.command kırpma işaretiyle 200 karaktere kısaltılır"
+(`summary.length <= 200` ve `…` ile bitiyor) + "BUG-001: 200 karakter veya altındaki
+tool_input.command aynen korunur, kırpılmaz" (kısa girdide değişiklik olmadığını doğrular,
+"her şeyi kes" gibi hatalı bir uygulamayı da yakalar).
+
+**Mutasyon kanıtı:** `truncateSummary` gövdesi geçici olarak `return value` (kırpma devre
+dışı) yapıldı → test KIRMIZI verdi:
+```
+AssertionError: expected 800 to be less than or equal to 200
+ ❯ tests/features/events/server/normalize.test.ts:197:37
+```
+Ardından orijinal kırpma mantığı geri konuldu, 19/19 test tekrar YEŞİL.
+
+**Gerçek veriyle doğrulama:** `data/events/2026-09-04.jsonl` içindeki 200 karakteri aşan
+9 gerçek `tool_input.command` değeri (234–732 karakter) `normalizeEvent`'ten geçirildi
+(dosya değiştirilmedi, yalnızca okundu). Hepsi için düzeltilmiş `summary` uzunluğu tam
+**200** ve `…` ile bitiyor.
+
+**`q` etkisi:** `docs/02-architecture.md` §6.1 `GET /api/events` `q` parametresi satırına
+tek cümlelik not eklendi — kırpılan kuyruk `q` alt dizge aramasıyla bulunamaz, ancak
+veri kaybı yok çünkü `raw` tam metni tutmaya devam ediyor.
+
+**Kapsam dışı bırakılan (bilinçli):** `data/` altındaki mevcut olaylardaki uzun `summary`
+değerleri geriye dönük düzeltilmedi (CEO kararı); retention zamanla düşürecek.

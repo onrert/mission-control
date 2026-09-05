@@ -42,62 +42,88 @@ export default function App() {
     setActiveScreen(screen)
   }
 
+  // QA düzeltme turu 1 (D50/Ö1) — WAI-ARIA APG Tabs Pattern roving tabindex, ok tuşuyla
+  // seçim değiştiğinde DOM odağı da yeni sekmeye taşınır; aksi hâlde ekran okuyucu duyurmaz
+  // ve bir sonraki `Tab` basışı beklenmedik yere düşer (QA ölçtü, `docs/qa/F-007-2026-09-06.md`
+  // Ö1). `id`ler sabit (`tab-${screen}`) olduğu için ref dizisi yerine doğrudan DOM sorgusu
+  // yeterli — gereksiz soyutlama eklenmiyor (Karpathy §2).
+  function focusTab(screen: TabScreen): void {
+    document.getElementById(`tab-${screen}`)?.focus()
+  }
+
   function onTabKeyDown(event: React.KeyboardEvent<HTMLSpanElement>): void {
     const currentIndex = TABS.findIndex((t) => t.screen === selectedTab)
     if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
       event.preventDefault()
       const delta = event.key === 'ArrowRight' ? 1 : -1
       const nextIndex = (currentIndex + delta + TABS.length) % TABS.length
-      selectTab(TABS[nextIndex]!.screen)
+      const nextScreen = TABS[nextIndex]!.screen
+      selectTab(nextScreen)
+      focusTab(nextScreen)
     } else if (event.key === 'Home') {
       event.preventDefault()
       selectTab(TABS[0]!.screen)
+      focusTab(TABS[0]!.screen)
     } else if (event.key === 'End') {
       event.preventDefault()
       selectTab(TABS[TABS.length - 1]!.screen)
+      focusTab(TABS[TABS.length - 1]!.screen)
     }
   }
 
   return (
     <div className="flex h-screen flex-col bg-zinc-950 text-zinc-100">
-      <header className="flex h-14 shrink-0 items-center gap-4 border-b border-zinc-800 px-4">
-        {/* QA düzeltme turu 1 (ÖNEMLİ-3): yalnızca başlık+nav bölgesi yatay kaydırılır
-            (`overflow-x-auto`) — Ayarlar dişlisi bu kaydırma alanının DIŞINDA, `shrink-0` ile
-            sağda sabit kalır (`docs/03-ux.md:17` dar panel senaryosu / `:21` "sağda sabit dişli
-            ikonu"). */}
-        <div className="flex flex-1 items-center gap-6 overflow-x-auto">
-          <span
-            data-testid="app-title"
-            className="shrink-0 whitespace-nowrap font-display tracking-wide text-lg"
-          >
-            MISSION CONTROL
-          </span>
-          <div role="tablist" aria-label="Ekranlar" className="flex shrink-0 items-center gap-4">
-            {TABS.map((tab) => {
-              const isSelected = selectedTab === tab.screen
-              return (
-                <span
-                  key={tab.screen}
-                  role="tab"
-                  id={`tab-${tab.screen}`}
-                  aria-controls={`panel-${tab.screen}`}
-                  aria-selected={isSelected}
-                  tabIndex={isSelected ? 0 : -1}
-                  onClick={() => selectTab(tab.screen)}
-                  onKeyDown={onTabKeyDown}
-                  className={
-                    isSelected
-                      ? 'cursor-pointer whitespace-nowrap text-sm font-mono text-amber-400'
-                      : 'cursor-pointer whitespace-nowrap text-sm font-mono text-zinc-400'
-                  }
-                >
-                  {tab.label}
-                </span>
-              )
-            })}
-          </div>
+      {/* QA düzeltme turu 1 (BLOKLAYICI B2/T3) — `docs/03-ux.md:48-56` dar-genişlik mockup'ının
+          BİREBİR uyguladığı iki satırlı düzen: <640px (`sm:` altı) başlık+rozet+Ayarlar üstte,
+          sekme çubuğu ALTTA kendi satırında TAM genişlik alır (title/right-group ile genişlik
+          YARIŞMAZ) — önceki tek-satırlık `overflow-x-auto` düzeni QA'nın ölçtüğü gibi 375px'te
+          her iki sekmenin de kırpılmış görünür genişliğini SIFIRA indiriyordu (title'ın doğal
+          genişliği tek başına kalan alanı tüketiyordu). `sm:` (≥640px) üzerinde tek satıra
+          döner (`sm:flex-nowrap`, `order-none`), başlık doğal genişliğinde, sekme alanı
+          `flex-1` — geniş ekran görünümü DEĞİŞMEDİ. */}
+      <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-zinc-800 px-4 py-2 sm:h-14 sm:flex-nowrap sm:gap-y-0 sm:py-0">
+        <span
+          data-testid="app-title"
+          // Tailwind'in min-width sıfırlama yardımcı sınıfı KASITLI OLARAK class değil, inline
+          // style olarak uygulanıyor: `tests/build-css.test.ts` "yalnızca projects/web" testi
+          // o TAM sınıf dizgesinin `src/web/**`'te HİÇ geçmediğini ön koşul sayıyor (F-005
+          // kararı) — dosya sahipliği dışına çıkmadan aynı CSS davranışını (dar genişlikte flex
+          // item'ın içeriğe göre büzülmesine izin verir, `truncate` ile birlikte) elde etmenin
+          // cerrahi yolu.
+          style={{ minWidth: 0 }}
+          className="order-1 flex-1 truncate font-display tracking-wide text-lg sm:order-none sm:flex-none sm:shrink-0"
+        >
+          MISSION CONTROL
+        </span>
+        <div
+          role="tablist"
+          aria-label="Ekranlar"
+          className="order-3 flex w-full shrink-0 items-center gap-4 overflow-x-auto sm:order-none sm:w-auto sm:flex-1"
+        >
+          {TABS.map((tab) => {
+            const isSelected = selectedTab === tab.screen
+            return (
+              <span
+                key={tab.screen}
+                role="tab"
+                id={`tab-${tab.screen}`}
+                aria-controls={`panel-${tab.screen}`}
+                aria-selected={isSelected}
+                tabIndex={isSelected ? 0 : -1}
+                onClick={() => selectTab(tab.screen)}
+                onKeyDown={onTabKeyDown}
+                className={
+                  isSelected
+                    ? 'cursor-pointer whitespace-nowrap text-sm font-mono text-amber-400'
+                    : 'cursor-pointer whitespace-nowrap text-sm font-mono text-zinc-400'
+                }
+              >
+                {tab.label}
+              </span>
+            )
+          })}
         </div>
-        <div className="flex shrink-0 items-center gap-4">
+        <div className="order-2 flex shrink-0 items-center gap-4 sm:order-none">
           <ConnectionBadge status={stream.connectionStatus} variant="shell" />
           <button
             type="button"

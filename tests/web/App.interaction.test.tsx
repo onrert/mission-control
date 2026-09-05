@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from '../../src/web/App'
 import { FakeEventSource } from '../helpers/fake-event-source'
@@ -165,6 +165,50 @@ describe("App.interaction — Ayarlar geçişi (F-005 CEO kararı, tam tablist F
       expect(screen.getByRole('button', { name: 'Ayarlar' }).getAttribute('aria-pressed')).toBe(
         'false'
       )
+    } finally {
+      restore()
+    }
+  })
+})
+
+describe('App.interaction — tablist ok tuşu gezinmesi (QA düzeltme turu 1: T1/Ö1/Ö2/D50/M9)', () => {
+  it('ArrowRight/ArrowLeft/Home/End seçili sekmeyi değiştirir VE DOM odağını yeni sekmeye taşır (roving tabindex)', async () => {
+    // QA'nın M9 mutasyonu (`onKeyDown={onTabKeyDown}` tamamen silinmesi) önceki turda
+    // 728/728 birim + 23/23 E2E yeşil kalmıştı — tablist klavye gezinmesinin HİÇBİR testi
+    // yoktu (Ö2). Bu test gerçek `keydown` olaylarını ateşleyip HEM seçim değişimini HEM
+    // DOM odağının taşınmasını (Ö1/D50 — WAI-ARIA roving tabindex) ölçer.
+    FakeEventSource.reset()
+    const restore = stubGlobals()
+    try {
+      render(<App />)
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      const timelineTab = screen.getByRole('tab', { name: 'Zaman Çizelgesi' })
+      const kanbanTab = screen.getByRole('tab', { name: 'Kanban' })
+
+      timelineTab.focus()
+      expect(document.activeElement).toBe(timelineTab)
+      expect(timelineTab.getAttribute('aria-selected')).toBe('true')
+
+      fireEvent.keyDown(timelineTab, { key: 'ArrowRight' })
+      expect(kanbanTab.getAttribute('aria-selected')).toBe('true')
+      expect(timelineTab.getAttribute('aria-selected')).toBe('false')
+      expect(document.activeElement).toBe(kanbanTab)
+      expect(screen.getByTestId('kanban-screen')).toBeTruthy()
+
+      fireEvent.keyDown(kanbanTab, { key: 'ArrowLeft' })
+      expect(timelineTab.getAttribute('aria-selected')).toBe('true')
+      expect(document.activeElement).toBe(timelineTab)
+
+      fireEvent.keyDown(timelineTab, { key: 'End' })
+      expect(kanbanTab.getAttribute('aria-selected')).toBe('true')
+      expect(document.activeElement).toBe(kanbanTab)
+
+      fireEvent.keyDown(kanbanTab, { key: 'Home' })
+      expect(timelineTab.getAttribute('aria-selected')).toBe('true')
+      expect(document.activeElement).toBe(timelineTab)
     } finally {
       restore()
     }

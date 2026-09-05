@@ -62,4 +62,19 @@ describe('App (AC6 — DOMsuz statik render)', () => {
     expect(html).toContain('id="panel-kanban"')
     expect(html).toContain('aria-labelledby="tab-kanban"')
   })
+
+  it("QA düzeltme turu 1 (Ö3/M6b): her sekmenin aria-controls'u KENDİ paneline işaret eder (ters yön dahil)", () => {
+    // QA'nın mutasyonu (her iki sekmeyi de `panel-timeline`'a bağlamak) önceki testte 728/728
+    // yeşil kalıyordu çünkü yalnızca `aria-controls="panel-timeline"`'ın VARLIĞI aranıyordu —
+    // Kanban sekmesinin KENDİ panel ilişkisi hiç ölçülmüyordu. Burada her sekmenin `id`sinden
+    // başlayan span'i ayrı ayrı izole edip kendi `aria-controls`'unu doğruluyoruz.
+    const headerMatch = /<header[\s\S]*?<\/header>/.exec(html)
+    const headerHtml = headerMatch![0]
+    const timelineTabHtml = /<span[^>]*id="tab-timeline"[^>]*>/.exec(headerHtml)
+    const kanbanTabHtml = /<span[^>]*id="tab-kanban"[^>]*>/.exec(headerHtml)
+    expect(timelineTabHtml).not.toBeNull()
+    expect(kanbanTabHtml).not.toBeNull()
+    expect(timelineTabHtml![0]).toContain('aria-controls="panel-timeline"')
+    expect(kanbanTabHtml![0]).toContain('aria-controls="panel-kanban"')
+  })
 })

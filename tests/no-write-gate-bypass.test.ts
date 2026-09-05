@@ -38,6 +38,7 @@ const DENIED = [
   'rmdirSync(',
   'fs.rm(',
   'copyFile(',
+  'copyFileSync(',
   'cp(',
   'cpSync(',
   'createWriteStream(',
@@ -143,7 +144,7 @@ describe('no-write-gate-bypass — genel yazma kapısı statik taraması (F-006 
     ['fs.truncateSync(a, 0)', 'truncateSync('],
     ["fs.openSync(a, 'w')", 'openSync('],
     ['fs.writeSync(fd, data)', 'writeSync('],
-  ] as const)('kalıcı negatif-kontrol: %s deseni (%s) yakalanır', (snippet) => {
+  ] as const)('kalıcı negatif-kontrol: %s deseni (%s) yakalanır', (...[snippet]) => {
     expect(findCalls(snippet).length).toBeGreaterThan(0)
   })
 

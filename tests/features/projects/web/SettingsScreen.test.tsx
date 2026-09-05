@@ -99,7 +99,10 @@ describe('SettingsScreen', () => {
 
     await user.click(screen.getByText('Kaldır'))
     await waitFor(() => expect(screen.queryAllByTestId('project-row')).toHaveLength(0))
-    expect(fetchMock).toHaveBeenCalledWith('/api/projects/p_1', { method: 'DELETE' })
+    expect(fetchMock).toHaveBeenCalledWith('/api/projects/p_1', {
+      method: 'DELETE',
+      headers: { 'x-mc-write': '1' },
+    })
   })
 
   it('hata durumu: "Liste kaydedilemedi, tekrar deneyin." banner + Tekrar dene', async () => {

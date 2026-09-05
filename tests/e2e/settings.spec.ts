@@ -106,7 +106,10 @@ test('3 proje ile Ayarlar tablosu 3 ayrı satır gösterir', async ({ page }) =>
 
   const ids: string[] = []
   for (const p of projects) {
-    const res = await page.request.post('/api/projects', { data: { path: p } })
+    const res = await page.request.post('/api/projects', {
+      data: { path: p },
+      headers: { 'x-mc-write': '1' },
+    })
     expect(res.status()).toBe(201)
     const body = (await res.json()) as { data: { id: string } }
     ids.push(body.data.id)
@@ -116,7 +119,7 @@ test('3 proje ile Ayarlar tablosu 3 ayrı satır gösterir', async ({ page }) =>
   await expect(page.locator('[data-testid="project-row"]')).toHaveCount(3, { timeout: 5000 })
 
   for (const id of ids) {
-    await page.request.delete(`/api/projects/${id}`)
+    await page.request.delete(`/api/projects/${id}`, { headers: { 'x-mc-write': '1' } })
   }
 })
 

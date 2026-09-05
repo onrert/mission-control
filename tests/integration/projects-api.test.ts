@@ -118,7 +118,7 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
   it('AC3: path eksikse invalid_body, geçersiz yolda invalid_path (okunabilir Türkçe hata)', async () => {
     const missingBody = await fetch(`${handle.baseUrl}/api/projects`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-mc-write': '1' },
       body: JSON.stringify({}),
     })
     expect(missingBody.status).toBe(400)
@@ -128,7 +128,7 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
     const noFeatures = makeProjectDir()
     const invalidRes = await fetch(`${handle.baseUrl}/api/projects`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-mc-write': '1' },
       body: JSON.stringify({ path: noFeatures }),
     })
     expect(invalidRes.status).toBe(400)
@@ -143,14 +143,14 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
     const project = createFixtureProject()
     const first = await fetch(`${handle.baseUrl}/api/projects`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-mc-write': '1' },
       body: JSON.stringify({ path: project }),
     })
     expect(first.status).toBe(201)
 
     const second = await fetch(`${handle.baseUrl}/api/projects`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-mc-write': '1' },
       body: JSON.stringify({ path: project.toUpperCase() }),
     })
     expect(second.status).toBe(409)
@@ -164,7 +164,7 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
     try {
       const addRes = await fetch(`${handle.baseUrl}/api/projects`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-mc-write': '1' },
         body: JSON.stringify({ path: project }),
       })
       expect(addRes.status).toBe(201)
@@ -189,7 +189,7 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
 
     const addRes = await fetch(`${handle.baseUrl}/api/projects`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-mc-write': '1' },
       body: JSON.stringify({ path: project }),
     })
     const addBody = (await addRes.json()) as { data: ProjectListItem }
@@ -199,6 +199,7 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
     try {
       const removeRes = await fetch(`${handle.baseUrl}/api/projects/${projectId}`, {
         method: 'DELETE',
+        headers: { 'x-mc-write': '1' },
       })
       expect(removeRes.status).toBe(200)
 
@@ -235,7 +236,10 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
   }, 15000)
 
   it('AC2: DELETE bilinmeyen id -> 404 not_found', async () => {
-    const res = await fetch(`${handle.baseUrl}/api/projects/p_yok`, { method: 'DELETE' })
+    const res = await fetch(`${handle.baseUrl}/api/projects/p_yok`, {
+      method: 'DELETE',
+      headers: { 'x-mc-write': '1' },
+    })
     expect(res.status).toBe(404)
     const body = (await res.json()) as { error: { code: string } }
     expect(body.error.code).toBe('not_found')
@@ -247,7 +251,7 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
     for (const p of projects) {
       const res = await fetch(`${handle.baseUrl}/api/projects`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-mc-write': '1' },
         body: JSON.stringify({ path: p }),
       })
       expect(res.status).toBe(201)
@@ -286,7 +290,7 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
     for (const p of projects) {
       const res = await fetch(`${handle.baseUrl}/api/projects`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-mc-write': '1' },
         body: JSON.stringify({ path: p }),
       })
       expect(res.status).toBe(201)
@@ -304,7 +308,7 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
     for (const p of projects) {
       const res = await fetch(`${handle.baseUrl}/api/projects`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-mc-write': '1' },
         body: JSON.stringify({ path: p }),
       })
       const body = (await res.json()) as { data: ProjectListItem }
@@ -315,6 +319,7 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
 
     const removeRes = await fetch(`${handle.baseUrl}/api/projects/${ids[0]}`, {
       method: 'DELETE',
+      headers: { 'x-mc-write': '1' },
     })
     expect(removeRes.status).toBe(200)
 
@@ -356,7 +361,7 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
 
     const okPost = await fetch(`${handle.baseUrl}/api/projects`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-mc-write': '1' },
       body: JSON.stringify({ path: project }),
     })
     expect(okPost.status).toBe(201)
@@ -370,7 +375,7 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
 
     const okDelete = await fetch(`${handle.baseUrl}/api/projects/${okBody.data.id}`, {
       method: 'DELETE',
-      headers: { Origin: handle.baseUrl },
+      headers: { Origin: handle.baseUrl, 'x-mc-write': '1' },
     })
     expect(okDelete.status).toBe(200)
   })
@@ -392,7 +397,7 @@ describe('AC5: kayıt defteri kalıcı, restart sonrası otomatik yeniden izleme
     const first = await startServer(dataDir)
     const addRes = await fetch(`${first.baseUrl}/api/projects`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-mc-write': '1' },
       body: JSON.stringify({ path: project }),
     })
     expect(addRes.status).toBe(201)
@@ -434,7 +439,7 @@ describe('İzleyici yaşam döngüsünün gerçek kapanışı (sözleşme §7, m
       const handle = await startServer(dataDir)
       const addRes = await fetch(`${handle.baseUrl}/api/projects`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-mc-write': '1' },
         body: JSON.stringify({ path: project }),
       })
       expect(addRes.status).toBe(201)
@@ -481,7 +486,7 @@ describe('BLOKLAYICI-1 düzeltmesi: kayıt defteri yazma hatasında istemci 500 
 
     const res = await fetch(`${handle.baseUrl}/api/projects`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-mc-write': '1' },
       body: JSON.stringify({ path: project }),
     })
     expect(res.status).toBe(500)
@@ -508,7 +513,7 @@ describe('BLOKLAYICI-1 düzeltmesi: kayıt defteri yazma hatasında istemci 500 
     fs.rmdirSync(filePath)
     const retryRes = await fetch(`${handle.baseUrl}/api/projects`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-mc-write': '1' },
       body: JSON.stringify({ path: project }),
     })
     expect(retryRes.status).toBe(201)
@@ -518,7 +523,7 @@ describe('BLOKLAYICI-1 düzeltmesi: kayıt defteri yazma hatasında istemci 500 
     const project = createFixtureProject()
     const addRes = await fetch(`${handle.baseUrl}/api/projects`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-mc-write': '1' },
       body: JSON.stringify({ path: project }),
     })
     expect(addRes.status).toBe(201)
@@ -531,6 +536,7 @@ describe('BLOKLAYICI-1 düzeltmesi: kayıt defteri yazma hatasında istemci 500 
 
     const removeRes = await fetch(`${handle.baseUrl}/api/projects/${addBody.data.id}`, {
       method: 'DELETE',
+      headers: { 'x-mc-write': '1' },
     })
     expect(removeRes.status).toBe(500)
     const removeBody = (await removeRes.json()) as { error: { code: string; message: string } }
@@ -556,6 +562,7 @@ describe('BLOKLAYICI-1 düzeltmesi: kayıt defteri yazma hatasında istemci 500 
     // Engel kalkınca sonraki istek başarılı olur.
     const retryRes = await fetch(`${handle.baseUrl}/api/projects/${addBody.data.id}`, {
       method: 'DELETE',
+      headers: { 'x-mc-write': '1' },
     })
     expect(retryRes.status).toBe(200)
   })

@@ -209,6 +209,52 @@ describe('setFeatureStatus — yol beyaz listesi', () => {
     const result = writeGateApproval(root, 'G2', 'x')
     expect(result).toMatchObject({ ok: false, code: 'write_failed' })
   })
+
+  // D38/Ö2 (QA KALDI turu) — `nextStatus` satır sonu içeriyorsa reddedilir (frontmatter
+  // enjeksiyonu, QA'nın ölçtüğü `'x\n---\nBODY'` girdisi). Hem `\n` hem `\r` denenir; dosya
+  // hiç dokunulmadan `invalid_body` dönmeli.
+  it.each(['x\n---\nBODY', 'x\r---\rBODY', 'x\r\n---\r\nBODY'])(
+    'nextStatus satır sonu içeriyorsa (%s) invalid_body döner, frontmatter bozulmaz (D38/Ö2)',
+    (nextStatus) => {
+      const before = '---\nstatus: todo\n---\nbody\n'
+      const full = writeFile(root, 'docs/features/G18.md', before)
+      const hash = sha256(before)
+      const result = setFeatureStatus(root, 'G18.md', nextStatus, hash)
+      expect(result).toMatchObject({ ok: false, code: 'invalid_body' })
+      expect(fs.readFileSync(full, 'utf8')).toBe(before)
+    }
+  )
+
+  // Ö5 (QA KALDI turu, MQ1 emsali) — ata-dizin `lstatSync` döngüsü TÜM üst segmentleri
+  // kontrol eder, yalnızca sonuncusunu değil. `setFeatureStatus` için relativeParts
+  // `['docs', 'features', fileName]`, yani iki ata segmenti var: `docs` (ÜST) ve
+  // `docs/features` (SON). MQ1 mutasyonu döngüyü yalnızca son segmenti kontrol edecek şekilde
+  // daraltınca (`for (i = len-2; i < len-1)`) 539/539 yeşil kalmıştı — `docs` segmenti hiç
+  // `lstatSync`'lenmemiş olsa bile fark edilmiyordu. Bu test gerçek bir symlink kurmadan,
+  // `lstatSync`'e giden her yolu kaydedip HER İKİ segmentin de gerçekten sorgulandığını kanıtlar.
+  it('ata dizin lstatSync taraması TÜM üst segmentleri kontrol eder, yalnızca sonuncuyu değil (Ö5)', () => {
+    const full = writeFile(root, 'docs/features/F-001.md', '---\nstatus: todo\n---\n')
+    const hash = sha256(fs.readFileSync(full))
+    const docsPath = path.resolve(path.join(root, 'docs'))
+    const featuresPath = path.resolve(path.join(root, 'docs', 'features'))
+    const realLstat = fs.lstatSync.bind(fs)
+    const seen = new Set<string>()
+    const spy = vi
+      .spyOn(fs, 'lstatSync')
+      .mockImplementation((p: fs.PathLike, ...rest: unknown[]) => {
+        seen.add(path.resolve(p.toString()))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (realLstat as any)(p, ...rest)
+      })
+    try {
+      const result = setFeatureStatus(root, 'F-001.md', 'qa', hash)
+      expect(result.ok).toBe(true)
+      expect(seen.has(docsPath)).toBe(true)
+      expect(seen.has(featuresPath)).toBe(true)
+    } finally {
+      spy.mockRestore()
+    }
+  })
 })
 
 describe('setFeatureStatus — bayt koruma (golden fixtures)', () => {
@@ -453,6 +499,37 @@ describe('archiveDenial — yalnızca rename, no-op durumu', () => {
     writeFile(root, 'docs/approvals/G4-2.deny.md', 'x')
     const result = archiveDenial(root, 'G4-2')
     expect(result.ok).toBe(true)
+  })
+
+  // D36/Ö1 (QA KALDI turu, MQ4 emsali) — `mkdirSync`+`renameSync` zaten `try` İÇİNDE (kod
+  // doğru), ama bunu ölçen hiçbir test yoktu: `docs/approvals/archive` hedefi bir DOSYAYLA işgal
+  // edilmişse `mkdirSync(..., {recursive:true})` `EEXIST` fırlatır — sağlam kod bunu yakalayıp
+  // `write_failed` döner. Bu try/catch kaldırılırsa (mutasyon) fonksiyon fırlar, bu test kırmızı
+  // verir.
+  it('arşiv hedef dizini bir dosyayla işgal edilmişse fırlamaz, write_failed döner (D36/Ö1)', () => {
+    writeFile(root, 'docs/approvals/G2.deny.md', 'red sebebi')
+    fs.writeFileSync(path.join(root, 'docs', 'approvals', 'archive'), 'ben bir dosyayım')
+    expect(() => archiveDenial(root, 'G2')).not.toThrow()
+    const result = archiveDenial(root, 'G2')
+    expect(result).toMatchObject({ ok: false, code: 'write_failed' })
+    // Kaynak `.deny.md` başarısız arşivlemede taşınmamış/silinmemiş olmalı.
+    expect(fs.existsSync(path.join(root, 'docs', 'approvals', 'G2.deny.md'))).toBe(true)
+  })
+
+  // D37/Ö4 (QA KALDI turu, MQ5 emsali) — `OPERATION_PATTERNS.archive` yalnızca "fazla dar"
+  // yönünde çitliydi (mutasyon 19, daraltma → kırmızı). Bu test GEVŞETME yönünü de çitler:
+  // `archiveDenial`'ın ürettiği ad kendi zaman damgası biçimine uymuyorsa (burada `toISOString`
+  // sahtelenerek zorlanıyor) adım 8 reddetmeli. Desen `.*`'a gevşetilirse bu test kırmızı verir.
+  it('archiveDenial üretilen ad kendi ISO zaman damgası biçimine uymuyorsa write_denied döner (D37/Ö4)', () => {
+    writeFile(root, 'docs/approvals/G2.deny.md', 'red sebebi')
+    const spy = vi.spyOn(Date.prototype, 'toISOString').mockReturnValue('not-a-valid-timestamp')
+    try {
+      const result = archiveDenial(root, 'G2')
+      expect(result).toMatchObject({ ok: false, code: 'write_denied' })
+      expect(fs.existsSync(path.join(root, 'docs', 'approvals', 'G2.deny.md'))).toBe(true)
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
 

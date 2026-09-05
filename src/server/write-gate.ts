@@ -206,6 +206,13 @@ export function setFeatureStatus(
   if (!FILE_NAME_PATTERN.test(fileName) || path.basename(fileName) !== fileName) {
     return { ok: false, code: 'invalid_body', message: 'Geçersiz dosya adı.' }
   }
+  // D38/Ö2 (QA KALDI turu): `status` bir kelimedir, çok satırlı olması meşru değil (Karpathy §2).
+  // `safeYamlValue` satır sonunu tırnaklar ama KAÇIRMAZ — satır sonu içeren bir değer frontmatter'ı
+  // erken kapatıp (`status: "x\n---\nBODY"` gibi) ayrıştırılamaz hâle getirebilir. Kabul edip
+  // kaçırmak yerine baştan reddediyoruz.
+  if (/[\r\n]/.test(nextStatus)) {
+    return { ok: false, code: 'invalid_body', message: 'status değeri satır sonu içeremez.' }
+  }
   const resolved = resolveInsideRoot(root, ['docs', 'features', fileName], 'featureStatus')
   if (!resolved.ok) {
     return { ok: false, code: resolved.code, message: resolved.message }

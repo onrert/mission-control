@@ -195,7 +195,16 @@ export function KanbanScreen({
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter })
+    // §3 madde 6/§7 (YENİ-R1) — dnd-kit'in VARSAYILAN `keyboardCodes.start` hem `Space` hem
+    // `Enter` içerir. `Enter` AC7'nin (karta tıkla/Enter'la aç → detay modalı) klavye
+    // eşdeğeriyle çakışır: `Enter` varsayılanda kalsaydı boşta bir karta `Enter` basıldığında
+    // dnd-kit AYNI ANDA sürüklemeyi başlatır VE `KanbanCard.handleKeyDown` (stale `isDragging`
+    // kapanışıyla) modalı da açardı — iki eylem birden. `start`'tan yalnızca `Enter` çıkarılır,
+    // `end`/`cancel` dnd-kit'in varsayılanıyla aynı bırakılır (bilinçli sapma, `docs/03-ux.md:443`).
+    useSensor(KeyboardSensor, {
+      coordinateGetter,
+      keyboardCodes: { start: ['Space'], end: ['Space', 'Enter', 'Tab'], cancel: ['Escape'] },
+    })
   )
 
   const cardsByKey = useMemo(() => {

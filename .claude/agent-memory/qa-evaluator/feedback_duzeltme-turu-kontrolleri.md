@@ -144,3 +144,25 @@ zaten tarihli bir kopyası var mı diye bak (`diff -q`) — ikinci kez yanlış 
     yüzeyini `toEqual([tam liste])` ile kilitleyip hem de iç yardımcıyı test/mutasyondan
     doğrudan çağırmayı planlayan sözleşme kendi kendini yener; düşen taraf her zaman sessizce
     çit olur (F-006 adım 8).
+
+25. **Bir düzeltmenin getirdiği YENİ ÇİT'i gerçek repoda koştur — doğuştan kırmızı mı?** F-007 tur 2,
+    "kapalı `testMatch` listesi" bloklayıcısını `tests/e2e-config-guard.test.ts` ile kapatıyordu:
+    her `tests/e2e/*.spec.ts` `playwright.config.ts` metninde geçmeli. Ölçüm 30 saniyede:
+    `dev-shell.spec.ts` bilinçli olarak İKİNCİ config'e (`playwright.dev.config.ts`, `npm run e2e:dev`)
+    bağlı → çit bugün kırmızı. Kural: çit "tüm X'ler Y'de geçer" diyorsa X kümesini `readdirSync` ile,
+    Y kümesini `ls <desen>*` ile **say**; tek bir Y varsaymak en sık hata. Pozitif kontrolü de yap
+    (geçici probe dosyası ekle → kırmızı → sil, `git status` ile temizliği kanıtla). Metin tabanlı
+    çitlerde iki sınırı ayrıca ölç: yorum satırında geçen ad (yanlış negatif) ve deseni glob'a çevirme
+    (yanlış pozitif).
+26. **"En fazla N arttı" tipi ÜST SINIR assert'i + tanımsız taban = mutasyon kaçağı.** F-007 D42'de
+    render sayacı "PATCH yanıtı sonrası en fazla 1 kez arttı" diyordu; doğru kodda artış 0, mutasyonlu
+    kodda 1 → eşik mutasyonu yeşil bırakıyor. Sayaç çitlerinde taban okuma anını sabitlet ve
+    `toBe(before)` gibi KESİN EŞİTLİK iste. Ayrıca "tek mutasyon iki çiti de kırar" iddialarını elle
+    yürüt: iki çit farklı boyutları (render sayısı vs ağ isteği sayısı) ölçüyorsa bir mutasyon
+    genelde yalnız birini kırar — mutasyon→çit eşlemesini bire bir yazdır.
+27. **Kütüphane varsayılanını daraltan düzeltme, aynı belgedeki düzyazıyı ve test adımlarını
+    bayatlatır.** F-007 tur 2, `KeyboardSensor.keyboardCodes`'u `Space`'e daraltıp AC7/AC9 çakışmasını
+    çözdü, ama §7 düzyazısı hâlâ "Enter onaylar", §5 AC9 adımları hâlâ `Enter` basıyordu ve daraltma
+    G3 onaylı UX dokümanından (Enter/Boşluk) sapıyordu — sapma listesine girmemişti. Daraltma gördüğün
+    an: (a) kütüphane varsayılanını dist'ten oku (`defaultKeyboardCodes`), (b) belgede o tuşun geçtiği
+    TÜM satırları grep'le, (c) bağlayıcı UX/mimari dokümanla karşılaştır, sapma işaretli mi diye bak.

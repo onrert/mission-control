@@ -1,6 +1,6 @@
 ---
 name: sozlesme-turu-kontrolleri
-description: Sözleşme turu incelemesinde ilk bakılacak beş şey — ADR uyumu ve ADR'nin verdiği ödevler, kanıtın okuma yolu, düzeltmenin ürettiği regresyon, mutasyon hedefinin belirsizliği, çok katmanlı zaman aşımı bütçesi
+description: Sözleşme turu incelemesinde ilk bakılacak kontroller — ADR uyumu ve ADR'nin verdiği ödevler, kanıtın okuma yolu, düzeltmenin ürettiği regresyon, mutasyon hedefinin belirsizliği, zaman aşımı bütçesi, E2E'nin gerçekten koşup koşmadığı, yeni bağımlılığın gerçek davranışı
 metadata:
   type: feedback
 ---
@@ -40,17 +40,34 @@ Sözleşme turunda (PROCESS §5) şu kontrolleri her zaman en başa al:
    kaçar: A seçilirse alt katman zaten tetiklenir ve mutasyon yeşil kalır — senaryoyu ve
    sayısal parametrelerini sözleşmede tek seçenek olarak sabitlet.
 
+6. **E2E'ye atanan AC'ler gerçekten koşacak mı?** Sözleşme bir AC'yi "E2E katmanı" diye
+   işaretlediğinde iki şeyi **çalıştırma konfigürasyonundan** doğrula: (a) `playwright.config.ts`
+   `testMatch` **kapalı bir dosya listesi** mi — öyleyse yeni spec dosyası "değiştireceğim
+   dosyalar" tablosunda olmalı, yoksa spec hiç koşmaz ve tüm E2E katmanı sessizce ölür;
+   (b) `webServer.command` üretim build'i mi koşuyor (`npm run build && npm start`) — öyleyse
+   `import.meta.env.MODE !== 'production'` / `NODE_ENV` koşuluna bağlanmış test-only ölçüm
+   probları (render sayacı, `data-*` attribute) E2E'de **hiç render edilmez** ve `null === null`
+   tuzağıyla yeşil kalır. F-007 tur 1'de ikisi de aynı sözleşmede vardı → 2 bloklayıcı.
+7. **Yeni bağımlılığın davranış iddiasını kaynaktan doğrula, kurmadan.** Sözleşme "kütüphane
+   şunu zaten sağlıyor" dediğinde (`aria-live="polite"` canlı bölge, klavye sensörü, peer
+   uyumu) `npm view` metadata'sı yetmez: `curl https://unpkg.com/<paket>@<sürüm>/dist/<bundle>`
+   ile dist kaynağını indirip grep'le. F-007: `@dnd-kit/accessibility@3.1.1` `LiveRegion`
+   varsayılanı `assertive` ve `@dnd-kit/core@6.3.1` bunu **hiç geçirmiyor** → sözleşmenin
+   erişilebilirlik iddiası yanlıştı. Aynı şekilde saf fonksiyon iddialarını (YAML tırnaklama,
+   hash) scratchpad'de gerçek paketi kurup **tablo hâlinde ölç** — "19/19 gösterge karakteri
+   doğru ama 10/40 değer round-trip'i geçmiyor" gibi sayısal bulgu tartışılmaz.
+
 **Why:** F-001'de yeşil görünen ama hiçbir şey ölçmeyen bir E2E assert'i ilk iki başlıktan
 kaçmıştı; CLAUDE.md'ye "QA'ya mutasyon testi yaptır" kuralı bu yüzden eklendi. Mutasyon planı
 da yeterli değil — mutasyonun **deterministik** kırmızı vereceği parametreler sözleşmede
 sabitlenmeli; "kırmızı verene kadar N artırırım" sonuca göre ayarlamadır, kanıt değil.
 
-**How to apply:** İnceleme sırasının ilk üç adımı olarak uygula. Dar doğrulama turlarında
+**How to apply:** İnceleme sırasının ilk adımları olarak uygula. Dar doğrulama turlarında
 (tur 2+) kapsam yalnızca "açık bulgular + düzeltmenin ürettiği regresyon" olur; onaylanmış
 bölümleri yeniden açma. Bulguları `## ADR uyum kontrolü`, `## Ölçmeyen test riski`,
 `## YENİ (regresyon)` gibi ayrı bölümlerde raporla. Bkz. [[proje-tur-ekonomisi]].
 
-6. **Rapor yazarken Bash heredoc'u ~10 KB'da kesiliyor** ve "unexpected EOF while looking for
-   matching quote" hatası veriyor (dosyaya hiçbir şey yazılmaz). Uzun QA bölümlerini 4-6 parçalık
-   `cat >> dosya <<'EOF'` çağrılarına böl; ayrıca alıntı içinde `split('\')` gibi ters bölü +
-   tırnak dizilimi kullanma — CLAUDE.md'nin ters bölü kuralının rapor metnindeki karşılığı.
+8. **Rapor yazarken Bash heredoc kullanma.** Heredoc ~10 KB'da kesiliyor ("unexpected EOF")
+   ve ters bölüleri teke düşürüyor. Doğru yol: bölümü **Write aracıyla** scratchpad'e yaz,
+   sonra tek satır `cat scratchpad/bolum.md >> docs/qa/<feature>-contract.md`. Tek çağrıda,
+   kayıpsız, regex/backtick içeren alıntılar bozulmadan geçer.

@@ -4,7 +4,7 @@
 - **Bulan:** CEO
 - **Şiddet:** ÖNEMLİ (bloklayıcı değil; veri kaybı yok)
 - **Sahibi:** F-002 kodu (`src/features/events/server/normalize.ts`, `deriveSummary`)
-- **Durum:** qa — düzeltme yapıldı, qa-evaluator onayı bekleniyor
+- **Durum:** KAPANDI (CEO doğrulaması, 2026-09-05)
 
 ## Belirti
 
@@ -62,7 +62,7 @@ Gerçek olay örneği (seq 8): `hook_event_name: PreToolUse`, `tool_name: Bash`,
 ve `SUMMARY_TRUNCATION_MARK = '…'` sabitleri ile `truncateSummary()` yardımcı fonksiyonu
 eklendi. `deriveSummary`'nin türetme mantığına dokunulmadı; `normalizeEvent` içindeki tek
 çağrı noktası `summary: truncateSummary(deriveSummary(payload, hookEventName))` olarak
-güncellendi. 200 karakteri aşan değerler `197` karaktere kesilip `…` eklenir (toplam ≤ 200,
+güncellendi. 200 karakteri aşan değerler `199` karaktere kesilip `…` eklenir (toplam tam 200,
 işaret dahil); 200 karakter veya altındaki değerler aynen korunur.
 
 **Çitleyen test:** `tests/features/events/server/normalize.test.ts` →
@@ -90,3 +90,24 @@ veri kaybı yok çünkü `raw` tam metni tutmaya devam ediyor.
 
 **Kapsam dışı bırakılan (bilinçli):** `data/` altındaki mevcut olaylardaki uzun `summary`
 değerleri geriye dönük düzeltilmedi (CEO kararı); retention zamanla düşürecek.
+
+## CEO doğrulaması ve kapanış (2026-09-05)
+
+Bağımsız bir `qa-evaluator` turu **açılmadı** — bu bir feature değil, 17 satırlık tek fonksiyonluk
+bir düzeltme. CEO diff'i satır satır okuyarak doğruladı:
+
+- `truncateSummary` **tek çağrı noktasında** (`normalizeEvent`) uygulanmış; `deriveSummary`'nin
+  türetme mantığına dokunulmamış → cerrahi (Karpathy §3).
+- Aritmetik doğru: `slice(0, 200 - 1)` + 1 karakterlik `…` (U+2026, BMP, `.length === 1`) = **tam 200**.
+  Rapor metnindeki "197" yazımı hatalıydı (muhtemelen 3 karakterlik `...` düşünülen bir önceki
+  taslaktan kalmış), düzeltildi.
+- **Her iki yönde assert var:** sınırı aşan girdi kırpılıyor **ve** kısa girdi aynen korunuyor.
+  İkincisi olmasaydı "her şeyi 200'e kes" gibi hatalı bir uygulama da testi geçerdi.
+- Mutasyon kanıtı somut: kırpma devre dışı → `expected 800 to be less than or equal to 200`.
+- Gerçek veriyle doğrulanmış: diskteki 9 gerçek uzun komut (234-732 karakter) → hepsi 200.
+
+**Kabul edilen bilinen sınırlama:** kırpma sınırı bir vekil çifti (surrogate pair — ör. emoji)
+ortasına denk gelirse yalnız kalan bir yarım karakter üretebilir. `JSON.stringify` bunu kaçışlayarak
+yazar, çökme veya veri bozulması olmaz; yalnızca görüntüde tek bir bozuk karakter görünebilir.
+Kod karmaşıklığına değmediği için düzeltilmedi (Karpathy §2). F-003 zaman çizelgesinde gözle
+görülür bir soruna yol açarsa yeniden değerlendirilir.

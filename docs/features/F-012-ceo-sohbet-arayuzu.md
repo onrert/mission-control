@@ -1,7 +1,7 @@
 ---
 id: F-012
 title: CEO sohbet arayüzü — panel, oturumu Agent SDK ile barındırır
-status: qa
+status: fix
 owner: developer
 deps: [F-003, F-006]
 sprint: 2

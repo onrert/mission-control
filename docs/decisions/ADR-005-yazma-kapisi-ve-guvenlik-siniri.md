@@ -53,3 +53,48 @@
   - **Panel çalışırken `docs/approvals/` elle düzenlenirse** panel bunu yalnızca okur ve gösterir; çelişkili durumu (`.ok` + `.deny.md`) işaretler, düzeltmez (PRD F4/AC4).
 
 - **Kullanıcı onayı gerekli mi:** Hayır — bu ADR mevcut onaylı sınırı **daraltmıyor veya genişletmiyor**, yalnızca nasıl zorlanacağını tanımlıyor. Ücret/hesap yok. (Sınırın kendisi G0/G1'de zaten onaylandı.)
+
+---
+
+## Ek — F-012 sohbet arayüzü yazma sınırını **ikiye ayırır** (2026-09-06, `ADR-014`)
+
+F-012 ile panel, CEO oturumunu kendi içinde barındırıyor. Bu, yukarıdaki "üç yol" kuralının
+kapsamını netleştirmeyi zorunlu kılıyor — çünkü barındırılan CEO'nun **kendi araçları** var
+(`Write`, `Edit`, `Bash`) ve bunlar üç yolla sınırlı değil.
+
+### İki ayrı yazma öznesi, iki ayrı kural
+
+**(1) Panelin kendi yazması — DEĞİŞMEDİ.** Kanban sürüklemesi, kapı onayı, arşivleme. Yukarıdaki
+üç yol kuralı ve `no-delete-guard` / dosya sistemi manifest testleri **aynen geçerli**. F-012 bu
+kümeye tek bir yol bile eklemez; sohbet uçları izlenen projelere yazmaz.
+
+**(2) Barındırılan CEO oturumunun yazması — YENİ ve üç yolla SINIRLI DEĞİL.** CEO bir yazılım
+ekibi yönetiyor; görevi gereği kod yazar, commit atar, komut çalıştırır. Onu üç yola hapsetmek
+aracı işlevsiz bırakırdı. Bu **bilinçli bir genişletmedir**, kaçak değil.
+
+### Genişlemeyi tutan şey nedir
+
+Sınır artık "hangi yollara yazılabilir" değil, **"kim izin veriyor"**:
+
+- **Hook kapıları.** `.claude/hooks/` altındaki altı kapı barındırılan oturumda da çalışır ve
+  **engeller**. Bu varsayım değil, ölçüldü (`SPIKE-002-asama0-olcum.md` M2, iki yönlü: hook
+  aktifken engellendi, hook no-op yapılınca aynı komut geçti). Yıkıcı komut, uzak depoya gönderme
+  ve kapı onayı korumaları bu yolda da ayakta.
+- **İzin akışı kullanıcıya çıkar.** Otomatik onay YASAK, "hepsine izin ver" kısayolu YASAK
+  (`ADR-014` K3). Yani üç yol dışına her çıkış, kullanıcının **o an verdiği** karara bağlıdır.
+- **`x-mc-write`.** Sohbet uçlarının hepsi `ADR-013`'e tabidir, muafiyet yok. Panele serbest
+  metin vermek, panele dolaylı olarak CEO'nun tüm yetkisini vermektir — CSRF savunması burada
+  `POST /api/events`'ten daha kritiktir.
+- **Bağlam sınırı.** İzlenen projelerin olay akışı CEO'nun bağlamına **beslenmez** (`ADR-014` K4).
+  Aksi hâlde izlenen bir projedeki metin CEO'ya talimat gibi geçebilirdi.
+
+### Bunun anlamı — açıkça yazılıyor ki sonraki feature varsaymasın
+
+Mission Control artık **iki güven seviyesi** taşıyor: panelin kendi yazma kapısı (dar, statik
+olarak çitlenmiş) ve barındırılan oturum (geniş, kullanıcı onayı + hook kapılarıyla tutulan).
+İkisini **aynı testle** ölçmeye çalışmak hatadır: dosya sistemi manifest testi ikinci seviyeyi
+kapsamaz ve kapsamamalıdır. Kapsıyormuş gibi yazılmış bir test, bu deponun en pahalı hata
+sınıfına (yeşil ama hiçbir şey ölçmeyen test) yeni bir örnek eklerdi.
+
+Bu yüzden ikinci seviyenin çiti **hook engellemesinin kendisidir** ve iki yönlü test edilmek
+zorundadır — "hook yükleniyor" testi kabul edilmez.

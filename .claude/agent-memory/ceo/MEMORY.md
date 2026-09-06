@@ -4,3 +4,4 @@
 - [Kesintisiz ilerleme](feedback_kesintisiz-ilerleme.md) — ara demo/duraklama onerme; feature sinirinda toplu push onayi iste
 - [Panel = CEO sohbet arayüzü vizyonu](project_panel-ceo-sohbet-vizyonu.md) — Veron'un asıl beklentisi; salt-izleyici panel ona yetmiyor
 - [Kanal gecikme ölçümü](project_spike-001-kanal-gecikme-olcumu.md) — CEO %87.5 boşta; arka plan agent düzeni "agent çalışırken konuşma"yı zaten çözüyor
+- [Kısa ve sade cevap](feedback_kisa-sade-cevap.md) — önce "olabiliyor mu", sonra detay; seçenek açıklamaları mini-rapor olmasın

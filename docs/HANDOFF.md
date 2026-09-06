@@ -16,19 +16,35 @@ salt-izleyici kalmayacak, **CEO oturumunu kendi içinde barındıracak** (`ADR-0
 - Faz 1: 7 feature `done`, **732 birim + 23 E2E testi**, CI Windows'ta yeşil, 14 ADR.
 - Kapılar G0-G3 onaylı. **G4-1 ONAYLANMADI** — kullanıcı "henüz değil" dedi, gerekçesini
   söylemedi. Sorulacak; `docs/approvals/G4-1.ok` YAZILMAYACAK.
-- **~14 commit push'lanmadı.** Push her seferinde kullanıcıya sorulur; onay verirse CEO
-  `docs/approvals/PUSH.ok` yazar, hook kullanınca siler.
+- **Push güncel:** 2026-09-06'da 37 commit push'landı (`eb1e415`). Kapı yeniden kapalı —
+  her push ayrı onay ister; CEO `docs/approvals/PUSH.ok` yazar, hook kullanınca **siler**
+  (tüketildiği doğrulandı).
 
 ## Aktif iş: F-012 CEO sohbet arayüzü
 Panel, CEO oturumunu `@anthropic-ai/claude-agent-sdk` ile barındırır ve sohbet arayüzü olur.
 
-**Şu anda arka planda çalışan iki tur** (kesilirse diskteki gerçek durumu ölç, yeni brief yaz):
-- `ux` → `docs/03-ux.md`'ye sohbet ekranı (geniş + 375px mockup, 7 zorunlu davranış).
-- `developer` → `docs/qa/F-012-contract.md` teknik sözleşme (kod YOK).
+**SÖZLEŞME TURU KAPANDI — QA GEÇTİ** (3 tur: 7+13 bulgu → 3 yeni bloklayıcı → kapanış).
+`docs/qa/F-012-contract.md` · raporlar `F-012-contract-review-{1,2,3}.md` · UX `docs/03-ux.md` §7.
+Feature notu `status: contract`.
 
-Sonraki adım: sözleşme QA'ya çitlenecek → kod turu → QA.
+**SONRAKİ ADIM: KOD TURU.** Kullanıcı kararı: opus limiti sıfırlanınca (05:00) başlatılacak —
+bu tur güvenlik çitlerini kuruyor, sonnet'le yapılmayacak.
+
+**Kod turunun ZORUNLU ilk işi (sözleşme §8a):** `managedSettings` +
+`allowManagedPermissionRulesOnly: true` gerçek bir oturumda **iki yönlü** test edilecek
+(override varken/yokken, allow-listeli aynı komut). Başarısız olursa **durmadan Yol B'ye geç**
+(programatik hook'lar + `settingSources:[]`); K3 pazarlığa kapalı (D10). Eskalasyon yalnızca
+Yol B de çalışmazsa.
+
+**⚠ TUZAK:** `allowManagedHooksOnly` ve `strictPluginOnlyCustomization` **asla set edilmeyecek** —
+ikisi de proje hook'larını devre dışı bırakır, altı güvenlik kapısı ölür.
+
+**Kod turunda doğrulanacak [T]'ler:** `.claude/settings.json` `env` bloğu spawn'ı eziyor mu ·
+Windows'ta yetim `claude.exe` · `"agent":"ceo"` personası yükleniyor mu · admin-tier
+`managed-settings.json` var mı.
 
 ### CEO'nun F-012 için önden verdiği kararlar (K1-K8, brief'te tam metin)
+D1-D11 kararları da sözleşme gövdesine yayıldı (D6 izin deliği, D10 Yol B, D11 bütçe tavanı).
 K1 tek oturum · K2 `ANTHROPIC_API_KEY` temizlenir **ve** görünür uyarı (mutasyonla çitli) ·
 K3 izin akışı kullanıcıya çıkar, otomatik onay YASAK · K4 olay akışı CEO bağlamına girmez
 (prompt injection sınırı) · K5 ikinci `EventSource` yok, gerekçesiz ikinci kanal kabul edilmez ·

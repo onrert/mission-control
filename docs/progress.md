@@ -2227,3 +2227,106 @@ oturum kayıt defterine hiç yazmadı — H5 testi kendi yazdığını kendi ger
 - qa-evaluator düzeltme turunu (B1/B2/B3/Ö2/N1 + bu turun H1/H5/H6/H7 mutasyon kanıtı + config
   retry kaldırma) değerlendirsin.
 - Ö1/Ö3/Ö5 (Ö5 hariç kapandı) bir sonraki turun veya CEO kararının konusu.
+
+---
+
+## 2026-09-06 — F-014 I1 kararlılık kanıtı + I2 (tembel sohbet başlatma) — 150 tur sınırından devam
+
+**Bağlam:** Önceki oturum tur sınırına takıldığında `c71feb8` (WIP) ile CEO şunu korumuştu:
+`electron/main.cjs`'teki B4/I1 düzeltmesi (`shutdownViaTray`'in çıkıştan önce
+`BrowserWindow.getAllWindows()`'daki HER pencereyi `destroy()` etmesi) + `tests/electron/
+lifecycle.test.ts`'e eklenen birim testi + `fake-electron.ts`'e eklenen `getAllWindows()`/
+`destroy()` sahteleri — ama "10/10 temiz koşu" iddiası doğrulanmamıştı. Bu oturum önce I1'i
+bağımsız olarak doğruladı, sonra CEO'nun asıl istediği I2'yi (tembel sohbet başlatma) uyguladı.
+
+**I1 — kök neden ve kararlılık kanıtı (kod değişikliği yok, yalnızca doğrulama):**
+- Kök neden (kod yorumunda zaten yazılıydı, bu oturum doğruladı): `app.quit()`'in kendi dahili
+  pencere kapatma denemesi (`close()`, iptal edilebilir olay + renderer round-trip'i bekler)
+  ikinci bir pencere (`showAutostartEnabledNotice`, henüz `data:` URL'i yüklenme sürecinde
+  olabilir) açıkken bu round-trip kaybolabiliyordu — QA'nın ölçtüğü ~%18 koşuda uygulama hiç
+  kapanmıyordu (5 süreç 30 sn boyunca yaşıyordu). QA'nın şüphesi (bildirim penceresinin referansı
+  tutulmuyor, `close` beklenmiyor) YÖNÜ doğruydu; gerçek düzeltme referans tutmak değil,
+  `destroy()`'un (senkron, kayıtsız-şartsız, `close` olayını hiç tetiklemeyen) `close()` yerine
+  kullanılmasıydı — hangi pencere olursa olsun (referans takibi gerekmeden) hepsini kapatıyor.
+- **Mutasyon kanıtı (bu oturum, bağımsız tekrar):** `shutdownViaTray`'deki `BrowserWindow.
+  getAllWindows()` döngüsü kaldırıldı → `tests/electron/lifecycle.test.ts` KIRMIZI verdi
+  (`expected false to be true`, bildirim penceresi `destroyed` kalmadı). Edit ile birebir geri
+  alındı, `git diff electron/main.cjs` boş, tekrar `npx vitest run tests/electron` = **27/27**
+  (8 dosya).
+- **Kararlılık — bu oturumun BAĞIMSIZ ölçtüğü sayılar (önceki oturumun "10/10" iddiasından AYRI,
+  doğrulanmış):** `electron-autostart-smoke.spec.ts` tek başına (workers=1) **10/10** yeşil
+  (retry yok). Ardından tam `npm run e2e:electron` paketi (workers=2, iki dosya) **3/3** yeşil.
+  Her koşu sonrası `tasklist`/`netstat` taraması: yetim süreç **0**, 7333-7336 LISTENING **boş**.
+  Toplam (bu oturum + önceki oturumun iddiası): 10+10=20 tekrar, hiç kırmızı yok — önceki
+  oturumun "yeni bilgi vermiyor" tahmini doğru çıktı, 10 tekrar daha koşulmadı (kota kararı).
+
+**I2 — barındırılan sohbet oturumu artık TEMBEL başlıyor (CEO kararı, QA F-014 tur2 N2):**
+- **Sözleşme eki:** `docs/qa/F-014-contract.md`'ye "Ek — I2" bölümü eklendi (plan + doğrulama
+  kriterleri, kodlamadan önce).
+- **Kod (`src/features/chat/server/session.ts`, dosya sahipliği istisnası — feature notuna
+  gerekçesiyle yazıldı, bkz. I3):** `bootstrap()` artık gerçek `deps.query()`'yi ÇAĞIRMIYOR —
+  yalnızca `historyLog.init()` yapıp önceki `session_id`'yi (`pendingResumeSessionId`) okuyup
+  saklıyor. Gerçek alt süreç spawn'ı yeni bir `startSession()` fonksiyonuna taşındı ve YALNIZCA
+  ilk `sendMessage()`'da tetikleniyor (`startSession`'ın hiç `await` içermemesi sayesinde bu
+  senkron tamamlanıyor, `sendMessage()`'ın senkron dönüş sözleşmesi bozulmuyor). `restart()`
+  kullanıcının açık talebi olduğu için İSTİSNA: `startSession()`'ı HER ZAMAN hemen çağırıyor.
+  Yan düzeltme: `getStatus()`'un `api_key_barrier_tripped`/`stripped_env_vars`'ı artık gerçek
+  strip olmadan önce `checkApiKeyBarrier` (saf fonksiyon) ile CANLI önizleme yapıyor — aksi hâlde
+  ilk mesajdan önce bariyer durumu yanlış "false" görünürdü.
+- **Test etkisi:** `tests/features/chat/server/session.test.ts`'e yeni bir test eklendi
+  ("bootstrap() sonrası sendMessage() ÇAĞRILMADAN query() hiç çağrılmaz"). Var olan 18
+  `bootstrapSession()` kullanımından 4'ü (bootstrap seçenekleri, restart, K3 çevrimdışı çit,
+  stopAll) `getHandles()`'a `sendMessage()` OLMADAN erişiyordu — gerçek kullanım akışını
+  yansıtacak şekilde başlarına birer `sendMessage()` eklendi (davranış gizlenmedi, yalnızca
+  test artık gerçek akışı taklit ediyor). `tests/integration/chat-api.test.ts`'teki 2 test
+  (env bariyeri görünürlüğü, AC8 çökme senaryosu) aynı sebeple güncellendi.
+  `tests/e2e/helpers/chat-fake-server.ts`'in (gerçek tarayıcı E2E'sinin sahte SDK harness'ı)
+  `getHandles()[0]` bekleme döngüsü 100×20ms (2 sn) → 1500×20ms (30 sn) büyütüldü — artık ilk
+  tarayıcı mesajını bekliyor, eskisi gibi sunucu açılışını değil.
+- **Mutasyon kanıtı:** `sendMessage()`'daki tembel-başlatma dalını (`if (inputPush === undefined)
+  { void startSession(...) }`) kaldırdım → `npx vitest run tests/features/chat/server/
+  session.test.ts` **13/27 KIRMIZI** verdi (yeni fence dahil). Edit ile birebir geri alındı,
+  `git diff` boş, tekrar **27/27** yeşil.
+- **I3 — dosya sahipliği istisnası belgelendi:** `docs/features/F-014-masaustu-uygulamasi.md`
+  "Dosya sahipliği" bölümüne hem H1 (önceki tur, `resolveChatSessionCwd`) hem I2 (bu tur,
+  bootstrap/sendMessage/restart) istisnaları gerekçesiyle yazıldı.
+
+**Nasıl doğrulandı**
+- `npm run verify` (typecheck + lint + build + test) = **0** — `Test Files 65 passed (65)`,
+  `Tests 892 passed | 2 skipped (894)`. İlk iki deneme CLAUDE.md'nin bilinen vitest worker fork
+  kararsızlığına (`exit code 3221226505`, her seferinde FARKLI, ilgisiz bir dosyada) takıldı,
+  üçüncü/dördüncü denemede temiz geçti — kod regresyonu değil (aynı ortam sorunu, ayrı ayrı
+  dosyalarda rastgele vuruyor).
+- `npm run e2e` = **0** (23/23, tarayıcı paketi, chat hariç — chat ayrı script).
+- `npm run e2e:chat` = **0** (1/1) — gerçek tarayıcı, gerçek HTTP/SSE, sahte SDK; genişletilmiş
+  bekleme penceresiyle ilk mesajın tetiklediği tembel başlatmayı doğruluyor (2.5 sn test, 7.6 sn
+  toplam — yeni 30 sn bütçesinin çok altında).
+- `npm run e2e:electron` = **0** (3/3, retry'siz).
+- `npx vitest run tests/electron` = **0** (27/27, 8 dosya — I1 fence dahil).
+- `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca meşru
+  `tests/server/write-gate-manifest.test.ts:124`.
+- Süreç/port hijyeni: her elle/otomatik Electron başlatmasından sonra `tasklist`/`netstat`
+  tarandı — tur boyunca ve tur sonunda yetim `electron`/`mission-control` süreci **0**,
+  7333-7336 LISTENING **boş**, kayıt defterine yazılmadı.
+
+**Kalan risk / QA'ya devredilen açık maddeler**
+- **N2'nin kesin kök nedeni hâlâ kanıtlanmadı** (bilerek — bkz. sözleşme eki "Kapsam dışı
+  bırakılan"): paylaşılan proje dizininde başka bir Claude Code oturumunun aynı event sunucusuna
+  yazması ihtimali elenmedi. I2, kaynak ne olursa olsun "açılış = sıfır model çağrısı" garantisini
+  MİMARİ olarak sağlıyor; QA isterse gerçek paketlenmiş `.exe`'yi taze bir profilde açıp
+  hook olaylarını (`SessionStart` sonrası `UserPromptSubmit` gelmediğini) canlı ölçerek bunu
+  bağımsız doğrulayabilir — bu oturum kota nedeniyle gerçek `.exe`'yi yeniden paketleyip bu canlı
+  ölçümü tekrarlamadı (birim/entegrasyon seviyesinde zaten çitli).
+- Ö1 (bu makinenin `%APPDATA%\mission-control\autostart-initialized.json` marker'ı hâlâ duruyor),
+  Ö3 (Kanban/Projeler masaüstünde boş, kullanıcı yeniden eklemeli) — önceki turlardan devreden,
+  bu turda dokunulmadı, hâlâ açık.
+- `restart()`'ın artık `startSession()`'ı doğrudan çağırması (eski `bootstrap()` çağrısı yerine)
+  davranışsal olarak birebir aynı (aynı `readSessionId`/`buildOptions` sırası) — ayrı bir birim
+  testiyle regresyona karşı zaten çitli (`createChatSession — restart` testi, bu turda
+  güncellendi).
+
+**Sonraki adım**
+- qa-evaluator I1 (kararlılık + mutasyon) ve I2'yi (tembel başlatma + mutasyon + dosya sahipliği
+  istisnası) değerlendirsin.
+- CEO/kullanıcı: N2'nin kök nedeni netleşmeden "yeterince güvenli" kabul edilip edilmediğine karar
+  versin (I2 mimari garanti veriyor, ama kesin kanıt hâlâ eksik).

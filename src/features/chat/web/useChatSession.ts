@@ -363,16 +363,38 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
     }
   }, [fetchImpl])
 
+  // QA F-012 tur 2 Y2 artığı (bloklayıcı olmayan ama gerçek regresyon) — `App.tsx` artık
+  // `useChatSession({ enabled: true })`'ı sunucunun `chat_enabled` durumundan BAĞIMSIZ, HER ZAMAN
+  // çağırıyor (Y2'nin kendisi bunu gerektiriyor: sekmenin görünürlüğünü belirlemek için önce
+  // durumu bilmemiz lazım). Ama `GET /api/chat/history` sunucuda `chat_enabled:false` iken
+  // `503 chat_disabled` döner (`handlers.ts:72`) — tarayıcı bu 503'ü JS `catch`'in GÖRMEDİĞİ bir
+  // konsol kaynağı hatası olarak loglar (`npm run e2e`'de `shell.spec.ts`'in konsol-hatası-yok
+  // assert'i bunu YAKALADI, gerçek bir e2e koşusuyla). Bu yüzden geçmiş yalnızca durumun
+  // `chat_enabled:true` olduğu KESİNLEŞTİKTEN SONRA yüklenir; `chatEnabledRef` `onChatSync`'in
+  // (SSE `'open'` yeniden bağlanması) kimliğini `status`'a bağlamadan aynı korumayı sağlar —
+  // aksi hâlde her `chat_status` güncellemesinde `onChatSync` yeniden oluşur ve `useEventStream`
+  // bunu bağımlılık dizisinde tuttuğu için gereksiz yeniden abonelikler tetiklenebilirdi.
+  const chatEnabledRef = useRef(false)
+  useEffect(() => {
+    chatEnabledRef.current = status?.chat_enabled === true
+  }, [status?.chat_enabled])
+
   useEffect(() => {
     if (!enabled) return
-    void loadHistory()
     void loadStatus()
-  }, [enabled, loadHistory, loadStatus])
+  }, [enabled, loadStatus])
+
+  useEffect(() => {
+    if (!enabled) return
+    if (status?.chat_enabled !== true) return
+    void loadHistory()
+  }, [enabled, status?.chat_enabled, loadHistory])
 
   const onChatSync = useCallback(() => {
     if (!enabled) return
-    void loadHistory()
     void loadStatus()
+    if (!chatEnabledRef.current) return
+    void loadHistory()
   }, [enabled, loadHistory, loadStatus])
 
   const onChatMessage = useCallback((payload: ChatMessageEvent) => {

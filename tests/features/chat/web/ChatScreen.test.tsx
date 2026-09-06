@@ -663,6 +663,17 @@ describe('ChatScreen — geçmiş sayfalama (madde 7)', () => {
             }),
           } as Response
         }
+        // QA F-012 tur2 Y2 artığı düzeltmesi: `/api/chat/status` gerçek sunucuda `chat_enabled`
+        // taşır ve `useChatSession` artık geçmişi yalnızca bu `true` iken yükler (aksi hâlde
+        // gerçek sunucuda `chat_disabled` 503'ü tetiklenir — bkz. `useChatSession.ts`). Bu stub
+        // eskiden bu alanı hiç dönmüyordu (`data: {}`), gerçek sözleşmeyle eşleşmiyordu.
+        if (url.includes('/api/chat/status')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ success: true, data: { chat_enabled: true } }),
+          } as Response
+        }
         return {
           ok: true,
           status: 200,
@@ -671,6 +682,7 @@ describe('ChatScreen — geçmiş sayfalama (madde 7)', () => {
       })
     )
     await renderHarness()
+    await screen.findByText('▲ Daha eski mesajları yükle')
     const link = screen.getByText('▲ Daha eski mesajları yükle')
     const user = userEvent.setup()
     await user.click(link)

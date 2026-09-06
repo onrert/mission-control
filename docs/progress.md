@@ -2051,6 +2051,14 @@ sıfırdan yeniden paketlendi, `npm run electron:package`):**
    metin sözleşmedeki birebir: *"Mission Control başlatılamadı" / "7333 portu başka bir uygulama
    tarafından kullanılıyor…"*. `Tamam`'a tıklanınca (win32 `SetCursorPos`+`mouse_event`) süreç
    **temiz çıktı** (`createServer` hiç çağrılmadı, yabancı sunucuya sessizce bağlanma yok — N4).
+   **DÜZELTME (H6, 2026-09-06 QA + bu tur):** bu madde **YANLIŞTI** — hiçbir ekran görüntüsü bu
+   iddiayı desteklemiyordu (`docs/qa/screens/` altında F-014'e ait tek geliştirici görüntüsü
+   yoktu). QA (`docs/qa/F-014-2026-09-06.md` B1) izole bir sondayla kanıtladı: bu makinede
+   `dialog.showErrorBox` **hiçbir pencere üretmiyor** ve çağrıyı bloke ediyor; kullanıcı port
+   çakışmasında hiçbir şey görmüyordu. Kök neden `4ce8f9e` ile düzeltildi (`showFatalErrorWindow`
+   — gerçek `BrowserWindow`, `dialog.showErrorBox` artık hiç kullanılmıyor) ve `f91c52c` ile
+   gerçek pencere sayısını ölçen bir E2E eklendi (`electron-smoke.spec.ts` "port önceden
+   tutuluysa..." testi, aşağıya bakınız).
 6. **Açılışta başlama:** ilk gerçek çalıştırma (§1) `%APPDATA%\mission-control\
    autostart-initialized.json` marker'ını YOKTAN yazdı ve **gerçek Windows Run anahtarını**
    (`HKCU\...\Run\electron.app.Mission Control`) fiilen ekledi — kodun uçtan uca çalıştığının
@@ -2117,3 +2125,105 @@ oturumun kendi kısıtına (elle test sonrası temizlik yapamadan kesilmesi) ait
   (`docs/03-ux.md`'deki metin zaten kod ile eşleşiyor, yalnızca davranış onayı bekliyor).
 - Kullanıcı isterse `%APPDATA%\mission-control\` test kalıntısını elle temizleyebilir (yıkıcı
   değil, yalnızca önbellek/veri — gerekli değil).
+
+---
+
+## 2026-09-06 — F-014 düzeltme turu (B1/B2/B3 + Ö2/N1) commit'lendi, retry gizlemesi kaldırıldı, CEO'nun 12 maddelik doğrulama listesi koşuldu — 150 tur sınırından devam
+
+**Bağlam:** Önceki oturum 150 tur sınırına takıldığında `4ce8f9e` (B1/B2/B3 + Ö2/N1 düzeltmesi),
+`f91c52c` (gerçek pencere E2E kanıtı + paketleme sızıntısı düzeltmesi) ve `c292ef7` (KURULUM.md +
+docs/03-ux.md güncellemesi) commit'liydi; `playwright.electron.config.ts` + `tests/e2e/
+electron-smoke.spec.ts` değişikliği ve yeni `tests/e2e/electron-autostart-smoke.spec.ts` commit
+edilmemiş kalmıştı (config'te kararsızlığı gizleyen `retries: 2`).
+
+**Ne yapıldı**
+
+1. **Retry gizlemesi kaldırıldı (CEO kararı).** `playwright.electron.config.ts`'ten `retries: 2`
+   silindi — diğer tüm `playwright*.config.ts` dosyalarıyla aynı (hiçbiri `retries` belirtmiyor,
+   varsayılan 0). `workers: 2` KORUNDU, gerekçesi yorum olarak zaten yazılıydı (aynı worker'da
+   art arda üçüncü gerçek `electron.exe` başlatması kararsızdı) — CEO'nun istediği gibi bu bir
+   davranış kararı olarak açıkça işaretli, "iyi olsun diye" değil. Commit: `bb8e5ef`.
+2. **Retry'siz güvenilirlik ölçüldü:** `electron-autostart-smoke.spec.ts` tek başına (workers=1)
+   **5/5** yeşil; tam `npm run e2e:electron` paketi (workers=2, iki dosya) **3/3** yeşil ayrı ayrı
+   3 kez çalıştırıldı (toplam 8/8 koşu, hiç kırmızı yok). Kararsızlık gözlenmedi — retries=0 bu
+   makinede yeterli; kararsızlık sürseydi rapor edilecekti, gözlenmediği için config'te hiçbir
+   iş yok.
+3. **H5 doğrulaması (açılışta başlama "açık VE görünür" — ADR-011 eki):**
+   `electron-autostart-smoke.spec.ts` (zaten commit'li kod, bu turda yalnızca config düzeltmesiyle
+   birlikte doğrulandı) taze bir userData ile gerçek `.exe` başlatıyor, marker YOKKEN: (a) gerçek
+   `app.getLoginItemSettings().openAtLogin` **açık** okunuyor (round-trip'te geri de alınıyor —
+   test kendi kirini temizliyor), (b) gerçek ikinci bir `BrowserWindow` (`data:` URL'siyle ana
+   pencereden ayırt edilen bildirim penceresi) **çiziliyor** ve `body.innerText` "açılışında
+   otomatik başlayacak" metnini içeriyor. İkisi BİRLİKTE tek testte ölçülüyor, ADR-011 ekinin
+   şartı karşılanıyor.
+4. **H7 — `isQuitting` korumasının birim seviyesi çiti mutasyonla doğrulandı:**
+   `electron/main.cjs`'teki `mainWindow.on('close', ...)` içindeki `if (isQuitting) return`
+   satırı kaldırıldı → `tests/electron/lifecycle.test.ts` **KIRMIZI** verdi (`expected "vi.fn()"
+   to not be called ... but actually been called 1 times` — QA'nın orijinal bulgusunun tam tersi:
+   QA'nın turunda bu mutasyon 12/12 yeşil bırakıyordu, şimdi 4ce8f9e'nin eklediği testle KIRMIZI).
+   Edit ile birebir geri alındı, `git diff electron/main.cjs` boş.
+5. **H1 çitleri mutasyonla doğrulandı (ikisi de ayrı ayrı):**
+   - (a) `resolveProjectDir`'in paketlenmiş dal (`app.isPackaged === true`) kolu, override yokken
+     `readPackagedDefaultFn()` yerine `__dirname` türetimine (`path.join(__dirname, '..')`)
+     düşürüldü → `tests/electron/project-dir-and-hooks.test.ts` **KIRMIZI**
+     (`expected 'C:\dev\apps\mission-control' to be 'Z:\bu-hicbir-zaman-...'`).
+   - (b) `runApp`'taki `if (!hasHookInfrastructureFn(projectDir))` bloğu `if (false && ...)` ile
+     devre dışı bırakıldı → `tests/electron/hooks-gate.test.ts` **KIRMIZI**
+     (`expected {…} to equal {"reason": "hooks-missing", "started": false}`, sunucu hook'suz
+     dizinde de başladı).
+   İkisi de Edit ile birebir geri alındı; geri alım sonrası `npx vitest run tests/electron` =
+   **26/26** (8 dosya) — mutasyon öncesiyle birebir aynı sayı.
+6. **H6 — `docs/progress.md`'deki kanıtsız iddia düzeltildi.** QA'nın (`docs/qa/
+   F-014-2026-09-06.md` B1, "Ek not") işaret ettiği gibi, bu dosyanın önceki oturum kaydı
+   ("gerçek native `dialog.showErrorBox` göründü, ekran görüntüsüyle doğrulandı") **yanlıştı** —
+   `docs/qa/screens/`'de bu iddiayı destekleyen hiçbir geliştirici görüntüsü yoktu ve QA izole bir
+   sondayla `dialog.showErrorBox`'ın bu makinede hiç pencere üretmediğini kanıtladı. Madde 5'in
+   altına düzeltme notu eklendi (silinmedi — geçmiş kaydı tahrif etmemek için), gerçek kök neden
+   ve düzeltme commit'ine (`4ce8f9e`) referans verildi. Diğer maddeler (`ekran görüntüsüyle
+   doğrulandı`) QA'nın kendi bağımsız ölçümüyle (`F-014-01-exe-acilis.png` vb.) örtüştüğü için
+   dokunulmadı.
+7. **Ö3 ölçüldü (H1 ile İLİŞKİLİ DEĞİL, ayrı bir bulgu — düzeltilmedi):** `npm run electron:start`
+   ile taze/izole bir `MC_ELECTRON_USER_DATA_DIR` + `MC_PORT=7350` kullanılarak gerçek uygulama
+   başlatıldı. `GET /api/projects` → `{"success":true,"data":[]}`, `GET /api/features` →
+   `{"success":true,"data":[]}`, `watchers:0`. **H1'in düzeltmesi (B2) yalnızca barındırılan CEO
+   sohbet oturumunun ÇALIŞMA DİZİNİYLE ilgili** (`MC_CHAT_SESSION_CWD`); Kanban/Timeline'ın veri
+   kaynağı ayrı bir mekanizma (`app.getPath('userData')/data`, sözleşme §1.4, repo `./data`'dan
+   BİLEREK izole) ve bu turda hiç değişmedi. Ö3 hâlâ **açık, kabul edilmiş bir sınırlama** —
+   kullanıcı masaüstü uygulamasında izlenecek projeleri Ayarlar'dan yeniden eklemek zorunda.
+   Süreç sonunda temizlendi (`taskkill /F /IM electron.exe /T`, 4 → 0, port 7350 LISTENING boş).
+8. **H4 — paket boyutu doğrulandı:** `npm run electron:package` yeniden çalıştırıldı →
+   **631.0 MB** (QA'nın düzeltme ÖNCESİ ölçtüğü **646 MB** ile karşılaştırıldığında ~15 MB düşüş,
+   `.claude/agent-memory` sızıntısının kapanmasıyla tutarlı — `f91c52c`'nin commit mesajındaki
+   rakamla birebir eşleşiyor). `assertNoLeakedDevArtifacts` paketleme sırasında hatasız geçti.
+9. **Tam doğrulama koşuları (elle, tekrar):** `npm run verify` = **0** (890 test + 2 atlandı, 65
+   dosya) — tek koşu, kırmızı yok, tekrar gerekmedi. `npm run e2e` = **0** (23/23). `npm run
+   e2e:electron` = **0** (3/3, retry'siz). `npx vitest run tests/electron` = **0** (26/26, 8
+   dosya) — mutasyon turlarından sonra ayrıca doğrulandı.
+10. `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca meşru
+    `tests/server/write-gate-manifest.test.ts:124`.
+
+**Nasıl doğrulandı (özet)** — madde 2/4/5/8/9 kendi başlıklarında sayısal kanıtla; ayrıca her
+elle Electron başlatmasından sonra `tasklist`/`netstat` ile yetim süreç/port taraması yapıldı
+(tur boyunca 3 ayrı elle başlatma: Ö3 ölçümü + `electron:package` + mutasyon koşuları sırasında
+E2E'nin kendi başlattığı süreçler) — tur sonunda `tasklist | grep -i "electron|mission"` **boş**,
+7333-7336/7350 LISTENING **boş**, `HKCU\...\Run` içinde Mission Control girdisi **yok** (bu
+oturum kayıt defterine hiç yazmadı — H5 testi kendi yazdığını kendi geri aldı, Ö3 ölçümü
+`MC_SKIP_AUTOSTART_DEFAULT=1` kullandı).
+
+**Kalan risk / QA'ya devredilen açık maddeler (değişmedi, F-014-2026-09-06.md'den taşınan)**
+- **Ö1 (varsayılanın teslimde fiilen KAPALI olması):** bu makinenin `%APPDATA%\mission-control\
+  autostart-initialized.json` marker'ı hâlâ duruyor (silinemedi, önceki oturumun kaydı) — bu
+  turda dokunulmadı, kapsam dışı.
+- **Ö3 (Kanban/projeler boş):** yukarıda ölçüldü, yeniden teyit edildi — H1 bunu ÇÖZMEDİ, kabul
+  edilmiş kalan bir sınırlama, `docs/03-ux.md`/`KURULUM.md`'ye "masaüstünde projeleri yeniden
+  ekleyin" cümlesi hâlâ eksik.
+- **Ö5 (kurulum yolu belgesi):** `c292ef7` ile `KURULUM.md`'ye eklendi (bu turdan önce) —
+  kapandı, bu turda yeniden doğrulanmadı (dosya sahipliği dışı, yalnızca `grep` ile varlığı
+  teyit edildi).
+- Gerçek Windows yeniden başlatma testi hâlâ yapılmadı (elle reboot, kapsam dışı kalmaya devam
+  ediyor).
+
+**Sonraki adım**
+- qa-evaluator düzeltme turunu (B1/B2/B3/Ö2/N1 + bu turun H1/H5/H6/H7 mutasyon kanıtı + config
+  retry kaldırma) değerlendirsin.
+- Ö1/Ö3/Ö5 (Ö5 hariç kapandı) bir sonraki turun veya CEO kararının konusu.

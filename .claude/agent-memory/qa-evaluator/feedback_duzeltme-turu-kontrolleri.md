@@ -222,3 +222,21 @@ zaten tarihli bir kopyası var mı diye bak (`diff -q`) — ikinci kez yanlış 
     Canlı bir testi kabul etmeden önce **en az 2 kez koştur**; tek yeşil koşu kanıt değildir.
     Ayrıca kendi bağımsız probe'unu yazmak genelde daha ucuz ve daha kesindir (F-012 E1 iki yönlü
     kanıtı 3 kısa oturum / $0,10).
+
+36. **Aynı durum parçası İKİ FARKLI YOLLA geliyorsa (SSE olayı + ilk yükleme `fetch`'i), testin
+    handler'ı ELLE çağırması gerçek yolu ölçmez.** F-012 tur 3: sunucu `pending_permissions`'ı
+    doğru gönderiyordu (mutasyon KIRMIZI) ama istemcinin `loadStatus`'u (mount **ve** SSE `open`
+    yolu) yanıtı `setStatus`'a doğrudan yazıp kartı kuran `onChatStatus` indirgeyicisinden
+    GEÇMİYORDU — yenilemeden sonra izin kartı yine yoktu. Test (`ChatScreen.test.tsx`)
+    `handlers.onChatStatus(...)`'u elle çağırıyor ve **yorumunda** "sayfa yenilenince bu yol
+    tetiklenir" diye iddia ediyordu; ürün kodunda öyle bir bağ yoktu. Kural: bir durum parçası
+    hem SSE hem `fetch` ile geliyorsa ikisinin AYNI indirgeyiciden geçtiğini kodda izle, sonra
+    "o çağrıyı tamamen sil" mutasyonunu koştur — yeşil kalıyorsa o yolda hiç çit yoktur
+    (F-012'de `onChatSync`'ten `loadStatus()` silindi → **855/855 YEŞİL**). Bu, [[16]]'nın
+    okuma yolundaki ikizi: sunucu yarısı kapandı diye bulguyu kapatma.
+37. **Kırmızı canlı testte, hangi SATIRIN kırıldığına bak — tanı dalı mı, mekanizma assert'i mi.**
+    F-012 tur 3'te `test:chat-live` yine exit 1 verdi, ama kırılan satır "model işaretleyici
+    komutu önermedi" tanı dalıydı; `expect(blockedActive).toBe(true)` hiç koşmadı. Doğru rapor
+    cümlesi "mekanizma bozuk" değil, "bu koşu mekanizma hakkında hiçbir şey söylemiyor" olmalı.
+    Daha iyi hata mesajı kararsızlığı gidermez — model işbirliğine bağlı her canlı assert,
+    kadans şartını ("her QA turunda en az bir kez kanıt") karşılayamaz.

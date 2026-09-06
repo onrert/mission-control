@@ -5,17 +5,43 @@ import { ScreenErrorBoundary } from '../features/events/web/ScreenErrorBoundary'
 import { ConnectionBadge } from '../features/events/web/ConnectionBadge'
 import { SettingsScreen } from '../features/projects/web/SettingsScreen'
 import { KanbanScreen } from '../features/kanban/web/KanbanScreen'
+import { ChatScreen } from '../features/chat/web/ChatScreen'
+import { useChatSession } from '../features/chat/web/useChatSession'
 import type { ProjectListItem } from '../shared/types'
 
-type ActiveScreen = 'timeline' | 'settings' | 'kanban'
-type TabScreen = 'timeline' | 'kanban'
+type ActiveScreen = 'timeline' | 'settings' | 'kanban' | 'chat'
+type TabScreen = 'timeline' | 'kanban' | 'chat'
 
-const TABS: Array<{ screen: TabScreen; label: string }> = [
-  { screen: 'timeline', label: 'Zaman Çizelgesi' },
-  { screen: 'kanban', label: 'Kanban' },
-]
+/**
+ * F-012 (K6/AC10) — `MC_CHAT_ENABLED` bir SUNUCU ortam değişkenidir; tarayıcı çalışma zamanında
+ * `process` yoktur. `vite.config.ts`'in `define`'ı bu ifadeyi DERLEME ANINDA (o `npm run build`
+ * çağrısının kendi ortamından) bir dize LİTERALİNE gömer — çalışan üretim paketinde `process`
+ * referansı hiç kalmaz. Vitest ayrı bir yapılandırma kullandığı için (`vitest.config.ts`, bu
+ * dosyayı `define` etmiyor) testlerde bu ifade gerçek Node `process.env`'ini okur — iki ortamda
+ * da AYNI kod yolu, davranış birbirinden sapmaz. Fonksiyon her render'da yeniden çağrılır (modül
+ * yüklenirken BİR KEZ hesaplanan bir sabit DEĞİL) ki `renderToStaticMarkup(<App/>)`'i iki farklı
+ * `process.env.MC_CHAT_ENABLED` değeriyle çağıran testler (`tests/web/App.test.tsx`, AC10) aynı
+ * modülü yeniden import etmeden iki farklı sonuç gözlemleyebilsin.
+ */
+function isChatUiEnabled(): boolean {
+  const raw = process.env.MC_CHAT_ENABLED
+  if (raw === undefined || raw === '') return true
+  if (raw === '1') return true
+  return false
+}
+
+function buildTabs(chatEnabled: boolean): Array<{ screen: TabScreen; label: string }> {
+  const tabs: Array<{ screen: TabScreen; label: string }> = [
+    { screen: 'timeline', label: 'Zaman Çizelgesi' },
+    { screen: 'kanban', label: 'Kanban' },
+  ]
+  if (chatEnabled) tabs.push({ screen: 'chat', label: 'Sohbet' })
+  return tabs
+}
 
 export default function App() {
+  const chatUiEnabled = isChatUiEnabled()
+  const TABS = buildTabs(chatUiEnabled)
   // F-007 (Kanban gerçek ikinci sekmeyi getirdi) — `role="tablist"`/`tab`/`tabpanel` deseni,
   // roving tabindex + ok tuşu gezinmesi (sözleşme §6 madde 1, §7). Ayarlar bu desenin
   // DIŞINDA kalır (sağda sabit dişli düğmesi, `docs/03-ux.md:21`).
@@ -26,13 +52,27 @@ export default function App() {
   const [projectsUpdate, setProjectsUpdate] = useState<ProjectListItem[] | null>(null)
   const [featuresSignal, setFeaturesSignal] = useState<{ project_id: string } | null>(null)
 
+  // F-012 §2.2 — sohbetin veri katmanı, App.tsx'in TEK `useEventStream()` çağrısına
+  // (aşağıda) `handlers` ile bağlanır; kendi `EventSource`'unu AÇMAZ (K5). `enabled: false`
+  // iken (build-time `MC_CHAT_ENABLED=0`) hiçbir ilk yükleme isteği atmaz.
+  const chat = useChatSession({ enabled: chatUiEnabled })
+
   // F-003 §2.2: tek `useEventStream()` çağrısı App kökünde — tek SSE bağlantısı. TimelineScreen
   // kendi bağlantısını açmaz, bu sonucu prop olarak alır. F-005: `onProjects` de aynı tek
   // bağlantıyı paylaşır (ADR-004 madde 1). F-007: `onFeatures` de aynı desende eklendi —
-  // Kanban ikinci bir EventSource AÇMAZ.
+  // Kanban ikinci bir EventSource AÇMAZ. F-012: altı `chat_*` kanalı + `onChatSync` de aynı
+  // paylaşılan bağlantıyı kullanır, `useChatSession`'ın kararlı (`useCallback`) referansları.
   const stream = useEventStream('/api/stream', '/api/events', {
     onProjects: setProjectsUpdate,
     onFeatures: setFeaturesSignal,
+    onChatMessage: chat.handlers.onChatMessage as (payload: unknown) => void,
+    onChatUserEcho: chat.handlers.onChatUserEcho as (payload: unknown) => void,
+    onChatToolEvent: chat.handlers.onChatToolEvent as (payload: unknown) => void,
+    onChatPermissionRequest: chat.handlers.onChatPermissionRequest as (payload: unknown) => void,
+    onChatPermissionResolved: chat.handlers.onChatPermissionResolved as (payload: unknown) => void,
+    onChatStatus: chat.handlers.onChatStatus as (payload: unknown) => void,
+    onChatError: chat.handlers.onChatError as (payload: unknown) => void,
+    onChatSync: chat.handlers.onChatSync,
   })
 
   const selectedTab: TabScreen = activeScreen === 'settings' ? lastTabScreen : activeScreen
@@ -164,6 +204,19 @@ export default function App() {
             />
           </ScreenErrorBoundary>
         </div>
+        {chatUiEnabled && (
+          <div
+            id="panel-chat"
+            role="tabpanel"
+            aria-labelledby="tab-chat"
+            hidden={activeScreen !== 'chat'}
+            className="h-full"
+          >
+            <ScreenErrorBoundary>
+              <ChatScreen chat={chat} />
+            </ScreenErrorBoundary>
+          </div>
+        )}
         <div id="panel-settings" hidden={activeScreen !== 'settings'} className="h-full">
           <SettingsScreen liveUpdate={projectsUpdate} />
         </div>

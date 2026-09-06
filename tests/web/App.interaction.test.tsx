@@ -214,3 +214,63 @@ describe('App.interaction — tablist ok tuşu gezinmesi (QA düzeltme turu 1: T
     }
   })
 })
+
+describe('App.interaction — F-012 üçüncü "Sohbet" sekmesi (MC_CHAT_ENABLED=1)', () => {
+  const originalChatEnabled = process.env.MC_CHAT_ENABLED
+
+  afterEach(() => {
+    process.env.MC_CHAT_ENABLED = originalChatEnabled
+  })
+
+  it("End tuşu artık son sekme olan Sohbet'i seçer (üç sekmeli tablist)", async () => {
+    process.env.MC_CHAT_ENABLED = '1'
+    FakeEventSource.reset()
+    const restore = stubGlobals()
+    try {
+      render(<App />)
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      const timelineTab = screen.getByRole('tab', { name: 'Zaman Çizelgesi' })
+      const chatTab = screen.getByRole('tab', { name: 'Sohbet' })
+      expect(screen.getAllByRole('tab')).toHaveLength(3)
+
+      timelineTab.focus()
+      fireEvent.keyDown(timelineTab, { key: 'End' })
+      expect(chatTab.getAttribute('aria-selected')).toBe('true')
+      expect(document.activeElement).toBe(chatTab)
+      expect(screen.getByTestId('chat-screen')).toBeTruthy()
+
+      fireEvent.keyDown(chatTab, { key: 'Home' })
+      expect(timelineTab.getAttribute('aria-selected')).toBe('true')
+    } finally {
+      restore()
+    }
+  })
+
+  it('Sohbet sekmesine tıklanınca ChatScreen görünür, diğer panel gizli kalır', async () => {
+    process.env.MC_CHAT_ENABLED = '1'
+    FakeEventSource.reset()
+    const restore = stubGlobals()
+    try {
+      const user = userEvent.setup()
+      render(<App />)
+      await act(async () => {
+        await Promise.resolve()
+      })
+
+      await user.click(screen.getByRole('tab', { name: 'Sohbet' }))
+      expect(screen.getByTestId('chat-screen').closest('[id="panel-chat"]')).toHaveProperty(
+        'hidden',
+        false
+      )
+      expect(screen.getByTestId('timeline-screen').closest('[id="panel-timeline"]')).toHaveProperty(
+        'hidden',
+        true
+      )
+    } finally {
+      restore()
+    }
+  })
+})

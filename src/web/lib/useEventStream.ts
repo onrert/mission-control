@@ -92,6 +92,20 @@ export interface UseEventStreamOptions {
    * `GET /api/features` ile ayrıca çekilir.
    */
   onFeatures?: (signal: { project_id: string }) => void
+  /**
+   * F-012 (sözleşme §5) — altı yeni `chat_*` kanalı, `onFeatures` ile BİREBİR aynı desende
+   * (yalnızca callback SAĞLANMIŞSA abone olunur, ADR-004 madde 1 "tek bağlantı çok kanal").
+   * `onChatSync` farklıdır: bir SSE kanalına değil, native `EventSource` `'open'` olayına
+   * (B1/D7 düzeltmesi, `handleOpen` — aşağıda) bağlanır; her (yeniden) bağlanmada ateşlenir.
+   */
+  onChatMessage?: (payload: unknown) => void
+  onChatUserEcho?: (payload: unknown) => void
+  onChatToolEvent?: (payload: unknown) => void
+  onChatPermissionRequest?: (payload: unknown) => void
+  onChatPermissionResolved?: (payload: unknown) => void
+  onChatStatus?: (payload: unknown) => void
+  onChatError?: (payload: unknown) => void
+  onChatSync?: () => void
 }
 
 export type LoadState = 'loading' | 'ready' | 'error'
@@ -166,7 +180,13 @@ export function useEventStream(
   useEffect(() => {
     if (!EventSourceImpl) return
     const es = new EventSourceImpl(streamUrl)
-    const handleOpen = (): void => setConnectionStatus('connected')
+    const handleOpen = (): void => {
+      setConnectionStatus('connected')
+      // F-012 B1/D7 düzeltmesi — `hello` DEĞİL, gerçekten var olan ve her (yeniden) bağlanmada
+      // ateşlenen native `'open'` olayı. Sohbet ekranı bunu "son 50 mesajı yeniden yükle" tetiği
+      // olarak kullanır (kısa kopmalarda boşluk her zaman kapanır, sözleşme §5).
+      options.onChatSync?.()
+    }
     const handleError = (): void => {
       if (es.readyState === EventSourceImpl.CONNECTING) setConnectionStatus('reconnecting')
       else if (es.readyState === EventSourceImpl.CLOSED) setConnectionStatus('disconnected')
@@ -200,6 +220,33 @@ export function useEventStream(
         // bozuk `features` verisi sessizce yok sayılır — akışın geri kalanını etkilemez.
       }
     }
+    // F-012 §5 — altı `chat_*` kanalı, `onFeatures`'ın BİREBİR aynı deseni (bozuk JSON sessizce
+    // yok sayılır, yalnızca callback SAĞLANMIŞSA abone olunur). Tek bir fabrika ile tekrar
+    // önlenir; her kanalın kendi `MessageEvent` dinleyicisi olması gerektiği için (`removeEventListener`
+    // kimliği korumalı) referanslar bir kere üretilip hem ekleme hem kaldırmada kullanılır.
+    function makeChatHandler(callback: ((payload: unknown) => void) | undefined) {
+      return (evt: MessageEvent): void => {
+        if (!callback) return
+        try {
+          callback(JSON.parse(evt.data as string))
+        } catch {
+          // bozuk `chat_*` verisi sessizce yok sayılır — akışın geri kalanını etkilemez.
+        }
+      }
+    }
+    const chatChannels: Array<[string, ((payload: unknown) => void) | undefined]> = [
+      ['chat_message', options.onChatMessage],
+      ['chat_user_echo', options.onChatUserEcho],
+      ['chat_tool', options.onChatToolEvent],
+      ['chat_permission_request', options.onChatPermissionRequest],
+      ['chat_permission_resolved', options.onChatPermissionResolved],
+      ['chat_status', options.onChatStatus],
+      ['chat_error', options.onChatError],
+    ]
+    const chatHandlers = chatChannels.map(
+      ([name, callback]) => [name, makeChatHandler(callback)] as const
+    )
+
     es.addEventListener('open', handleOpen)
     es.addEventListener('error', handleError)
     es.addEventListener('event', handleEvent)
@@ -209,6 +256,9 @@ export function useEventStream(
     }
     if (options.onFeatures) {
       es.addEventListener('features', handleFeatures)
+    }
+    for (const [name, handler] of chatHandlers) {
+      es.addEventListener(name, handler)
     }
     return () => {
       es.removeEventListener('open', handleOpen)
@@ -221,9 +271,26 @@ export function useEventStream(
       if (options.onFeatures) {
         es.removeEventListener('features', handleFeatures)
       }
+      for (const [name, handler] of chatHandlers) {
+        es.removeEventListener(name, handler)
+      }
       es.close()
     }
-  }, [streamUrl, EventSourceImpl, loadEvents, options.onProjects, options.onFeatures])
+  }, [
+    streamUrl,
+    EventSourceImpl,
+    loadEvents,
+    options.onProjects,
+    options.onFeatures,
+    options.onChatMessage,
+    options.onChatUserEcho,
+    options.onChatToolEvent,
+    options.onChatPermissionRequest,
+    options.onChatPermissionResolved,
+    options.onChatStatus,
+    options.onChatError,
+    options.onChatSync,
+  ])
 
   // Sözleşme §3 madde 5: frozen'a geçişte anlık görüntü al; frozen kalkınca canlıya dön.
   useEffect(() => {

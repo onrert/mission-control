@@ -540,3 +540,55 @@ durumları ürettiğinin envanteridir.
 elle bir kez, (b) her QA turunda en az bir kez (ADR-014'ün kendi "iki yönlü kanıt" şartını
 karşılamak için). Kesin kadans **§13 açık soru 4**'te CEO'ya soruluyor.
 
+---
+
+## 12. Kapsam dışı listesi (konsolide)
+
+- **K4 — olay akışı köprüsü yok.** İzlenen projelerin hook olayları bu feature'da hiçbir biçimde
+  CEO'nun `query()` prompt akışına eklenmez; "CEO, zaman çizelgesinde ne oluyor özetle" gibi bir
+  özellik **kapsam dışı** ve ayrı bir karar/feature gerektirir (SPIKE-002 §6.3).
+- **Çoklu oturum / thread görünümü** — F-010'un konusu. K1 tek oturum.
+- **Kapılar paneli** (F-008) — CEO üzerinden onay **verilmez**, doktrin gereği kapı onayı
+  doğrudan panelden verilir (`docs/00-idea.md`), CEO'ya devredilmez.
+- **Token kullanım ekranı** (F-011) — bu feature `total_cost_usd`/`modelUsage` alanlarını
+  **üretir/iletmez**; ileride F-011 bu veriyi ayrı bir uçtan tüketebilir.
+- **`ADR-005`'e ek yazmak** — SPIKE-002 §6.1'in tespit ettiği gerçek boşluk (agent alt süreci
+  `write-gate.ts`'in dışında dosya yazabilir, mevcut statik/manifest guard'lar bunu ölçmüyor) bu
+  feature ile **kapanmıyor**; dosya sahipliği dışında, §13'te açık soru.
+- **`bypassPermissions`/`acceptEdits` dışındaki `permissionMode` ince ayarları** (ör. belirli araç
+  adlarına özel otomatik izin kuralları) — v1 `default` ile başlar, ince ayar ayrı bir karar.
+- **Görsel tasarım, renk/spacing, son Türkçe metinler** — `docs/03-ux.md`'nin konusu (K8).
+- **Retention/boyut sınırlama** (`history-log.ts` için) — v1'de yok, §6'da gerekçeli.
+- **Otomatik yeniden başlatma / crash-loop koruması** — v1'de yok, kullanıcı elle `restart` tetikler.
+
+---
+
+## 13. Açık sorular (CEO karar verecek — uydurulmadı)
+
+1. **Minimal/işlevsel arayüz mü, yoksa `docs/03-ux.md` onayı beklenmeli mi?** Bu sözleşme
+   `ChatScreen.minimal.tsx`'i "bilinçli olarak minimal, mevcut Tailwind yardımcı sınıflarıyla"
+   tanımlıyor (§2.2) çünkü UX dokümanının sohbet bölümü bu sözleşme turunda henüz yazılmamıştı
+   (paralel çalışan bir agent tarafından işleniyor, K8). Bu feature'ın "bitti" tanımı bu minimal
+   ekranla mı kapanacak (sonra ayrı bir görsel-uygulama turu üstüne biner), yoksa kod turu UX
+   dokümanı onaylanana kadar mı bekleyecek?
+2. **`ANTHROPIC_AUTH_TOKEN` bariyere dahil mi?** AC ve ADR-014 yalnızca `ANTHROPIC_API_KEY`'i
+   adlandırıyor, ama SDK'nın kimlik önceliği listesinde `ANTHROPIC_AUTH_TOKEN` **daha yüksek**
+   öncelikli (SPIKE-002 §2.2 tablosu, madde 2) ve o da ücretli bir ağ geçidine işaret edebilir.
+   Kapsam dışı bırakmak bilinçli bir risk kabulü mü, yoksa bariyer genişletilsin mi?
+3. **`ADR-005`'e ek kim yazacak, ne zaman?** SPIKE-002 §6.1/§9 madde 2 bunu "uygulanırsa ADR'ye
+   girmesi gereken koşul" sayıyor ama bu feature'ın dosya sahipliği `docs/decisions/`'ı
+   kapsamıyor. Bu feature'ın kod turu, ADR eki **yazılmadan** başlayabilir mi, yoksa CEO/architect
+   önce eki mi yazmalı (SPIKE-002'nin önerdiği sıra buydu)?
+4. **`chat-hooks-live.test.ts` hangi kadansta koşacak?** Her QA turunda mı (gerçek kota harcar,
+   ADR-014'ün "iki yönlü kanıt" şartını her seferinde tazeler), yoksa yalnızca hook/oturum wiring
+   koduna dokunulduğunda mı (daha ucuz, ama "kanıt" bir süre sonra eskir)?
+5. **Sohbet sekmesi panel kabuğunda nereye/nasıl eklenecek (geçici bağlama noktası)?**
+   `docs/03-ux.md`'nin "Faz bazlı ekleme kuralı" ilkesi (sekme yalnızca hazır olduğunda eklenir)
+   ile bu feature'ın "veri katmanı hazır ama görsel katman minimal" durumu nasıl uzlaştırılır —
+   geçici bir sekme mi (sonra kaldırılıp doğru yere taşınır), yoksa Ayarlar dişlisinin yanına
+   ikinci bir geçici ikon mu?
+
+Bu beş soru cevaplanmadan kod turu başlarsa, sözleşme **1, 3 ve 5** için en muhafazakâr varsayımla
+ilerler (minimal ekran + `ADR-005` eki CEO/architect'ten ayrıca istenir + geçici sekme) — ama bu
+varsayımlar **CEO onayı olmadan kalıcı sayılmaz**.
+

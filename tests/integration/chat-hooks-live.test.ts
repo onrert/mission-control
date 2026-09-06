@@ -1,15 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk'
 
 /**
- * D4 (sözleşme §8/§11.3) — bu dosya GERÇEK, ÜCRETLİ bir `@anthropic-ai/claude-agent-sdk`
- * oturumu açar. Varsayılan `npm test`/`npm run verify` bu dosyayı ÇALIŞTIRMAZ
- * (`describe.skipIf` aşağıda) — yalnızca `MC_CHAT_LIVE_TESTS=1 npm run test:chat-live` ile
- * elle koşulur. Kadans (§11.3): (a) hook zinciri veya `managedSettings`/izin yapılandırması
+ * D4 (sözleşme §8/§11.3) — bu dosyanın CANLI describe bloğu (`describe.skipIf` ile sarılı)
+ * GERÇEK, ÜCRETLİ bir `@anthropic-ai/claude-agent-sdk` oturumu açar. Varsayılan `npm test`/
+ * `npm run verify` bu bloğu ÇALIŞTIRMAZ — yalnızca `MC_CHAT_LIVE_TESTS=1 npm run test:chat-live`
+ * ile elle koşulur. Kadans (§11.3): (a) hook zinciri veya `managedSettings`/izin yapılandırması
  * değiştiğinde elle bir kez, (b) her QA turunda en az bir kez (`ADR-014`'ün "iki yönlü kanıt"
  * şartı için).
+ *
+ * QA F-012 tur 3 Y3 düzeltmesi — aşağıdaki `describe('block-dangerous.cjs — hook doğrudan …')`
+ * bloğu SARILI DEĞİL: kota harcamaz, modele hiç bağımlı değil, `npm run verify`'nin normal
+ * parçasıdır. `.claude/hooks/block-dangerous.cjs`'i gerçek bir alt süreç olarak, PreToolUse'un
+ * göndereceği JSON'un AYNISIYLA çalıştırıp çıkış kodunu doğrudan ölçer (QA'nın önerdiği
+ * model-bağımsız alternatiflerden biri: "hook betiğini kendi başına çalıştırarak tetiklemek").
  *
  * QA F-012 KALDI B6 — bu dosya sözleşmenin §2.3/§8/§11.3'ün şart koştuğu, `package.json:26`'nın
  * çağırdığı ama önceki turlarda hiç YAZILMAMIŞ olan testtir.
@@ -50,9 +57,14 @@ function makeSingleTurnPrompt(text: string) {
  *  belgesi: "Denials that resolve before canUseTool runs — PreToolUse hook denies... are not
  *  covered [by this event]" — `sdk.d.ts:4853`) — yani `updatedInput` ile komutu ZORLAMAK hook'un
  *  GÖRDÜĞÜ girdiyi DEĞİŞTİRMEZ, yalnızca hook+izin ikisi de geçtikten SONRA gerçekten ÇALIŞACAK
- *  komutu değiştirir. Mekanizmayı (hook'un doğru komutu engelleyip engellemediğini) ölçebilmek
- *  için modelin GERÇEKTEN önerdiği komutun beklenen işaretleyiciyle eşleştiğini doğrulamak
- *  gerekiyor; eşleşmezse mekanizma hakkında hiçbir şey söylenemez (bkz. çağıran taraf). */
+ *  komutu değiştirir. QA F-012 tur 3 Y3 düzeltmesi — eskiden mekanizmayı ölçmek için modelin
+ *  ÖNERDİĞİ komutun BEKLENEN bir işaretleyiciyle (`npm publish`) eşleşmesi ŞART koşuluyordu;
+ *  eşleşmezse test "kararsız" sayılıp elle tekrar çalıştırılması isteniyordu (4 art arda koşuda
+ *  bu tanı dalına takıldı — CEO personası talimatı izlemek yerine proje bağlamını okuma
+ *  alışkanlığını sürdürdü). Artık `proposedBashCommands`'ın İLK öğesi NE OLURSA OLSUN doğrudan
+ *  `runHookDirect` (aşağıda) ile GERÇEK hook betiğine verilip "olması gereken karar" (ground
+ *  truth) hesaplanıyor; çağıran taraf gözlenen canlı kararı bununla karşılaştırıyor — model HANGİ
+ *  komutu önerirse önersin test her zaman deterministik ve anlamlıdır. */
 async function collectToolResultTexts(
   q: AsyncIterable<Record<string, unknown>>
 ): Promise<{ toolResultTexts: string[]; sawBashToolUse: boolean; proposedBashCommands: string[] }> {
@@ -82,6 +94,42 @@ async function collectToolResultTexts(
   }
   return { toolResultTexts, sawBashToolUse, proposedBashCommands }
 }
+
+const BLOCK_DANGEROUS_HOOK = path.join(repoRoot, '.claude', 'hooks', 'block-dangerous.cjs')
+
+/** QA F-012 tur 3 Y3 düzeltmesi — `.claude/hooks/block-dangerous.cjs`'i GERÇEK bir Node alt
+ *  süreci olarak, `PreToolUse`'un göndereceği JSON'un (`{tool_input:{command}}`) AYNISIYLA
+ *  stdin'den besler ve `_common.cjs`'in `block()`'unun ürettiği çıkış kodunu (2 = engellendi,
+ *  0 = geçti) doğrudan okur. Modelden, SDK'dan, kotadan TAMAMEN bağımsız — hem kendi başına bir
+ *  kanıt (aşağıdaki `describe` bloğu) hem de canlı testin (AC4) ground truth kaynağı. */
+function runHookDirect(command: string): {
+  blocked: boolean
+  exitCode: number | null
+  stderr: string
+} {
+  const result = spawnSync(process.execPath, [BLOCK_DANGEROUS_HOOK], {
+    input: JSON.stringify({ tool_input: { command } }),
+    encoding: 'utf8',
+  })
+  return { blocked: result.status === 2, exitCode: result.status, stderr: result.stderr ?? '' }
+}
+
+// QA F-012 tur 3 Y3 — bu describe BİLEREK `describe.skipIf` ile SARILMADI: kota harcamaz
+// (gerçek SDK/model çağrısı yok), `npm run verify`'nin normal parçasıdır. QA'nın önerdiği iki
+// model-bağımsız alternatiften biri ("hook betiğini kendi başına çalıştırarak tetiklemek").
+describe('block-dangerous.cjs — hook doğrudan tetiklenir (model bağımlılığı yok, kota: 0)', () => {
+  it('yayın komutunu (npm publish) ÇIKIŞ KODU 2 ile Engellendi mesajıyla durdurur', () => {
+    const result = runHookDirect('npm publish --dry-run')
+    expect(result.exitCode).toBe(2)
+    expect(result.stderr).toContain('Engellendi')
+  })
+
+  it('salt-okunur bir komutu (ls -la) engellemeden ÇIKIŞ KODU 0 ile geçirir', () => {
+    const result = runHookDirect('ls -la')
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe('')
+  })
+})
 
 describe.skipIf(!process.env.MC_CHAT_LIVE_TESTS)(
   'canlı SDK oturumu — hook zinciri ve izin motoru (D4, AC2/AC4, E1/B5)',
@@ -140,140 +188,93 @@ describe.skipIf(!process.env.MC_CHAT_LIVE_TESTS)(
     )
 
     it(
-      'AC4 iki yönlü kanıt: hook zinciri AKTİFKEN tehlikeli komutu engeller, ' +
-        'DEVRE DIŞIYKEN (settingSources: []) aynı komut geçer (Ö10)',
+      'AC4 canlı kanıt: hook zinciri AKTİFKEN modelin önerdiği komutu block-dangerous.cjs ile ' +
+        'AYNI kararla değerlendirir; DEVRE DIŞIYKEN (settingSources: []) hiçbir komutu ' +
+        'engellemez (Ö10 + QA F-012 tur 3 Y3 düzeltmesi)',
       async () => {
-        // Ö10 madde 1 — işaretleyici komut `.claude/settings.json`'ın `permissions.deny`
-        // listesiyle örtüşmüyor (yalnızca rm -rf/git push --force/git reset --hard var), ama
-        // `.claude/hooks/block-dangerous.cjs`'in kendi `release` deseniyle eşleşiyor
-        // (`npm\s+publish`) — QA'nın §3.5'te gerçek oturumda kullandığı KOMUTUN AYNISI.
-        //
-        // QA F-012 tur 2 Y3 — 4 deneme, sonuncusu bir MİMARİ BULGU ortaya çıkardı: 3. denemenin
-        // "canUseTool modelin önerdiği komutu NE OLURSA OLSUN markerCommand'a ZORLAR" tasarımı
-        // YANLIŞ VARSAYIMA dayanıyordu. `PreToolUse` hook'u modelin ÖNERDİĞİ ham `tool_input`
-        // üzerinde çalışır ve `canUseTool` ÇAĞRILMADAN ÖNCE karar verir (SDK'nın kendi belgesi,
-        // `sdk.d.ts:4853`: "Denials that resolve before canUseTool runs — PreToolUse hook
-        // denies... are not covered"). Yani `updatedInput` hook'un GÖRDÜĞÜ girdiyi asla
-        // değiştirmez — yalnızca hook+izin ikisi de geçtikten SONRA fiilen ÇALIŞACAK komutu
-        // değiştirir. 4. koşuda bu netleşti: `blockedActive` beklenmedik biçimde `false` çıktı
-        // çünkü model o turda `npm publish` DIŞINDA bir salt-okunur komut önermişti; hook onu
-        // (haklı olarak) hiç engellemedi, ama test "mekanizma çalışmıyor" gibi yanlış yorumluyordu.
-        //
-        // Düzeltme: `canUseTool`'un komutu zorlaması KALDIRILMADI (fiilen çalışacak komutu hâlâ
-        // güvenli `--dry-run`'a sabitliyor, savunma katmanı), ama artık mekanizma yalnızca
-        // modelin GERÇEKTEN önerdiği komut beklenen işaretleyiciyle eşleştiğinde değerlendiriliyor
-        // (`proposedBashCommands`, hook'un gördüğü ham veri). Eşleşmezse (model talimatı
-        // izlemediyse) mekanizma hakkında hiçbir iddiada bulunulmaz, ayrı ve okunabilir bir tanı
-        // hatası verilir — tıpkı `sawBashToolUse` deseninde olduğu gibi.
+        // QA F-012 tur 3 Y3 — eski tasarım modelin TAM OLARAK "npm publish" içeren bir komut
+        // ÖNERMESİNİ ŞART koşuyordu; önermezse test "kararsız, tekrar dene" diye kırılıyordu (4
+        // art arda koşuda bu tanı dalına takıldı — CEO personası talimatı izlemek yerine proje
+        // bağlamını okuma alışkanlığını sürdürdü, bkz. `docs/qa/F-012-2026-09-06-tur3.md` §4).
+        // O tanı dalı TAMAMEN KALKTI. Yeni tasarım modelin NE ÖNERDİĞİNE bakmaksızın çalışır:
+        // model hangi Bash komutunu önerirse önersin, o AYNI ham komut `runHookDirect` ile
+        // GERÇEK `.claude/hooks/block-dangerous.cjs` betiğine (kota harcamadan, ayrı bir alt
+        // süreçte) verilip "olması gereken karar" (ground truth) hesaplanır; canlı oturumun
+        // GÖZLENEN kararı bu ground truth ile karşılaştırılır. Ayrıca CEO personası
+        // (`agent:'ceo'`) bu testte hiç KULLANILMIYOR — hook zinciri `settingSources:['project']`
+        // ile persona'dan BAĞIMSIZ yüklenir, persona yalnızca modelin talimatı izleme
+        // olasılığını düşürüyordu (bkz. yukarı).
         const markerCommand = 'npm publish --dry-run'
         const promptText =
           `İlk aracın Bash olsun: tam olarak şu komutu çalıştır: ${markerCommand}. ` +
           'Başka hiçbir komut çalıştırma, hiçbir açıklama yapma.'
+        const directiveSystemPrompt =
+          'SADECE Bash aracını çağırarak cevap ver. Metinle cevap vermek veya açıklama ' +
+          'yapmak YASAK. İlk ve tek aracın Bash olmalı; kullanıcının istediği komutu ' +
+          'doğrudan çalıştır.'
+        // `canUseTool` hâlâ FİİLEN ÇALIŞACAK komutu güvenli `--dry-run`'a sabitliyor (savunma
+        // katmanı, ADR-014 Ek) — ama bu, hook'un GÖRDÜĞÜ ham girdiyi değiştirmez (aşağıdaki
+        // ground truth hesaplaması `proposedBashCommands`'ın HAM hâlini kullanır).
         const forceMarkerCommand = async (toolName: string, input: Record<string, unknown>) => ({
           behavior: 'allow' as const,
           updatedInput: toolName === 'Bash' ? { ...input, command: markerCommand } : input,
         })
-        const proposedMarkerCommand = (cmds: string[]) => cmds.some((c) => /npm\s+publish/.test(c))
+
+        async function runBranch(settingSources: 'project'[] | []) {
+          return collectToolResultTexts(
+            sdkQuery({
+              prompt: makeSingleTurnPrompt(promptText),
+              options: {
+                cwd: repoRoot,
+                settingSources,
+                systemPrompt: directiveSystemPrompt,
+                permissionMode: 'default',
+                disallowedTools: [...NO_EXPLORATION_TOOLS, 'TodoWrite'],
+                maxTurns: 3,
+                model: 'claude-haiku-4-5',
+                managedSettings: {
+                  allowManagedPermissionRulesOnly: true,
+                  permissions: { ask: ['Bash'] },
+                },
+                canUseTool: forceMarkerCommand,
+              },
+            }) as unknown as AsyncIterable<Record<string, unknown>>
+          )
+        }
+
         // (a) Hook zinciri AKTİF — Ö10 madde 2: gerçek cwd (repo kökü) üzerinden .claude/
         // settings.json'daki göreli hook yolu çözülüyor.
-        const active = await collectToolResultTexts(
-          sdkQuery({
-            prompt: makeSingleTurnPrompt(promptText),
-            options: {
-              cwd: repoRoot,
-              agent: 'ceo',
-              settingSources: ['project'],
-              permissionMode: 'default',
-              disallowedTools: NO_EXPLORATION_TOOLS,
-              maxTurns: 3,
-              model: 'claude-haiku-4-5',
-              managedSettings: {
-                allowManagedPermissionRulesOnly: true,
-                permissions: { ask: ['Bash'] },
-              },
-              canUseTool: forceMarkerCommand,
-            },
-          }) as unknown as AsyncIterable<Record<string, unknown>>
-        )
-        if (!active.sawBashToolUse) {
+        const active = await runBranch(['project'])
+        if (!active.sawBashToolUse || active.proposedBashCommands.length === 0) {
           throw new Error(
-            'Model hiç Bash çağırmadı (aktif kol) — bu, hook mekanizmasının kendisi hakkında ' +
-              'bir kanıt DEĞİL, yalnızca modelin bu turda aracı seçmediğini gösterir. Testi ' +
-              'tekrar çalıştırın; tekrarlıyorsa promptu güçlendirin.'
+            'Model hiç Bash çağırmadı / komut alanı boş (aktif kol) — bu, hook mekanizması ' +
+              'hakkında bir kanıt DEĞİL, yalnızca modelin bu turda aracı seçmediğini gösterir. ' +
+              'Testi tekrar çalıştırın.'
           )
         }
-        if (!proposedMarkerCommand(active.proposedBashCommands)) {
-          throw new Error(
-            'Model işaretleyici komutu (npm publish) ÖNERMEDİ (aktif kol) — hook bu ham girdi ' +
-              `üzerinde çalışır (canUseTool'un komut zorlaması hook'tan SONRA devreye girer), ` +
-              `bu yüzden mekanizma hakkında hiçbir şey söylenemez. Önerilen komut(lar): ` +
-              `${JSON.stringify(active.proposedBashCommands)}. Testi tekrar çalıştırın.`
-          )
-        }
+        const activeGroundTruth = runHookDirect(active.proposedBashCommands[0]!)
         const blockedActive = active.toolResultTexts.some((t) => t.includes('Engellendi'))
 
         // (b) Hook zinciri DEVRE DIŞI — `settingSources: []` proje hook'larını hiç yüklemez
-        // (SDK isolation mode, ✓ DOĞRULANDI sözleşme §8a). Aynı ZORLANMIŞ komut, hook
-        // koruması olmadan.
-        //
-        // QA F-012 tur 2 Y3 (3. deneme) — `allowedTools: ['Bash']` (2. denemede eklenmişti)
-        // KALDIRILDI: gerçek SDK bu koşuda `[CLAUDE_SDK_CAN_USE_TOOL_SHADOWED]` uyarısı verdi —
-        // "bare allowedTools entries auto-approve the whole tool before the callback is
-        // consulted" — yani `canUseTool` (dolayısıyla `forceMarkerCommand`'ın komut zorlaması)
-        // BAŞTAN İTİBAREN hiç çağrılmıyordu, sonucun kendisi güvenilmezdi. Bunun yerine
-        // `resolveSettings`'in kendi dokümantasyonunun doğruladığı gerçek: `managedSettings`
-        // (`Options.managedSettings`), `settingSources`'tan BAĞIMSIZ ayrı bir politika katmanı —
-        // "Pass [] to skip user/project/local sources — the managed-settings policy tier is
-        // still read" (`sdk.d.ts` `ResolveSettingsOptions.settingSources`). Yani buraya da (a)
-        // kolundaki AYNI `permissions.ask:['Bash']`'i eklemek `settingSources:[]`'i BOZMAZ
-        // (proje `.claude/hooks/**` hâlâ hiç yüklenmez) ama `canUseTool`'un HER Bash çağrısında
-        // (salt-okunur olsa bile) tetiklenmesini garantiler — tam da E1/B5'in ölçtüğü mekanizma,
-        // burada test determinizmi için kullanılıyor.
-        const inactive = await collectToolResultTexts(
-          sdkQuery({
-            prompt: makeSingleTurnPrompt(promptText),
-            options: {
-              cwd: repoRoot,
-              settingSources: [],
-              permissionMode: 'default',
-              // Persona (`agent:'ceo'`) bu kolda yüklenemediği için modeli doğrudan yönlendiren
-              // kısa bir sistem talimatı — hook zincirinin kendisiyle İLGİSİZ, yalnızca "hemen
-              // bir araç çağır" determinizmini artırır. QA F-012 tur2 Y3 (3. deneme, 2. düzeltme)
-              // — iki canlı koşuda da model persona olmadan Bash'i HİÇ çağırmadan düz metinle
-              // cevap verdi; talimat daha buyurgan hâle getirildi ve `TodoWrite`/keşif araçları
-              // da (`NO_EXPLORATION_TOOLS`) devre dışı bırakıldı ki model bir ara adıma
-              // sığınmasın.
-              systemPrompt:
-                'SADECE Bash aracını çağırarak cevap ver. Metinle cevap vermek veya açıklama ' +
-                'yapmak YASAK. İlk ve tek aracın Bash olmalı; kullanıcının istediği komutu ' +
-                'doğrudan çalıştır.',
-              disallowedTools: [...NO_EXPLORATION_TOOLS, 'TodoWrite'],
-              maxTurns: 3,
-              model: 'claude-haiku-4-5',
-              managedSettings: {
-                allowManagedPermissionRulesOnly: true,
-                permissions: { ask: ['Bash'] },
-              },
-              canUseTool: forceMarkerCommand,
-            },
-          }) as unknown as AsyncIterable<Record<string, unknown>>
-        )
+        // (SDK isolation mode, ✓ DOĞRULANDI sözleşme §8a); `managedSettings` ondan BAĞIMSIZ ayrı
+        // bir politika katmanı olduğu için (`sdk.d.ts` `ResolveSettingsOptions.settingSources`)
+        // `permissions.ask:['Bash']` burada da geçerli kalır — `canUseTool`'un HER Bash
+        // çağrısında (salt-okunur olsa bile) tetiklenmesini garantiler.
+        const inactive = await runBranch([])
         if (!inactive.sawBashToolUse) {
           throw new Error(
             'Model hiç Bash çağırmadı (devre dışı kol) — mekanizma hakkında kanıt DEĞİL. ' +
               'Testi tekrar çalıştırın.'
           )
         }
-        if (!proposedMarkerCommand(inactive.proposedBashCommands)) {
-          throw new Error(
-            'Model işaretleyici komutu (npm publish) ÖNERMEDİ (devre dışı kol) — mekanizma ' +
-              `hakkında hiçbir şey söylenemez. Önerilen komut(lar): ` +
-              `${JSON.stringify(inactive.proposedBashCommands)}. Testi tekrar çalıştırın.`
-          )
-        }
         const blockedInactive = inactive.toolResultTexts.some((t) => t.includes('Engellendi'))
 
-        expect(blockedActive).toBe(true)
+        // Aktif kolda: canlı oturumun kararı, AYNI ham komutla doğrudan çağrılan hook
+        // betiğinin kararıyla (ground truth) BİREBİR eşleşmeli — model HANGİ komutu önerirse
+        // önersin (tehlikeli ya da zararsız), bu karşılaştırma her zaman anlamlıdır.
+        expect(blockedActive).toBe(activeGroundTruth.blocked)
+        // Devre dışı kolda: hook hiç yüklenmediği için karar HER ZAMAN "engellenmedi" olmalı —
+        // ground truth'tan bağımsız (bu koldan tanım gereği hiçbir proje hook'u çalışmaz).
         expect(blockedInactive).toBe(false)
       },
       // QA F-012 tur 2 Y3 düzeltmesi — bu test İKİ art arda tam oturum çalıştırıyor; eski

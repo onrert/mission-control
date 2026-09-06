@@ -200,7 +200,7 @@ describe('chat API — mutasyon 5 (canUseTool bekler, K3)', () => {
 })
 
 describe("chat API — mutasyon 7 (asenkron handler kendi try/catch'ini taşır)", () => {
-  it('bozuk JSON gövdesi 2 saniye içinde 400 döner, asılı kalmaz', async () => {
+  it('bozuk JSON gövdesi 2 saniye içinde 400 döner, asılı kalmaz (iç try/catch)', async () => {
     const handle = await startServer(dataDir)
     try {
       const start = Date.now()
@@ -211,6 +211,27 @@ describe("chat API — mutasyon 7 (asenkron handler kendi try/catch'ini taşır)
       })
       const elapsed = Date.now() - start
       expect(res.status).toBe(400)
+      expect(elapsed).toBeLessThan(2000)
+    } finally {
+      await stopServer(handle)
+    }
+  })
+
+  // Yukarıdaki test yalnızca `JSON.parse`'ın kendi İÇ try/catch'ini ölçer (mutasyon 7 dış
+  // try/catch'i kaldırırsa bile bu test yeşil kalır — dış try/catch'i gerçekten ölçmek için
+  // hatanın İÇ try'ın dışında (readBody'nin `body_too_large` reddi) oluşması gerekir).
+  it('65536 baytı aşan gövde 2 saniye içinde yanıtlanır, asılı kalmaz (dış try/catch)', async () => {
+    const handle = await startServer(dataDir)
+    try {
+      const oversized = JSON.stringify({ text: 'x'.repeat(70000) })
+      const start = Date.now()
+      const res = await fetch(`${handle.base}/api/chat/message`, {
+        method: 'POST',
+        headers: writeHeaders(),
+        body: oversized,
+      })
+      const elapsed = Date.now() - start
+      expect(res.status).toBeGreaterThanOrEqual(400)
       expect(elapsed).toBeLessThan(2000)
     } finally {
       await stopServer(handle)

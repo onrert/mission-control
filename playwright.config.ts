@@ -31,7 +31,11 @@ export default defineConfig({
     timeout: 120_000,
     // F-012 — chat kapalı: bu webServer'ın gerçek `@anthropic-ai/claude-agent-sdk` `query()`'si
     // enjekte etmesi mümkün değil (Playwright ayrı bir süreç başlatıyor), varsayılan açık kalırsa
-    // her `npm run e2e` gerçek, ÜCRETLİ bir Claude oturumu açardı.
+    // her `npm run e2e` gerçek, ÜCRETLİ bir Claude oturumu açardı. QA tur 2 Y2 düzeltmesi —
+    // bu artık YALNIZCA `npm start`'ın (SUNUCU süreci) `MC_CHAT_ENABLED`'ı; `npm run build`
+    // (istemci paketi) bu değişkeni HİÇ okumuyor (vite.config.ts'in `define`'ı kaldırıldı) —
+    // yani bu ortam değişkeni `dist/`'i kalıcı olarak "sohbetsiz" bırakmıyor, yalnızca BU e2e
+    // koşusundaki sunucu sürecinin gerçek SDK oturumu açmasını engelliyor.
     env: { MC_DATA_DIR: e2eDataDir, MC_CHAT_ENABLED: '0' },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],

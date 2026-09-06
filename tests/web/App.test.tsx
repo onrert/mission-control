@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import App from '../../src/web/App'
 
@@ -79,49 +79,10 @@ describe('App (AC6 — DOMsuz statik render)', () => {
   })
 })
 
-describe('F-012 — üçüncü "Sohbet" sekmesi, MC_CHAT_ENABLED build-time bayrağı (AC10)', () => {
-  // `tests/setup/chat-disabled-by-default.ts` bu dosya import edilmeden ÖNCE `MC_CHAT_ENABLED`i
-  // '0'a sabitler — yukarıdaki üst-seviye `html` (module scope, dosyanın en başında hesaplandı)
-  // bu yüzden zaten KAPALI modu ölçüyor (2 sekme). Burada `App.tsx`'in `isChatUiEnabled()`'ı her
-  // render'da YENİDEN çağırdığı doğrulanıyor — `process.env`'i değiştirip AYNI modülü tekrar
-  // import etmeden iki farklı `renderToStaticMarkup` sonucu üretilebiliyor.
-  const original = process.env.MC_CHAT_ENABLED
-
-  afterEach(() => {
-    process.env.MC_CHAT_ENABLED = original
-  })
-
-  it('MC_CHAT_ENABLED=0 (varsayılan test ortamı) iken role="tab" sayısı 2 kalır, Sohbet DOM\'da hiç yok', () => {
-    process.env.MC_CHAT_ENABLED = '0'
-    const closedHtml = renderToStaticMarkup(<App />)
-    const headerMatch = /<header[\s\S]*?<\/header>/.exec(closedHtml)
-    expect(headerMatch![0].match(/role="tab"/g)).toHaveLength(2)
-    expect(closedHtml).not.toContain('id="tab-chat"')
-    expect(closedHtml).not.toContain('id="panel-chat"')
-    expect(closedHtml).not.toContain('>Sohbet<')
-  })
-
-  it('MC_CHAT_ENABLED=1 iken role="tab" sayısı 3\'e çıkar, Sohbet Kanban\'dan sonra gelir', () => {
-    process.env.MC_CHAT_ENABLED = '1'
-    const openHtml = renderToStaticMarkup(<App />)
-    const headerMatch = /<header[\s\S]*?<\/header>/.exec(openHtml)
-    const headerHtml = headerMatch![0]
-    expect(headerHtml.match(/role="tab"/g)).toHaveLength(3)
-    expect(headerHtml).toContain('id="tab-chat"')
-    expect(headerHtml).toContain('aria-controls="panel-chat"')
-    expect(openHtml).toContain('id="panel-chat"')
-    expect(openHtml).toContain('aria-labelledby="tab-chat"')
-    // Sıra: docs/03-ux.md:230 — "[Zaman Çizelgesi][Kanban][Sohbet]..."
-    const kanbanIndex = headerHtml.indexOf('id="tab-kanban"')
-    const chatIndex = headerHtml.indexOf('id="tab-chat"')
-    expect(kanbanIndex).toBeGreaterThan(-1)
-    expect(chatIndex).toBeGreaterThan(kanbanIndex)
-  })
-
-  it('MC_CHAT_ENABLED tanınmayan bir değer taşırsa güvenli tarafa (KAPALI) düşer', () => {
-    process.env.MC_CHAT_ENABLED = 'evet'
-    const html = renderToStaticMarkup(<App />)
-    const headerMatch = /<header[\s\S]*?<\/header>/.exec(html)
-    expect(headerMatch![0].match(/role="tab"/g)).toHaveLength(2)
-  })
-})
+// F-012 tur 2 Y2 düzeltmesi — "Sohbet" sekmesinin görünürlüğü artık `renderToStaticMarkup`
+// (efekt çalıştırmaz, bu yüzden hiçbir zaman `GET /api/chat/status`'a ulaşmaz) ile ölçülemez;
+// bu ÇALIŞMA ZAMANI davranışının kendisi `tests/web/App.chat-tab.test.tsx`'e taşındı (jsdom +
+// stub `fetch`, gerçek DOM render). Burada yalnızca (yukarıdaki testlerin zaten doğruladığı gibi)
+// `chat.status` henüz gelmemişken (statik render, efekt YOK) sekmenin hiç görünmediği — yani
+// varsayılan hâlin GÜVENLİ tarafta (kapalı) olduğu — dolaylı olarak doğrulanır: hiçbir yukarıdaki
+// AC6 testi "Sohbet" metnini beklemiyor.

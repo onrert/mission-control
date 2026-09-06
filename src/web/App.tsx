@@ -12,24 +12,6 @@ import type { ProjectListItem } from '../shared/types'
 type ActiveScreen = 'timeline' | 'settings' | 'kanban' | 'chat'
 type TabScreen = 'timeline' | 'kanban' | 'chat'
 
-/**
- * F-012 (K6/AC10) — `MC_CHAT_ENABLED` bir SUNUCU ortam değişkenidir; tarayıcı çalışma zamanında
- * `process` yoktur. `vite.config.ts`'in `define`'ı bu ifadeyi DERLEME ANINDA (o `npm run build`
- * çağrısının kendi ortamından) bir dize LİTERALİNE gömer — çalışan üretim paketinde `process`
- * referansı hiç kalmaz. Vitest ayrı bir yapılandırma kullandığı için (`vitest.config.ts`, bu
- * dosyayı `define` etmiyor) testlerde bu ifade gerçek Node `process.env`'ini okur — iki ortamda
- * da AYNI kod yolu, davranış birbirinden sapmaz. Fonksiyon her render'da yeniden çağrılır (modül
- * yüklenirken BİR KEZ hesaplanan bir sabit DEĞİL) ki `renderToStaticMarkup(<App/>)`'i iki farklı
- * `process.env.MC_CHAT_ENABLED` değeriyle çağıran testler (`tests/web/App.test.tsx`, AC10) aynı
- * modülü yeniden import etmeden iki farklı sonuç gözlemleyebilsin.
- */
-function isChatUiEnabled(): boolean {
-  const raw = process.env.MC_CHAT_ENABLED
-  if (raw === undefined || raw === '') return true
-  if (raw === '1') return true
-  return false
-}
-
 function buildTabs(chatEnabled: boolean): Array<{ screen: TabScreen; label: string }> {
   const tabs: Array<{ screen: TabScreen; label: string }> = [
     { screen: 'timeline', label: 'Zaman Çizelgesi' },
@@ -40,7 +22,16 @@ function buildTabs(chatEnabled: boolean): Array<{ screen: TabScreen; label: stri
 }
 
 export default function App() {
-  const chatUiEnabled = isChatUiEnabled()
+  // QA F-012 tur 2 Y2 (BLOKLAYICI) düzeltmesi — `MC_CHAT_ENABLED` artık bir ÇALIŞMA ZAMANI
+  // bilgisidir, derleme anında `vite.config.ts`'e gömülen bir sabit DEĞİL (eskiden `npm run
+  // e2e`'nin `MC_CHAT_ENABLED=0` ortamıyla derlediği `dist/` her zaman sohbetsiz kalıyordu, açık
+  // bir sunucuyla çalıştırılsa bile — `docs/qa/F-012-2026-09-06-tur2.md` §4 Y2). Sunucu zaten
+  // `GET /api/chat/status`'ta `chat_enabled`'ı bildiriyor; istemci ikinci bir kaynağa (env/derleme
+  // bayrağı) değil, doğrudan buna bakar. İlk render'da henüz yanıt gelmediği için sekme kısa bir
+  // an gizli kalabilir — bu, "sunucu ne diyorsa arayüz onu gösterir" garantisinin kaçınılmaz
+  // bedeli ve sessizce yanlış bir duruma (kapalıyken açık görünme/tersi) yeğdir.
+  const chat = useChatSession({ enabled: true })
+  const chatUiEnabled = chat.status?.chat_enabled ?? false
   const TABS = buildTabs(chatUiEnabled)
   // F-007 (Kanban gerçek ikinci sekmeyi getirdi) — `role="tablist"`/`tab`/`tabpanel` deseni,
   // roving tabindex + ok tuşu gezinmesi (sözleşme §6 madde 1, §7). Ayarlar bu desenin
@@ -51,11 +42,6 @@ export default function App() {
   const [lastTabScreen, setLastTabScreen] = useState<TabScreen>('timeline')
   const [projectsUpdate, setProjectsUpdate] = useState<ProjectListItem[] | null>(null)
   const [featuresSignal, setFeaturesSignal] = useState<{ project_id: string } | null>(null)
-
-  // F-012 §2.2 — sohbetin veri katmanı, App.tsx'in TEK `useEventStream()` çağrısına
-  // (aşağıda) `handlers` ile bağlanır; kendi `EventSource`'unu AÇMAZ (K5). `enabled: false`
-  // iken (build-time `MC_CHAT_ENABLED=0`) hiçbir ilk yükleme isteği atmaz.
-  const chat = useChatSession({ enabled: chatUiEnabled })
 
   // F-003 §2.2: tek `useEventStream()` çağrısı App kökünde — tek SSE bağlantısı. TimelineScreen
   // kendi bağlantısını açmaz, bu sonucu prop olarak alır. F-005: `onProjects` de aynı tek

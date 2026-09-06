@@ -11,14 +11,46 @@ afterEach(() => cleanup())
 // gerçek ağ isteği yapılmasın diye global `fetch`'i sahteleriz ve `window.EventSource`'u
 // `FakeEventSource` ile değiştiririz (F-003 sözleşmesi §6 "Enjekte edilebilirlik notu" App
 // seviyesinde `EventSourceImpl` prop'u almadığı için burada global override gerekir).
-function stubGlobals() {
+//
+// QA F-012 tur 2 Y2 düzeltmesi — "Sohbet" sekmesinin görünürlüğü artık derleme-anı bir bayrak
+// değil, `GET /api/chat/status`'un ÇALIŞMA ZAMANI `chat_enabled` alanı (`src/web/App.tsx`); bu
+// yüzden `chatEnabled` parametresi o uca verilecek yanıtı belirler (varsayılan kapalı — önceki
+// `MC_CHAT_ENABLED` env varsayılanıyla BİREBİR aynı davranış).
+function stubGlobals(opts: { chatEnabled?: boolean } = {}) {
+  const chatEnabled = opts.chatEnabled ?? false
   const originalFetch = window.fetch
   const originalEventSource = (window as unknown as { EventSource: unknown }).EventSource
-  window.fetch = vi.fn(async () => ({
-    ok: true,
-    status: 200,
-    json: async () => ({ success: true, data: [] }),
-  })) as unknown as typeof fetch
+  window.fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.includes('/api/chat/status')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: {
+            session_active: chatEnabled,
+            session_id: undefined,
+            busy: false,
+            api_key_barrier_tripped: false,
+            stripped_env_vars: [],
+            chat_enabled: chatEnabled,
+            api_key_helper_configured: false,
+            max_budget_usd: 20,
+            pending_permissions: [],
+          },
+        }),
+      } as Response
+    }
+    if (url.includes('/api/chat/history')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, data: { entries: [], has_more: false } }),
+      } as Response
+    }
+    return { ok: true, status: 200, json: async () => ({ success: true, data: [] }) } as Response
+  }) as unknown as typeof fetch
   ;(window as unknown as { EventSource: unknown }).EventSource = FakeEventSource
   return () => {
     window.fetch = originalFetch
@@ -215,20 +247,17 @@ describe('App.interaction — tablist ok tuşu gezinmesi (QA düzeltme turu 1: T
   })
 })
 
-describe('App.interaction — F-012 üçüncü "Sohbet" sekmesi (MC_CHAT_ENABLED=1)', () => {
-  const originalChatEnabled = process.env.MC_CHAT_ENABLED
-
-  afterEach(() => {
-    process.env.MC_CHAT_ENABLED = originalChatEnabled
-  })
-
+describe('App.interaction — F-012 üçüncü "Sohbet" sekmesi (sunucu chat_enabled:true derken, Y2)', () => {
   it("End tuşu artık son sekme olan Sohbet'i seçer (üç sekmeli tablist)", async () => {
-    process.env.MC_CHAT_ENABLED = '1'
     FakeEventSource.reset()
-    const restore = stubGlobals()
+    const restore = stubGlobals({ chatEnabled: true })
     try {
       render(<App />)
+      // Y2 düzeltmesi — sekme artık `GET /api/chat/status`'un yanıtı işlendikten SONRA belirir
+      // (bir `useEffect` fetch'i, tek mikro görev turu yetmeyebilir).
       await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
         await Promise.resolve()
       })
 
@@ -250,13 +279,14 @@ describe('App.interaction — F-012 üçüncü "Sohbet" sekmesi (MC_CHAT_ENABLED
   })
 
   it('Sohbet sekmesine tıklanınca ChatScreen görünür, diğer panel gizli kalır', async () => {
-    process.env.MC_CHAT_ENABLED = '1'
     FakeEventSource.reset()
-    const restore = stubGlobals()
+    const restore = stubGlobals({ chatEnabled: true })
     try {
       const user = userEvent.setup()
       render(<App />)
       await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
         await Promise.resolve()
       })
 

@@ -8,14 +8,14 @@ const webPort = Number(process.env.MC_WEB_PORT ?? '7334')
 export default defineConfig({
   root: 'src/web',
   plugins: [react(), tailwindcss()],
-  // F-012 — `MC_CHAT_ENABLED` sunucu tarafı bir ortam değişkenidir; tarayıcıda `process` yok,
-  // bu yüzden derleme anında (bu `npm run build` çağrısının kendi ortamından) literal bir
-  // dizgeye gömülür (`App.tsx`'in `isChatUiEnabled` fonksiyonu bunu okur). Vitest bu dosyayı
-  // KULLANMAZ (ayrı `vitest.config.ts`) — testlerde aynı ifade gerçek Node `process.env`'i
-  // okur, davranış birebir aynı kalır.
-  define: {
-    'process.env.MC_CHAT_ENABLED': JSON.stringify(process.env.MC_CHAT_ENABLED ?? ''),
-  },
+  // QA F-012 tur 2 Y2 (BLOKLAYICI) düzeltmesi — `MC_CHAT_ENABLED`'ı derleme anında bir dize
+  // literaline gömen `define` KALDIRILDI (CEO kararı F2). Eskiden `npm run e2e`'nin
+  // `webServer.command`'ı (`npm run build && npm start`) TÜM ortamı (`MC_CHAT_ENABLED:'0'` dahil)
+  // `build` adımına da uyguluyordu; bu yüzden e2e koşusundan sonra kalan `dist/` sohbet sekmesini
+  // KALICI olarak içermiyordu — sunucu `chat_enabled:true` derken bile (bkz. `docs/qa/
+  // F-012-2026-09-06-tur2.md` §4 Y2). Artık istemci bu bilgiyi `GET /api/chat/status`'un
+  // `chat_enabled` alanından ÇALIŞMA ZAMANINDA okuyor (`src/web/App.tsx`) — derlenmiş `dist/`
+  // artık hangi ortamda derlendiğinden BAĞIMSIZ, her zaman aynı davranışı sergiliyor.
   build: {
     outDir: '../../dist/web',
     emptyOutDir: true,

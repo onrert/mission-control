@@ -118,7 +118,7 @@
         ]
       },
       {
-        "matcher": "mcp__higgsfield__.*",
+        "matcher": "mcp__(?:[Hh]iggsfield|21483710-7850-4248-ab7a-1fb9bc4656ee)__.*",
         "hooks": [
           {
             "type": "command",

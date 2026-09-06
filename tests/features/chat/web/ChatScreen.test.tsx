@@ -431,3 +431,26 @@ describe('ChatScreen — geçmiş sayfalama (madde 7)', () => {
     expect(calls.some((c) => c.url.includes('before_seq=5'))).toBe(true)
   })
 })
+
+describe('ChatScreen — B1/D7 çiti: onChatSync (EventSource "open" olayı) geçmiş/durumu yeniden çeker', () => {
+  it('handlers.onChatSync() çağrılınca history+status GET sayısı artar (yeniden bağlanma senkronu)', async () => {
+    const { fetchMock } = stubFetch()
+    const chatRef = await renderHarness()
+    const countBefore = fetchMock.mock.calls.filter(
+      ([input]) =>
+        String(input).includes('/api/chat/history') || String(input).includes('/api/chat/status')
+    ).length
+    expect(countBefore).toBeGreaterThan(0)
+
+    await act(async () => {
+      chatRef.current!.handlers.onChatSync()
+      await Promise.resolve()
+    })
+
+    const countAfter = fetchMock.mock.calls.filter(
+      ([input]) =>
+        String(input).includes('/api/chat/history') || String(input).includes('/api/chat/status')
+    ).length
+    expect(countAfter).toBeGreaterThan(countBefore)
+  })
+})

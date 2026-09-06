@@ -53,6 +53,7 @@ export interface RunAppOptions {
   loadServerModuleFn?: () => any
   trayIconPath?: string
   fsImpl?: unknown
+  skipDefaultAutostart?: boolean
 }
 
 export type RunAppResult =

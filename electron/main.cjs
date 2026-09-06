@@ -143,6 +143,11 @@ async function runApp(electronApi, options = {}) {
     loadServerModuleFn = loadServerModule,
     trayIconPath = path.join(__dirname, 'assets', 'tray-icon.png'),
     fsImpl = fs,
+    // E2E duman testi (§8) gerçek `electron.exe` + gerçek `app.getLoginItemSettings`/
+    // `setLoginItemSettings` kullanır — bu gerçek Windows kayıt defterini (Run anahtarı)
+    // değiştirir. Test izolasyonu içindir, üretimde HİÇBİR ZAMAN set edilmez (yalnızca
+    // `MC_SKIP_AUTOSTART_DEFAULT=1` ortam değişkeniyle bootstrap'tan geçirilir).
+    skipDefaultAutostart = false,
   } = options
 
   // §3 — tek örnek. Port kontrolünden ÖNCE ve BAĞIMSIZ: `false` dönerse hiçbir şey başlatılmadan
@@ -215,11 +220,13 @@ async function runApp(electronApi, options = {}) {
 
   // G1 (CEO kararı) — varsayılan AÇIK ama GÖRÜNÜR: ilk açılışta açılır ve kullanıcıya
   // bildirilir (tepsi balonu, yalnızca Windows'ta desteklenir — ADR-009 zaten Windows-only).
-  const justEnabledAutostart = ensureDefaultAutostart(
-    app,
-    path.join(app.getPath('userData'), 'autostart-initialized.json'),
-    fsImpl
-  )
+  const justEnabledAutostart = skipDefaultAutostart
+    ? false
+    : ensureDefaultAutostart(
+        app,
+        path.join(app.getPath('userData'), 'autostart-initialized.json'),
+        fsImpl
+      )
   rebuildTrayMenu()
   tray.on('click', showAndFocus)
   if (justEnabledAutostart && typeof tray.displayBalloon === 'function') {
@@ -246,8 +253,22 @@ async function runApp(electronApi, options = {}) {
 if (require.main === module) {
   const electron = require('electron')
   const { app, BrowserWindow, Tray, Menu, dialog } = electron
-  app.whenReady().then(() => {
-    void runApp({ app, BrowserWindow, Tray, Menu, dialog })
+  // Test izolasyonu (E2E duman testi, sözleşme §8): gerçek kullanıcının `%APPDATA%` klasörünü
+  // ve gerçek Windows açılış kaydını KİRLETMEMEK için iki izole edici kapı. Üretimde (normal
+  // çift tıklama) hiçbiri set edilmez, davranış tamamen değişmeden kalır.
+  if (process.env.MC_ELECTRON_USER_DATA_DIR) {
+    app.setPath('userData', process.env.MC_ELECTRON_USER_DATA_DIR)
+  }
+  app.whenReady().then(async () => {
+    const result = await runApp(
+      { app, BrowserWindow, Tray, Menu, dialog },
+      { skipDefaultAutostart: process.env.MC_SKIP_AUTOSTART_DEFAULT === '1' }
+    )
+    // `tests/e2e/electron-smoke.spec.ts` İÇİN TEK erişim noktası: tepsi menüsü OS-native olduğu
+    // için Playwright onu tıklayamaz (bilinen kısıt); test `electronApp.evaluate(...)` ile bu
+    // globali okuyup `shutdownViaTray()`'i doğrudan çağırır. Üretim kodunun hiçbir yeri bu
+    // globali okumaz — yalnızca testin main-process tarafına açtığı bir kapı.
+    global.__missionControlTestHook = result
   })
 }
 

@@ -13,5 +13,15 @@
     "noEmit": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "tests", "vite.config.ts", "vitest.config.ts", "playwright.config.ts", "playwright.dev.config.ts", "eslint.config.js"]
+  "include": [
+    "src",
+    "tests",
+    "electron",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts",
+    "playwright.dev.config.ts",
+    "playwright.electron.config.ts",
+    "eslint.config.js"
+  ]
 }

@@ -11,7 +11,16 @@ import { defineConfig } from '@playwright/test'
  */
 export default defineConfig({
   testDir: 'tests/e2e',
-  testMatch: ['electron-smoke.spec.ts'],
-  workers: 1,
+  testMatch: ['electron-smoke.spec.ts', 'electron-autostart-smoke.spec.ts'],
+  // Her dosya kendi worker'ında (bkz. `electron-autostart-smoke.spec.ts` başlık notu — aynı
+  // worker'da art arda üçüncü gerçek `electron.exe` başlatması ölçülebilir şekilde kararsızdı).
+  // Bir dosya içindeki testler yine SERİ çalışır (Playwright varsayılanı); yalnızca iki dosya
+  // paralel worker'lara dağılır.
+  workers: 2,
   timeout: 60_000,
+  // `retries` KASITLI OLARAK yok — diğer `playwright*.config.ts` dosyalarıyla aynı (varsayılan
+  // 0). CLAUDE.md'nin "retry kararsızlığı gizler" dersi: bir test retry olmadan kararsızsa bu
+  // BULGUDUR, config'te saklanmaz. Önceki `retries: 2` denemesi kaldırıldı (CEO kararı,
+  // 2026-09-06) — kök neden düzeltilmeden retry eklemek testi yeşil GÖSTERİR ama hiçbir şey
+  // ÖLÇMEZ.
 })

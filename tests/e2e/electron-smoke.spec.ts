@@ -184,3 +184,8 @@ test.describe('electron masaüstü kabuğu — uçtan uca duman testi (F-014)', 
     }
   })
 })
+
+// H5/Ö1/Ö2 (açılışta başlama, "açık VE görünür") gerçek pencere kanıtı `electron-autostart-
+// smoke.spec.ts`'e taşındı — bu dosyayla aynı worker'da art arda üçüncü gerçek `electron.exe`
+// başlatması olarak çalıştırıldığında ölçülebilir şekilde kararsız olduğu için ayrı bir dosyaya
+// (ve dolayısıyla taze bir worker'a) izole edildi.

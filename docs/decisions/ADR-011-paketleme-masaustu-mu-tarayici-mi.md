@@ -82,3 +82,25 @@ paketleme bu kararı **karşılamaz**.
   etmeli (geri dönüş yolu).
 - **Sohbet varsayılan olarak açık** gelmeli — kullanıcı `MC_CHAT_ENABLED` diye bir şey bilmek
   zorunda kalmamalı (F-012'nin çalıştırma sürtünmesi bu kararı tetikleyen şeyin parçasıydı).
+
+### Ek karar — "Bilgisayar açılışında başlat" varsayılanı **AÇIK** (2026-09-06, CEO)
+
+F-014 kod turu bunu haklı olarak "yalnızca çıkarım, yazılı onayı yok" diye işaretledi. Kayda
+geçiyor.
+
+**Karar:** varsayılan **AÇIK**. **Ama sessizce yerleşmez:** kullanıcı ilk açılışta bunun açık
+olduğunu **görür** ve **tek tıkla** kapatabilir.
+
+**Gerekçe:** kullanıcının bu feature'ı istemesinin sebebi buydu — *"sürekli terminalde server'ı
+başlatmak istemiyorum."* Varsayılanı KAPALI yapmak, kullanıcıyı her açılışta uygulamayı elle
+başlatmaya zorlardı; yani terminal komutunu bir masaüstü kısayoluyla değiştirmiş olurduk, asıl
+şikâyeti çözmezdik. Bu ADR'nin kendi tespiti de aynı yere bakıyor: *"asıl mesele pencere değil:
+Windows açılışında başlayıp sistem tepsisinde sürekli dinlemek."*
+
+**Karşı ağırlık:** kullanıcının makinesinin açılış davranışını değiştirmek küçük bir müdahale
+değildir. Bu yüzden "açık" yetmez, **görünür olmak zorunda** — gizli varsayılan değil, ilk
+açılışta fark edilen ve geri alınabilen bir varsayılan. Kabul kriteri bu iki şartı **birlikte**
+taşır.
+
+**Not (F-014 ölçümü):** açılış anahtarının gerçekten yazıldığı uçtan uca doğrulandı ve test
+sonrası `reg delete` ile geri alındı — geliştirme makinesinde kalıcı bir değişiklik bırakılmadı.

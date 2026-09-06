@@ -182,8 +182,21 @@ async function runApp(electronApi, options = {}) {
   const serverModule = loadServerModuleFn()
   const server = serverModule.createServer(port, dataDir)
 
+  // Gerçek Electron E2E duman testiyle bulunan hata: `app.quit()` çağrıldığında Electron hâlâ
+  // var olan (yalnızca gizli) pencereyi de kapatmaya çalışır ve bu, aşağıdaki `close`
+  // handler'ını TEKRAR tetikler — handler koşulsuz `preventDefault()` çağırdığı için `app.quit()`
+  // sessizce İPTAL OLUYORDU, `app.on('before-quit')`/`will-quit` hiç ateşlenmiyordu ve tepsi
+  // "Çıkış" gerçek bir kapanma ÜRETMİYORDU (Playwright `waitForEvent('close')` süresiz asılı
+  // kaldı, birim testleri bunu YAKALAYAMADI çünkü sahte `app.quit()` pencereyi tekrar kapatmayı
+  // simüle etmiyor — bu satırın varlığı tam olarak bu yüzden gerçek `electron.exe` duman testi
+  // gerektiriyordu, sözleşme §8'in kendi gerekçesi). Çözüm: yalnızca tepsi "Çıkış" akışında
+  // `isQuitting` bayrağı önceden `true` yapılır; `close` handler bu bayrak açıkken müdahale
+  // etmez, pencerenin gerçekten kapanmasına izin verir.
+  let isQuitting = false
+
   // §2 — tepsi "Çıkış": gerçek `shutdown()` çağrılır (mutasyon M3 hedefi, sözleşme §8), callback'te `app.quit`.
   const shutdownViaTray = () => {
+    isQuitting = true
     serverModule.shutdown(server, server.sseHub, () => app.quit())
   }
 
@@ -196,8 +209,10 @@ async function runApp(electronApi, options = {}) {
   })
   mainWindow.loadURL(`http://127.0.0.1:${port}`)
   // §2 — pencere kapatma (X): sunucu çalışmaya devam eder, pencere yalnızca gizlenir
-  // (mutasyon M4 hedefi, sözleşme §8).
+  // (mutasyon M4 hedefi, sözleşme §8). `isQuitting` AÇIKKEN (tepsi "Çıkış" akışı) müdahale
+  // etmez — aksi hâlde `app.quit()`'in kendi pencere kapatma denemesi burada engellenir.
   mainWindow.on('close', (event) => {
+    if (isQuitting) return
     event.preventDefault()
     mainWindow.hide()
   })
@@ -250,8 +265,18 @@ async function runApp(electronApi, options = {}) {
   }
 }
 
-if (require.main === module) {
-  const electron = require('electron')
+// Bootstrap yalnızca bu dosya GERÇEK bir Electron süreci OLARAK çalışırken tetiklenir.
+// `require.main === module` burada GÜVENİLMEZ: Electron kendi uygulama giriş dosyasını
+// kendi modül yükleyicisiyle çalıştırıyor ve `require.main`'i bu dosyaya değil kendi iç
+// bootstrap modülüne (`require.main.filename === 'electron'`) işaret edecek şekilde
+// bırakıyor (gerçek Electron 44 sürecinde ölçüldü — bu yüzden eski `require.main === module`
+// koşulu HİÇBİR ZAMAN true olmuyordu ve bootstrap asla çalışmıyordu, pencere hiç açılmıyordu).
+// Elektron'un kendi belgelenmiş tasarımı gereği `require('electron')` yalnızca GERÇEK bir
+// Electron sürecinde bir modül nesnesi döner; başka her yerde (vitest, düz node) paketin
+// kendi `index.js`'i çalıştırılabilir dosyaya giden bir YOL DİZGESİ döner (üstteki başlık
+// notu, `typeof` kontrolü zaten bunu varsayıyordu — yalnızca tetikleyici koşul yanlıştı).
+const electron = require('electron')
+if (typeof electron !== 'string') {
   const { app, BrowserWindow, Tray, Menu, dialog } = electron
   // Test izolasyonu (E2E duman testi, sözleşme §8): gerçek kullanıcının `%APPDATA%` klasörünü
   // ve gerçek Windows açılış kaydını KİRLETMEMEK için iki izole edici kapı. Üretimde (normal

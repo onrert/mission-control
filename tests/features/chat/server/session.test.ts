@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { resolveSettings } from '@anthropic-ai/claude-agent-sdk'
 import {
   createChatSession,
   isChatEnabled,
@@ -288,6 +289,28 @@ describe('createChatSession — D11 bütçe tavanı (mutasyon 14)', () => {
     expect(session.getStatus().session_active).toBe(false)
     expect(broadcasts.some((b) => b.name === 'chat_status')).toBe(true)
     expect(broadcasts.some((b) => b.name === 'chat_error')).toBe(true)
+  })
+})
+
+describe('K3 çevrimdışı çit (mutasyon 13, Y-B1) — allowManagedPermissionRulesOnly gerçekten etkili', () => {
+  it("buildOptions'ın ürettiği managedSettings, SDK'nın kendi resolveSettings motorunda etkili olur", async () => {
+    // Kaynaktan türetilmiş: burada literal bir obje YAZILMIYOR, `session.ts`'in gerçek
+    // buildOptions() çıktısından (sahte query()'e geçirilen `options.managedSettings`) okunuyor.
+    // Bu turun mutasyonu (D6/D10, F-012-kod-turu-A-notlari.md) bu alanın `permissions` içine
+    // gömülürse veya kaldırılırsa `resolveSettings`'in `managed` kaynağı hiç belirmez.
+    const { getHandles } = await bootstrapSession()
+    const opts = getHandles()[0]!.options
+    const resolved = await resolveSettings({
+      cwd: CHAT_SESSION_CWD,
+      managedSettings: opts.managedSettings,
+    })
+    expect(resolved.effective.allowManagedPermissionRulesOnly).toBe(true)
+    const managedSource = resolved.sources.find((s) => s.source === 'managed')
+    expect(managedSource).toBeDefined()
+    expect(
+      (managedSource!.settings as { allowManagedPermissionRulesOnly?: boolean })
+        .allowManagedPermissionRulesOnly
+    ).toBe(true)
   })
 })
 

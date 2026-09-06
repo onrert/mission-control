@@ -339,12 +339,18 @@ describe('chat API — mutasyon 9 / AC10 (MC_CHAT_ENABLED=0 zarif davranış)', 
     try {
       const res = await fetch(`${handle.base}/api/chat/history`)
       expect(res.status).toBe(503)
+      const body = (await res.json()) as { error: { code: string } }
+      expect(body.error.code).toBe('chat_disabled')
     } finally {
       await stopServer(handle)
     }
   })
 
-  it('POST /api/chat/message, /interrupt, /permission, /restart → 503 (500/çökme değil)', async () => {
+  // `errorCode: 'session_not_ready'` de 503 döner (handlers.ts) — yalnızca durum kodunu
+  // kontrol etmek `isChatEnabled` kaldırılırsa (mutasyon 9) hâlâ 503 verip yeşil kalabilir
+  // (totoloji, D9 uyarısı). Gövdedeki `error.code`'un gerçekten `chat_disabled` OLDUĞUNU da
+  // assert ederek bu ayrım netleştirilir.
+  it("POST /api/chat/message, /interrupt, /permission, /restart → 503 error.code:'chat_disabled' (500/çökme değil)", async () => {
     const handle = await startServer(dataDir)
     try {
       const msgRes = await fetch(`${handle.base}/api/chat/message`, {
@@ -353,6 +359,9 @@ describe('chat API — mutasyon 9 / AC10 (MC_CHAT_ENABLED=0 zarif davranış)', 
         body: JSON.stringify({ text: 'x' }),
       })
       expect(msgRes.status).toBe(503)
+      expect(((await msgRes.json()) as { error: { code: string } }).error.code).toBe(
+        'chat_disabled'
+      )
 
       const intRes = await fetch(`${handle.base}/api/chat/interrupt`, {
         method: 'POST',
@@ -360,6 +369,9 @@ describe('chat API — mutasyon 9 / AC10 (MC_CHAT_ENABLED=0 zarif davranış)', 
         body: '{}',
       })
       expect(intRes.status).toBe(503)
+      expect(((await intRes.json()) as { error: { code: string } }).error.code).toBe(
+        'chat_disabled'
+      )
 
       const permRes = await fetch(`${handle.base}/api/chat/permission`, {
         method: 'POST',
@@ -367,6 +379,9 @@ describe('chat API — mutasyon 9 / AC10 (MC_CHAT_ENABLED=0 zarif davranış)', 
         body: JSON.stringify({ request_id: 'x' }),
       })
       expect(permRes.status).toBe(503)
+      expect(((await permRes.json()) as { error: { code: string } }).error.code).toBe(
+        'chat_disabled'
+      )
 
       const restartRes = await fetch(`${handle.base}/api/chat/restart`, {
         method: 'POST',
@@ -374,6 +389,9 @@ describe('chat API — mutasyon 9 / AC10 (MC_CHAT_ENABLED=0 zarif davranış)', 
         body: '{}',
       })
       expect(restartRes.status).toBe(503)
+      expect(((await restartRes.json()) as { error: { code: string } }).error.code).toBe(
+        'chat_disabled'
+      )
     } finally {
       await stopServer(handle)
     }

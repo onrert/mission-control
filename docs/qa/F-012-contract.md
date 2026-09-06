@@ -249,3 +249,110 @@ her `request_id` **yalnızca bir kez** çözülebilir (ikinci POST `404` döner 
 seviyesindeki karşılığıdır: sunucu hiçbir zaman kendi başına `{behavior:'allow'}` üretmez, yalnızca
 panelden gelen kararı **yönlendirir**.
 
+---
+
+## 5. Akış protokolü (SSE)
+
+**K5 — mimari karar: mevcut `/api/stream` bağlantısı yeniden kullanılır, ikinci `EventSource`
+AÇILMAZ.** Gerekçe (ölçülmüş, SPIKE-002 §5.2): ADR-004 zaten "tek bağlantı, çok kanal" desenini
+kurmuş (`hello`/`event`/`features`/`projects`/`gates`/`resync`, ✓ DOĞRULANDI) ve kanal listesi
+"zaten genişletilebilir" olarak tasarlanmış; sohbet trafiği de tek yönlü (sunucu→tarayıcı) olduğu
+için WebSocket'e geçmek için hiçbir sebep yok. Yeni kanal adları: `chat_message`,
+`chat_user_echo`, `chat_tool`, `chat_permission_request`, `chat_permission_resolved`,
+`chat_status`, `chat_error`.
+
+**Sıralama:** tek bir sunucu içi `for await` döngüsü (`session.ts`) SDK mesaj akışını **sırayla**
+tüketir ve her mesajı işlerken `hub.broadcast(...)` çağırır — Node tek iş parçacıklı olduğu için
+(mevcut `ingest.ts`/`hub.ts` ile aynı garanti, ✓ DOĞRULANDI) yayın sırası **üretim sırasıyla
+birebir aynıdır**, ek bir kilitleme/kuyruklama gerekmez.
+
+**`id:`/`Last-Event-ID` kararı — bağlayıcı ve ADR-004'ten sapma:** yeni `chat_*` çerçevelerinin
+**hiçbiri `id:` satırı taşımaz** (`hello`/`resync` ile aynı desen, `formatSseFrame(name, data)` —
+`id` parametresi **verilmez**). Gerekçe, ölçülmüş bir kısıttan geliyor: WHATWG `EventSource`
+spesifikasyonu **tek bir** "son olay kimliği" tamponu tutar — bu tampon, adı ne olursa olsun `id:`
+taşıyan **her** çerçeveyle güncellenir (SPIKE §5.2'nin `hello`'ya sahte `id` koymama gerekçesiyle
+**aynı mekanizma**, `hub.ts:4-9` yorumu ✓ DOĞRULANDI). Eğer `chat_message` kendi `seq`'inden bir
+`id:` taşısaydı ve `event` kanalının `seq`'i **farklı bir sayı uzayında** olsaydı, bir yeniden
+bağlanmada `Last-Event-ID` hangi uzaya ait olduğu belirsiz tek bir sayı gönderirdi —
+`computeResyncDecision` bunu yanlış yorumlardı (ya gereksiz `resync` ya da **sessiz boşluk**, bu
+deponun en pahalı hata sınıfı). İki uzayı **aynı** sayaçtan beslemek (chat mesajlarını
+`store.append()`'e yazmak) da reddedildi: `jsonl-store` `EventRecord` şemasına kilitli (§2.4) ve
+hook-olay retention/`corrupt_lines` sayaçlarıyla sohbeti karıştırmak kavramsal olarak yanlış.
+
+**Sonuç — kopma/telafi (bağlayıcı):** `chat_*` kanalı **sıra garantisi vermez** (ADR-004 karar
+5'in "yalnızca `event` kanalı sıra garantisi verir" cümlesi **korunuyor**, genişletilmiyor — bu
+feature o cümleyi ihlal etmiyor, aksine ona **uyuyor**: sıra garantisi istemeyen bir kanal
+ekliyor). Panel, `/api/stream` her (yeniden) bağlandığında (`hello` çerçevesini gördüğünde) **her
+zaman** `GET /api/chat/history`'yi çağırıp sohbet durumunu **tam olarak** yeniden yükler — hook
+olay akışının `Last-Event-ID` tabanlı kısmi telafisinden **bağımsız**, ayrı bir REST çağrısı.
+Bu, "sohbette kaçan bir mesaj telafi edilemezse kullanıcı fark etmez" riskini (SPIKE-002 §5.2)
+yapısal olarak ortadan kaldırır: kayıp bir SSE çerçevesi olsa bile bir sonraki `hello` tam
+senkronizasyon tetikler. Bedel: her yeniden bağlanmada küçük bir REST çağrısı (sohbet metni kısa
+ömürlü/az hacimli, `MAX_EVENTS`/ring gibi bir tavana ihtiyaç yok, §6).
+
+**Yarım cevap kesilirse ne olur (iki senaryo, ayrı ayrı):**
+1. **Tarayıcı bağlantısı kopar, sunucu süreci hayatta:** asistan cevabı üretmeye **sunucu
+   tarafında devam eder** (SSE aboneliğinden bağımsız, `for await` döngüsü tarayıcıya değil
+   `hub`'a yazar). Tarayıcı yeniden bağlanınca `hello` + `GET /api/chat/history` ile son duruma
+   (tamamlanmışsa tam metin, hâlâ üretiliyorsa `status:'streaming'` işaretli kısmi metin) döner.
+2. **Sunucu süreci çöker/yeniden başlar (turun ortasında):** SDK alt süreci de ölür (ebeveyn/çocuk
+   ilişkisi), tur **tamamlanmadan** kaybolur — bu, "Claude Code kapanınca da tur ölür" bugünkü
+   davranışıyla **aynıdır** (SPIKE-002 §5.5 ⊢ ÇIKARIM). `history-log.ts`'te bu turdan kalan
+   `status:'streaming'` girdi, bir sonraki `init()`'te `markDanglingAsInterrupted()` tarafından
+   `status:'interrupted'`e çevrilir (§6) — panel sonsuza kadar dönen bir "yazıyor…" göstergesi
+   **göstermez**.
+
+**`chat_message` delta biçimi:** `{ turn_id: string, delta: string, done: boolean }` — SDK'nın
+`stream_event`/parça mesajlarından **metin** alanı çıkarılıp gönderilir (tam SDK mesaj zarfı
+panelin bağlamına **sızmaz** — K3'ün "iç metadata kullanıcıya sızmamalı" gözlemiyle aynı gerekçe,
+SPIKE-002 §4/M3'teki "bu tool_result'ı asla alıntılama" iç talimatı ✓ DOĞRULANDI, biz zaten yalnızca
+görüntülenecek metni çıkarıp gönderiyoruz, ham mesaj asla tarayıcıya gitmiyor).
+
+**`chat_tool` alt agent görünürlüğü:** `parent_tool_use_id` alanı SDK mesajında **varsa** olduğu
+gibi iletilir (SPIKE-002 M3'te ✓ DOĞRULANDI: alt agent mesajları bu alanla etiketleniyor) — panel
+bunu kullanarak "Explorer agent çalışıyor" gibi bir ağaç gösterebilir (görsel detay UX'in konusu).
+
+---
+
+## 6. Kalıcılık
+
+**Kaynak gerçeği ayrımı (bağlayıcı):** oturumun **kendisinin** (modelin bağlamı, "devam
+ettirilebilirlik") kaynak gerçeği SDK'nın kendi transkriptidir (`~/.claude/projects/<encoded-cwd>/
+<session-id>.jsonl`, ✓ DOĞRULANDI SPIKE-002 §5.5) — panel bunu **ayrıştırmaz**, yalnızca
+`resume: <session_id>` çağırır (K1'in tek-oturum basitliğiyle uyumlu: tek bir `session_id`,
+`<dataDir>/chat/session-id.txt` gibi küçük bir dosyada saklanır). Panelin **görüntüleme**
+geçmişinin (kullanıcının ekranda gördüğü mesaj listesi) kaynak gerçeği ise kendi
+`history-log.ts`'idir — bu, "SDK'nın belgesiz transkript formatını ayrıştırmayalım" kararının
+(SPIKE-002 §5.5) doğal sonucu: zaten sunucu sürecinden **canlı geçen** her mesajı kendi basit
+şemamızla kaydediyoruz, geriye dönük ayrıştırmaya hiç gerek kalmıyor.
+
+**`ChatLogEntry` şekli** (`src/shared/types.ts`'e eklenir):
+```ts
+interface ChatLogEntry {
+  seq: number            // history-log.ts'in kendi monoton sayacı — SSE seq'i DEĞİL, karışmaz
+  turn_id: string
+  role: 'user' | 'assistant' | 'system'
+  kind: 'text' | 'tool' | 'permission_request' | 'permission_resolved' | 'error'
+  text?: string
+  status: 'streaming' | 'done' | 'interrupted'
+  ts: string
+}
+```
+
+**Retention:** v1'de **yok** — "ileride lazım olur" kodu yazılmıyor (Karpathy §2). Sohbet metni
+hacim olarak hook-olay firehose'una kıyasla küçüktür (kullanıcı başına, tek oturum); dosya
+büyürse gelecekte ayrı bir feature retention ekler. Bu, bilinen/kabul edilen bir risktir — §13'te
+açık soru olarak da not edilebilir ama engelleyici değildir.
+
+**Panel açılınca ne yükleniyor:** `GET /api/chat/history` → `history-log.ts` dosyasının tamamı
+(retention olmadığı için "tamamı" sınırlı kalıyor, yukarıdaki risk kabulüyle tutarlı) sırayla
+render edilir; `status:'streaming'` olan varsa panel "hâlâ yazıyor" gösterir ve SSE'den gelecek
+devamı bekler.
+
+**Devam ettirme (resume):** ✓ DOĞRULANDI, SDK `resume: <session_id>` seçeneğini destekliyor.
+Sunucu yeniden başladığında (K1 tek oturum, tek dosyada saklı `session_id` varsa) yeni `query()`
+çağrısı `resume` ile açılır — model, kendi tarafında konuşmanın **tamamına** sahiptir (SDK'nın
+kendi transkriptinden); panelin `history-log.ts`'i ise yalnızca **görüntüleme** amaçlıdır ve iki
+kaynağın round-trip'te birebir aynı olması **gerekmez** (biri model bağlamı, diğeri ekran metni) —
+bu ayrım açıkça yazılmalı ki gelecekte biri "neden ikisi farklı" diye şaşırmasın.
+

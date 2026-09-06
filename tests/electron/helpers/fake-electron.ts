@@ -10,8 +10,15 @@ export function createFakeApp(initialOpenAtLogin = false) {
   const listeners: Record<string, Array<(...args: unknown[]) => void>> = {}
   let openAtLogin = initialOpenAtLogin
   return {
+    // QA F-014 H1 düzeltmesi — `resolveProjectDir`'in `!app.isPackaged` dalını sessizce test
+    // etmek için varsayılan `false` (paketlenmemiş): mevcut testlerin hiçbiri bunu set etmez,
+    // bu yüzden hepsi gerçek depo kökünü kullanmaya devam eder (davranış DEĞİŞMEZ).
+    isPackaged: false,
     requestSingleInstanceLock: vi.fn(() => true),
     quit: vi.fn(),
+    // QA F-014 H3 düzeltmesi — başlatma hatasında `app.exit(1)` çağrılır (zombi bırakmadan
+    // KESİN çıkış), `app.quit()` DEĞİL.
+    exit: vi.fn(),
     on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
       ;(listeners[event] ??= []).push(handler)
     }),
@@ -29,6 +36,12 @@ export function createFakeApp(initialOpenAtLogin = false) {
 export type FakeApp = ReturnType<typeof createFakeApp>
 
 export class FakeBrowserWindow {
+  /** QA F-014 H2 düzeltmesi — `showFatalErrorWindow`/`showAutostartEnabledNotice` gerçek bir
+   *  `BrowserWindow` oluşturuyor mu (B1 dersi: `dialog.showErrorBox` DEĞİL) diye testlerin
+   *  doğrulayabilmesi için oluşturulan HER örnek burada birikir. Testler arası state sızmasın
+   *  diye `resetFakeBrowserWindowInstances()` ile temizlenmeli. */
+  static instances: FakeBrowserWindow[] = []
+
   handlers: Record<string, (...args: unknown[]) => void> = {}
   hidden = false
   destroyed = false
@@ -41,12 +54,27 @@ export class FakeBrowserWindow {
   })
   focus = vi.fn()
   restore = vi.fn()
-  constructor(public opts: unknown) {}
+  constructor(public opts: unknown) {
+    FakeBrowserWindow.instances.push(this)
+  }
   loadURL(url: string) {
     this.loadedUrl = url
   }
   on(event: string, handler: (...args: unknown[]) => void) {
     this.handlers[event] = handler
+    // Gerçek `showFatalErrorWindow`/`showAutostartEnabledNotice` `'closed'`i kullanıcı pencereyi
+    // KAPATANA kadar bekler (B1 dersi — hemen ardından quit/exit çağırmak mesajı okunmadan
+    // kapatırdı). Testlerin sonsuza kadar asılı kalmaması için sahte pencere bunu bir sonraki
+    // microtask'ta kendiliğinden "kapatır" — üretim davranışını (pencere gerçekten gösterildi,
+    // SONRA kapandı, SONRA akış devam etti) sıralama açısından bozmadan.
+    if (event === 'closed') {
+      queueMicrotask(() => {
+        if (!this.destroyed) {
+          this.destroyed = true
+          handler()
+        }
+      })
+    }
   }
   isMinimized() {
     return false
@@ -54,6 +82,12 @@ export class FakeBrowserWindow {
   isDestroyed() {
     return this.destroyed
   }
+}
+
+/** Her testten önce çağrılmalı (yalnızca `FakeBrowserWindow.instances`'i gözlemleyen testlerde)
+ *  — statik dizi worker içindeki TÜM testler arasında paylaşılır. */
+export function resetFakeBrowserWindowInstances() {
+  FakeBrowserWindow.instances = []
 }
 
 export class FakeTray {

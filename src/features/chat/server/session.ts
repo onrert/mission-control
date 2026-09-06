@@ -15,10 +15,22 @@ import type { SseHub } from '../../../server/sse/hub'
 import type { ChatLogEntry } from '../../../shared/types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-/** `src/features/chat/server` -> repo kökü (4 seviye yukarı). `process.cwd()` KULLANILMAZ
- *  (sözleşme §3) — hook'ların göreli yolları (`.claude/settings.json`'daki `node .claude/
- *  hooks/X.cjs`) her zaman bu kökten çözülmelidir. */
-export const CHAT_SESSION_CWD = path.resolve(__dirname, '..', '..', '..', '..')
+/**
+ * QA F-014 (2026-09-06, KALDI) H1 düzeltmesi — Electron paketlenmiş kopyada bu dosyanın kendi
+ * `__dirname`'i `resources/app/...`'a çözülürdü (git yok, `docs/` yok, `.claude/settings.json`
+ * yok — hook'ların hepsi ölü koşardı). `electron/main.cjs` artık gerçek proje dizinini bulup
+ * bootstrap'tan ÖNCE `MC_CHAT_SESSION_CWD`'i set ediyor; tanımsızsa (tarayıcıdan `npm start`,
+ * testler) eski `__dirname` türetimi DEĞİŞMEDEN çalışır. `process.cwd()` hâlâ KULLANILMAZ
+ * (sözleşme §3) — hook'ların göreli yolları (`.claude/settings.json`'daki `node .claude/
+ * hooks/X.cjs`) her zaman bu kökten çözülmelidir.
+ */
+export function resolveChatSessionCwd(env: NodeJS.ProcessEnv): string {
+  const override = env.MC_CHAT_SESSION_CWD
+  if (override !== undefined && override.trim() !== '') return path.resolve(override.trim())
+  return path.resolve(__dirname, '..', '..', '..', '..')
+}
+/** `src/features/chat/server` -> repo kökü (4 seviye yukarı). */
+export const CHAT_SESSION_CWD = resolveChatSessionCwd(process.env)
 
 /** D11 — sabit gömülü değil, `MC_CHAT_MAX_BUDGET_USD`'den okunur. `isChatEnabled`'ın aynı
  *  savunmacı deseni: tanımsız/sayı-değil/`<= 0` ise güvenli varsayılana düşülür ve stderr'e

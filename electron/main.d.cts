@@ -4,13 +4,24 @@
 
 export declare const DEFAULT_PORT: number
 export declare const PORT_ERROR_TITLE: string
+export declare const HOOKS_MISSING_TITLE: string
+export declare const STARTUP_ERROR_TITLE: string
+export declare const AUTOSTART_ENABLED_MESSAGE: string
 export declare function portErrorBody(port: number): string
+export declare function hooksMissingBody(projectDir: string): string
+export declare function startupErrorBody(messageText: string): string
 export declare function resolvePortLike(raw: string | undefined, defaultPort: number): number
 export declare function isPortFree(port: number): Promise<boolean>
 export declare function ensurePortAvailable(
   port: number,
   isPortFreeFn?: (port: number) => Promise<boolean>
 ): Promise<boolean>
+export declare function resolveProjectDir(
+  app: { isPackaged?: boolean },
+  env?: NodeJS.ProcessEnv,
+  readPackagedDefaultFn?: () => string
+): string
+export declare function hasHookInfrastructure(projectDir: string, fsImpl?: unknown): boolean
 export declare function loadServerModule(): unknown
 export declare function setAutostart(app: ElectronAppLike, openAtLogin: boolean): void
 export declare function getAutostart(app: ElectronAppLike): boolean
@@ -28,8 +39,10 @@ export declare function buildTrayMenuTemplate(opts: {
 }): unknown[]
 
 export interface ElectronAppLike {
+  isPackaged?: boolean
   requestSingleInstanceLock(): boolean
   quit(): void
+  exit(code?: number): void
   on(event: string, handler: (...args: unknown[]) => void): void
   getPath(name: string): string
   getLoginItemSettings(): { openAtLogin: boolean }
@@ -53,11 +66,14 @@ export interface RunAppOptions {
   loadServerModuleFn?: () => any
   trayIconPath?: string
   fsImpl?: unknown
+  resolveProjectDirFn?: (app: ElectronAppLike, env: NodeJS.ProcessEnv) => string
+  hasHookInfrastructureFn?: (projectDir: string) => boolean
   skipDefaultAutostart?: boolean
 }
 
 export type RunAppResult =
-  | { started: false; reason: 'single-instance' | 'port-in-use' }
+  | { started: false; reason: 'single-instance' | 'port-in-use' | 'hooks-missing' }
+  | { started: false; reason: 'startup-error'; error: string }
   | {
       started: true
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,6 +86,7 @@ export type RunAppResult =
       rebuildTrayMenu: () => void
       port: number
       dataDir: string
+      projectDir: string
       justEnabledAutostart: boolean
     }
 

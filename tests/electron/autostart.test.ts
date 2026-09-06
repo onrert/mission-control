@@ -1,5 +1,10 @@
-import { describe, expect, it, vi } from 'vitest'
-import { ensureDefaultAutostart, runApp, setAutostart } from '../../electron/main.cjs'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  AUTOSTART_ENABLED_MESSAGE,
+  ensureDefaultAutostart,
+  runApp,
+  setAutostart,
+} from '../../electron/main.cjs'
 import {
   assertStarted,
   createFakeApp,
@@ -8,7 +13,12 @@ import {
   createFakeServerModule,
   FakeBrowserWindow,
   FakeTray,
+  resetFakeBrowserWindowInstances,
 } from './helpers/fake-electron'
+
+beforeEach(() => {
+  resetFakeBrowserWindowInstances()
+})
 
 // F-014 sözleşme §5 + G1 (CEO kararı: varsayılan AÇIK ama GÖRÜNÜR) + §8 (mutasyon M6).
 
@@ -124,5 +134,34 @@ describe('ensureDefaultAutostart (G1 — varsayılan AÇIK ama görünür)', () 
     expect(result.justEnabledAutostart).toBe(true)
     const tray = result.tray as FakeTray
     expect(tray.displayBalloon).toHaveBeenCalledTimes(1)
+
+    // Ö2 düzeltmesi (QA F-014 KALDI) — tepsi balonu bu ortamda hiç çizilmiyor (B1 ile aynı
+    // sınıf), bu yüzden "açık VE görünür" şartının görünür yarısını artık ölçülebilir bir
+    // `BrowserWindow` taşır (ana pencereden AYRI, ikinci bir pencere).
+    expect(FakeBrowserWindow.instances).toHaveLength(2) // [0]=ana pencere, [1]=bildirim penceresi
+    const noticeWindow = FakeBrowserWindow.instances[1]
+    const decodedUrl = decodeURIComponent(noticeWindow.loadedUrl ?? '')
+    expect(decodedUrl).toContain(AUTOSTART_ENABLED_MESSAGE)
+  })
+
+  it('ikinci açılışta (marker zaten var, justEnabledAutostart false) bildirim penceresi GÖSTERİLMEZ', async () => {
+    const app = createFakeApp(false)
+    const serverModule = createFakeServerModule()
+    const fsImpl = { existsSync: () => true, mkdirSync: vi.fn(), writeFileSync: vi.fn() }
+
+    const result = await runApp(
+      {
+        app,
+        BrowserWindow: FakeBrowserWindow,
+        Tray: FakeTray,
+        Menu: createFakeMenu(),
+        dialog: createFakeDialog(),
+      },
+      { isPortFreeFn: async () => true, loadServerModuleFn: () => serverModule, fsImpl }
+    )
+
+    assertStarted(result)
+    expect(result.justEnabledAutostart).toBe(false)
+    expect(FakeBrowserWindow.instances).toHaveLength(1) // yalnızca ana pencere
   })
 })

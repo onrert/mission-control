@@ -7,6 +7,7 @@ import {
   createChatSession,
   isChatEnabled,
   resolveChatBudget,
+  resolveChatSessionCwd,
   CHAT_SESSION_CWD,
 } from '../../../../src/features/chat/server/session'
 import { createFakeQueryFactory } from '../../../helpers/fake-chat-query'
@@ -76,6 +77,19 @@ describe('isChatEnabled / resolveChatBudget (saf fonksiyonlar)', () => {
 describe('CHAT_SESSION_CWD (mutasyon 3 — çevrimdışı çit)', () => {
   it("cwd'den .claude/settings.json gerçekten çözülüyor", () => {
     expect(fs.existsSync(path.join(CHAT_SESSION_CWD, '.claude', 'settings.json'))).toBe(true)
+  })
+})
+
+describe('resolveChatSessionCwd (QA F-014 H1 düzeltmesi — Electron paketlenmiş kopya asla çalışma dizini olmaz)', () => {
+  it('MC_CHAT_SESSION_CWD tanımsızsa eski __dirname türetimiyle (CHAT_SESSION_CWD) BİREBİR aynı sonucu verir', () => {
+    expect(resolveChatSessionCwd({})).toBe(CHAT_SESSION_CWD)
+  })
+
+  it('MC_CHAT_SESSION_CWD verilmişse (electron/main.cjs bunu gerçek proje dizinine sabitler) onu kullanır, __dirname türetimini GÖRMEZDEN gelir', () => {
+    const fakeProjectDir = path.join(os.tmpdir(), 'mc-fake-real-repo')
+    expect(resolveChatSessionCwd({ MC_CHAT_SESSION_CWD: fakeProjectDir })).toBe(
+      path.resolve(fakeProjectDir)
+    )
   })
 })
 

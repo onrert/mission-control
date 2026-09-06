@@ -20,26 +20,32 @@ salt-izleyici kalmayacak, **CEO oturumunu kendi içinde barındıracak** (`ADR-0
   her push ayrı onay ister; CEO `docs/approvals/PUSH.ok` yazar, hook kullanınca **siler**
   (tüketildiği doğrulandı).
 
-## Son biten: F-012 CEO sohbet arayüzü — **QA GEÇTİ, `done`**
-Panel artık CEO oturumunu `@anthropic-ai/claude-agent-sdk` ile **kendi içinde barındırıyor**.
-Kullanıcı panelden yazıyor, cevap akış hâlinde geliyor, alt agent'lar arka planda çalışırken
-sohbet devam ediyor.
+## Son biten: F-014 masaüstü uygulaması — **QA GEÇTİ, `done`**
+Panel artık Electron uygulaması. Çift tıkla açılıyor, **terminal komutu gerekmiyor**, sohbet
+varsayılan açık, pencere kapanınca tepside çalışmaya devam ediyor, tepsiden "Çıkış" her şeyi
+kapatıyor.
 
-**Ölçülen kapanış:** `verify` = 0 (**859 test + 2 atlandı / 57 dosya**) · `e2e` = 0 (23/23) ·
-`e2e:chat` = 0 (1/1, sıfır kota) · canlı hook testi 4/4 · puanlar 8/8/8/7.
+**Ölçülen kapanış:** `verify` = 0 (**892 test + 2 atlandı / 65 dosya**) · `e2e` = 0 (23/23) ·
+`e2e:electron` = 0 (3/3) · `tests/electron` = 27/27 · puanlar 8/8/7/8.
+Paket **631 MB**, `release/Mission Control-win32-x64/mission-control.exe`
+(2026-09-06 20:42'de düzeltmelerle **yeniden paketlendi**; `diff -rq` ile depo ağacıyla birebir
+aynı olduğu doğrulandı).
 
-**Turlar:** 3 sözleşme turu (20 bulgu) → 2 kod turu → 4 QA turu → 3 düzeltme turu.
-Üçüncü QA turunda kullanıcıya eskale edildi; kullanıcı tek bir dar tur onayladı ve kapandı.
+**Turlar:** ölçüm+sözleşme → 2 kod turu → 3 QA turu → 3 düzeltme turu.
 
-**Kalan açık maddeler (hiçbiri bloklayıcı değil):**
-- **Ö7** — araç satırları yenilemede kayboluyor (veri `history.jsonl`'de duruyor).
-  `ADR-014` "Kabul edilen riskler" madde 5 + `docs/blockers.md`.
-- **React duplicate key** — `src/features/chat/web/ChatScreen.tsx:393` render anahtarında `role`
-  yok; aynı turda kullanıcı ve CEO aynı anahtarı alıyor, konsolda duplicate-key uyarısı.
-  `42c3848`'ten beri var. B2'de veri tarafı düzeltilen hatanın **render ikizi**.
-- **`npm run dev`** bu ortamda `concurrently` ile tekrarlanabilir biçimde bozuk; süreçler ayrı
-  başlatılınca sorunsuz. Ölçümler üretim sunucusuyla yapılıyor.
-- Geçmiş yazma amplifikasyonu ≈159× ve `entries` belleği sınırsız (`ADR-014` madde 4).
+**QA'nın yakaladığı üç ciddi şey:**
+1. **Masaüstü oturumunda güvenlik kapıları KAPALIYDI** — oturum paketlenmiş kopyada çalışıyordu,
+   orada `.claude/settings.json` yoktu. Bu deponun en pahalı hata sınıfının tekrarı. Artık oturum
+   gerçek proje dizininde çalışıyor **ve hook bulunamazsa oturum hiç açılmıyor**.
+2. **Port doluyken hiç diyalog çıkmıyordu**, 7 sn sonra sessiz ölüm (F-001'in N4 dersinin tekrarı).
+3. **Açılışta kullanıcı yazmadan ücretli tur koşuyordu** — uygulama Windows açılışında da
+   başladığı için her gün kota yakacaktı. Oturum artık **tembel**: ilk mesaja kadar sıfır çağrı,
+   gerçek `.exe` ile canlı kanıtlandı.
+
+**Kalan açık maddeler (bloklayıcı değil):**
+- Masaüstünde Kanban boş (`userData/data` ayrı veri kaynağı) — kabul edilmiş sınırlama.
+- Ö1 açılış marker'ı bu makinede duruyor; N3 hata penceresi metni kırpılıyor.
+- Sohbette araç satırları yenilemede kayboluyor (F-010'a devredildi).
 
 ## Faz 2 sırası (kullanıcı kararlarıyla güncel)
 | # | Feature | Durum |

@@ -36,11 +36,23 @@ test('mesaj gönder → akan cevap görünür → izin kartı çıkar → onayla
   await expect(permissionCard).toContainText('Bash')
   await expect(permissionCard).toContainText('ls -la')
 
-  await permissionCard.getByRole('button', { name: 'Onayla' }).click()
+  // QA F-012 tur 3 Y1 (BLOKLAYICI) tekrar üretmesi — bekleyen izin VARKEN sayfa yenilenirse
+  // kart geri gelmeli ve gerçekten cevaplanabilmeli (`docs/03-ux.md:443`). Sunucu tarafında
+  // `canUseTool` hâlâ bekliyor (in-memory pending map, `session.ts`), yenileme yalnızca
+  // istemciyi sıfırlar; `loadStatus` artık `onChatStatus` indirgeyicisinden geçtiği için kart
+  // ELLE bir SSE olayı beklemeden geri kurulmalı.
+  await page.reload()
+  await page.getByRole('tab', { name: 'Sohbet' }).click()
+  const permissionCardAfterReload = page.getByRole('group', { name: 'İzin isteği' })
+  await expect(permissionCardAfterReload).toBeVisible({ timeout: 5000 })
+  await expect(permissionCardAfterReload).toContainText('Bash')
+  await expect(permissionCardAfterReload).toContainText('ls -la')
+
+  await permissionCardAfterReload.getByRole('button', { name: 'Onayla' }).click()
 
   // Kolabe olmuş izin satırı (Ö8) — kart TAMAMEN silinmez, tek satıra döner.
   await expect(page.getByText('Onaylandı — ls -la çalıştı')).toBeVisible({ timeout: 5000 })
-  await expect(permissionCard).toHaveCount(0)
+  await expect(permissionCardAfterReload).toHaveCount(0)
 
   // Kapanış cümlesi — akış bitip `status:'done'` olunca "CEO yazıyor…" etiketi kaybolur.
   await expect(page.getByText('Klasörde iki dosya buldum, hazır.')).toBeVisible({ timeout: 5000 })

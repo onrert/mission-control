@@ -312,6 +312,11 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
   const [warningDismissed, setWarningDismissed] = useState(false)
   const [historyError, setHistoryError] = useState(false)
   const streamingBufferRef = useRef<Map<string, string>>(new Map())
+  // QA F-012 Ö8 düzeltmesi — `onChatPermissionResolved` yalnızca `payload.outcome`'u taşır,
+  // hangi araç/komut olduğunu DEĞİL. Kart silinmeden önceki `tool_name`/`input_preview`'ı burada
+  // saklarız ki kolabe satırı (`Onaylandı — <komut> çalıştı`) doğru metni gösterebilsin.
+  // (Tur 3 düzeltmesiyle `onChatStatus`'un da `loadStatus`'tan kullanabilmesi için üste taşındı.)
+  const permissionDataRef = useRef<Map<string, { input_preview: string }>>(new Map())
 
   const loadHistory = useCallback(
     async (beforeSeq?: number) => {
@@ -352,16 +357,44 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
     [fetchImpl]
   )
 
+  // QA F-012 tur 2 Y1 düzeltmesi — bekleyen izinler artık İSTEMCİ belleğinde değil, SUNUCUDAN
+  // gelen `pending_permissions` listesinden kurulur. `chat_status` hem SSE ile canlı yayınlanır
+  // (`session.ts` `canUseTool`/`resolvePermission`) hem de ilk yüklemede/`chat_sync` sonrasında
+  // `GET /api/chat/status` ile çekilir (aşağıdaki `loadStatus`) — bu yüzden sayfa yenilendiğinde
+  // veya SSE yeniden bağlandığında bekleyen bir izin kartı varsa GERİ GELİR ve gerçekten
+  // cevaplanabilir (aynı `request_id`, sunucunun kendi haritasından). Liste sunucu tarafından
+  // OTORİTER kabul edilir — tam olarak değiştirilir (birleştirilmez), çünkü sunucu zaten
+  // çözülmüş istekleri listeden çıkarıyor.
+  const onChatStatus = useCallback((payload: ChatStatus) => {
+    setStatus(payload)
+    const pending = payload.pending_permissions ?? []
+    for (const p of pending) {
+      permissionDataRef.current.set(p.request_id, { input_preview: p.input_preview })
+    }
+    setPendingPermissions(
+      pending.map((p) => ({
+        ...p,
+        question: parseAskUserQuestion(p.tool_name, p.input_preview),
+      }))
+    )
+  }, [])
+
+  // QA F-012 tur 3 Y1 düzeltmesi — bu, `pending_permissions`'ın SUNUCUDAN geldiği TEK yer değil:
+  // sayfa yenilemesi (mount) ve SSE yeniden bağlanması (`onChatSync`) de bu fonksiyonu çağırır.
+  // Eskiden yanıt doğrudan `setStatus(body.data)`'ya yazılıyordu ve `onChatStatus`'un kurduğu
+  // `pendingPermissions` hiç güncellenmiyordu — sunucu bekleyen izni doğru döndürse bile kart
+  // ekrana hiç gelmiyordu (yalnızca bir sonraki SSE `chat_status` olayı, ör. yeni bir mesaj
+  // gönderilince, kartı kazara geri getiriyordu). Artık aynı indirgeyiciden geçiyor.
   const loadStatus = useCallback(async () => {
     try {
       const res = await fetchImpl(STATUS_URL)
       if (!res.ok) return
       const body = (await res.json()) as { data: ChatStatus }
-      setStatus(body.data)
+      onChatStatus(body.data)
     } catch {
       // sessizce yok say — `chat_status` SSE olayı zaten canlı günceller.
     }
-  }, [fetchImpl])
+  }, [fetchImpl, onChatStatus])
 
   // QA F-012 tur 2 Y2 artığı (bloklayıcı olmayan ama gerçek regresyon) — `App.tsx` artık
   // `useChatSession({ enabled: true })`'ı sunucunun `chat_enabled` durumundan BAĞIMSIZ, HER ZAMAN
@@ -452,11 +485,6 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
     })
   }, [])
 
-  // QA F-012 Ö8 düzeltmesi — `onChatPermissionResolved` yalnızca `payload.outcome`'u taşır,
-  // hangi araç/komut olduğunu DEĞİL. Kart silinmeden önceki `tool_name`/`input_preview`'ı burada
-  // saklarız ki kolabe satırı (`Onaylandı — <komut> çalıştı`) doğru metni gösterebilsin.
-  const permissionDataRef = useRef<Map<string, { input_preview: string }>>(new Map())
-
   const onChatPermissionRequest = useCallback((payload: ChatPermissionRequestEvent) => {
     const question = parseAskUserQuestion(payload.tool_name, payload.input_preview)
     permissionDataRef.current.set(payload.request_id, { input_preview: payload.input_preview })
@@ -483,28 +511,6 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
             ]
       )
     }
-  }, [])
-
-  // QA F-012 tur 2 Y1 düzeltmesi — bekleyen izinler artık İSTEMCİ belleğinde değil, SUNUCUDAN
-  // gelen `pending_permissions` listesinden kurulur. `chat_status` hem SSE ile canlı yayınlanır
-  // (`session.ts` `canUseTool`/`resolvePermission`) hem de ilk yüklemede/`chat_sync` sonrasında
-  // `GET /api/chat/status` ile çekilir (yukarıdaki `loadStatus`) — bu yüzden sayfa yenilendiğinde
-  // veya SSE yeniden bağlandığında bekleyen bir izin kartı varsa GERİ GELİR ve gerçekten
-  // cevaplanabilir (aynı `request_id`, sunucunun kendi haritasından). Liste sunucu tarafından
-  // OTORİTER kabul edilir — tam olarak değiştirilir (birleştirilmez), çünkü sunucu zaten
-  // çözülmüş istekleri listeden çıkarıyor.
-  const onChatStatus = useCallback((payload: ChatStatus) => {
-    setStatus(payload)
-    const pending = payload.pending_permissions ?? []
-    for (const p of pending) {
-      permissionDataRef.current.set(p.request_id, { input_preview: p.input_preview })
-    }
-    setPendingPermissions(
-      pending.map((p) => ({
-        ...p,
-        question: parseAskUserQuestion(p.tool_name, p.input_preview),
-      }))
-    )
   }, [])
 
   const onChatError = useCallback((payload: ChatErrorEvent) => {

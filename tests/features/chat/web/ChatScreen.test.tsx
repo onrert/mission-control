@@ -358,6 +358,140 @@ describe('ChatScreen — QA F-012 tur 2 Y1 (BLOKLAYICI): sayfa yenilemesi/yenide
   })
 })
 
+describe('ChatScreen — QA F-012 tur 3 Y1 (BLOKLAYICI): loadStatus (mount/yeniden bağlanma) GERÇEK yolu — handler ELLE çağrılmaz', () => {
+  // Tekrar üretme (QA KALDI tur 3 Y1): önceki test yalnızca `handlers.onChatStatus`'u elle
+  // çağırıyordu — ürün kodunda bu, `loadStatus`'un (mount / `onChatSync`) GERÇEKTEN izlediği
+  // yol değil. `loadStatus` eskiden `setStatus(body.data)`'ya yazıyordu ve `onChatStatus`'un
+  // kurduğu `pendingPermissions` HİÇ güncellenmiyordu. Bu testler `fetch`'i stub'layıp GERÇEK
+  // `loadStatus` çağrısının (mount ve `onChatSync`) kartı kurduğunu ölçer.
+  it('mount anında GET /api/chat/status bekleyen izin döndürürse kart, handler hiç elle çağrılmadan kurulur', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      calls.push({ url, init })
+      if (url.includes('/api/chat/history')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true, data: { entries: [], has_more: false } }),
+        } as Response
+      }
+      if (url.includes('/api/chat/status')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              session_active: true,
+              session_id: 's1',
+              busy: true,
+              api_key_barrier_tripped: false,
+              stripped_env_vars: [],
+              chat_enabled: true,
+              api_key_helper_configured: false,
+              max_budget_usd: 20,
+              pending_permissions: [
+                {
+                  request_id: 'r-mount',
+                  turn_id: 't1',
+                  tool_name: 'Bash',
+                  input_preview: 'ls -la',
+                  ts: new Date().toISOString(),
+                },
+              ],
+            },
+          }),
+        } as Response
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, data: {} }),
+      } as Response
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    // `renderHarness()` mount effect'ini tetikler -> GERÇEK `loadStatus()` çağrılır; hiçbir
+    // `handlers.onChatXxx` burada elle çağrılmıyor.
+    await renderHarness()
+
+    expect(screen.getByText('İzin isteği')).toBeTruthy()
+    expect(screen.getByText(/CEO şu aracı çalıştırmak istiyor: Bash/)).toBeTruthy()
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Onayla' }))
+
+    const permCall = calls.find((c) => c.url.includes('/api/chat/permission'))
+    expect(permCall).toBeTruthy()
+    expect(JSON.parse(permCall!.init!.body as string)).toEqual({
+      request_id: 'r-mount',
+      result: { behavior: 'allow' },
+    })
+  })
+
+  it('SSE yeniden bağlanınca (onChatSync — onChatStatus DEĞİL) sunucudaki bekleyen izin geri gelir', async () => {
+    let pending: unknown[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/chat/history')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true, data: { entries: [], has_more: false } }),
+        } as Response
+      }
+      if (url.includes('/api/chat/status')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              session_active: true,
+              session_id: 's1',
+              busy: pending.length > 0,
+              api_key_barrier_tripped: false,
+              stripped_env_vars: [],
+              chat_enabled: true,
+              api_key_helper_configured: false,
+              max_budget_usd: 20,
+              pending_permissions: pending,
+            },
+          }),
+        } as Response
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, data: {} }),
+      } as Response
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const chatRef = await renderHarness()
+    expect(screen.queryByText('İzin isteği')).toBeNull()
+
+    // Sunucuda arada (ör. başka bir sekme/arka planda) bir izin isteği oluştu; sayfa şimdi
+    // GERÇEK `EventSource` "open" olayının tetikleyeceği yolu (`onChatSync`) izliyor —
+    // `onChatStatus` burada ELLE çağrılmıyor.
+    pending = [
+      {
+        request_id: 'r-reconnect',
+        turn_id: 't1',
+        tool_name: 'Bash',
+        input_preview: 'ls -la',
+        ts: new Date().toISOString(),
+      },
+    ]
+    await act(async () => {
+      chatRef.current!.handlers.onChatSync()
+    })
+
+    expect(screen.getByText('İzin isteği')).toBeTruthy()
+  })
+})
+
 describe('ChatScreen — Ö8 (QA KALDI): izin kartı kararla TEK SATIRA kolabe olur, silinmez', () => {
   it("onChatPermissionResolved (allow) sonrası 'Onaylandı — <komut> çalıştı' kalıcı satırı görünür", async () => {
     // Tekrar üretme (QA KALDI Ö8, docs/03-ux.md §7 madde (h)2 birebir): eskiden

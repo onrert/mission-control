@@ -1,328 +1,292 @@
-KARAR: KALDI
-ESKALE: true
+KARAR: GEÇTİ
+ESKALE: false
 
 ---
 feature: F-012
 title: CEO sohbet arayüzü — panel oturumu Agent SDK ile barındırır
 reviewer: qa-evaluator
 date: 2026-09-06
-round: düzeltme turu QA (tur 3, kapanış kontrolü — çok dar kapsam)
-previous: docs/qa/F-012-2026-09-06-tur2.md (KALDI — Y1, Y2 bloklayıcı; Y3, Y4, Y5 önemli)
+round: kapanış denetimi (tur 4, çok dar kapsam — üç madde)
+previous: docs/qa/F-012-2026-09-06-tur3.md (KALDI — Y1 bloklayıcı, Y3 kırmızı, Ö7 kabul edildi)
 ---
 
-# F-012 düzeltme turu QA raporu (tur 3 — kapanış kontrolü)
+# F-012 kapanış denetimi (tur 4)
 
 ## 0. Özet
 
-**KARAR: KALDI. ESKALE: true** (üçüncü tur — süreç gereği kullanıcıya gider).
+**KARAR: GEÇTİ. ESKALE: false.**
 
-Bu tur yalnızca 2. turun açık maddelerine baktı. Dört maddenin ikisi gerçekten kapandı, biri
-kapanmadı, biri hâlâ kırmızı:
+Dördüncü tur olduğu için `ESKALE` bayrağı KALDI hâlinde `true` olacaktı; karar GEÇTİ olduğu için
+eskale edilecek bir şey yok.
 
-| # | 2. tur bulgusu | İddia | Ölçüm sonucu |
+Bu tur yalnızca üç maddeye baktı. Üçü de tuttu:
+
+| # | 3. tur bulgusu | İddia | Ölçüm sonucu |
 |---|---|---|---|
-| **Y1** | Bekleyen izin yenilemede kayboluyor, oturum kilitleniyor | "sunucudan geri geliyor, cevaplanabiliyor" | **KAPANMADI** — sunucu doğru veriyi gönderiyor, **istemci onu çöpe atıyor** (§2) |
-| **Y2** | `e2e` sonrası `dist/` sohbeti derleme anında kapatıyor | "çalışma zamanı oldu" | **KAPANDI** — canlı, gerçek `dist/` ile doğrulandı (§3) |
-| **Y3** | Canlı hook testi güvenilir değil | "determinize edildi" | **HÂLÂ KIRMIZI** — bu turda 1 koşu, exit 1 (§4) |
-| **Y4** | İstemci fold anahtarı çitsiz | "çitlendi" | **KAPANDI** — mutasyon C KIRMIZI (§5) |
+| **Y1** | Bekleyen izin yenilemede kayboluyor (istemci `loadStatus` yanıtını indirgeyiciden geçirmiyor) | "`loadStatus` artık `onChatStatus`'tan geçiyor" | **KAPANDI** — canlı doğrulandı; mutasyon F artık **KIRMIZI** (§2) |
+| **Y3** | Canlı hook testi model davranışına bağımlı, dört turdur kırmızı | "tanı dalı kaldırıldı + kota-sıfır doğrudan hook bloğu" | **KAPANDI** — kota-sıfır blok deterministik yeşil; AC4 canlı kolu **ilk kez yeşil** (§3) |
+| **Paketler** | 859/57, 23/23, 1/1 iddiası | — | **DOĞRU** — üçü de kendim koşturuldu (§4) |
 
-Y1'in durumu 2. turdakinden **farklı ama hâlâ bloklayıcı**: sunucu tarafı düzeltmesi doğru ve
-çitli (`getStatus().pending_permissions` gerçekten dolu geliyor, mutasyon A KIRMIZI), ama
-istemcinin sayfa-yenileme yolu (`loadStatus`) yanıtı `onChatStatus`'tan **geçirmiyor**;
-`setStatus`'a doğrudan yazıyor ve `pendingPermissions` hiç kurulmuyor. Sonuç: yenilemeden sonra
-izin kartı **yine yok**, kurtarma satırı yok, kullanıcı ancak **ikinci bir mesaj göndererek**
-(bu yeni bir `chat_status` yayını tetiklediği için) kartı kazara geri getirebiliyor.
-
-Bu, deponun `CLAUDE.md`'sinde yazılı iki dersin aynı anda tekrarı:
-1. **"Testin yorumu ile taradığı şey çelişebiliyor."** Y1 için yazılan istemci testinin kendi
-   yorumu (`ChatScreen.test.tsx:273-279`) *"sayfa yenilenince … `onChatSync` … `onChatStatus`'u
-   tetikliyor"* diyor. Ürün kodunda `onChatSync` → `loadStatus()` → `setStatus()`; `onChatStatus`
-   **çağrılmıyor**. Test, `handlers.onChatStatus(...)`'u elle çağırarak gerçekte var olmayan bir
-   yolu ölçüyor.
-2. **"Sessiz durma / yarı-başarı, temiz hatadan kötüdür."** Veri kabloda var, ekranda yok.
-
-Mutasyon F bunu bağımsız olarak kanıtlıyor: `onChatSync`'ten `loadStatus()` çağrısını tamamen
-silmek **855 testin tamamını YEŞİL bırakıyor** — yeniden bağlanma/yenileme yolunda hiçbir çit yok.
-
-## 1. Ölçüm ortamı ve üç paketin sayıları
+## 1. Ölçüm ortamı
 
 | Ne | Değer |
 |---|---|
-| Çalıştırma | `npm run build` (e2e'nin kendi derlemesi) + gerçek üretim `createServer()`; `npm run dev` hiç kullanılmadı |
-| Port / veri dizini | 7435, `MC_DATA_DIR=<scratchpad>/qa-data-t3` (depo `data/` kirletilmedi) |
-| Tarayıcı | Playwright (Chromium), varsayılan masaüstü genişliği (dar genişlik 1./2. turda GEÇTİ — yeniden ölçülmedi) |
-| Sahte `query()` | `tests/e2e/helpers/chat-fake-server.ts` (ürün kodundaki enjeksiyon dikişi) — tarayıcı ölçümlerinin kotası **$0** |
-| Canlı SDK | yalnızca `npm run test:chat-live`, **tek koşu** (talimat gereği) |
-| Ürün kodu değişikliği | **YOK** — tur sonunda `git status --porcelain` boş |
+| Çalıştırma | `npm run verify`'nin ürettiği `dist/` + gerçek üretim `createServer()`; `npm run dev` **hiç kullanılmadı** (bu ortamda `concurrently` ile bozuk) |
+| Port / veri dizini | 7437, `MC_DATA_DIR=<scratchpad>/qa-data-t4` (depo `data/` kirletilmedi) |
+| Tarayıcı | Playwright (Chromium), masaüstü genişliği |
+| Sahte `query()` | `tests/e2e/helpers/chat-fake-server.ts` (ürün kodundaki `chatQueryOverride` dikişi) — tarayıcı ölçümlerinin kotası **$0** |
+| Canlı SDK | yalnızca `MC_CHAT_LIVE_TESTS=1 npm run test:chat-live`, **tek koşu** (talimat gereği) |
+| Ürün kodu değişikliği | **YOK** — mutasyonlar yedekten birebir geri alındı, `git status --porcelain` boş |
 | Artık mutasyon | **yok** — `grep -rn "MUTATION\|MUTASYON" src/ tests/` yalnızca `tests/server/write-gate-manifest.test.ts:124` (meşru test adı) |
+| Yeniden ölçülmeyenler | Akış, dar genişlik, bariyer, E1 güvenlik garantisi, B2, B3, Y2, Y4 — 1./2./3. turda GEÇTİ, talimat gereği açılmadı |
 
-**Sayılar kendim koşturuldu, iddiaya güvenilmedi:**
+## 2. Y1 — KAPANDI (canlı doğrulandı + iki mutasyonla çitlendi)
+
+### 2.1 Canlı tekrar üretme (gerçek Chromium, gerçek üretim sunucusu, sıfır kota)
+
+1. `PORT=7437 MC_CHAT_ENABLED=1 MC_DATA_DIR=<scratchpad>/qa-data-t4 npx tsx tests/e2e/helpers/chat-fake-server.ts`
+2. `http://127.0.0.1:7437/` → **Sohbet** sekmesi → mesaj gönder. Sahte CEO akan cevap verir,
+   `Bash` (`ls -la`) için izin ister. Kart görünür, oturum bekler.
+   Ekran: `docs/qa/screens/F-012-T4-01-y1-yenileme-oncesi-izin-karti.png`
+3. Sunucu durumu 26 saniye boyunca 2 sn aralıkla yoklandı — bekleyen izin **kararlı** duruyor
+   (kendiliğinden çözülmüyor, zaman aşımı yok):
+   ```
+   09:17:14.511 busy= true pending= 1 req_bb93d9bb-8c38-4633-89de-917b0fd445ef
+   … (12 ölçüm, hepsi aynı) …
+   09:17:40.469 busy= true pending= 1 req_bb93d9bb-8c38-4633-89de-917b0fd445ef
+   ```
+4. **Sayfa yenilendi** (`docs/03-ux.md:443`'ün birebir senaryosu), Sohbet'e dönüldü, 3 sn beklendi.
+
+### 2.2 Beklenen
+
+`docs/03-ux.md:443` — *"panel yeniden başlasa/sekme kapatılıp açılsa bile bekleyen izin isteği
+geçmişte kaldığı hâliyle gösterilir."* Feature notu — *"kart geri gelir ve gerçekten
+cevaplanabilir."*
+
+### 2.3 Gerçek (ölçüldü)
+
+Yenileme sonrası, hiçbir ek mesaj göndermeden:
+
+```
+document.querySelectorAll('[role="group"]').length = 1        <- KART VAR  (tur 3: 0)
+role="group" adı: "İzin isteği"; içerik: "Komut: ls -la"
+buton listesi: ["⚙ Ayarlar","Duraklat","Filtreleri temizle","Ayarlar'a git","✕",
+                "Reddet","Onayla","Gönder","Ekle"]                <- Onayla/Reddet VAR (tur 3: YOK)
+body.innerText "İzin isteği" içeriyor: true
+```
+Ekran: `docs/qa/screens/F-012-T4-02-y1-yenileme-sonrasi-izin-karti-GERI-GELDI.png`
+
+**Cevaplanabilirlik ölçüldü** (tur 3'te ölçülemeyen asıl soru): yenileme sonrası gelen karttaki
+**Onayla**'ya tıklandı →
+
+```
+GET /api/chat/status -> busy: false, pending_permissions: []   <- sunucu AYNI request_id'yi çözdü
+DOM: "Onaylandı — ls -la çalıştı" kolabe satırı        (status rolü)
+     "✓ Bash tamamlandı (1 dk 25 sn)" araç satırı
+     "Klasörde iki dosya buldum, hazır."  <- tool_result sonrası kapanış cevabı akıp bitti
+     "İzin isteği" DOM'da yok, kompozer aktif (disabled=false)
+```
+Ekran: `docs/qa/screens/F-012-T4-03-y1-yenileme-sonrasi-onaylandi-oturum-devam.png`
+
+Yani tur 3'ün "kart yok → kullanıcı ancak ikinci bir mesajla kazara kurtarabiliyor" davranışı
+ortadan kalktı: kart yenilemeden sonra geri geliyor, aynı `request_id` ile gerçekten
+cevaplanıyor, tur normal tamamlanıyor ve oturum kilitlenmiyor.
+
+### 2.4 Kök nedenin kapandığı yer (kod okundu)
+
+```
+src/features/chat/web/useChatSession.ts:388-397
+  const loadStatus = useCallback(async () => {
+      …
+      onChatStatus(body.data)        // <- tur 3'te: setStatus(body.data)
+  }, [fetchImpl, onChatStatus])
+```
+`onChatStatus` (`:372-385`) hem `setStatus`'u hem `setPendingPermissions`'ı kuruyor ve artık her
+üç yol da (mount → `:417`, SSE `chat_sync` → `:428`, SSE `chat_status` olayı) aynı indirgeyiciden
+geçiyor. `permissionDataRef` bu yüzden dosyanın üstüne taşınmış (`:319`) — kolabe satırının metni
+`loadStatus` yolundan da doldurulabiliyor.
+
+### 2.5 Mutasyonlar (kendim koşturdum)
+
+| # | Mutasyon | Testler | Tur 3 | Tur 4 |
+|---|---|---|---|---|
+| **F** | `useChatSession.ts:428` — `onChatSync`'ten `void loadStatus()` silinir | **tüm paket** | **YEŞİL 855/855** | **KIRMIZI** — 1 failed / 858 passed, `ChatScreen.test.tsx:491` (`getByText('İzin isteği')` bulunamıyor) |
+| **F2** | `useChatSession.ts:393` — `onChatStatus(body.data)` → `setStatus(body.data)` (düzeltmenin birebir geri sarılması) | `tests/features/chat/web` | — | **KIRMIZI** — 2 failed / 21 passed |
+
+F2'yi ayrıca koşturdum çünkü F yalnızca **yeniden bağlanma** yolunu, F2 ise **mount/yenileme**
+yolunu da vuruyor; ikisi de kırmızı olduğuna göre Y1'in her iki yarısı da çitli. Her iki mutasyon
+sonrası dosya yedekten birebir geri yazıldı, `git status --porcelain` boş.
+
+## 3. Y3 — KAPANDI
+
+### 3.1 Kota-sıfır blok (bedava, `verify`'nin parçası) — **YEŞİL**
+
+```
+npx vitest run tests/integration/chat-hooks-live.test.ts     exit 0
+  Test Files  1 passed (1)
+       Tests  2 passed | 2 skipped (4)          675 ms
+  ✓ yayın komutunu ÇIKIŞ KODU 2 ile "Engellendi" mesajıyla durdurur
+  ✓ salt-okunur bir komutu (ls -la) engellemeden ÇIKIŞ KODU 0 ile geçirir
+```
+
+`tests/integration/chat-hooks-live.test.ts:104-119` `runHookDirect()`, gerçek
+`.claude/hooks/block-dangerous.cjs`'i `spawnSync` ile ayrı bir Node alt süreci olarak,
+PreToolUse'un göndereceği `{tool_input:{command}}` JSON'uyla besliyor ve çıkış kodunu okuyor.
+Modelden, SDK'dan ve kotadan **tamamen** bağımsız; `describe.skipIf` ile sarılmamış, yani
+**her `npm run verify` koşusunda** çalışıyor. `ADR-014` M2'nin "hook'ların engellediği otomatik
+testle kanıtlanmalı; 'yükleniyor' testi kabul edilmez" şartı böylece koşulsuz olarak
+karşılanıyor — bu tam olarak tur 3 §4'te önerdiğim iki model-bağımsız alternatiften biri.
+İddia boş değil: iki yönü de (engelle / geçir) çıkış kodu + stderr ile doğrudan ölçüyor.
+
+### 3.2 Canlı koşu (talimat gereği tek kez)
+
+```
+MC_CHAT_LIVE_TESTS=1 npm run test:chat-live       exit 1     (79,25 sn)
+  Test Files  1 failed (1)
+       Tests  1 failed | 3 passed (4)
+
+  ✓ block-dangerous.cjs kota-sıfır × 2                            -> YEŞİL
+  ✓ AC4 iki yönlü canlı kanıt (hook aktif / devre dışı)           -> YEŞİL  (tur 2-3: KIRMIZI)
+  × E1/B5 canlı izin motoru testi                     18260ms     -> KIRMIZI (tur 3: YEŞİL)
+      AssertionError: expected false to be true
+      tests/integration/chat-hooks-live.test.ts:180  expect(sawPermissionRequest).toBe(true)
+```
+
+**Y3'ün hedefi olan test (AC4) ilk kez yeşil.** Sözleşme §11.3'ün "her QA turunda en az bir kez
+alınan iki yönlü canlı kanıt" şartı **beş turdur ilk kez karşılandı**: aktif kolda canlı
+oturumun gözlenen kararı, modelin **gerçekten önerdiği ham komutun** aynı hook betiğine doğrudan
+verilmesiyle hesaplanan ground truth ile eşleşti (`:275`), devre dışı kolda hiçbir komut
+engellenmedi (`:278`). "Model işaretleyici komutu önerdi mi" tanı dalı gerçekten kaldırılmış —
+`git show d466044` ile doğrulandı.
+
+**Kırmızının nedenini ayırdım (talimatın istediği): mekanizma değil, kardeş testin model
+bağımlılığı.**
+- Kırmızı, hook mekanizmasını ölçen bir iddiada değil; **E1/B5** testinde
+  (`sawPermissionRequest === false`, yani model bu turda hiç `Bash` çağırmadı — 18 sn'de metinle
+  cevapladı). Mekanizma hakkında ne olumlu ne olumsuz bir şey söylüyor.
+- **Düzeltmenin ürünü değil:** E1/B5 test bloğunu düzeltme öncesi (`81276a8`) ve sonrası
+  (`d466044`) sürümlerden çıkarıp `diff`'ledim — **byte-byte aynı**, hiç dokunulmamış. Aynı
+  kırılganlık (persona + direktif systemPrompt yokluğu) orada başından beri vardı; tur 3'te
+  zarla yeşil geldi, bu turda zarla kırmızı geldi.
+- **Kapsam:** E1 güvenlik garantisi bu turda yeniden ölçülmeyecekler listesinde (1./2. turda
+  GEÇTİ). Yapılandırma yarısının çevrimdışı çiti de var ve `verify`'de yeşil:
+  `tests/features/chat/server/session.test.ts:487` "K3 çevrimdışı çit — allowManagedPermission
+  RulesOnly gerçekten etkili" (`:499`, `:506` `permissions.ask:['Bash']`'ı da doğruluyor).
+- Talimat gereği canlı test **tekrarlanmadı** (kota).
+
+Kayda geçiyorum, bloklayıcı olarak açmıyorum (talimat: düzeltmenin kendisi üretmediyse yeni
+bulgu açma): **E1/B5, AC4'ün kurtulduğu model-uyum kırılganlığını hâlâ taşıyor** — `agent:'ceo'`
+personasıyla koşuyor ve AC4'e eklenen direktif `systemPrompt`'u almadı. Bir sonraki turda canlı
+paketin kırmızı gelmesi muhtemel; kalıcı çözüm AC4'e uygulanan iki tedavinin (direktif prompt +
+"araç çağrılmadı" durumunu kanıt-yok sayan dal) E1/B5'e de uygulanmasıdır.
+
+## 4. Üç paket (iddiaya güvenilmedi, kendim koşturdum)
 
 | Komut | Çıkış | Sayı | Developer iddiası |
 |---|---|---|---|
-| `npm run verify` | **0** | 855 geçti + 2 atlandı (857); 56 dosya + 1 atlandı (57) | 855 / 56 → **doğru** |
-| `npm run e2e` | **0** | **23/23** | 23/23 → **doğru** |
+| `npm run verify` | **0** | **859 geçti + 2 atlandı (861)**; **57 dosya** | 859 / 57 → **doğru** |
+| `npm run e2e` | **0** (2. koşu) | **23/23** | 23/23 → **doğru** |
 | `npm run e2e:chat` | **0** | **1/1** | 1/1 → **doğru** |
-| `MC_CHAT_LIVE_TESTS=1 npm run test:chat-live` | **1** | 1 geçti, **1 KIRMIZI** | "5 denemede determinize edildi" → **doğrulanmadı** |
 
-Vitest worker fork kararsızlığı bu turda **görülmedi** (verify tek koşuda temiz).
+`verify` **ilk koşuda temiz** geçti (9,69 sn test + tipkontrol + lint + build); vitest worker fork
+kararsızlığı bu turda görülmedi.
 
-## 2. Y1 — BLOKLAYICI, KAPANMADI
+`npm run e2e` **ilk koşuda 22 geçti / 1 kırmızı** verdi:
+`tests/e2e/kanban.spec.ts:261` (AC4 çakışma banner'ı, `:298 expect(banner).toHaveCount(0)`).
+İkinci koşuda **23/23 yeşil**. F-012'nin dosya sahipliğinin tamamen dışında (Kanban/dosya
+izleyici zamanlaması), bu turun düzeltmesiyle ilgisiz. Deponun `CLAUDE.md`'sindeki "kırmızıya
+alışma, her görüldüğünde rapora yaz" kuralı gereği kayda geçiyorum: **kanban AC4 e2e'si
+kararsız**, 1/2 koşuda kırmızı.
 
-### Tekrar üretme (gerçek Chromium, gerçek üretim sunucusu, sahte `query()`, sıfır kota)
+## 5. Ayrıca istenen iki tek satırlık kontrol
 
-1. `PORT=7435 MC_CHAT_ENABLED=1 npx tsx tests/e2e/helpers/chat-fake-server.ts` ile üretim
-   sunucusunu başlat, `http://127.0.0.1:7435/` aç, **Sohbet** sekmesine geç.
-2. "Y1 testi: klasörü kontrol eder misin?" gönder. Sahte CEO akan cevap verir ve `Bash`
-   (`ls -la`) için izin ister. Kart görünür, oturum bekler.
-   Ekran: `docs/qa/screens/F-012-T3-02-y1-bekleyen-izin-yenileme-oncesi.png`
-   ```
-   GET /api/chat/status -> busy: true
-     pending_permissions: [{ request_id:"req_37299f6d-…", turn_id:"2fccbd45-…",
-                             tool_name:"Bash", input_preview:"ls -la", ts:"…08:26:38.960Z" }]
-   ```
-3. **Sayfayı yenile** (`docs/03-ux.md:443`'ün birebir senaryosu; VS Code Simple Browser'da
-   sekme geçişi bunu üretir), **Sohbet**'e dön, 3 sn bekle.
+- **Mutasyon artığı temiz.** `grep -rn "MUTATION\|MUTASYON" src/ tests/` → tek sonuç
+  `tests/server/write-gate-manifest.test.ts:124` (meşru test adı). Tur sonunda tekrar kontrol
+  edildi, `git status --porcelain` boş.
+- **Ö7 yazılmış, kod değişmemiş.** `ADR-014` "Kabul edilen riskler" **madde 5** (satır 102-116:
+  `docs/03-ux.md:327` ile sapma, ne kaybolduğu, verinin `history.jsonl`'de durduğu, yeniden ele
+  alınma eşiği) **ve** `docs/blockers.md:212`'deki açık madde. Her ikisi de davranışın
+  değişmediğini, yalnızca belgelendiğini açıkça söylüyor; `git show` ile Ö7 için ürün kodu
+  değişikliği olmadığı doğrulandı.
 
-### Beklenen
+## 6. Kapsam dışı, bloklayıcı değil — kayda geçirilen tek gözlem
 
-`docs/03-ux.md:443` — *"Otomatik onay hiçbir koşulda yapılmaz; panel yeniden başlasa/sekme
-kapatılıp açılsa bile **bekleyen izin isteği geçmişte kaldığı hâliyle gösterilir**."*
-Feature notu (tur 2 yanıtı) — *"Sayfa yenilemesi/SSE yeniden bağlanması sonrası kart geri gelir
-ve gerçekten cevaplanabilir."*
+Canlı ölçüm sırasında tarayıcı konsolunda React `"Encountered two children with the same key"`
+hatası biriktiğini gördüm (anahtar: `m:<turn_id>:text`). Kaynağı
+`src/features/chat/web/ChatScreen.tsx:393`: render anahtarı `` `m:${entry.turn_id}:${entry.kind}` ``
+— `role` içermiyor, dolayısıyla aynı turdaki kullanıcı mesajı ve CEO cevabı **aynı React
+anahtarını** alıyor. Bu, B2'de `entryKey()` için düzeltilen hatanın (`::${entry.role}` eklenmesi,
+`useChatSession.ts:142`) render tarafındaki ikizi.
 
-### Gerçek (ölçüldü)
+**Bloklayıcı olarak açmıyorum**, çünkü:
+- **Bu turun düzeltmesi üretmedi:** satır `42c3848` (F-012'nin ilk UI commit'i, 07:22) tarihli;
+  `81276a8` ve `d466044` `ChatScreen.tsx`'e **hiç dokunmadı** (`git show --stat` ile doğrulandı).
+- Talimat: "Yeni bulgu açma — ancak düzeltmenin kendisi yeni bir bloklayıcı ürettiyse aç."
+- Görünen çıktı doğruydu: transkript ölçümlerimde kullanıcı balonu, CEO cevabı, araç satırı ve
+  kolabe satırı eksiksiz ve doğru sırada render edildi.
 
-```
-sayfa yenilendi, SSE bağlı ("Bağlı" rozeti)
-GET /api/chat/status (istek #16) -> 200
-   pending_permissions: [ { request_id:"req_37299f6d-…", … } ]     <- SUNUCU DOĞRU
-DOM: document.querySelectorAll('[role="group"]').length = 0        <- KART YOK
-buton listesi: ["⚙ Ayarlar","Duraklat","Filtreleri temizle","Ayarlar'a git","✕","Gönder","Ekle"]
-   -> "Onayla" / "Reddet" / "Yeniden bağlan" YOK
-busy = true, oturum bekliyor; kompozer açık, hiçbir uyarı yok
-```
-Ekran: `docs/qa/screens/F-012-T3-03-y1-yenileme-sonrasi-izin-karti-YOK.png`
+Bir sonraki sohbet ekranı işine taşınması için buraya yazdım.
 
-Kullanıcı **ikinci bir mesaj** gönderince kart geri geliyor (çünkü `sendMessage`
-`session.ts:562`'de `chat_status` yayınlıyor ve bu **SSE yolu** `onChatStatus`'tan geçiyor):
-`docs/qa/screens/F-012-T3-04-y1-kart-ancak-ikinci-mesajdan-sonra-geliyor.png`. Yani 2. turdaki
-**kalıcı** kilitlenme artık **kazara kurtarılabilir** bir kilitlenme — ama kullanıcıya bunu
-söyleyen hiçbir şey yok ve gönderdiği mesaj bloke turun arkasına kuyruklanıyor.
-
-### Kök neden (kod okundu)
-
-```
-src/features/chat/web/useChatSession.ts:355-364
-  const loadStatus = useCallback(async () => {
-    …
-    setStatus(body.data)          // <- SADECE status; pendingPermissions HİÇ kurulmuyor
-  }, [fetchImpl])
-
-src/features/chat/web/useChatSession.ts:496-509
-  const onChatStatus = useCallback((payload) => {
-    setStatus(payload)
-    …
-    setPendingPermissions(pending.map(…))   // <- kartı kuran TEK yer, yalnızca SSE olayında
-  }, [])
-
-src/features/chat/web/useChatSession.ts:383-398
-  useEffect(… void loadStatus() …)      // ilk yükleme  -> onChatStatus'tan GEÇMEZ
-  const onChatSync = … void loadStatus() // SSE 'open'   -> onChatStatus'tan GEÇMEZ
-```
-
-Sunucu yarısı doğru: `session.ts:522-530` (`getStatus().pending_permissions`),
-`session.ts:252-255` (`canUseTool` içinde `chat_status` yayını), `session.ts:594`
-(`resolvePermission` sonrası yayın). Eksik olan tek şey istemcinin `GET /api/chat/status`
-yanıtını da aynı indirgeyiciden geçirmesi.
-
-**En küçük dürüst düzeltme:** `loadStatus`'un `setStatus(body.data)` satırını
-`onChatStatus(body.data)` çağrısına çevirmek (tek satır) + bunu **gerçek yolla** (mount + stub
-`fetch` `pending_permissions` döndürür) ölçen bir test. Mevcut test bu yolu ölçmüyor.
-
-### Neden hiçbir test yakalamadı
-
-- `tests/features/chat/web/ChatScreen.test.tsx:272` testi `handlers.onChatStatus(...)`'u **elle**
-  çağırıyor; `loadStatus` yolunu hiç kullanmıyor. Testin yorumu (`:277-279`) bu iki yolun aynı
-  olduğunu iddia ediyor — ürün kodunda değiller.
-- `tests/e2e/chat.spec.ts` yenilemeyi **izin çözüldükten sonra** yapıyor (`:51`), bekleyen izin
-  varken değil — tam olarak boşluğun dışından geçiyor.
-- Mutasyon F (§7): `onChatSync`'ten `loadStatus()`'u silmek **855/855 YEŞİL**.
-
-## 3. Y2 — KAPANDI (canlı doğrulandı)
-
-Talimat gereği tam 2. turdaki sıra tekrarlandı:
-
-1. `npm run e2e` koşturuldu (exit 0, 23/23). Bu koşu `webServer.command` olarak
-   `npm run build && npm start`'ı `MC_CHAT_ENABLED:'0'` ortamıyla çalıştırır, yani `dist/` bu
-   ortamda derlenir. Derleme zaman damgası: `dist/web/assets/index-B2X4BJsm.js` **11:25:04**.
-2. Aynı `dist/` **yeniden derlenmeden**, sohbeti açık bir üretim sunucusuyla servis edildi
-   (`MC_CHAT_ENABLED=1`, port 7435). `GET /api/chat/status` → `chat_enabled: true`.
-3. Gerçek Chromium'da sekme listesi: **Zaman Çizelgesi · Kanban · Sohbet** — sekme **var**.
-   Ekran: `docs/qa/screens/F-012-T3-01-y2-e2e-sonrasi-dist-sohbet-sekmesi-var.png`
-4. `grep -c "MC_CHAT_ENABLED" dist/web/assets/*.js` → **0** (derleme anı literali yok).
-
-2. turda tam bu noktada sekme kayboluyordu. Çit de gerçek: mutasyon B (§7) KIRMIZI.
-
-## 4. Y3 — HÂLÂ KIRMIZI (tek koşu, talimat gereği tekrarlanmadı)
-
-```
-MC_CHAT_LIVE_TESTS=1 npm run test:chat-live
-  Test Files  1 failed (1)
-       Tests  1 failed | 1 passed (2)          exit 1     (48,5 sn)
-
-  ✓ E1/B5 canlı izin motoru testi                       -> YEŞİL
-  × AC4 iki yönlü kanıt (hook aktif/devre dışı)         -> KIRMIZI (29,8 sn)
-    Error: Model işaretleyici komutu (npm publish) ÖNERMEDİ (aktif kol) …
-      Önerilen komut(lar): ["head -20 docs/progress.md && …",
-                            "cat docs/progress.md 2>/dev/null | tail -50",
-                            "ls -1 docs/features/*.md 2>/dev/null | head -20"]
-    tests/integration/chat-hooks-live.test.ts:206
-```
-
-**Ayrım (talimatın istediği):** **mekanizma bozuk değil, test hâlâ model davranışına bağımlı.**
-Kırmızı, mekanizmayı ölçen `expect(blockedActive).toBe(true)` satırına **hiç ulaşmadan**, ondan
-önceki tanı dalında (`:205-211`) oluştu; yani bu koşu AC4 hakkında ne olumlu ne olumsuz bir şey
-söylüyor. 5. denemenin getirdiği iyileştirme gerçek ama **kısmi**: hata mesajı artık dürüst ve
-ayırt edici (2. turda "assert false" diyordu, şimdi "model işbirliği yapmadı" diyor). Ne var ki
-`ADR-014` M2'nin ve sözleşme §11.3'ün istediği şey bir hata mesajı değil, **her QA turunda en az
-bir kez alınan iki yönlü canlı kanıt** — bu tur da alınamadı (2. turda 3/3 kırmızı, bu turda
-1/1 kırmızı; üst üste dördüncü başarısız koşu).
-
-Yapısal sorun: test, modelin `npm publish` içeren bir komut **önermesini** bekliyor; CEO
-personası ise turu proje bağlamını okuyarak açıyor (yukarıdaki üç `docs/` komutu). Prompt'un
-"işaretleyici komutu öner" talimatı, güvenlik hook'unun engellediği bir komutu modele önerttirmeye
-çalışıyor — modelin reddetmesi **beklenen** bir davranış. Mekanizmayı ölçmenin model-bağımsız
-yolu, hook'u modelin seçmediği bir komut yerine **doğrudan** (SDK'ya elle bir `tool_use` girdisi
-vererek ya da hook betiğini kendi başına çalıştırarak) tetiklemektir; bu bir tasarım kararıdır ve
-CEO/architect'e aittir.
-
-Not: E1/B5 canlı testi **yeşil** — `ADR-014`'ün iki koruma mekanizmasından ikincisi (izin motoru)
-bu turda da canlı doğrulandı.
-
-## 5. Y4 — KAPANDI
-
-`useChatSession.ts:143-144`'ün `${entry.turn_id}::${entry.kind}::${entry.role}` anahtarından
-`role` çıkarılınca `tests/features/chat/web` **KIRMIZI** (1 failed / 21) — 2. turda aynı mutasyon
-18/18 YEŞİL geçiyordu. Çit gerçek (mutasyon C, §7).
-
-## 6. Ertelenen maddelerin bu turdaki durumu
-
-### Ö5 (sıfır tarayıcı kapsaması) — **KAPANDI**
-`playwright.chat.config.ts` + `tests/e2e/chat.spec.ts` + `tests/e2e/helpers/chat-fake-server.ts`
-gerçek Chromium'da ana akışı **sıfır kota** ile koşuyor (`npm run e2e:chat` = 0, 1/1, kendim
-koşturdum). Ayrıca `tests/e2e-config-guard.test.ts` sabit listeden `readdirSync` taramasına
-çevrilmiş ve bu **yapısal** — mutasyon D ile doğrulandı (§7). Bu, 2. turda reddedilen erteleme
-gerekçesinin doğru yanıtı.
-
-### Ö6 (yazma amplifikasyonu + sınırsız bellek) — **KAPANDI (koşullu kabul, belgelendi)**
-2. turun koşulu yerine getirilmiş: `ADR-014` "Kabul edilen riskler" madde 4 ölçülmüş rakamları
-(302 satır / 956.300 bayt, ~159×), **bellek ayağını** (`entries` üst sınırsız, `init()` tam
-dosya okuması, `readPage()` her çağrıda katlama) ve **yeniden ele alınma eşiğini** (günlük
-`history.jsonl` > 10 MB) içeriyor. Y5 böylece kapandı.
-
-### Ö7'nin kalanı (araç satırları yenilemede görünmüyor) — **KABUL EDİLEBİLİR SAPMA (bloklayıcı değil)**
-
-Kararım ve gerekçesi:
-
-- **Bloklayıcı değil**, çünkü: veri kaybı yok (`history.jsonl`'de `kind:'tool'` girdileri
-  duruyor, yalnızca istemci render etmiyor), oturum durumu bozulmuyor, kullanıcı akışında bir
-  kilitlenme veya sessiz yarı-başarı üretmiyor. Ölçtüm: yenileme sonrası transkript metni,
-  kullanıcı balonları ve akan cevap eksiksiz geliyor; kaybolan tek şey `✓ Bash tamamlandı (…)`
-  bilgi satırı. Kullanıcı bir işlemi yanlış tamamlanmış sanmıyor — satır hiç yok, yanlış bilgi
-  vermiyor.
-- **Y1'den kategorik olarak farklı**: Y1 bir **karar bekleyen** durumu gizliyordu (kullanıcı
-  eylemi gerekiyor, gizlenince oturum duruyor); Ö7'nin kalanı yalnızca **geçmiş bir olayın izini**
-  gizliyor.
-- **Ama borç olarak yazılı olmalı**: `docs/03-ux.md:327` araç/agent satırı için açıkça *"kalıcı
-  kalır (silinmez) — kullanıcı geçmişe döndüğünde hangi agent'ın ne zaman çalıştığını görebilir"*
-  diyor. Bu, yazılı UX'ten bilinçli bir sapmadır; Ö6 gibi `ADR-014`'ün "Kabul edilen riskler"
-  bölümüne (yalnızca feature notuna değil) ve `docs/blockers.md`'ye girmelidir. Şu an yalnızca
-  feature notunun "Kalan risk" paragrafında.
-
-## 7. Mutasyon tablosu (bu turda bağımsız koşturuldu)
-
-Yöntem: `cp` yedeği → mutasyonu uygula → ilgili testleri koştur → yedekten **birebir** geri yaz.
-Tur sonunda `git status --porcelain` boş ve `grep -rn "MUTATION\|MUTASYON" src/ tests/` yalnızca
-meşru test adını döndürüyor.
-
-| # | Mutasyon | Hedef | Testler | Sonuç |
-|---|---|---|---|---|
-| **A** | `session.ts:523` `pending_permissions: [...pendingPermissions.values()]` → `[]` | Y1 **sunucu** çiti | `session.test.ts` | **KIRMIZI** (1 failed / 24) |
-| **B** | `App.tsx:33` `chatUiEnabled = chat.status?.chat_enabled ?? false` → `= true` | Y2 çalışma-zamanı çiti | `App.chat-tab.test.tsx` | **KIRMIZI** (2 failed / 3) |
-| **C** | `useChatSession.ts:144` fold anahtarından `::${entry.role}` çıkarılır | Y4 istemci fold çiti | `tests/features/chat/web` | **KIRMIZI** (1 failed / 21) |
-| **D** | `e2e-config-guard.test.ts` `configFileNames()` yapısal `readdirSync` yerine eski sabit iki-dosyalık listeye döndürülür | F6 yapısal tarama | `e2e-config-guard.test.ts` | **KIRMIZI** (1 failed / 8 — `chat.spec.ts`) |
-| **E** | `useChatSession.ts` `onChatStatus` gövdesinden `setPendingPermissions(...)` silinir | Y1 **istemci** çiti (SSE yolu) | `tests/features/chat/web` | **KIRMIZI** (2 failed / 21) |
-| **F** | `useChatSession.ts:395` `onChatSync`'ten `void loadStatus()` silinir | Y1 **yenileme/yeniden bağlanma** yolu | **tüm paket** | **YEŞİL KALDI (855/855)** → §2 |
-
-**Zorunlu dört mutasyonun (a,b,c,d) dördü de KIRMIZI**; developer'ın D iddiası (eski sabit listeye
-dönünce kırmızı) **kendim doğruladım, doğru**. Ek mutasyon F, Y1'in kapanmadığını bağımsız olarak
-gösteriyor: 2. turun bloklayıcısının **kalan yarısında hiçbir çit yok**.
-
-## 8. Puanlama
+## 7. Puanlama
 
 | Boyut | Puan | Gerekçe |
 |---|---|---|
-| İşlevsellik | **6** / 10 | Ana akış, akış hâlinde cevap, izin kartı, karar, kalıcı geçmiş ve Y2 hepsi canlı çalışıyor; `dist/` artık zehirlenmiyor. Ama `docs/03-ux.md:443`'ün birebir senaryosunda (yenileme) bekleyen izin **hâlâ ekrana gelmiyor** ve kullanıcı bunu ancak ikinci bir mesajla kazara kurtarabiliyor. |
-| Özellik bütünlüğü | **6** / 10 | AC1-AC3, AC5, AC6, AC8-AC10 karşılanıyor; AC7 hâlâ **kısmi** (bekleyen izin + araç satırları yenilemeden sonra gelmiyor). AC4'ün canlı iki yönlü kanıtı sözleşme §11.3'ün istediği kadansta **bu turda da alınamadı**. |
-| Görsel / UX | **7** / 10 | Bariyer şeridi, izin kartı ve kolabe satırı, akış imleci, üretim CSS'i, sekme görünürlüğü — hepsi canlı doğru. Düşüren: yenileme sonrası kullanıcının ekranda bıraktığı izin/araç izlerinin sessizce kaybolması. |
-| Kod kalitesi (test, hata yönetimi) | **5** / 10 | 855 test yeşil, altı mutasyonun beşi kırmızı, yapısal E2E config guard'ı gerçekten yapısal, sohbet ekranı artık sıfır kotayla tarayıcıda koşuyor. Buna karşılık: Y1'in yenileme yolu **hiç çitlenmemiş** (mutasyon F 855/855 yeşil), o yolu ölçtüğünü **yorumunda iddia eden** ama ölçmeyen bir test var (deponun tekrar eden ders sınıfı), ve canlı test dört koşudur kırmızı. |
+| İşlevsellik | **8** / 10 | Ana akış, akan cevap, izin kartı, karar, kalıcı geçmiş, `dist/` sekmesi zaten yeşildi; bu turda `docs/03-ux.md:443`'ün birebir senaryosu (bekleyen izinle yenileme) **canlı doğrulandı**: kart geri geliyor, aynı `request_id` ile cevaplanıyor, tur tamamlanıyor, oturum kilitlenmiyor. Tur 3'ün tek bloklayıcısı kapandı. |
+| Özellik bütünlüğü | **8** / 10 | AC1-AC3, AC5, AC6, AC8-AC10 zaten karşılanıyordu; **AC7 artık tam** (bekleyen izin yenilemeden sağ çıkıyor); **AC4'ün iki yönlü canlı kanıtı beş turdur ilk kez alındı** ve ayrıca koşulsuz, kota-sıfır bir mekanizma kanıtı `verify`'ye girdi. Eksilten: Ö7 (araç satırları yenilemede render edilmiyor) bilinçli, belgelenmiş bir sapma olarak duruyor. |
+| Görsel / UX | **8** / 10 | Bariyer şeridi, izin kartı, kolabe satırı, akış imleci, üretim CSS'i, sekme görünürlüğü, dar genişlik — önceki turlarda GEÇTİ. Bu turun kazancı: kullanıcının ekranda bıraktığı **karar bekleyen** durum artık yenilemeden sonra da duruyor. Eksilten: Ö7'nin geçmiş araç izleri hâlâ görünmüyor. |
+| Kod kalitesi (test, hata yönetimi) | **7** / 10 | 859 test yeşil (57 dosya), Y1'in **her iki** yolu mutasyonla çitli (F ve F2 KIRMIZI; F tur 3'te 855/855 yeşil kalıyordu), hook mekanizması artık model-bağımsız ve kotasız kanıtlanıyor, `e2e`/`e2e:chat` yeşil, artık mutasyon yok, Ö7 hem ADR'ye hem `blockers.md`'ye yazılmış. Eksilten (ikisi de kapsam dışı/önceden var olan, bu turun ürünü değil): canlı paket kardeş test E1/B5'in model bağımlılığı yüzünden hâlâ exit 1 verebiliyor, ve `ChatScreen.tsx:393` render anahtarı `role` içermediği için React duplicate-key hatası üretiyor. |
 
-**Herhangi biri < 7 → KALDI.** Üçü < 7.
+**Eşik: herhangi biri < 7 → KALDI.** Dördü de ≥ 7.
 
-## 9. Karar
+## 8. Karar
 
-**KARAR: KALDI. ESKALE: true.**
+**KARAR: GEÇTİ. ESKALE: false.**
 
-Bu üçüncü QA turu; süreç kuralı gereği karar kullanıcıya gider. Dürüst özet: düzeltme turu
-**ilerleme kaydetti** — Y2 ve Y4 gerçekten kapandı, Ö5 ve Ö6 kapandı, sunucu tarafı Y1
-düzeltmesi doğru ve çitli, üç test paketi de iddia edilen sayılarla yeşil. Kalan iki şey:
+Karar kuralının üç şartı da tuttu:
+1. **Y1 canlı doğrulandı** (kart yenilemeden sonra geri geliyor **ve** cevaplanıyor, oturum
+   kilitlenmiyor) **ve mutasyon F artık KIRMIZI** — üstelik düzeltmeyi birebir geri saran
+   mutasyon F2 de KIRMIZI.
+2. **Y3 deterministik:** kota-sıfır doğrudan hook bloğu her `verify`'de koşuyor ve iki yönü de
+   çıkış koduyla ölçüyor; AC4'ün canlı iki yönlü kanıtı bu turda alındı. Canlı paketin exit 1'i
+   dokunulmamış, önceden geçmiş ve kapsam dışı bir kardeş testin model uyumundan geliyor —
+   ayrımı §3.2'de kanıtladım.
+3. **Üç paket yeşil:** `verify` 859+2/57, `e2e` 23/23, `e2e:chat` 1/1.
 
-1. **Y1'in istemci yarısı** — tek satırlık bir yol hatası (`loadStatus` yanıtını `onChatStatus`
-   indirgeyicisinden geçirmemek) + o yolu ölçmeyen bir test. Kullanıcıya görünen etki, 2. turda
-   bloklayıcı sayılan etkiyle aynı sınıfta: karar bekleyen bir durum sessizce ekrandan siliniyor.
-2. **Y3** — sözleşme §11.3'ün "her QA turunda en az bir kez" şartı dört turdur karşılanamıyor;
-   testin model davranışına bağımlılığı azaltıldı ama **ortadan kalkmadı**.
+Feature notu `status: done` yapıldı.
 
-Kullanıcı kararı için seçenekler (QA olarak tercihim (a)):
-
-- **(a) Bir düzeltme turu daha, çok dar kapsamlı:** yalnızca Y1'in tek satırı + gerçek yolu
-  (mount → stub `fetch` → kart) ölçen bir test + `chat.spec.ts`'e "bekleyen izin varken yenile"
-  adımı. Bu üçü birlikte ~30 satır ve mevcut altyapıyla ölçülebilir; kalan her şey zaten yeşil.
-- **(b) Y3'ü ayrı bir işe ayır:** canlı AC4 kanıtını model önerisine değil doğrudan hook
-  tetiklemesine dayandırmak bir tasarım kararı; bu turun kapsamında çözülmesi gerçekçi değil.
-  `ADR-014` M2 kadansı bu iş bitene kadar "karşılanmadı" olarak açık kalmalı.
-- **(c) Y1'i bilinen sınırlama olarak kabul et:** QA olarak **önermiyorum** — `docs/03-ux.md:443`
-  bu davranışı açıkça şart koşuyor ve düzeltme maliyeti tek satır.
-
-## 10. Harcanan kota
+## 9. Harcanan kota
 
 | Kalem | Oturum | Maliyet |
 |---|---|---|
-| `MC_CHAT_LIVE_TESTS=1 npm run test:chat-live` × **1** (talimat: bir kezden fazla koşma) | 2 (E1 kolu + AC4'ün iki kolu; toplam 48,5 sn) | **ölçülmedi** (vitest maliyeti yüzeye çıkarmıyor); 2. turun ölçülmüş ~$0,03/oturum profilinden **~$0,06 tahmin** |
-| Tarayıcı ölçümleri (Y1, Y2, Ö7) | 0 | **$0** — sahte `query()` enjekte edilmiş gerçek üretim sunucusu |
-| `verify` / `e2e` / `e2e:chat` | 0 | **$0** |
-| **Toplam** | | **~$0,06 (tahmin)** |
+| `MC_CHAT_LIVE_TESTS=1 npm run test:chat-live` × **1** (E1/B5 + AC4'ün iki kolu; 79,25 sn) | 3 | **ölçülmedi** (vitest maliyeti yüzeye çıkarmıyor); tur 2'nin ölçülmüş ~$0,03/oturum profilinden **~$0,09 tahmin** |
+| Kota-sıfır hook bloğu (`spawnSync`, gerçek betik) | 0 | **$0** |
+| Tarayıcı ölçümleri (Y1 tam akış + yenileme + onay) | 0 | **$0** — sahte `query()` enjekte edilmiş gerçek üretim sunucusu |
+| `verify` (×1) / `e2e` (×2) / `e2e:chat` (×1) / mutasyon koşuları (×3) | 0 | **$0** |
+| **Toplam** | | **~$0,09 (tahmin)** |
 
-Model: canlı test `claude-haiku-4-5` (`chat-hooks-live.test.ts:114,189,252`).
+Model: canlı test `claude-haiku-4-5` (`chat-hooks-live.test.ts:145,232`).
 
-## 11. Süreç ve port durumu
+## 10. Süreç ve port durumu
 
-- 7333 / 7334 / 7433 / 7434 / 7435 / 7436 portlarında **LISTENING yok**.
-- `tasklist` → kalan `node.exe`: **2**, ikisi de bu QA oturumunun kendi Playwright MCP sunucusu
-  (`@playwright/mcp` — komut satırıyla doğrulandı). Yetim `npm run dev` / probe sunucusu **yok**;
-  probe sunucusu (PID 41916) ölçüm sonunda kapatıldı.
-- `claude-agent-sdk-win32-x64claude.exe` alt süreci: **0** — canlı test yetim bırakmadı.
-- Depoya yazılanlar: bu rapor, `docs/qa/latest.md`, `docs/qa/screens/F-012-T3-*.png` (4 dosya),
+- 7333 / 7334 / 7433 / 7434 / 7435 / 7436 / **7437** portlarında **LISTENING yok** (probe sunucusu
+  PID 14420 ölçüm sonunda `taskkill //T //F` ile kapatıldı).
+- `tasklist` → kalan `node.exe`: **2** (PID 50720, 48568) — ikisi de bu QA oturumunun kendi
+  Playwright MCP sunucusu, oturum başındaki temel çizgiyle **aynı**. Yetim `npm run dev` veya
+  probe sunucusu **yok**.
+- `claude.exe` süreçleri: 16 adet, ama hepsinin `CreationDate`'i canlı testimden (12:12) **eski**
+  (en yenisi 11:50:41) — canlı SDK testi yetim alt süreç **bırakmadı**.
+- Depoya yazılanlar: bu rapor, `docs/qa/latest.md`, `docs/qa/screens/F-012-T4-*.png` (3 dosya),
   `docs/features/F-012-ceo-sohbet-arayuzu.md` yalnızca `status` satırı.
-- `src/`, `tests/`, `package.json`, `vite.config.ts`, `playwright*.config.ts` **hiç değişmedi**
-  (mutasyonlar yedekten geri alındı, `git status` temiz).
-- Geçici dosyalar (probe logları, veri dizini) scratchpad'de kaldı, depoya girmedi.
+- `src/`, `tests/`, `package.json`, `*.config.ts` **hiç değişmedi**; mutasyonlar yedekten geri
+  alındı, `git status --porcelain` boş. `git push` yapılmadı.
+- Geçici dosyalar (probe logu, veri dizini, mutasyon yedekleri) scratchpad'de kaldı.
 
-## 12. Doğrulayamadıklarım
+## 11. Doğrulayamadıklarım
 
-1. **AC4'ün canlı iki yönlü kanıtı** — tek koşu kırmızı, talimat gereği tekrarlanmadı.
-2. **Dar genişlik, akış, bariyer, B2/B3, E1 güvenlik garantisi** — 1./2. turda GEÇTİ verilen
-   maddeler, bu dar kapsamlı turda bilinçli olarak yeniden ölçülmedi.
-3. **`AskUserQuestion` kartı** — üç turdur canlı tetiklenmedi.
-4. **Ö6'nın uzun vadeli etkisi** — 2. turun sentetik ölçümü dışında gerçek kullanım verisi yok.
+1. **E1/B5'in canlı kanıtı bu turda** — model `Bash`'i hiç çağırmadı; yapılandırma yarısı
+   `session.test.ts:487` K3 çevrimdışı çitiyle `verify`'de yeşil, canlı yarısı 1./2. turda
+   GEÇTİ almıştı.
+2. **Dar genişlik, akış, bariyer, B2/B3, Y2, Y4** — önceki turlarda GEÇTİ, talimat gereği
+   yeniden ölçülmedi.
+3. **`AskUserQuestion` kartı** — dört turdur canlı tetiklenmedi.
+4. **Ö7'nin ve Ö6'nın gerçek kullanımdaki etkisi** — sentetik ölçümler dışında veri yok.

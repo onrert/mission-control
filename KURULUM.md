@@ -1,8 +1,35 @@
-# KURULUM.md — send-event.cjs hook kurulumu
+# KURULUM.md — send-event.cjs hook kurulumu ve masaüstü uygulaması
 
 Bu belge, Mission Control'ün izlediği projelere `send-event.cjs` hook scriptini nasıl
 kuracağınızı ve kurulumu nasıl doğrulayacağınızı anlatır. Arka plan: `docs/02-architecture.md`
 §8, `docs/decisions/ADR-006-hook-tasima-bicimi.md`.
+
+## Masaüstü uygulaması (Electron) — nasıl elde edilir (F-014, QA Ö5 düzeltmesi)
+
+`release/` depoya girmez (`.gitignore`); `.exe`'yi elde etmek için bu deponun kökünden iki komut
+gerekir (`npm run dev`/`npm start` gibi bir sunucu adımı **gerekmez**, `.exe` kendi sunucusunu
+içeride başlatır):
+
+```sh
+npm run electron:fetch    # Electron ikilisini indirir (yalnızca ilk kurulumda gerekli)
+npm run electron:package  # dist/web'i derler + Windows-only .exe üretir (ADR-009)
+```
+
+Çıktı: `release\Mission Control-win32-x64\mission-control.exe`. Çift tıklayın — terminal
+komutu, ortam değişkeni bilmeniz gerekmez (AC1). Paketleme betiği (`scripts/package-electron.mjs`)
+çıktıyı kendi kendine doğrular (yasaklı klasör sızıntısı varsa paketleme başarısız olur) ve
+paket boyutunu (MB) yazdırır.
+
+**Bilinen davranış (QA F-014 Ö3 — hata DEĞİL, tasarım gereği):** masaüstü uygulaması kendi
+kullanıcı veri klasörünü kullanır (`%APPDATA%\mission-control\data`), bu deponun `./data`
+klasöründen **ayrıdır** (sözleşme §1.4). Yani ilk açılışta Kanban/Zaman Çizelgesi **boş**
+görünür — bu, H1 düzeltmesiyle (barındırılan sohbet oturumunun çalışma dizini) **ilgisiz** bir
+davranıştır, ölçüldü (temiz bir `userData` ile `/api/projects` → `[]`). İzlemek istediğiniz
+projeleri panelden **yeniden ekleyin** (aynı `npm run install-hook -- <proje-yolu>` adımı,
+yukarıya bakınız).
+
+**Masaüstü kabuğunun kullanıcıya görünen metinleri, tepsi davranışı ve açılışta başlama
+ayarı:** `docs/03-ux.md` "Masaüstü kabuğu metinleri" bölümü.
 
 ## Ne yapar
 

@@ -463,3 +463,80 @@ yazma hatası) bir şey ters giderse, istemciye **her zaman** bir yanıt döner 
 üzerinden ayrı bir kanaldan gelir; SSE tarafında bir hata olursa (`chat_error`) bu da panelin
 görebileceği ayrı, dürüst bir sinyaldir — "sessizce kayboldu" hiçbir yol **yoktur**.
 
+---
+
+## 10. Metin/UI sözleşmesi — `docs/03-ux.md`'ye atıf (K8)
+
+Bu sözleşme kullanıcıya gösterilecek Türkçe metinleri, renkleri, yerleşimi **tanımlamaz**.
+Aşağıdaki durum makinesi/veri sözlüğü, UX dokümanının hangi durumları karşılaması gerektiğinin
+**listesidir** (F-007 sözleşmesinin "durum tasarımı" bölümüne UX'in nasıl metin/görsel bağladığı
+emsaliyle aynı iş bölümü):
+
+| Durum anahtarı | Ne zaman | UX'in karşılaması gereken |
+|---|---|---|
+| `chat_disabled` | `MC_CHAT_ENABLED=0` | Sohbet sekmesi/alanı hiç görünmez veya "kapalı" mesajı (F-007 emsali: Faz 2 sekmelerinin "hiç yok" kuralına benzer) |
+| `api_key_barrier_tripped: true` | Ortamda `ANTHROPIC_API_KEY` bulunup temizlendi | **Kalıcı**, göz ardı edilemeyen bir uyarı (K2) |
+| `session_active: false, last_error: <mesaj>` | Bootstrap/oturum çöktü | Okunabilir hata + "yeniden başlat" eylemi |
+| `busy: true` | Bir tur işleniyor | SPIKE-001 §7.5'in kabul kriteri: "CEO meşgul, mesajın sıraya alındı" göstergesi |
+| `permission_request` bekleniyor | `canUseTool` tetiklendi | Onay/red kartı — **otomatik onay yok** (K3) |
+| `status:'interrupted'` geçmiş girdi | Sunucu çöktükten sonra yeniden yüklendi | "Yarıda kesildi" işareti, sonsuz spinner değil |
+
+Bu tablo **bağlayıcı değildir** (UX dokümanı son sözü söyler) — yalnızca veri katmanının hangi
+durumları ürettiğinin envanteridir.
+
+---
+
+## 11. Test planı ve mutasyon listesi
+
+### 11.1 Kabul kriteri → test eşlemesi
+
+| AC (feature notu) | Test(ler) |
+|---|---|
+| AC1 — mesaj ulaşır, cevap akış hâlinde, beklemeden | `chat-api.test.ts` (POST 202 hemen döner, SSE'den `chat_message` delta'ları gelir) · `session.test.ts` (kuyruklama, `done:false` ara mesajlar) |
+| AC2 — abonelik yolu, `ANTHROPIC_API_KEY` sessizce kullanılmaz | `env-barrier.test.ts` · `session.test.ts` (temizlik `query()`'den önce) · `chat-hooks-live.test.ts` (gerçek M1 tekrarı, opsiyonel kadans) |
+| AC3 — bariyer çitlenmiş | Mutasyon 1, 2 (aşağıda) |
+| AC4 — hook kapıları engelliyor, iki yönlü | Mutasyon 3 (unit, wiring) + `chat-hooks-live.test.ts` (gerçek iki yönlü) |
+| AC5 — alt agent arka planda, ana oturum cevap verebilir, ilerleme görünür | `session.test.ts` (sahte `query` art arda `chat_tool`(started) → ikinci kullanıcı mesajı işlenir → `chat_tool`(finished) sırası; SPIKE M3 zaman damgalı gözleminin sahte-veriyle tekrarı) |
+| AC6 — `x-mc-write`, çitlenmiş | Mutasyon 6 |
+| AC7 — kalıcı geçmiş | `history-log.test.ts` · `chat-api.test.ts` (yeniden başlatma sonrası `GET /api/chat/history`) |
+| AC8 — hata paneli çökertmez, async handler kendi sınırı | Mutasyon 7 + `session.test.ts` (çöküş sonrası `/api/health` hâlâ 200) |
+| AC9 — olay akışı CEO bağlamına girmez | `no-context-injection.test.ts`, mutasyon 8 |
+| AC10 — geri dönüş temiz | `chat-api.test.ts` (`MC_CHAT_ENABLED=0` altında 5 mevcut uç + ekranlar bozulmadan çalışır), mutasyon 9 |
+
+### 11.2 Mutasyon listesi (≥6 zorunlu — burada 10, her biri gerçek bir koruma noktası)
+
+1. **Bariyer temizliği kaldırılır** (`env-barrier.ts`'teki `delete env.ANTHROPIC_API_KEY` satırı
+   yorumlanır) → `env-barrier.test.ts`/`session.test.ts` KIRMIZI: anahtar `query()`'e geçirilen
+   env'de hâlâ mevcut.
+2. **Görünür uyarı bayrağı kaldırılır** (`tripped` durumunun `GET /api/chat/status`'a
+   yansıtılması silinir) → `chat-api.test.ts` KIRMIZI: anahtar varken `api_key_barrier_tripped`
+   hâlâ `false`.
+3. **Hook yükleme seçenekleri bozulur** (`settingSources: []` veya yanlış `cwd`) →
+   `session.test.ts` KIRMIZI: sahte `query`'e geçirilen `Options`'ta beklenen değerler yok.
+4. **`permissionMode` `'bypassPermissions'`e çevrilir** → `permission-mode-fence.test.ts`
+   KIRMIZI (statik grep guard).
+5. **`canUseTool` bekleme olmadan otomatik `{behavior:'allow'}` döner** → `chat-api.test.ts`
+   KIRMIZI: izin isteği hiç `POST /api/chat/permission` çağrılmadan "onaylandı" görünür (test bu
+   endpoint'i **hiç** çağırmadan sahte tool-call'ın izin gerektiği hâlde geçtiğini yakalar).
+6. **Chat uçlarına `POST /api/events` benzeri bir `x-mc-write` istisnası eklenir** →
+   `chat-api.test.ts` KIRMIZI: başlıksız `POST /api/chat/message` 403 yerine 202 döner.
+7. **Bir handler'ın kendi `try/catch`'i kaldırılır** (ör. `handleChatMessage`'ın async
+   gövdesindeki `catch` bloğu silinir, sahte `query` reddeden bir promise döndürür) →
+   `chat-api.test.ts` KIRMIZI: yanıt makul bir sürede (ör. 2 sn) hiç gelmez / bağlantı asılı kalır
+   (tam olarak `CLAUDE.md`'nin F-007 dersinin tekrarını yakalayan test).
+8. **`src/features/chat/server/session.ts`'e `jsonl-store`'dan bir okuma import'u eklenir**
+   (K4 ihlali simülasyonu) → `no-context-injection.test.ts` KIRMIZI (statik guard).
+9. **`MC_CHAT_ENABLED=0` kontrolü kaldırılır** → `chat-api.test.ts` KIRMIZI: kapalıyken chat
+   uçları 503 yerine (sahte oturum hiç kurulmadığı için) 500/crash döner **ya da** kapalı
+   olması gerekirken mesaj gerçekten işlenir.
+10. **`markDanglingAsInterrupted` çağrısı `session.ts` bootstrap'ından kaldırılır** →
+    `history-log.test.ts`/`chat-api.test.ts` KIRMIZI: yeniden başlatma sonrası eski bir
+    `status:'streaming'` girdi `interrupted`e dönmez, sonsuz "yazıyor" durumunda görünür.
+
+### 11.3 Canlı (gerçek SDK) test kadansı — kesinleştirilecek
+
+`chat-hooks-live.test.ts` ve M1'in gerçek-abonelik tekrarı **her `npm run verify`'de değil**;
+öneri: (a) hook zinciri (`settingSources`, `session.ts`'in bootstrap seçenekleri) değiştiğinde
+elle bir kez, (b) her QA turunda en az bir kez (ADR-014'ün kendi "iki yönlü kanıt" şartını
+karşılamak için). Kesin kadans **§13 açık soru 4**'te CEO'ya soruluyor.
+

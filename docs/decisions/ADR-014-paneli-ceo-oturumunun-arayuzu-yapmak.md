@@ -82,6 +82,23 @@ başarısız olmuş olabilirdi.
    kapatamayız. Kaydedildi; tek kullanıcılı yerel araçta etkisi kabul edilebilir bulundu.
 3. **`ANTHROPIC_API_KEY` sessizce devralır ve gerçek para yakar.** Ortamda varsa SDK onu tercih
    eder. **Bariyer zorunlu** ve çitlenmeli (aşağıya bak).
+4. **Geçmiş yazma amplifikasyonu ve sınırsız bellek (bilinen sınırlama, F-012 QA tur 2 Ö6,
+   koşullu kabul).** `session.ts` her `content_block_delta`'da BİRİKMİŞ metnin TAMAMINI
+   `historyLog.append` ile yeni bir satır olarak yazıyor (O(delta_sayısı × metin_uzunluğu)).
+   **Ölçüldü** (`docs/qa/F-012-2026-09-06-tur2.md` §3): tek bir 6.000 karakterlik CEO cevabı
+   (20 karakterlik 300 delta) → `history.jsonl`'de **302 satır / 956.300 bayt** (**~159×**
+   amplifikasyon). İkinci, daha önce belgelenmemiş kat: `history-log.ts`'in `entries` dizisi
+   **tüm** girdileri bellekte tutuyor ve **hiçbir üst sınırı yok** (`jsonl-store.ts`'in ring
+   buffer emsalinin aksine); `init()` dosyanın tamamını `readFileSync` ile belleğe alıyor;
+   `readPage()` her çağrıda tüm diziyi katlıyor. Ekstrapolasyon (ölçülmedi, tahmin): 100
+   cevaplık bir gün ≈ 95 MB dosya + 95 MB bellek + her geçmiş isteğinde ~30.000 girdilik katlama
+   + her sunucu açılışında ~95 MB senkron okuma. **Kabul koşulu:** yazma sıklığını kısıtlamak
+   (`markDanglingAsInterrupted`'ın restart-sonrası davranışını etkileyebilir, bir dayanıklılık
+   tasarım kararı) tek bir turda aceleyle yapılmayacak. **Yeniden ele alınma eşiği:** gerçek
+   kullanımda tek bir günlük `history.jsonl` **10 MB**'ı aşarsa veya sunucu açılış gecikmesi
+   gözle görülür hâle gelirse (mevcut sentetik ölçüm dışında ilk gerçek belirti), bu bir sonraki
+   feature'da (yazma sıklığı sınırlama + `entries` için ring buffer) ele alınmalı;
+   `docs/blockers.md`'ye de bir sonraki feature için açık madde olarak yazıldı.
 
 ## Sonuçlar (uygulamayı bağlayan kurallar)
 

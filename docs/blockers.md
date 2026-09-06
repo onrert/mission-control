@@ -181,3 +181,30 @@ CEO onayı feature notuna ("İkinci genişletme") yazıldı; üç dosya mekanik 
 (yalnızca `x-mc-write: '1'` header'ı eklendi, gerçekte ~15 çağrı sitesi çıktı — tahmin edilenden
 fazla ama hepsi aynı sınıf). `npm run verify` = 0 (538/538), `npm run e2e` = 0 (15/15), `npm run
 e2e:dev` = 0 (1/1). Detay: `docs/progress.md` "2026-09-05 — F-006 kod turu tamamlandı" bölümü.
+
+## 2026-09-06 — bilgilendirme + açık madde (developer, F-012 QA tur2 düzeltme turu) — Ö6 geçmiş yazma amplifikasyonu, bir sonraki feature'a devrediliyor
+
+**Görev:** `docs/qa/F-012-2026-09-06-tur2.md` Ö6'yı "kabul edilebilir sapma (koşullu)" olarak
+kapatıyor; koşul (a) ölçülen rakamların `ADR-014`'e yazılması (yapıldı, "Kabul edilen riskler"
+madde 4), (b) bu maddenin `docs/blockers.md`'ye açık madde olarak girmesiydi (bu kayıt).
+
+**Durum (davranış DEĞİŞMEDİ, yalnızca ölçüldü ve belgelendi):** `session.ts` her
+`content_block_delta`'da BİRİKMİŞ metnin TAMAMINI yeni bir `history.jsonl` satırı olarak
+yazıyor. Ölçülen: 6.000 karakterlik tek bir CEO cevabı → 302 satır / 956.300 bayt (~159×
+amplifikasyon). Ayrıca `history-log.ts`'in `entries` dizisi bellekte **sınırsız** birikiyor,
+`init()` tüm dosyayı `readFileSync` ile okuyor, `readPage()` her çağrıda tüm diziyi katlıyor.
+
+**Neden bu turda düzeltilmedi:** Yazma sıklığını kısıtlamak (ör. zaman/delta-sayısı ile
+sınırlama, yalnızca `finalizeTurn`'de tam metni yazma) `markDanglingAsInterrupted`'ın
+restart-sonrası davranışını etkileyebilir (kısmi metin kaybı riski) — bu bir dayanıklılık
+tasarım kararı, aceleyle yapılırsa yeni bir hata sınıfı riski taşır. F-012'nin dosya sahipliği
+(`src/features/chat/**`) bu turun kapsamı (Y1/Y2/Y3/Y4) için zaten yeterince genişti.
+
+**İstenen aksiyon:** Bir sonraki feature (veya ayrı bir teknik borç feature'ı) `history-log.ts`
+için (1) yazma sıklığı sınırlaması + restart-sonrası dayanıklılık tasarımı, (2) `entries` için
+ring buffer (jsonl-store.ts emsali) tasarlasın. **Yeniden ele alınma eşiği** (`ADR-014` madde 4):
+gerçek kullanımda tek bir günlük `history.jsonl` 10 MB'ı aşarsa veya sunucu açılış gecikmesi
+gözle görülür hâle gelirse.
+
+**Durum:** F-012'yi bekletmiyor (QA'nın kendi kararıyla koşullu kabul edildi); yalnızca bir
+sonraki feature'ın planlamasına bilgi taşıyor.

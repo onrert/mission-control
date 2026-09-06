@@ -893,10 +893,10 @@ kapsamında YOK (v1, Karpathy §2 — istenmeyen ek durum makinesi).
 | AC5 | `session.test.ts` (sahte `query` art arda `chat_tool`(started) → ikinci mesaj işlenir → `chat_tool`(finished)) |
 | AC6 | Mutasyon 6 |
 | AC7 | `history-log.test.ts` · `chat-api.test.ts` (sayfalama dahil, Ö4) |
-| AC8 | Mutasyon 7, 7b + `session.test.ts` (çöküş sonrası `/api/health` hâlâ 200) |
+| AC8 | Mutasyon 7, 7b, **14** (D11 bütçe tavanı sessiz durmama) + `session.test.ts` (çöküş sonrası `/api/health` hâlâ 200) |
 | AC9 | `no-context-injection.test.ts`, mutasyon 8, 8b |
 | AC10 | `chat-api.test.ts` (`MC_CHAT_ENABLED=0`) + `App.test.tsx` (kapalıyken `role="tab"`=2) + mutasyon 9 |
-| K3 (izin deliği) | §8a canlı test (kod turunun ilk işi) |
+| K3 (izin deliği) | Mutasyon **13** (çevrimdışı çit, `verify`'de) + §8a canlı test (kod turunun ilk işi, `verify` dışında, D4) |
 
 ### 11.2 Mutasyon listesi — D9: her madde "hangi dosya/test KIRMIZI" + "türetilmiş mi/elle mi"
 
@@ -946,18 +946,36 @@ kapsamında YOK (v1, Karpathy §2 — istenmeyen ek durum makinesi).
 12. **`chat_tool` yayınına ham `tool_result`/`content` alanı eklenir** → `chat-api.test.ts`
     KIRMIZI (B7/S2 — yayınlanan yükün alan kümesi **kapalı** allowlist ile assert edilir: `{
     tool_use_id, tool_name, description, status, elapsed_ms, parent_tool_use_id }` dışında hiçbir
-    alan kabul edilmez, "şu alan yok" değil "yalnızca şu alanlar var" biçiminde).
+    alan kabul edilmez, "şu alan yok" değil "yalnızca şu alanlar var" biçiminde; kod turunda bu
+    aynı desen `chat_permission_request`/`chat_permission_resolved` şemalarına da uygulanır, §5 Ö6).
+13. **(Y-B1/D6, yeni) `managedSettings.permissions.allowManagedPermissionRulesOnly` kaldırılır
+    veya `false` yapılır** → çevrimdışı çit KIRMIZI: `resolveSettings({ cwd, managedSettings:
+    {...} })` çağrısının döndürdüğü `ResolvedSettings`'te bu bayrağın etkili olmadığı görülür.
+    **Elle yazılmış beklenti** (sözleşmenin kendi yapılandırma literalini test tekrarlar — `verify`
+    içinde koşar, kota harcamaz, ama §8a'nın kendi uyarısı gereği bu bir güvenlik kararı DEĞİLDİR,
+    yalnızca yapılandırma-doğruluğu çitidir; K3'ün fiili kapanması yalnızca §8a'nın canlı testiyle
+    kanıtlanır).
+14. **(Y-B3/D11, yeni) `session.ts`'in mesaj `switch`'inden `error_max_budget_usd` `case`'i
+    kaldırılır** (genel `default`'a düşürülür) → `session.test.ts` KIRMIZI: enjekte edilmiş sahte
+    `query`, bir `SDKResultError { type: 'result', subtype: 'error_max_budget_usd', is_error:
+    true }` mesajı yayınlar; test `chat_status`/`chat_error`'ın **yayınlanmadığını** görüp
+    kırmızı vermeli (D11'in "sessizce durmadığını ortaya çıkaran test" şartının birebir karşılığı).
+    **Kaynaktan türetilmiş**: gerçek `session.ts`'in mesaj işleme dalı taranır, sahte mesaj tipi
+    SDK'nın kendi tipinden (`sdk.d.ts:4957-4964`) kopyalanır.
 
-**≥6 zorunlu şartı 13 mutasyonla fazlasıyla karşılanıyor; her biri gerçek bir koruma noktası,
-hiçbiri kozmetik değil (D9 gereği yukarıda hangisinin kaynaktan türetildiği, hangisinin sözleşme
-metnine dayandığı açıkça işaretlendi).**
+**≥6 zorunlu şartı bu turda eklenen 13/14 ile birlikte 17 maddeye çıktı (önceki liste 15 madde
+sayıyordu — 1,2,2b,3,4,5,6,7,7b,8,8b,9,10,11,12); her biri gerçek bir koruma noktası, hiçbiri
+kozmetik değil (D9 gereği yukarıda hangisinin kaynaktan türetildiği, hangisinin sözleşme metnine
+dayandığı açıkça işaretlendi).**
 
 ### 11.3 Canlı (gerçek SDK) test kadansı
 
-`chat-hooks-live.test.ts` + §8a'nın izin-motoru canlı testi **her `npm run verify`'de değil**
-(D4). Kadans: (a) hook zinciri veya `managedSettings` yapılandırması değiştiğinde elle bir kez,
-(b) her QA turunda en az bir kez (ADR-014'ün "iki yönlü kanıt" şartı için), (c) §8a'nın izin-motoru
-testi **kod turunun ilk işi olarak zaten bir kez** çalıştırılmış olacak.
+`chat-hooks-live.test.ts` + §8a'nın izin-motoru canlı testi (Yol A, ve tetiklenirse D10 gereği Yol
+B'nin kendi canlı testi) **her `npm run verify`'de değil** (D4) — yalnızca mutasyon 13'ün
+çevrimdışı çiti `verify`'de koşar. Kadans: (a) hook zinciri veya `managedSettings`/Yol B
+yapılandırması değiştiğinde elle bir kez, (b) her QA turunda en az bir kez (ADR-014'ün "iki yönlü
+kanıt" şartı için), (c) §8a'nın izin-motoru testi **kod turunun ilk işi olarak zaten bir kez**
+çalıştırılmış olacak (Yol A başarısızsa hemen ardından Yol B'nin testi de, D10).
 
 ---
 

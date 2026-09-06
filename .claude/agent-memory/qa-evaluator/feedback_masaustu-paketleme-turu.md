@@ -1,11 +1,11 @@
 ---
 name: masaustu-paketleme-turu
-description: Masaüstü/paketleme (Electron) turunda bulgu üreten teknikler — native diyalog/balonun gerçekten ÇİZİLDİĞİNİ ölç, paketlenmiş kopyanın kökünü ve eksiklerini ölç, teslim durumu ile kod doğruluğunu ayır, OS tepsi menüsünü win32+UIA ile gerçekten tıkla
+description: Masaüstü/paketleme (Electron) turunda bulgu üreten teknikler — native diyalog/balonun gerçekten ÇİZİLDİĞİNİ ölç, paketlenmiş kopyanın kökünü PEB'den oku, hook'ların yüklendiğini olay akışından kanıtla, teslim durumu ile kod doğruluğunu ayır, retry kaldırıldıktan sonra N kez koştur ve süreç sayacıyla eşle
 metadata:
   type: feedback
 ---
 
-Paketleme/kabuk feature'larında (F-014, Electron) bulguların tamamı şu dört teknikten çıktı:
+Paketleme/kabuk feature'larında (F-014, Electron) bulguların tamamı şu tekniklerden çıktı:
 
 1. **"API çağrıldı" ile "kullanıcı gördü" arasındaki farkı ölç.** `dialog.showErrorBox` ve
    `tray.displayBalloon` bu makinede (Electron 44 / Win11) **hiçbir pencere/toast üretmiyor**;
@@ -21,8 +21,7 @@ Paketleme/kabuk feature'larında (F-014, Electron) bulguların tamamı şu dört
    `CHAT_SESSION_CWD`'si) o kopyaya bağlanır. `ls` ile bak: `docs/`, `.git`, `.claude/settings.json`
    yoksa ürünün ana kullanım senaryosu (dokümana bakan, commit atan, hook çitleriyle korunan bir
    ajan) sessizce çöker. `overwrite: true` olan bir paketleme betiği o klasörü bir sonraki sürümde
-   siler. Canlı kanıt ucuz: `/api/chat/status`'un bekleyen izin isteğindeki komut önizlemesi cwd'yi
-   birebir gösteriyordu.
+   siler.
 
 3. **"Kod doğru" ile "teslim edilen durum doğru"yu ayır.** F-014'te ilk-açılış varsayılanı
    (autostart AÇIK) kodda ve taze bir userData'da **çalışıyordu**; ama geliştiricinin elle testi
@@ -34,17 +33,37 @@ Paketleme/kabuk feature'larında (F-014, Electron) bulguların tamamı şu dört
 4. **OS-native yüzeyleri gerçekten tıkla — test kancasına razı olma.** Windows 11 tepsi menüsü:
    UIA ile "Gizli Simgeleri Göster" düğmesinin rect'ini bul → tıkla → UIA ile ikon rect'ini bul →
    `mouse_event` ile sağ tık → kareyi kırp (menü metinleri UX sözlüğüyle birebir karşılaştırılır) →
-   öğeye tıkla. Tepsi "Çıkış"ı böyle tıklayınca 4 → 0 süreç ölçtüm; geliştirici yalnızca
-   `global.__missionControlTestHook`'u çağırmıştı. Uyarı: taşma menüsü odak kaybında kapanıyor,
-   ikinci deneme kararsız — ölçümü ilk seferde kaydet, kalanı E2E'ye bırak.
+   öğeye tıkla. Uyarı: taşma menüsü odak kaybında kapanıyor, ikinci deneme kararsız — ölçümü ilk
+   seferde kaydet, kalanı E2E'ye bırak.
 
 5. **Yeni giriş noktasında hata sınırı yoksa fault injection ile göster.** `userData/data` yolunda
-   `data` adında bir DOSYA oluşturmak `createServer`'ı düşürdü; `app.whenReady().then(async …)`
-   zincirinde `.catch` olmadığı için: pencere yok, tepsi yok, hata yok, **3 zombi süreç** kalıcı;
-   aynı userData ile sonraki açılışlar tek-örnek kilidine takılıp sessizce ölüyor. Bu, "yazma
-   yolundaki yakalanmamış hata" dersinin dördüncü biçimi — her yeni başlatma katmanında tekrarla.
+   `data` adında bir DOSYA oluşturmak `createServer`'ı düşürüyor. Düzeltmeden önce: pencere yok,
+   tepsi yok, hata yok, **3 zombi süreç**. Düzeltmeden sonra aynı enjeksiyonu tekrarla ve
+   **pencere kapatıldıktan sonraki süreç sayısını** ölç (0 olmalı) + **aynı bozuk userData ile
+   ikinci başlatmanın** hâlâ hata gösterip göstermediğini (tek-örnek kilidi zombide takılı kalmasın).
+
+6. **Alt sürecin çalışma dizinini PEB'den oku — en ucuz ve en kesin cwd kanıtı.** Windows'ta
+   `NtQueryInformationProcess` + `ReadProcessMemory` ile x64 PEB `0x20` → `RTL_USER_PROCESS_PARAMETERS`
+   `0x38` (CurrentDirectory.DosPath) okunur; ~30 satır C#/PowerShell. F-014 2. turda barındırılan
+   oturumun `claude.exe`'sinin cwd'si böyle `C:\dev\apps\mission-control\` olarak ölçüldü — üstelik
+   uygulamayı bilerek `-WorkingDirectory 'C:\'` ile başlatıp `process.cwd()` türetimini de eledim.
+   **Hook'ların gerçekten YÜKLENDİĞİNİ** kanıtlamak için de ücretsiz bir yol var: hook'lar panele
+   olay POST'luyorsa `/api/events`'i barındırılan oturumun `session_id`'siyle filtrele ve
+   `SessionStart` olayının `raw.cwd` alanına bak. "settings.json orada duruyor" çıkarımından
+   çok daha güçlü.
+
+7. **Retry kaldırıldı diye kararsızlık bitmez — kendin N kez koştur ve süreç sayacıyla eşle.**
+   F-014 2. turda `retries: 2` gerçekten kaldırılmıştı ve geliştirici "5/5 + 3/3 yeşil" dedi;
+   benim koşumda aynı spec **17 koşuda 3 kez** kırmızı verdi (ilk koşuda hemen). Kritik ayrım:
+   *test mi kararsız, ürün mü kilitleniyor?* Bunu 1 sn aralıkla `Get-Process` örnekleyen bir
+   arka plan betiğiyle çöz — F-014'te sayaç, `shutdownViaTray()` sonrası **5 sürecin 30 saniye
+   boyunca hayatta kaldığını** ve yalnızca Playwright'ın `finally` bloğunun onları öldürdüğünü
+   gösterdi. Yani ürün kilitleniyordu, harness onu gizliyordu. Ayrıca **kardeş spec'i de koştur**
+   (F-014'te bildirim penceresi açmayan `electron-smoke` 10/10 yeşildi) — tek değişkeni izole eder
+   ve muhtemel dosya:satırı doğrudan verir.
 
 **How to apply:** Bir feature "kullanıcıya X bildirilir" diyorsa, çiti *çizim* seviyesinde ara;
-bir feature paketleme yapıyorsa çıktının içini `ls`le ve uygulamanın kökünü canlı bir API
-yanıtından doğrula. Bkz. [[kod-turu-kontrolleri]] (fault injection, çit mutasyonu),
+bir feature paketleme yapıyorsa çıktının içini `ls`le ve uygulamanın kökünü PEB'den + hook olay
+akışından doğrula; bir düzeltme turu "retry kaldırdım, yeşil" diyorsa paketi en az 10 kez koştur.
+Bkz. [[kod-turu-kontrolleri]] (fault injection, çit mutasyonu), [[duzeltme-turu-kontrolleri]],
 [[statik-cit-denetimi]].

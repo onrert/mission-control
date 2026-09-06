@@ -20,4 +20,13 @@ Multica benzeri yerel pano: hangi agent ne yaptı, hangi feature nerede, agent'l
 Vite + React + TypeScript + Tailwind; Node (chokidar dosya izleme, better-sqlite3, SSE); `localhost:4000`; VS Code Simple Browser veya tarayıcı sekmesi; Tailscale ile telefondan.
 
 ## v2
-Panodan CEO'ya mesaj: Claude Code Channels protokolüyle özel kanal (MCP sunucusu).
+~~Panodan CEO'ya mesaj: Claude Code Channels protokolüyle özel kanal (MCP sunucusu).~~
+
+**2026-09-06'da değişti (kullanıcı kararı, `ADR-014`).** Channels yaklaşımı **reddedildi**:
+panele *dışarıdaki* bir oturuma mesaj yollatmak yerine, panel CEO oturumunu
+`@anthropic-ai/claude-agent-sdk` ile **kendi içinde barındırır** ve sohbet arayüzü olur.
+
+Channels neden reddedildi (`docs/spikes/SPIKE-001-panelden-ceoya-mesaj.md`):
+oturum `--channels` bayrağıyla **başlatılmak** zorunda (ayar dosyasından açılamıyor, sonradan
+takılamıyor) · araştırma önizlemesi · kanal yüklenmemişse mesaj **hatasız, sessizce kayboluyor** ·
+ve kullanıcının istediği şey mesaj enjeksiyonu değil, sohbetin panelde geçmesiydi.

@@ -372,6 +372,45 @@ describe('createChatSession — hata sınırı (§9)', () => {
   })
 })
 
+describe('createChatSession — Ö4 (QA KALDI): tur-içi hata oturumu çökertmese bile kalıcı olarak görünür', () => {
+  it(
+    "is_error===true ama session_active=true kalan bir 'result' " +
+      "geçmişe kind:'error' girdisi ekler ve chat_error turn_id/chat_seq taşır",
+    async () => {
+      // Tekrar üretme (QA KALDI Ö4): eskiden bu dal yalnızca `chat_error` broadcast edip
+      // `finalizeTurn('done')` çağırıyordu — oturum ÇÖKMEDİĞİ (session_active hâlâ true) için
+      // `ChatScreen`'in `sessionDown`/`ErrorRow` yolu hiç tetiklenmiyordu ve `chat_error`
+      // hiçbir transkript girdisine bağlı değildi; kullanıcı turun hatayla bittiğini asla
+      // görmüyordu.
+      const { session, getHandles, broadcasts } = await bootstrapSession()
+      const result = session.sendMessage('bu tur hatayla bitecek')
+      await flush()
+      const turnId = 'turn_id' in result ? result.turn_id : undefined
+      expect(turnId).toBeDefined()
+      const handle = getHandles()[0]!
+
+      handle.emit({ type: 'result', subtype: 'success', is_error: true, total_cost_usd: 0.01 })
+      await flush()
+
+      // Oturum ÇÖKMEDİ — bu Ö4'ün tam da ayırt ettiği durum (crashed farklı bir test'te).
+      expect(session.getStatus().session_active).toBe(true)
+
+      const errorBroadcast = broadcasts.find(
+        (b) => b.name === 'chat_error' && (b.data as { code: string }).code === 'internal_error'
+      )
+      expect(errorBroadcast).toBeDefined()
+      const errorData = errorBroadcast!.data as { turn_id?: string; chat_seq?: number }
+      expect(errorData.turn_id).toBe(turnId)
+      expect(typeof errorData.chat_seq).toBe('number')
+
+      const page = session.getHistoryPage()
+      const errorEntry = page.entries.find((e) => e.turn_id === turnId && e.kind === 'error')
+      expect(errorEntry?.text).toBe('Sohbet turu hatayla sonuçlandı.')
+      expect(errorEntry?.seq).toBe(errorData.chat_seq)
+    }
+  )
+})
+
 describe('createChatSession — D11 bütçe tavanı (mutasyon 14)', () => {
   it("error_max_budget_usd sonucu sessizce yutulmaz: crashed + 'budget_exceeded' + chat_error", async () => {
     const { session, getHandles, broadcasts } = await bootstrapSession()

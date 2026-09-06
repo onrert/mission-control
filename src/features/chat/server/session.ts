@@ -364,9 +364,35 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
         return
       }
       if (message.is_error === true) {
+        // QA F-012 Ö4 düzeltmesi — eskiden yalnızca `chat_error` broadcast edilip
+        // `finalizeTurn('done')` çağrılıyordu; bu durumda `session_active` `true` kalır
+        // (crash yok), `ChatScreen`'in `sessionDown`/`ErrorRow` yolu tetiklenmez ve
+        // `useChatSession`'ın tuttuğu `lastError` hiçbir yerde render edilmediği için
+        // kullanıcı turun hatayla bittiğini FARK ETMİYORDU. Diğer `kind:'error'` girdileri
+        // gibi (bkz. `MessageBubble` — zaten `entry.kind === 'error'` render ediyor, ve
+        // `messages` filtresi zaten `kind === 'error'`'ı içeriyor) transkripte kalıcı bir
+        // hata balonu ekleniyor; `chat_error` yayınına `turn_id`/`chat_seq` eklenerek istemci
+        // sayfa yenilenmeden de aynı balonu CANLI gösterebiliyor (`onChatUserEcho` ile aynı
+        // desen).
+        const turnId = currentTurnId
+        const errorText = 'Sohbet turu hatayla sonuçlandı.'
+        let errorSeq: number | undefined
+        if (turnId !== undefined) {
+          const entry = historyLog.append({
+            turn_id: turnId,
+            role: 'system',
+            kind: 'error',
+            status: 'done',
+            text: errorText,
+            ts: deps.now().toISOString(),
+          })
+          errorSeq = entry.seq
+        }
         deps.hub.broadcast('chat_error', {
           code: 'internal_error',
-          message: 'Sohbet turu hatayla sonuçlandı.',
+          message: errorText,
+          turn_id: turnId,
+          chat_seq: errorSeq,
         })
       }
       finalizeTurn('done')

@@ -47,6 +47,13 @@ export interface ChatUserEchoEvent {
 export interface ChatErrorEvent {
   code: string
   message: string
+  /** QA F-012 Ö4 düzeltmesi — yalnızca oturum çökmeden biten (`session_active` `true` kalan)
+   *  tur-içi hatalarda dolu gelir (`session.ts` `is_error===true` dalı). Doluysa istemci bu
+   *  hatayı transkriptte kalıcı bir `kind:'error'` balonu olarak gösterir (aşağı bkz.
+   *  `onChatError`); `budget_exceeded`/`crashed` gibi oturumu düşüren hatalarda `undefined`
+   *  kalır — onlar zaten `ErrorRow`/`sessionDown` yoluyla gösteriliyor. */
+  turn_id?: string
+  chat_seq?: number
 }
 
 /** `src/features/chat/server/session.ts` `ChatStatusPayload`'ın tel biçimi — sunucu dosyasından
@@ -416,6 +423,23 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
 
   const onChatError = useCallback((payload: ChatErrorEvent) => {
     setLastError(payload)
+    // QA F-012 Ö4 düzeltmesi — `turn_id`/`chat_seq` doluysa (tur-içi hata, oturum ÇÖKMEDİ) bunu
+    // `onChatUserEcho` ile AYNI desende transkribe kalıcı bir girdi olarak ekle; sayfa
+    // yenilenmeden de görünür, `history-log.ts`'in `foldByTurn`'üyle aynı (turn_id, kind, role)
+    // anahtarını kullandığı için reload sonrası gelen gerçek girdiyle çakışmaz (aynı seq).
+    if (payload.turn_id !== undefined && payload.chat_seq !== undefined) {
+      setEntriesMap((prev) =>
+        upsertEntry(prev, {
+          seq: payload.chat_seq!,
+          turn_id: payload.turn_id!,
+          role: 'system',
+          kind: 'error',
+          text: payload.message,
+          status: 'done',
+          ts: new Date().toISOString(),
+        })
+      )
+    }
   }, [])
 
   const sendMessage = useCallback(

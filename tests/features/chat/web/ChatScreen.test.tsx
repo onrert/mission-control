@@ -143,6 +143,38 @@ describe('ChatScreen — akış hâlinde cevap (AC1 streaming)', () => {
   })
 })
 
+describe('ChatScreen — Ö4 (QA KALDI): tur-içi hata kalıcı olarak transkriptte görünür', () => {
+  it('onChatError turn_id/chat_seq taşıyorsa hata balonu SAYFA YENİLENMEDEN transkripte eklenir', async () => {
+    // Tekrar üretme (QA KALDI Ö4): eskiden `chat.lastError` hiçbir yerde render edilmiyordu —
+    // oturum çökmediği (`session_active` true kaldığı) sürece kullanıcı hiçbir şey görmüyordu.
+    stubFetch()
+    const chatRef = await renderHarness()
+
+    await act(async () => {
+      chatRef.current!.handlers.onChatMessage({
+        turn_id: 't1',
+        chat_seq: 1,
+        delta: 'yarım cevap',
+        done: false,
+      })
+    })
+    expect(screen.getByText('yarım cevap')).toBeTruthy()
+
+    await act(async () => {
+      chatRef.current!.handlers.onChatError({
+        code: 'internal_error',
+        message: 'Sohbet turu hatayla sonuçlandı.',
+        turn_id: 't1',
+        chat_seq: 2,
+      })
+    })
+
+    expect(screen.getByText('Sohbet turu hatayla sonuçlandı.')).toBeTruthy()
+    // Oturum çökmedi — genel "Oturum bağlantısı koptu" ErrorRow'u YANLIŞLIKLA tetiklenmemeli.
+    expect(screen.queryByText(/Oturum bağlantısı koptu/)).toBeNull()
+  })
+})
+
 describe('ChatScreen — izin isteği: otomatik onay YOK (K3)', () => {
   it('kart göründüğünde HİÇBİR /api/chat/permission çağrısı atılmaz; yalnızca Onayla tıklanınca gider', async () => {
     const { calls } = stubFetch()

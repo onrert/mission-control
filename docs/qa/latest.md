@@ -6,521 +6,391 @@ feature: F-012
 title: CEO sohbet arayüzü — panel oturumu Agent SDK ile barındırır
 reviewer: qa-evaluator
 date: 2026-09-06
-round: kod turu QA (round A + round B birlikte)
+round: düzeltme turu QA (tur 2, dar kapsamlı)
+previous: docs/qa/F-012-2026-09-06.md (KALDI — 6 BLOKLAYICI + Ö1-Ö8)
 ---
 
-# F-012 QA raporu — gerçek tarayıcı + gerçek SDK oturumu
+# F-012 düzeltme turu QA raporu (tur 2)
 
 ## 0. Özet
 
-**KARAR: KALDI.** 6 BLOKLAYICI, 8 ÖNEMLİ, 4 NOT.
+**KARAR: KALDI.** 2 BLOKLAYICI, 3 ÖNEMLİ.
 
-Feature'ın çekirdeği çalışıyor: gerçek bir barındırılan oturum açılıyor, panelden yazılan mesaj
-CEO'ya ulaşıyor, cevap **token token akıyor**, izin kartı gerçekten bekliyor, `.claude/hooks/`
-kapıları barındırılan oturumda gerçekten **engelliyor**, oturum çökse bile sunucu ayakta kalıyor.
-Bunlar tek tek kanıtlandı ve aşağıda ekran görüntüleriyle kayıtlı.
+Düzeltme turu iyi iş çıkardı: **1. turun 6 bloklayıcısının 6'sı da gerçekten kapandı** ve
+tek tek ölçülerek doğrulandı — iddiaya güvenilmedi. En kritik olan E1/B5 güvenlik garantisini
+**bağımsız, canlı, iki yönlü** bir deneyle kanıtladım (§2). 1. turda yeşil kalan üç mutasyonun
+üçü de artık KIRMIZI. `verify` ve `e2e` sayıları doğrulandı.
 
-Buna rağmen KALDI, çünkü:
+Buna rağmen KALDI, çünkü ertelenen iki maddenin **gerçek etkisi ölçülünce** erteleme gerekçesinden
+büyük çıktı:
 
-1. **Sohbet ekranının üretim CSS'i yok.** `src/web/index.css`'e `@source "../features/chat/web"`
-   eklenmemiş; bu depoda üç kez (F-003/B1, F-005, F-007) tekrarlamış bir hata sınıfı dördüncü kez
-   tekrarlıyor. 24 sınıf üretim CSS'inden düşüyor, `docs/03-ux.md §7`'nin görsel sözleşmesinin
-   neredeyse tamamı üretimde yok. Bunun regresyon çiti (`tests/build-css.test.ts`) de eklenmemiş.
-2. **Kullanıcının kendi mesajları transkriptten kayboluyor.** CEO cevap verir vermez "Sen" balonu
-   siliniyor; panel yeniden yüklendiğinde geçmiş tek taraflı bir monologa dönüyor. AC7 doğrudan
-   ihlal.
-3. **AC5 hem testsiz hem bozuk.** Alt agent çalışırken ikinci mesaj gönderilince ilk turun cevabı
-   ikiye bölünüyor ve yarısı ikinci tura yazılıyor.
-4. **UX CEO notu S2'nin açıkça istediği çit yanlış dala uygulanmış.** Ham araç **çıktısını**
-   (`tool_result`) akışa basan mutasyon 34 testin hiçbirini kırmıyor — yani `ListAgents` sızma
-   yolunun tam üstünde çit yok.
-5. **İzin kartı çıkmadan araç çalıştı.** Gerçek oturumda, kullanıcı hiç yokken iki `Bash` komutu
-   onay kartı gösterilmeden çalıştı ve panelde **ne çalıştığı görünmüyor**.
+1. **Bekleyen bir izin isteği varken sayfa yenilenirse oturum sessizce ve kalıcı olarak
+   kilitleniyor** (Y1). Kart kayboluyor, hiçbir uyarı yok, kompozer açık kalıyor, gönderilen
+   mesaj `202 queued` alıyor ve **hiç cevaplanmıyor**; 90 sn sonra hâlâ `busy:true`. Arayüzde
+   kurtarma yolu (Yeniden bağlan / kes) **yok**. Üstelik bu turun B5 düzeltmesi
+   (`permissions.ask:['Bash']`) her Bash çağrısını bir izin kartına çevirdiği için **bu pencereyi
+   kat kat büyüttü** — düzeltme, ertelenen kusurun olasılığını artırdı. Bu etkileşim erteleme
+   gerekçesinde hiç ele alınmamış.
+2. **`npm run e2e` çalıştıktan sonra `dist/` sohbet sekmesini derleme anında kapatıyor** (Y2).
+   Sunucu `chat_enabled: true` derken panelde sekme **hiç yok**; hata yok, mesaj yok. Bunu
+   bu turda kazara, gerçek tarayıcıda yaşadım ve tek değişken olarak izole ettim.
 
-`npm run verify` yeşil (837 test / 55 dosya, exit 0). Bu, yukarıdakilerin hiçbirini yakalamıyor —
-bu raporun ana mesajı budur.
+Ayrıca Ö5'in erteleme **öncülü yanlış**: "sahte `query()` enjekte edilebilen ayrı bir E2E modu
+mevcut harness'e yeni bir yetenek eklemek demektir" deniyor — oysa enjeksiyon dikişi **ürün
+kodunda zaten var** (`createServer(port, dataDir, chatQueryOverride)`), ve bu turdaki tüm
+tarayıcı ölçümlerimi **kota harcamadan** bu dikişle yaptım (§3). Yani boşluk kapatılabilirdi.
 
 ## 1. Ölçüm ortamı
 
 | Ne | Değer |
 |---|---|
-| Çalıştırma | `npm run build && npx tsx src/server/index.ts` (üretim yolu, `concurrently` yok) |
-| Port / veri dizini | `MC_PORT=7433`, `MC_DATA_DIR=<scratchpad>/qa-data*` (depo `data/` kirletilmedi) |
-| Tarayıcı | Playwright (Chromium), 1280 / 480 / 375 / 320 px |
-| Barındırılan oturum | gerçek `@anthropic-ai/claude-agent-sdk`, `session_id=1654ace5-…`, `agent: 'ceo'` |
-| Ürün kodu değişikliği | **YOK** (`git status --porcelain -- src tests package.json` tur boyunca boş) |
-
-## 2. Kabul kriteri → karar
-
-| # | Kabul kriteri | Karar | Kanıt |
-|---|---|---|---|
-| AC1 | Mesaj CEO'ya ulaşır, cevap **akış hâlinde** görünür | **GEÇTİ** | §3.1 — 9 sn'de 47 artımlı DOM güncellemesi, ilk token 1401 ms, `▍` imleci akış boyunca var |
-| AC2 | Oturum abonelikle açılır; `ANTHROPIC_API_KEY` sessizce kullanılmaz | **GEÇTİ (uyarı metni hariç)** | §3.4 — sahte anahtar temizlendi, oturum yine açıldı; **ama** şerit metni yanlış → Ö1 |
-| AC3 | Bariyeri kaldıran mutasyon KIRMIZI | **GEÇTİ** | Mutasyon 1, 2, 2b → hepsi KIRMIZI |
-| AC4 | `.claude/hooks/` kapıları barındırılan oturumda **engeller** (iki yönlü) | **KALDI** | §3.5 — engelleme canlı kanıtlandı, **ama** sözleşmenin şart koştuğu `tests/integration/chat-hooks-live.test.ts` **yok**, `package.json` var olmayan dosyayı çağırıyor → B6 |
-| AC5 | Alt agent çalışırken ana oturum yeni mesaja cevap verebilir | **KALDI** | B3 (§5) — testi hiç yok; izole ölçümde transkript bozuluyor → B3 |
-| AC6 | Sohbet ucu `x-mc-write`'a tabi, mutasyonla çitli | **GEÇTİ** | Mutasyon 6 → KIRMIZI (2 test) |
-| AC7 | Konuşma geçmişi kalıcı; panel kapatılıp açılınca görünür | **KALDI** | B2 (§5) — kullanıcı mesajları geçmişten düşüyor → B2; araç satırları da kayboluyor → Ö7 |
-| AC8 | Oturum hatası paneli çökertmez, okunabilir hata | **GEÇTİ** | §3.7 — `claude.exe` öldürüldü, `/api/health` 200, diğer uçlar çalıştı, kart + "Yeniden bağlan" göründü |
-| AC9 | İzlenen proje verisi CEO bağlamına girmez | **GEÇTİ** | Mutasyon 8, 8b → KIRMIZI; `ChatSessionDeps` alan kümesi kapalı |
-| AC10 | Kapatılınca panel temiz döner | **GEÇTİ** | §3.8 — `MC_CHAT_ENABLED=0` ile oturum hiç açılmadı, uçlar 503, sekme render edilmiyor |
-
-## 3. Ölçümler
-
-### 3.1 Gerçekten konuşulabiliyor mu — **EVET**
-
-Panelden yazıldı, gerçek oturuma gitti, cevap akış hâlinde geldi. Ölçüm (DOM örneklemesi, 150 ms):
-
-```
-t=1401ms  len=2    imleç=true  "1▍"
-t=2011ms  len=47   imleç=true  "…her bulgu bir AC▍"
-t=3079ms  len=141  imleç=true  "…adım adım üretim▍"
-…
-toplam 47 artımlı değişim, ~9 sn
-```
-
-Ekran: `docs/qa/screens/F-012-QA-03-akis-sonrasi-css-bozuk.png`
-
-### 3.2 Otomatik onay — **KISMİ / BLOKLAYICI**
-
-**İyi taraf:** `.claude/settings.json`'ın `permissions.allow` listesinde bulunan
-`Bash(node *)` kuralına uyan bir komut (`node -e "console.log(2+2)"`) için panelde izin kartı
-**çıktı** ve oturum kullanıcı karar verene kadar **bekledi** (23 sn boyunca "Bash çalışıyor"
-satırı; onaylanınca komut çalıştı). `allowManagedPermissionRulesOnly` fiilen çalışıyor.
-Ekran: `F-012-QA-02-izin-karti-gercek-oturum.png`
-
-**Kötü taraf:** aynı oturumda, **kullanıcı hiç mesaj göndermeden**, iki `Bash` komutu izin kartı
-gösterilmeden çalıştı. Kanıt (`GET /api/events`, hook telemetrisi):
-
-```
-05:17:04.982 PreToolUse Bash "git log --oneline -3 && git status --short | head -5 && ls docs/approvals && grep -H \"^status:\" docs/features/"
-05:17:12.159 PreToolUse Bash "ls -t docs/qa | head -5 && tail -15 docs/progress.md"
-05:17:33.741 PreToolUse Bash "npm publish --dry-run"      <- ilk kullanıcı mesajı bundan SONRA
-```
-
-`GET /api/chat/history` bu iki çağrı için **hiç `permission_request` satırı içermiyor**
-(karşılaştır: seq 3, onaylanan `node -e` çağrısının satırı var). Panelde yalnızca
-`✓ Bash tamamlandı (1 sn)` yazıyor — **ne komut ne özet**. → B5
-
-### 3.3 Ham araç çıktısı akışa basılıyor mu — **hayır, ama çit yanlış yerde**
-
-Panelde araç etkinliği yalnızca durum satırı olarak göründü, ham çıktı görünmedi (gözlemlendi).
-Ancak çitin kendisi test edildiğinde: sunucunun `chat_tool` yayınının **finished** dalına
-(`tool_result`, yani gerçek araç ÇIKTISININ taşındığı dal) `output: JSON.stringify(block)`
-eklendiğinde **34 testin hepsi yeşil kaldı** (mutasyon 12b). Round A'nın mutasyon 12'si yalnızca
-**started** (girdi) dalını ölçüyor. `docs/03-ux.md` CEO notu S2 birebir şunu istiyor:
-*"ham araç çıktısını akışa basan bir mutasyon KIRMIZI vermelidir"* — vermiyor. → B4
-
-### 3.4 Ortam bariyeri — **çalışıyor, uyarı metni yanlış**
-
-Sunucu `ANTHROPIC_API_KEY=sk-ant-qa-fake-DO-NOT-USE`, `AWS_QA_PROBE=1`, `GOOGLE_QA_PROBE=1` ile
-başlatıldı. `GET /api/chat/status` → `api_key_barrier_tripped: true`, `stripped_env_vars` **23 ad**
-(ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, AWS_QA_PROBE, GOOGLE_QA_PROBE, 19 adet `CLAUDE_*`).
-Oturum sahte anahtara rağmen açıldı → anahtar gerçekten kullanılmadı.
-
-**Ama:** panel şeridi her durumda tek bir sabit cümle gösteriyor:
-*"Ortamda ANTHROPIC_API_KEY bulundu; bu oturum için temizlendi ve kullanılmadı."*
-İkinci ölçümde sunucu **`ANTHROPIC_API_KEY` olmadan** başlatıldı (`env -u`), 22 değişken
-temizlendi, `stripped_env_vars` içinde `ANTHROPIC_API_KEY` **yok** — şerit yine aynı cümleyi
-gösterdi. Yani kullanıcıya **var olmayan bir bulgu** bildiriliyor ve **gerçekten temizlenen
-22 değişkenin hiçbiri** ekranda görünmüyor.
-Ekran: `F-012-QA-08-butce-tavani-ve-yanlis-uyari.png` → Ö1
-
-### 3.5 Hook kapıları — canlı olarak **engelliyor**
-
-`MC_CHAT_MAX_BUDGET_USD` varsayılan, gerçek oturum. Panelden: *"Bash aracıyla tam olarak şu
-komutu çalıştır: npm publish --dry-run"*. CEO'nun panele yazdığı cevap:
-
-```
-PreToolUse:Bash hook error: [node .claude/hooks/block-dangerous.cjs]:
-Engellendi: yayın için G6 onayı (docs/approvals/G6.ok) gerekli.
-```
-
-Yani hook yalnızca **yüklenmiyor**, gerçekten **durduruyor**. `docs/approvals/G6.ok` yok, hiçbir
-onay dosyası tüketilmedi (`ls docs/approvals` ile doğrulandı).
-Ekran: `F-012-QA-09-hook-engelledi-ve-onaysiz-bash.png`
-
-**Eksik olan:** ADR-014'ün istediği **iki yönlü** kanıt (hook kapalıyken aynı eylemin geçmesi)
-otomatik bir teste bağlanmamış. Sözleşme §2.3/§8/§11.3'ün şart koştuğu
-`tests/integration/chat-hooks-live.test.ts` **hiç yazılmamış**, ama `package.json:26`
-onu çağıran bir script taşıyor: `npm run test:chat-live` → `Error: No test files found`. → B6
-
-### 3.6 Bütçe tavanı — **sessiz değil, ama sözleşme metni eksik**
-
-`MC_CHAT_MAX_BUDGET_USD=0.000001` ile başlatıldı. Tavan daha ilk bootstrap'ta tetiklendi;
-`GET /api/chat/status` → `last_error: "budget_exceeded"`, `session_active: false`.
-Panelde açık mesaj göründü ve kompozer kilitlendi:
-
-```
-Oturum bu oturum için ayrılan bütçe tavanına ulaştı.
-[Yeniden bağlan]
-kompozer disabled, placeholder: "Oturum yeniden bağlanıyor…"
-```
-
-Sessiz durma **yok** — bu iyi. Ama sözleşme §10 birebir şunu şart koşuyor:
-*"Oturum bu oturum için ayrılan bütçe tavanına **(${budget} USD)** ulaştı."*
-Tutar yok; `ChatStatusPayload`'da bütçeyi taşıyan bir alan da yok, dolayısıyla istemci
-gösteremez. Kullanıcı hangi tavana çarptığını ve nasıl devam edeceğini (hangi ortam değişkeni)
-öğrenemiyor. → Ö2
-
-### 3.7 Dar genişlik — **GEÇTİ** (kırpılmış görünür genişlikle ölçüldü, `toBeVisible()` kullanılmadı)
-
-Yöntem: `getBoundingClientRect()` + her `overflow-x` ata kapsayıcıyla kesişim + viewport kırpması.
-
-| Genişlik | tab-timeline | tab-kanban | **tab-chat** | kompozer | Gönder | Ayarlar sağ kenar | yatay taşma |
-|---|---|---|---|---|---|---|---|
-| 320 px | 126 | 50.4 | **50.4** | 256 | 40 | 304 (<320) | 0 |
-| 375 px | 126 | 50.4 | **50.4** | 311 | 40 | 359 (<375) | 0 |
-| 480 px | 126 | 50.4 | **50.4** | 416 | 40 | 464 (<480) | 0 |
-| 1280 px | 126 | 50.4 | 50.4 | 1216 | 40 | — | 0 |
-
-F-007'nin "0 piksel" kırılma deseni tekrarlamıyor; developer'ın round B tablosu **doğrulandı**.
-Ekranlar: `F-012-QA-04-320px.png`, `F-012-QA-05-480px.png`.
-
-Yan bulgu: `Gönder` butonunun kırpılmış genişliği **1280 px'te de 40 px** — çünkü metin etiketi
-(`hidden sm:inline`) üretim CSS'inde hiç yok (B1). UX §7 geniş mockup'ı `[Gönder]` metinli buton
-gösteriyor; üretimde hiçbir genişlikte görünmüyor.
-
-### 3.8 Oturum çökmesi ve kapatma yolu
-
-`claude.exe` (PID 51632, panelin alt süreci) dışarıdan öldürüldü:
-- `/api/health` → 200 (`uptime_s` sıfırlanmadı, süreç aynı)
-- `/api/events` → 200, zaman çizelgesi çalışmaya devam etti
-- `/api/chat/status` → `session_active:false`, `last_error:"crashed"`
-- stderr: `Hata: barındırılan CEO oturumu çöktü: Claude Code process exited with code 4294967295`
-- Panel: "Oturum bağlantısı koptu. Geçmiş mesajlarınız kayıtlı, yeni mesaj gönderilemiyor."
-  + `[Yeniden bağlan]`; tıklanınca oturum aynı `session_id` ile geri geldi (`resume` çalışıyor).
-Ekran: `F-012-QA-06-oturum-coktu.png`
-
-`MC_CHAT_ENABLED=0` ile yeniden başlatıldığında hiç `claude.exe` açılmadı, `stripped_env_vars`
-boş kaldı, `/api/chat/history` → `403/503 chat_disabled`.
-
-**Round A'nın kapatamadığı [T] kapandı:** panelin node süreci `Stop-Process -Force` ile
-öldürüldüğünde SDK'nın `claude.exe` alt süreci 6 sn içinde **kendiliğinden öldü** — yetim
-kalmadı (ölçüldü: PID 6080, ebeveyn 50280).
-
-## 4. Mutasyon tablosu
-
-Yöntem: uygula → ilgili test dosyalarını tek başına koştur → çıkış kodunu kaydet → dosyayı
-birebir geri yaz. Tur sonunda `git status --porcelain -- src tests package.json` **boş**, ve
-`grep -rn "MUTATION\|MUTASYON" src/ tests/` yalnızca meşru test adını
-(`tests/server/write-gate-manifest.test.ts:124`) döndürüyor.
-
-| # | Mutasyon | Hangi test(ler) | Sonuç |
-|---|---|---|---|
-| 1 | `env-barrier.ts` `stripApiKey`'in `delete env[key]` satırı yorumlanır | `env-barrier.test.ts` | **KIRMIZI** (1/6 fail) |
-| 2 | `getStatus()`'ta `api_key_barrier_tripped:false`, `stripped_env_vars:[]` sabitlenir | `chat-api.test.ts` | **KIRMIZI** (1/13) |
-| 2b | `ALLOWED_ENV_EXCEPTIONS` kontrolü devre dışı | `env-barrier.test.ts` | **KIRMIZI** (2/6) |
-| 4 | `permissionMode: 'default'` → `'bypassPermissions'` | `permission-mode-fence.test.ts` + `session.test.ts` | **KIRMIZI** (3/25) |
-| 5 | `canUseTool` beklemeden otomatik `{behavior:'allow'}` döner | `chat-api.test.ts` | **KIRMIZI** (1/13) |
-| 6 | Dağıtıcıya `/api/chat/` için `x-mc-write` istisnası eklenir | `chat-api.test.ts` + `adr-013-write-header.test.ts` | **KIRMIZI** (2/25) |
-| 8 | `session.ts`'e `events/server/query` import'u eklenir | `no-context-injection.test.ts` | **KIRMIZI** (1/11) |
-| 9 | `sendMessage`'daki `isChatEnabled` kontrolü kaldırılır | `session.test.ts` + `chat-api.test.ts` | **KIRMIZI** (2/34) |
-| 10 | `markDanglingAsInterrupted()` çağrısı kaldırılır | `history-log.test.ts` | **KIRMIZI** (1/7) |
-| 12 | `chat_tool` **started** dalına `raw_input` eklenir | `chat-api.test.ts` | **KIRMIZI** (1/13) |
-| **12b** | **`chat_tool` FINISHED (`tool_result`) dalına `output: JSON.stringify(block)` eklenir** | `chat-api.test.ts` + `session.test.ts` | **YEŞİL KALDI (34/34)** → **B4** |
-| 13 | `allowManagedPermissionRulesOnly: true` → `false` | `session.test.ts` | **KIRMIZI** (2/21) |
-| 13b | `managedSettings` iç içe (`permissions.*`) hatalı biçime döndürülür | `session.test.ts` | **KIRMIZI** (2/21) |
-| 14 | `error_max_budget_usd` dalı devre dışı (bütçe mesajı susturulur) | `session.test.ts` | **KIRMIZI** (1/21) |
-| **15** | **`chat_permission_request` yayınına `raw_input: input` eklenir** | `chat-api.test.ts` + `session.test.ts` | **YEŞİL KALDI (34/34)** → **Ö3** |
-| **16** | **`chat_permission_resolved` yayınına `raw_result: result` eklenir** | `chat-api.test.ts` + `session.test.ts` | **YEŞİL KALDI (34/34)** → **Ö3** |
-| 17 | `consume()`'un `catch`'i yeniden `throw` eder (hata sınırı kaldırılır) | `session.test.ts` | **KIRMIZI** (1/21) |
-| S2-a | İstemci veri katmanı `...payload` ile şema dışı alanı geçirir (tek katman) | `ChatScreen.test.tsx` | YEŞİL (beklenen: render katmanı basmıyor) |
-| S2-b | Aynı + `ChatScreen` o alanı `JSON.stringify` ile basar (round B'nin iddia ettiği biçim) | `ChatScreen.test.tsx` | **KIRMIZI** (1/14) — round B iddiası **doğrulandı** |
-
-**17 gerçek mutasyondan 14'ü KIRMIZI, 3'ü YEŞİL kaldı.** Yeşil kalan üçü tesadüf değil,
-sistematik: hiçbiri sunucunun `chat_permission_*` ve `chat_tool`-finished yüklerinde kapalı şema
-assert etmiyor. Sözleşme §11.2 madde 12 bu deseni bu kanallara uygulamayı **açıkça taahhüt
-ediyordu** ("kod turunda bu aynı desen `chat_permission_request`/`chat_permission_resolved`
-şemalarına da uygulanır, §5 Ö6"); uygulanmamış.
-
-S2-b testinin kendisi de zayıf: `queryByText(/CIZLI-VERI-SIZMAMALI/)` yalnızca dizge **tam metin
-düğümü olarak** basılırsa yakalıyor. Aynı alanı nesne olarak basan (`[object Object]`) ya da
-`title=`/`aria-label` özniteliğine yazan bir sızıntı bu testten geçer (S2-a ölçümüyle gösterildi).
-
-## 5. Bulgular
-
-### BLOKLAYICI
-
-**B1 — Sohbet ekranının Tailwind sınıfları üretim CSS'ine hiç girmiyor (bu hata sınıfının 4. tekrarı)**
-- **Tekrar üretme:** `npm run build` → `dist/web/assets/*.css` içinde `sm\:inline`,
-  `whitespace-pre-wrap`, `items-end`, `sticky`, `bg-amber-700`, `border-l-4`, `max-w-\[92%\]`
-  ara → hiçbiri yok. Tarayıcıda 1280 px'te:
-  `getComputedStyle(document.querySelector('button[aria-label="Gönder"] span')).display === "none"`.
-- **Beklenen (`docs/03-ux.md §7`):** kullanıcı balonu sağa hizalı, CEO balonu sola, balon genişliği
-  ≤ %80 / %92, uyarı şeridi `sticky top-0`, "Onayla" birincil **amber** buton, hata satırı kırmızı
-  sol kenarlıklı, çok satırlı cevaplar satır sonlarını korur, ≥640 px'te "Gönder" metin etiketi.
-- **Gerçek:** hepsi kayıp. Yalnızca `chat/web` içinde geçip üretim CSS'inde bulunmayan 24 sınıf:
-  `bg-amber-700, border-l-4, hover:border-zinc-700, items-end, items-start, justify-end,
-  last:mb-0, max-h-24, max-w-[92%], ml-2, mt-2, mt-3, mx-auto, opacity-100, resize-none,
-  sm:inline, sm:max-w-[80%], sticky, text-amber-200, text-amber-500, text-zinc-950, top-0,
-  whitespace-pre-wrap, z-10`
-- **Görünür sonuç:** CEO'nun 5 maddelik listesi **tek devam eden paragraf** olarak çıkıyor
-  (`whitespace-pre-wrap` yok); "Onayla" düz metin gibi ve "Reddet"ten daha az belirgin
-  (`bg-amber-700` yok) — UX'in birincil/ikincil hiyerarşisi **tersine dönmüş**; hiçbir balon
-  hizalanmıyor; 1280 px'te balonlar 1256 px genişliğinde.
-- **Ekran:** `docs/qa/screens/F-012-QA-02-izin-karti-gercek-oturum.png`,
-  `docs/qa/screens/F-012-QA-03-akis-sonrasi-css-bozuk.png`
-- **Muhtemel dosya:satır:** `src/web/index.css:8-10` — `@source` listesinde
-  `"../features/chat/web"` yok. Ayrıca `tests/build-css.test.ts` — F-003/B1, F-005 ve F-007'nin
-  üçünde de eklenen `@source` regresyon çiti bu feature için eklenmemiş.
-- **Neden `verify` yakalamadı:** jsdom testleri CSS'i değerlendirmez ve
-  `playwright.config.ts:35` E2E'yi `MC_CHAT_ENABLED: '0'` ile koşturuyor — sohbet sekmesi
-  tarayıcı testlerinde hiç render edilmiyor (bkz. Ö5).
-
-**B2 — Kullanıcının kendi mesajları transkriptten ve geçmişten siliniyor (AC7)**
-- **Tekrar üretme:** panelden mesaj gönder → CEO cevap verince "Sen" balonu kaybolur →
-  sayfayı yenile → geçmişte hiç kullanıcı mesajı yok.
-- **Beklenen:** kullanıcı + CEO mesajları kronolojik ve kalıcı.
-- **Gerçek:** `GET /api/chat/history?limit=50` → 4 girdi, hepsi `assistant`/`system`.
-  Diskteki `history.jsonl` **2 adet `"role":"user"` satırı içeriyor** — yazma doğru,
-  **okuma/katlama** yanlış.
-- **Kök neden:** `foldByTurn` anahtarı `${entry.turn_id}::${entry.kind}` — `role` yok. Kullanıcı
-  mesajı ve CEO'nun cevabı aynı `turn_id` ve aynı `kind: 'text'` taşıdığı için aynı anahtara
-  düşüyor; yüksek `seq`'li assistant girdisi kullanıcınınkini eziyor. İstemci `upsertEntry`
-  **aynı hatayı** tekrarlıyor, bu yüzden canlıda da siliniyor.
-- **Muhtemel dosya:satır:** `src/features/chat/server/history-log.ts:13-19`,
-  `src/features/chat/web/useChatSession.ts:112-114`.
-- **Ekran:** `docs/qa/screens/F-012-QA-07-yenileme-sonrasi-kullanici-mesajlari-kayip.png`
-- **Not:** sözleşme §6/Ö3'ün "aynı (turn_id, kind) = aynı mantıksal mesaj" varsayımı yanlış;
-  hiçbir test aynı turda iki farklı `role` bulunan durumu kurmuyor.
-
-**B3 — AC5 hem testsiz hem bozuk: ikinci mesaj ilk turun cevabını ikiye bölüyor**
-- **Sözleşme §11.1 iddiası:** "AC5 | `session.test.ts` (sahte `query` art arda `chat_tool`(started)
-  → ikinci mesaj işlenir → `chat_tool`(finished))". `session.test.ts`'in 20 `it()` bloğunun
-  hiçbiri bunu yapmıyor.
-- **Tekrar üretme (izole ölçüm, sahte `query`, ürün kodu değiştirilmeden):** mesaj A gönder →
-  bir metin delta'sı gelsin → alt agent `tool_use` gelsin → mesaj B gönder → A'nın devamı olan
-  delta gelsin → `result` gelsin.
-- **Gerçek çıktı:**
-  ```
-  turn A = d4066e07   turn B = 271a64cb
-  seq=2 turn=d4066e07 assistant text status=streaming :: "A-cevabi-basladi "   <- sonsuza kadar streaming
-  seq=3 turn=d4066e07 assistant tool  status=done
-  seq=6 turn=271a64cb assistant text  status=done      :: "A-cevabinin-DEVAMI" <- A'nin devami B'ye yazildi
-  (iki kullanici mesaji da yok — B2)
-  ```
-- **Kullanıcıya yansıması:** ilk cevap yarım kalır ve yanıp sönen imleç hiç durmaz; ikinci balon
-  aslında birinci cevabın devamıdır; yeniden başlatmada ilk yarı "Yarıda kesildi" olur.
-- **Muhtemel dosya:satır:** `src/features/chat/server/session.ts:453` (`currentTurnId = turnId`
-  koşulsuz üzerine yazılıyor), `:256-278` (`finalizeTurn` yalnızca `currentTurnId`'yi biliyor).
-  Tur kuyruğu / tur-eşleme yok.
-
-**B4 — "Ham araç çıktısı akışa basılmaz" çiti yanlış dala uygulanmış (S2 / `ListAgents`)**
-- **Tekrar üretme:** `session.ts:246-252`'deki `tool_result` yayınına
-  `output: JSON.stringify(block)` ekle →
-  `npx vitest run tests/integration/chat-api.test.ts tests/features/chat/server/session.test.ts`
-  → **34/34 yeşil**.
-- **Beklenen (`docs/03-ux.md` CEO notu S2, birebir):** *"ham araç çıktısını akışa basan bir
-  mutasyon KIRMIZI vermelidir"*.
-- **Gerçek:** yalnızca `tool_use` (girdi) dalı kapalı allowlist ile assert ediliyor; **çıktı dalı
-  hiç assert edilmiyor**. `ListAgents`'ın döndürdüğü diğer projelerin oturum adları tam bu daldan
-  geçer.
-- **Muhtemel dosya:satır:** `src/features/chat/server/session.ts:243-253`; test tarafı
-  `tests/integration/chat-api.test.ts` (mutasyon 12 senaryosu yalnızca `started` yükünü ölçüyor).
-
-**B5 — İzin kartı çıkmadan araç çalıştı; panelde ne çalıştığı görünmüyor**
-- **Tekrar üretme:** sunucuyu var olan bir `chat/session-id.txt` ile başlat (resume). Kullanıcı
-  hiçbir şey yazmadan CEO iki `Bash` komutu çalıştırır.
-- **Kanıt (`GET /api/events`, hook telemetrisi):**
-  ```
-  05:17:04.982 PreToolUse Bash "git log --oneline -3 && git status --short | head -5 && ls docs/approvals && grep -H \"^status:\" docs/features/"
-  05:17:12.159 PreToolUse Bash "ls -t docs/qa | head -5 && tail -15 docs/progress.md"
-  05:17:33.741 PreToolUse Bash "npm publish --dry-run"   <- ilk kullanici mesaji bundan SONRA
-  ```
-  `GET /api/chat/history` bu iki `tool_use_id` için `permission_request` satırı **içermiyor**
-  (karşılaştır: onaylanan `node -e` çağrısının satırı seq 3'te var). İzin kartı hiç görünmedi;
-  sayfa açık ve izleniyordu.
-- **Beklenen (`docs/03-ux.md §7` madde 3):** *"Otomatik onay yoktur — panel tasarımı hiçbir
-  koşulda kendiliğinden onaylamaz."*
-- **Gerçek:** panel onaylamıyor, ama SDK'nın `permissionMode:'default'` sınıflandırıcısı
-  salt-okunur saydığı komutları `canUseTool`'a **hiç sormadan** geçiriyor.
-  `docs/qa/F-012-kod-turu-A-notlari.md` "Düzeltme 2" bunu gözlemlemiş ama yalnızca bir **test
-  tasarımı sorunu** olarak ele almış; sınırlama `ADR-014`'ün kabul edilen risklerinde, feature
-  notunda ve `docs/03-ux.md`'de **yazılı değil**.
-- **İkinci kat sorun:** panelde görünen tek şey `✓ Bash tamamlandı (1 sn)` — komut metni yok, özet
-  yok. Onaysız çalışan komutun ne olduğu **hiçbir yerde** görünmüyor (onaylananlarda izin kartında
-  görünüyor).
-- **Muhtemel dosya:satır:** `src/features/chat/server/session.ts:216-241`; belge tarafı
-  `docs/decisions/ADR-014-*.md` (kabul edilen riskler) ve `docs/03-ux.md §7` madde 3.
-
-**B6 — Sözleşmenin şart koştuğu canlı hook testi hiç yazılmamış; `package.json` var olmayan dosyayı çağırıyor**
-- **Tekrar üretme:** `ls tests/integration/chat-hooks-live.test.ts` → yok.
-  `npm run test:chat-live` → `No test files found`.
-- **Beklenen:** sözleşme §2.3, §8 madde 2 ("gerçek, iki yönlü kanıt"), §11.1 (AC2 ve AC4'ün test
-  eşlemesi), §11.3 ("her QA turunda en az bir kez"). `ADR-014` M2 gerekçesi iki yönlü kanıt
-  istiyor.
-- **Gerçek:** dosya yok; AC4'ün "hook devre dışıyken aynı eylem geçer" yönü hiç ölçülmedi.
-  `package.json:26` çalışmayan bir script taşıyor.
-
-### ÖNEMLİ
-
-**Ö1 — Bariyer uyarı şeridi yanlış bilgi veriyor ve temizlenen değişkenleri göstermiyor**
-- Şerit sabit metin: *"Ortamda ANTHROPIC_API_KEY bulundu; bu oturum için temizlendi ve
-  kullanılmadı."* Sunucu `ANTHROPIC_API_KEY` **olmadan** başlatıldığında (22 başka değişken
-  temizlendi, `stripped_env_vars` içinde `ANTHROPIC_API_KEY` yok) şerit yine aynı cümleyi gösterdi.
-- Sözleşme §7 D2 bariyeri dört ad-uzayına (`ANTHROPIC_`, `CLAUDE_`, `AWS_`, `GOOGLE_`) genişletti;
-  arayüz hâlâ tek bir değişkenden bahsediyor. Kullanıcı `AWS_PROFILE`/`CLAUDE_CODE_USE_BEDROCK`
-  gibi bir değişkeninin temizlendiğini **öğrenemiyor** — K2'nin "sessiz olmama" ilkesinin arayüz
-  ayağı eksik (`stripped_env_vars` yalnızca API'de var).
-- Ekran: `docs/qa/screens/F-012-QA-08-butce-tavani-ve-yanlis-uyari.png`
-- Muhtemel dosya:satır: `src/features/chat/web/ChatScreen.tsx:259-277` (`WarningBanner`
-  `chat.status.stripped_env_vars`'ı hiç okumuyor).
-
-**Ö2 — Bütçe mesajı sözleşmenin şart koştuğu tutarı içermiyor**
-- Sözleşme §10 birebir: *"Oturum bu oturum için ayrılan bütçe tavanına **(${budget} USD)**
-  ulaştı."* Gerçek metin: *"Oturum bu oturum için ayrılan bütçe tavanına ulaştı."*
-- `ChatStatusPayload`'da bütçeyi taşıyan alan yok, dolayısıyla istemci gösteremez. Kullanıcı
-  hangi tavana çarptığını ve nasıl devam edeceğini (`MC_CHAT_MAX_BUDGET_USD`) öğrenemiyor;
-  "Yeniden bağlan" aynı tavana yeniden çarpar.
-- Muhtemel dosya:satır: `src/features/chat/server/session.ts:61-70` (`ChatStatusPayload`),
-  `src/features/chat/web/ChatScreen.tsx:294-296`.
-
-**Ö3 — `chat_permission_request` / `chat_permission_resolved` yüklerinde kapalı şema çiti yok**
-- Mutasyon 15 ve 16 (yüke `raw_input` / `raw_result` eklenmesi) 34/34 yeşil.
-- Sözleşme §11.2 madde 12 bu deseni bu iki kanala uygulamayı açıkça taahhüt ediyordu.
-- İstemci `useChatSession.ts:403` yükü `{ ...payload }` ile **olduğu gibi** içeri alıyor, yani
-  sunucudan eklenen her alan istemci durumuna giriyor.
-- Muhtemel dosya:satır: `tests/integration/chat-api.test.ts` (eksik assert),
-  `src/features/chat/server/session.ts:204-210`, `:483-488`.
-
-**Ö4 — `chat_error` olayları kullanıcıya hiç gösterilmiyor**
-- `useChatSession` `lastError`'ı tutuyor (`:415-417`) ama `ChatScreen` onu **hiç render etmiyor**;
-  ekranda yalnızca `chat.status.last_error` kullanılıyor.
-- Sonuç: `result.is_error === true` durumunda sunucu `chat_error {code:'internal_error',
-  message:'Sohbet turu hatayla sonuçlandı.'}` yayınlıyor, ardından `finalizeTurn('done')` state'i
-  `idle`'a döndürüyor → `session_active` `true` kalıyor → **kullanıcı hiçbir hata görmüyor**,
-  turun hatayla bittiğini fark etmiyor.
-- Muhtemel dosya:satır: `src/features/chat/server/session.ts:349-355`,
-  `src/features/chat/web/ChatScreen.tsx` (`chat.lastError` kullanılmıyor).
-
-**Ö5 — Sohbet ekranının tarayıcı seviyesinde sıfır kapsaması var; ayrıca `npm run e2e` dist'i sohbetsiz bırakıyor**
-- `playwright.config.ts:35` → `env: { MC_DATA_DIR: e2eDataDir, MC_CHAT_ENABLED: '0' }`.
-  Bu `env` webServer komutunun **tamamına** (`npm run build && npm start`) uygulanıyor, yani
-  E2E hem sekmeyi kapatıyor hem `dist/`'i sohbet sekmesi olmadan derliyor. `npm run e2e`
-  sonrasında `npm start` ile açılan panelde sohbet sekmesi **yok** (yeniden `npm run build`
-  gerekene kadar).
-- B1 tam bu boşluktan geçti: hiçbir tarayıcı testi sohbet sekmesini açmıyor.
-- Ücret riskini önleme gerekçesi geçerli; çözüm sekmeyi kapatmak değil, sunucuya sahte bir
-  `query` enjekte edilebilen ayrı bir E2E modu olmalı (ya da en azından CSS çiti
-  `tests/build-css.test.ts` üzerinden kurulmalı).
-
-**Ö6 — Geçmiş yazma amplifikasyonu: her token delta'sı için tüm birikmiş metin diske yazılıyor**
-- `session.ts:299-306` her `content_block_delta` için `historyLog.append({ text: accumulated })`
-  çağırıyor; `history-log.ts:77-89` her `append` için diske **yeni bir tam satır** ekliyor.
-- Ölçüm: 2 turluk, ~600 karakterlik bir konuşma → `history.jsonl` **129 satır / 57.566 bayt**.
-  Uzunlukla karesel büyüyor. Uzun bir CEO cevabı (5-10 bin karakter) tek başına onlarca MB
-  yazabilir; `readPage` de her okumada tüm listeyi katlıyor.
-- Muhtemel dosya:satır: `src/features/chat/server/session.ts:299-312`,
-  `src/features/chat/server/history-log.ts:77-89`.
-
-**Ö7 — Araç satırları ve izin kayıtları yenilemede kayboluyor (UX §7 madde 2'ye aykırı)**
-- `useChatSession.ts:486` geçmişi `kind === 'text' || kind === 'error'` ile filtreliyor;
-  `tool` ve `permission_request` girdileri atılıyor. `toolRows` yalnızca canlı SSE'den doluyor.
-- UX §7 madde 2 birebir: *"Agent bittiğinde satır yeşil ✓ + özet cümlesine döner ve **kalıcı
-  kalır** (silinmez) — kullanıcı geçmişe döndüğünde hangi agent'ın ne zaman çalıştığını
-  görebilir."* Yenilemeden sonra görünmüyor.
-- Ayrıca `foldByTurn` bir turdaki **tüm** `tool` girdilerini tek satıra katlıyor
-  (`turn_id::kind` anahtarı), yani diskte bile yalnızca sonuncusu temsil ediliyor.
-- Kod içindeki yorum bunu "bilinen bir sınırlama" sayıyor ama sözleşmede/feature notunda kabul
-  edilmiş bir sapma olarak **yazılı değil**.
-
-**Ö8 — İzin kartının "kolabe" hâli yok**
-- UX §7 madde 3: *"Karar verildikten sonra kart tek satıra kolabe olur: `Onaylandı — npm test
-  çalıştı` veya `Reddedildi`."* Uygulamada `onChatPermissionResolved` kartı listeden **tamamen
-  siliyor** (`useChatSession.ts:407-409`) — geriye hiçbir iz kalmıyor, kullanıcı neyi onayladığını
-  transkriptte göremiyor.
-
-### NOT
-
-**N1 — `npm run dev` bu ortamda kullanılamıyor (developer bulgusu, doğrulanmadı).**
-Ölçümlerimi üretim yoluyla (`npm run build && npx tsx src/server/index.ts`) yaptım ve bu yol
-sorunsuz çalıştı. `concurrently` donması bu turda **bağımsız olarak tekrar üretilmedi**; gerçek
-bir Windows Terminal/PowerShell penceresinde denenmesi açık madde olarak kalıyor. Bloklayıcı
-saymıyorum (üretim kod yolu etkilenmiyor), ama `tests/e2e/dev-shell.spec.ts` bu ortamda kırmızı
-kaldığı sürece `npm run e2e:dev` güvenilir değil.
-
-**N2 — Yetim süreç: round A'nın kapatamadığı [T] kapandı.** Panelin node süreci `Stop-Process
--Force` ile öldürüldüğünde SDK'nın `claude.exe` alt süreci 6 sn içinde kendiliğinden öldü
-(ölçüldü: alt süreç PID 6080, ebeveyn 50280 → 6 sn sonra alt süreç yok). Tur sonunda
-`claude-agent-sdk-win32-x64\claude.exe` süreç sayısı **0**.
-
-**N3 — CEO'nun cevabı ham Markdown olarak basılıyor** (`**kalın**`, `` `kod` `` işaretleri
-görünüyor). UX §7 Markdown render etmeyi şart koşmuyor, dolayısıyla sapma değil; ancak B1
-düzeltildikten sonra bile satır sonu dışında bir biçimlendirme olmayacağını CEO'nun bilerek
-kabul etmesi gerekir.
-
-**N4 — `getStatus()` her çağrıda `.claude/settings.json`'ı senkron okuyor**
-(`session.ts:429` → `hasApiKeyHelperConfigured`). `chat_status` her tur başında/bitişinde
-yayınlandığı için bu, olay döngüsünde gereksiz senkron disk I/O üretiyor.
-
-## 6. Puanlama
-
-| Boyut | Puan | Gerekçe |
+| Çalıştırma | `npm run build` + gerçek `createServer()` (üretim yolu, `concurrently` yok) |
+| Portlar / veri dizini | 7434/7435/7436, `MC_DATA_DIR=<scratchpad>/qa-data-t2*` (depo `data/` kirletilmedi) |
+| Tarayıcı | Playwright (Chromium), 929–1280 px (dar genişlik 1. turda GEÇTİ, tekrar ölçülmedi) |
+| Canlı SDK | `@anthropic-ai/claude-agent-sdk`, gerçek oturum — yalnızca E1 kanıtı ve `test:chat-live` için |
+| Ürün kodu değişikliği | **YOK** — tur sonunda `git status --porcelain -- src tests package.json vite.config.ts playwright.config.ts` **boş** |
+| Artık mutasyon | **yok** — `grep -rn "MUTATION\|MUTASYON" src/ tests/` yalnızca meşru test adını döndürüyor (`tests/server/write-gate-manifest.test.ts:124`) |
+
+`verify` / `e2e` **kendim koşturdum**, iddiaya güvenmedim:
+
+| Komut | Çıkış | Sayı |
 |---|---|---|
-| İşlevsellik | **3** / 10 | Akış, izin akışı, hook engellemesi, hata sınırı çalışıyor; ama kullanıcı mesajları transkriptten siliniyor (B2), ikinci mesaj ilk cevabı bozuyor (B3), onaysız araç çalışıyor (B5). |
-| Özellik bütünlüğü | **4** / 10 | AC5 testsiz ve bozuk; AC4'ün iki yönlü kanıtı ve şart koşulan test dosyası yok (B6); sözleşmenin taahhüt ettiği üç kapalı-şema çiti (Ö3) ve bütçe metni (Ö2) eksik; UX §7'nin izin kolabe satırı, kalıcı araç satırı ve bariyer şeridi içeriği eksik (Ö1/Ö7/Ö8). |
-| Görsel / UX | **2** / 10 | Üretim CSS'inde 24 sınıf yok; hizalama, balon genişliği, sticky şerit, birincil buton rengi, satır sonları, "Gönder" etiketi — UX §7'nin görsel sözleşmesinin tamamı üretimde yok (B1). Dar genişlik geometrisi ise temiz. |
-| Kod kalitesi (test, hata yönetimi) | **4** / 10 | 837 test yeşil, hata sınırları gerçekten çalışıyor (canlı fault injection ile kanıtlandı), 14/17 mutasyon KIRMIZI. Buna karşılık: depoda üç kez tekrarlamış `@source` hatası dördüncü kez tekrarlıyor ve regresyon çiti eklenmemiş; sohbet için sıfır tarayıcı kapsaması; geçmiş yazma amplifikasyonu; `package.json` var olmayan bir test dosyasını çağırıyor. |
+| `npm run verify` | **0** | 849 geçti + 2 atlandı (851), **55 dosya** geçti + 1 atlandı (56) |
+| `npm run e2e` | **0** | **23/23** |
 
-**Herhangi biri < 7 → KALDI.** Dördü de < 7.
+Developer'ın "849 test / 55 dosya" ve "23/23" iddiaları **doğru**. Vitest worker kararsızlığı bu
+turda bir kez görüldü (M6'nın ilk koşusunda "Errors 1 error"); tekrar koşuda aynı tek gerçek
+başarısızlıkla temiz sonuç alındı — kod regresyonu değil.
 
-## 7. Karar
+## 2. E1 / B5 — güvenlik garantisi, bağımsız canlı iki yönlü kanıt
 
-**KARAR: KALDI.**
+**Sonuç: KAPANDI, iki yön de gösterildi.** Developer'ın "kesilen önceki oturumda koşuldu"
+dediği kanıtı kabul etmedim; kendi ölçümümü yaptım.
 
-Gerekçe: feature'ın güvenlik sınırının çekirdeği (bariyer, izin kartı, hook engellemesi, hata
-sınırı) gerçekten çalışıyor ve bu değerli. Ancak (a) kullanıcının kendi yazdığı mesajlar
-transkriptten kayboluyor, (b) alt agent çalışırken ikinci mesaj göndermek — yani feature'ın
-reklam ettiği ana senaryo — transkripti bozuyor ve hiçbir testi yok, (c) UX §7'nin görsel
-sözleşmesi üretimde hiç yok ve bunun regresyon çiti bu depoda üç kez öğrenilmiş olmasına rağmen
-eklenmemiş, (d) UX CEO notu S2'nin adıyla istediği çit ham araç **çıktısı** dalını hiç ölçmüyor,
-(e) izin kartı çıkmadan araç çalışabildiği ve bunun panelde görünmediği hiçbir belgede yazılı
-değil.
+Yöntem: depo dışında (scratchpad) bir betik, `session.ts`'in `buildOptions()` çıktısıyla aynı
+çekirdeği (`cwd`, `agent:'ceo'`, `settingSources:['project']`, `permissionMode:'default'`,
+`allowManagedPermissionRulesOnly:true`) kullanarak **gerçek** `query()` açar; tek fark
+`managedSettings.permissions.ask` alanının varlığı. `canUseTool` her çağrıldığında kaydedip
+**reddediyor** — yani araç çalışırsa, sorulmadan çalışmıştır.
 
-Bunların hiçbiri kozmetik değil; (b), (d) ve (e) doğrudan `ADR-014`'ün gerekçesine dokunuyor.
+### Yön A — `permissions.ask: ['Bash']` VARKEN (mevcut ürün yapılandırması)
 
-## 8. Harcanan kota
+```
+canUseTool_cagrildi: true
+  Bash  find /c/dev/apps/mission-control/docs -name "latest.md" -type f 2>/dev/null | head -5
+  Bash  git log --oneline -3
+tool_result: "QA E1 probe: reddedildi"  (iki çağrı için de)
+```
 
-Barındırılan oturumun (`session_id=1654ace5-…`) SDK transkriptinden ölçüldü
-(`~/.claude/projects/C--dev-apps-mission-control/1654ace5-….jsonl`, 77 satır):
+Salt-okunur sınıfın tam ortasındaki `git log --oneline -3` **soruldu ve bekledi**; reddedilince
+çıktı **hiç üretilmedi**.
+
+### Yön B — `permissions.ask` YOKKEN (düzeltme geri alınmış hâli)
+
+```
+tool_use sayısı: 3
+canUseTool çağrıları: 2   <-- BİRİ EKSİK
+  (asked)     cd "C:\dev\..." && git status --short && ls -la docs/approvals/ ...
+  (SORULMADI) cd "C:\dev\apps\mission-control" && git log --oneline -3
+  (asked)     cd "C:\dev\..." && ls -la docs/approvals/ ... | while read f; ...
+tool_result (sorulmayan çağrı için):
+  "730220d docs: F-012 QA fix round complete, feature status back to qa
+   2e5b5d5 fix: F-012 QA Ö8 - permission card collapse..."
+```
+
+Aynı komut **hiç sorulmadan çalıştı ve gerçek depo çıktısını döndürdü**. 1. turdaki delik birebir
+tekrar üretildi; `permissions.ask` eklenince kapandı.
+
+**İki yön de gösterildi → E1 GEÇTİ.** Ek olarak çevrimdışı çit gerçek: `permissions.ask` satırını
+silen mutasyon `session.test.ts`'i KIRMIZI veriyor (M1) ve o test SDK'nın kendi
+`resolveSettings()` motorunu çağırıyor, literal obje karşılaştırmıyor.
+
+## 3. Üç ertelenen madde — imza / ret
+
+### Ö5 — sohbet ekranının sıfır tarayıcı kapsaması → **ERTELEME REDDEDİLDİ (öncül yanlış)**
+
+Erteleme gerekçesi: *"Düzeltme sahte `query()` enjekte edilebilen ayrı bir E2E modu gerektirir —
+bu, mevcut E2E harness'ine yeni bir yetenek eklemek demektir… bu QA turunun cerrahi değişiklik
+sınırının dışında."*
+
+Bu öncül **yanlış**. Dikiş ürün kodunda zaten var:
+
+```
+src/server/index.ts:301   chatQueryOverride?: Parameters<typeof createChatSession>[0]['query']
+src/server/index.ts:322   const chatSession = createChatSession({ query: chatQueryOverride ?? sdkQuery, ... })
+```
+
+Bu turda ~100 satırlık **tek bir başlatıcı betikle** (depo dışında, scratchpad'de) gerçek üretim
+sunucusunu sahte `query()` ile ayağa kaldırdım ve bu raporun **bütün tarayıcı ölçümlerini
+sıfır kota ile** yaptım — B2, B3, Ö7, Ö8, B1'in hesaplanmış CSS'i, Y1, Y2. Yani "ücret riski
+olmadan gerçek tarayıcıda sohbet ekranını açmak" yeni bir yetenek değil; `playwright.config.ts`'in
+`webServer.command`'ını `npm start` yerine böyle bir başlatıcıya çevirmek yeterli.
+
+Kapsam kararının kendisi (bu turda mı yapılsın) tartışılabilir; ama **gerekçe olarak yazılan
+teknik iddia doğru değil** ve bu boşluk bu turda somut zarar üretti: Y2 tam bu boşluktan geçti.
+
+### Ö6 — geçmiş yazma amplifikasyonu → **KABUL EDİLEBİLİR SAPMA (koşullu)**
+
+Erteleme gerekçesi (yazma sıklığını kısıtlamanın `markDanglingAsInterrupted`'ın restart-sonrası
+davranışını bozma riski) **teknik olarak geçerli**; aceleyle yapılırsa yeni bir dayanıklılık
+hatası riski gerçek. Ama etkisi 1. turda tahmin edilenden büyük; **ölçtüm**:
 
 | Ölçüm | Değer |
 |---|---|
-| Gerçek kullanıcı turu | **3** (izin akışı için `node -e`, akış kanıtı için 5 maddelik liste, hook kanıtı için `npm publish --dry-run`) |
-| Model | `claude-fable-5-1` |
-| input tokens | 176 |
-| output tokens | 3.760 |
-| cache read | 265.013 |
-| cache write | 33.396 |
-| Ek oturum açılışı | 3 (bütçe tavanı testi — tavan bootstrap'ta tetiklendi, çıktı ~0; `MC_CHAT_ENABLED=0` testi — oturum hiç açılmadı; yetim süreç testi — mesaj gönderilmedi) |
-| Plan dışı harcama | Oturum resume edildiğinde CEO **kendiliğinden** 2 `Bash` komutu çalıştırdı (B5) — bu turlar da yukarıdaki toplama dahil. |
+| Tek bir CEO cevabı | 6.000 karakter, 20 karakterlik 300 delta |
+| `history.jsonl` | **302 satır / 956.300 bayt** |
+| Amplifikasyon | **~159×** |
 
-USD tutarı **ölçülemedi**: panel maliyeti hiçbir yerde yüzeye çıkarmıyor (F-011 kapsam dışı) ve
-SDK transkripti `total_cost_usd` alanı taşımıyor.
+1. turda bilinmeyen ikinci kat: `history-log.ts:56` `entries` dizisi **tüm** girdileri bellekte
+tutuyor ve **hiçbir üst sınırı yok** (`jsonl-store.ts`'in ring buffer emsalinin aksine);
+`init()` dosyanın tamamını `readFileSync` ile belleğe alıyor; `readPage()` **her çağrıda** tüm
+diziyi katlıyor. Yani 100 cevaplık bir gün ≈ 95 MB dosya + 95 MB bellek + her geçmiş isteğinde
+30.000 girdilik katlama + her sunucu açılışında 95 MB senkron okuma.
 
-## 9. Süreç ve port durumu
+**Kabul ediyorum**, iki koşulla: (a) ölçülmüş rakam ve **bellek/retention üst sınırının olmaması**
+`ADR-014`'ün kabul edilen riskler bölümüne (yalnızca feature notunun QA bölümüne değil) yazılmalı;
+(b) bir sonraki feature'a taşınacak açık madde olarak `docs/blockers.md`'ye girmeli.
 
-- Tur sonunda `claude-agent-sdk-win32-x64\claude.exe` süreç sayısı: **0**
-- 7333 / 7433 portlarında dinleyen süreç: **yok** (`netstat -ano | grep LISTENING`)
-- Kalan `node.exe` süreçleri: yalnızca bu QA oturumunun kendi araç süreçleri (Playwright MCP),
-  tur başında da vardı.
-- Depoya yazılanlar: `docs/qa/F-012-2026-09-06.md`, `docs/qa/latest.md`,
-  `docs/qa/screens/F-012-QA-*.png` (9 dosya), `docs/features/F-012-*.md` (`status: fix`).
-  `src/`, `tests/`, `package.json` **hiç değişmedi**.
-- Geçici ölçüm betiği (`qa-probe-ac5.mts`) ölçümden sonra silindi; veri dizinleri scratchpad'de.
+### Ö7 — araç satırları ve bekleyen izinler yenilemede kayboluyor → **ERTELEME REDDEDİLDİ → BLOKLAYICI (Y1)**
 
-## 10. Doğrulayamadıklarım
+Erteleme metni bunu bir **görüntüleme/şema** işi gibi ele alıyor ("araç satırları… hiç
+yüklenmiyorlardı… şema + sunucu + istemci değişikliği"). Etkiyi ölçtüm: **veri kaybı değil,
+kalıcı kilitlenme.** Ayrıntı §4/Y1.
 
-1. **AC4'ün ikinci yönü** (hook devre dışıyken aynı eylemin geçmesi) — `.claude/settings.json`'ı
-   değiştirmeyi gerektirir; QA turunda depo yapılandırmasına dokunmadım. Bu, developer'ın yazması
-   gereken `chat-hooks-live.test.ts`'in işi (B6).
-2. **`npm run dev` donması** (N1) — üretim yoluyla ölçtüm, `concurrently` senaryosunu bağımsız
-   tekrar üretmedim; gerçek bir terminal penceresinde denenmedi.
-3. **`AskUserQuestion` kartı** — gerçek oturumda tetiklenmedi (kota); yalnızca birim testleriyle
-   kapsanıyor. `input_preview`'un 500 karakterde kırpılması uzun sorularda JSON ayrıştırmasını
-   bozar ([T], `useChatSession.ts:94-102`'nin kendi notu) — **canlı doğrulanmadı**.
-4. **`.claude/settings.json`'ın `env` bloğunun spawn'da uygulanıp uygulanmadığı** — round A'nın
-   da kapatamadığı [T]; bu turda da ölçülmedi.
-5. **Uzun/çok turlu oturum davranışı** (retention, `history.jsonl` büyümesi ile `readPage`
-   performansı) — yalnızca Ö6'daki 2 turluk ölçümle sınırlı.
+Araç satırlarının kaybolan kısmı (`✓ Bash tamamlandı` satırlarının yenilemeden sonra gitmesi)
+tek başına ÖNEMLİ olarak kabul edilebilirdi; **bekleyen izin isteğinin** kaybolması değil.
+
+## 4. Bulgular
+
+### BLOKLAYICI
+
+**Y1 — Bekleyen izin isteği sayfa yenilemesinde kayboluyor; oturum sessizce ve kalıcı olarak kilitleniyor**
+
+- **Tekrar üretme (gerçek tarayıcı, gerçek üretim sunucusu, sahte `query()`):**
+  1. Sohbet sekmesinde bir mesaj gönder; CEO `canUseTool('Bash', {command:'npm test'})` çağırsın.
+  2. Panelde izin kartı görünür, oturum bekler (`busy:true`). Ekran:
+     `docs/qa/screens/F-012-T2-04-bekleyen-izin-karti-yenileme-oncesi.png`
+  3. Sayfayı yenile (F5 / sekmeyi kapat-aç — `docs/03-ux.md`'nin birincil senaryosu VS Code
+     Simple Browser, bu her tab geçişinde olabilir; AC7'nin kendi senaryosu da budur).
+  4. Sohbet sekmesine dön.
+- **Beklenen (`docs/03-ux.md §7` madde 3 + AC7):** bekleyen karar kullanıcıya sorulmaya devam
+  etmeli; en kötü ihtimalle kullanıcı durumu görüp kurtarabilmeli.
+- **Gerçek (ölçüldü):**
+  ```
+  izin kartı           : YOK
+  araç satırı          : YOK
+  kompozer             : AÇIK (disabled değil), placeholder normal
+  panelde buton listesi: ["✕", "Gönder"]      <- "Yeniden bağlan"/"Kes" YOK
+  POST /api/chat/message -> 202 {"queued":true}
+  90 sn sonra          : busy=true, session_active=true, last_error=yok,
+                         "CEO yazıyor… ▍" hâlâ yanıp sönüyor,
+                         kuyruktaki mesaj HİÇ cevaplanmadı
+  ```
+  Ekran: `docs/qa/screens/F-012-T2-05-yenileme-sonrasi-izin-karti-kayip-oturum-kilitli.png`
+- **Neden kurtarılamıyor:** `canUseTool`'un `Promise`'i `pendingPermissions` haritasında
+  `request_id` ile tutuluyor; `request_id` yalnızca **istemci belleğinde** yaşıyordu.
+  `GET /api/chat/history` bu isteği `kind:'permission_request'` girdisi olarak **taşıyor**
+  (ölçüldü: `seq 304, role:system, kind:permission_request, text:"npm test"`) ama girdide
+  `request_id` ve `tool_name` **yok**, ve istemci `useChatSession.ts` geçmişi
+  `kind === 'text' || kind === 'error'` ile filtrelediği için kartı zaten hiç kurmuyor.
+  `POST /api/chat/permission` için gereken `request_id`'yi kullanıcı **hiçbir yerden**
+  elde edemiyor.
+- **Bu turun düzeltmesi riski BÜYÜTTÜ:** `permissions.ask:['Bash']` (E1/B5 düzeltmesi) sayesinde
+  artık **her** Bash çağrısı bir izin kartı üretiyor. 1. turda salt-okunur komutlar hiç sormadan
+  geçiyordu; şimdi 5 Bash çalıştıran tek bir CEO turu, panelin kilitlenebileceği **5 pencere**
+  açıyor. Erteleme gerekçesi bu etkileşimi hiç değerlendirmemiş.
+- **Muhtemel dosya:satır:** `src/features/chat/server/session.ts:204-227` (`canUseTool` —
+  geçmiş girdisi `request_id`/`tool_name` taşımıyor), `src/shared/types.ts` (`ChatLogEntry`
+  şeması), `src/features/chat/web/useChatSession.ts:486` (geçmiş filtresi),
+  `src/features/chat/web/ChatScreen.tsx` (kilitli durumda kurtarma yolu yok).
+- **Not:** en küçük dürüst çözüm bile şema değişikliği gerektirmez: `session_active && busy &&
+  pendingPermissions.size > 0` durumunu `chat_status`'a koyup panelde "Bekleyen bir izin isteği
+  var, oturumu yeniden başlat" satırı göstermek kilitlenmeyi **görünür ve kurtarılabilir** yapar.
+  Bu depoda tekrar eden ders: sessiz durma, temiz hatadan kötüdür.
+
+**Y2 — `npm run e2e` sonrası üretim `dist/`'i sohbet sekmesini derleme anında kapatıyor; sunucu "açık" derken arayüzde özellik yok**
+
+- **Tekrar üretme:**
+  1. `npm run e2e` (Playwright `webServer` `npm run build && npm start`'ı
+     `env: { MC_CHAT_ENABLED: '0' }` ile çalıştırır — `playwright.config.ts:35`).
+  2. Sohbeti **açık** bir sunucuyla paneli aç (`MC_CHAT_ENABLED=1`).
+  3. `GET /api/chat/status` → `chat_enabled: true`, `session_active: true`.
+  4. Panelde sekme listesi: `Zaman Çizelgesi`, `Kanban`. **`Sohbet` yok.**
+  5. `npm run build` (override'sız) → aynı sunucu, aynı oturum, sayfa yenile → `Sohbet` **geri
+     geliyor.** Tek değişken derleme çıktısı.
+- **Kök neden:** `vite.config.ts:16` `define: { 'process.env.MC_CHAT_ENABLED': JSON.stringify(
+  process.env.MC_CHAT_ENABLED ?? '') }` → değer **derleme anında** bundle'a gömülüyor;
+  `src/web/App.tsx:26-31` `isChatUiEnabled()` bunu okuyor. E2E'nin `env`'i `webServer.command`'ın
+  **tamamına** uygulandığı için `npm run build` adımı da `'0'` ile derliyor ve `dist/` o hâlde
+  kalıyor.
+- **Beklenen:** sunucu tarafı anahtarla arayüz tarafı anahtar aynı şeyi söylemeli; en azından
+  arayüzde bir açıklama olmalı (AC10 "temiz geri dönüş" bilinçli kapatma içindir, kaza için değil).
+- **Gerçek:** özellik **sessizce ve tamamen** yok oluyor; hata yok, uyarı yok, API tersini
+  söylüyor. Kullanıcının F-012'yi bitirdikten sonra izleyeceği en olası komut sırası
+  (`verify` → `e2e` → `npm start`) tam olarak bu duruma sokuyor.
+- **Muhtemel dosya:satır:** `playwright.config.ts:35`, `vite.config.ts:16`, `src/web/App.tsx:26`.
+- **Neden hiçbir test yakalamadı:** derleme çıktısındaki bu bayrağı denetleyen çit yok; ve
+  Ö5 gereği hiçbir tarayıcı testi sohbet sekmesine bakmıyor.
+
+### ÖNEMLİ
+
+**Y3 — B6'nın teslim ettiği canlı test güvenilir değil: 3 koşunun 3'ü de KIRMIZI, her seferinde farklı testten**
+
+`MC_CHAT_LIVE_TESTS=1 npm run test:chat-live` (gerçek, ücretli oturum), üç koşu:
+
+| Koşu | E1/B5 testi | AC4 iki yönlü testi | Sonuç |
+|---|---|---|---|
+| 1 | **KIRMIZI** — 30.000 ms zaman aşımı (test 30019 ms) | YEŞİL | exit 1 |
+| 2 | YEŞİL | **KIRMIZI** — assert (54120 ms) | exit 1 |
+| 3 | YEŞİL | **KIRMIZI** — `expect(blockedActive).toBe(true)` → `false` (58711 ms) | exit 1 |
+
+- Kök neden 1: E1 testinin 30 sn'lik zaman aşımı gerçek CEO personası için yetersiz — kendi
+  probem aynı yapılandırmayla `error_max_turns`'e kadar 40-70 sn koştu.
+- Kök neden 2: AC4 testi bir **mekanizmayı** değil bir **model davranışını** assert ediyor
+  ("model gerçekten `npm publish --dry-run` çalıştırsın"). Model bunu yapmazsa `blockedActive`
+  `false` kalıyor ve test kırmızı oluyor — mekanizma sağlamken.
+- Sonuç: sözleşme §11.3 "her QA turunda en az bir kez koşulur" diyor; koşulduğunda **yanlış
+  alarm** veriyor. Bu, `ADR-014`'ün talep ettiği kanıtın kendisine olan güveni aşındırır.
+- **Yine de mekanizma kanıtlandı:** koşu 1 AC4'ün iki yönünü (hook aktifken `Engellendi`,
+  devre dışıyken geçiyor) **canlı olarak yeşil verdi**, koşu 2/3 E1'i yeşil verdi, ve §2'deki
+  bağımsız probem E1'i iki yönlü kesin olarak kapattı. Sorun testin **güvenilirliği**, iddianın
+  doğruluğu değil.
+- **Muhtemel dosya:satır:** `tests/integration/chat-hooks-live.test.ts:110` (30 sn),
+  `:175` (model davranışına bağlı assert).
+- Ek gözlem: testin "hook devre dışı" kolu `npm publish --dry-run`'ı **gerçekten çalıştırıyor**
+  (`settingSources: []` ile koruma kapalı). `--dry-run` olduğu için zararsız, ama koruma kapalı
+  bir kolda yayın ailesinden bir komut çalıştırmak dokümante edilmeli.
+
+**Y4 — B2'nin istemci yarısında çit yok (mutasyon YEŞİL geçiyor)**
+
+- 1. turun B2 bulgusu **iki** dosyayı adlandırıyordu: `history-log.ts` (sunucu katlaması) ve
+  `useChatSession.ts` (istemci katlaması). Sunucu tarafına test eklendi (M6 KIRMIZI); istemci
+  tarafına eklenmedi.
+- Mutasyon M8: `useChatSession.ts:131`'de anahtar `${turn_id}::${kind}::${role}` →
+  `${turn_id}::${kind}` yapıldı → `tests/features/chat/web` **18/18 YEŞİL**.
+- Davranış bugün doğru (canlı ölçüldü, §5), ama regresyon çiti yok: aynı hata istemci tarafında
+  tekrar edilirse hiçbir test görmez.
+- **Muhtemel dosya:satır:** `src/features/chat/web/useChatSession.ts:130-132`;
+  test tarafı `tests/features/chat/web/ChatScreen.test.tsx` (aynı turda user+assistant girdisi
+  içeren bir geçmiş yükleme senaryosu yok).
+
+**Y5 — Ö6'nın bellek ayağı hiçbir belgede yazılı değil**
+
+§3/Ö6'da ölçülen sınırsız bellek birikmesi (`entries` dizisinin üst sınırı yok, `init()` tüm
+dosyayı belleğe alıyor) feature notunun erteleme metninde **geçmiyor**; orada yalnızca disk/
+yazma sıklığı anlatılıyor. Kabul edilen sapmanın tam kapsamı yazılı olmalı.
+
+## 5. 1. tur bulgularının kapanış tablosu
+
+| # | 1. tur bulgusu | Durum | Bu turda nasıl doğrulandı |
+|---|---|---|---|
+| B1 | Sohbet CSS'i üretimde yok | **KAPANDI** | `dist/web/assets/*.css` içinde 17/17 sınıf var (`sm\:inline`, `max-w-\[92\%\]`, `sm\:max-w-\[80\%\]`, `whitespace-pre-wrap`, `bg-amber-700`, `sticky`, `border-l-4`, `text-zinc-950`, `resize-none`, `justify-end`, `items-end`, `max-h-24`, `last\:mb-0`, `text-amber-200`, `z-10`, `border-l-4`, `mt-2`). Canlı DOM: `whiteSpace:"pre-wrap"`, banner `position:"sticky"`, "Gönder" span `display:"block"`, buton sınıfı `bg-amber-700 text-zinc-950`. Çit yapısal ve gerçek (M2 KIRMIZI) |
+| B2 | Kullanıcı mesajları transkriptten siliniyor | **KAPANDI** | Canlı: iki "Sen" balonu CEO cevapladıktan sonra da duruyor; **yenilemeden sonra da** duruyor (ekran `F-012-T2-03`). M6 KIRMIZI. İstemci yarısında çit yok → Y4 |
+| B3 | İkinci mesaj ilk cevabı ikiye bölüyor | **KAPANDI** | Canlı: A'nın cevabı tek balonda tam (`"A-cevabi-basladi. A-cevabinin-DEVAMI."`), B ayrı balonda; takılı "yazıyor" balonu **yok** (ekran `F-012-T2-02`). M7 KIRMIZI |
+| B4 | Ham araç **çıktısı** çiti yanlış dalda | **KAPANDI** | M3 (`tool_result` dalına `output` eklenmesi) KIRMIZI; assert kapalı allowlist + `not.toHaveProperty('content'/'tool_result'/'output')` |
+| B5/E1 | İzin kartı çıkmadan araç çalışıyor | **KAPANDI** | §2 — bağımsız canlı **iki yönlü** kanıt + M1 KIRMIZI |
+| B6 | Canlı hook testi hiç yazılmamış | **KAPANDI (dosya var, mekanizma kanıtlı) ama test güvenilir değil** | Dosya var, `npm run test:chat-live` artık dosya buluyor; AC4'ün iki yönü canlı yeşil görüldü. Ancak 3/3 koşu kırmızı → Y3 |
+| Ö1 | Bariyer şeridi yanlış bilgi veriyor | **KAPANDI** | Canlı şerit gerçek 21 değişkeni sayıyor: *"Ortamda şu ortam değişkenleri bulundu ve bu oturum için temizlendi: ANTHROPIC_BASE_URL, CLAUDE_AGENT_SDK_VERSION, …"* |
+| Ö2 | Bütçe mesajında tutar yok | **KAPANDI** | `GET /api/chat/status` → `max_budget_usd: 20` (yeni alan) |
+| Ö3 | İzin yüklerinde kapalı şema yok | **KAPANDI** | M4 ve M5 **ayrı ayrı** KIRMIZI (iki farklı test adı) |
+| Ö4 | `chat_error` kullanıcıya gösterilmiyor | **KAPANDI (kod + test)** | `session.ts:370-395` tur-içi hatayı kalıcı `kind:'error'` girdisi olarak yazıyor, `chat_error` `turn_id`/`chat_seq` taşıyor; `session.test.ts` bunu assert ediyor. Canlı tekrar ölçülmedi |
+| Ö5 | Sıfır tarayıcı kapsaması | **ERTELEME REDDEDİLDİ** | §3 — öncül yanlış; Y2 tam bu boşluktan geçti |
+| Ö6 | Yazma amplifikasyonu | **ERTELEME KABUL (koşullu)** | §3 — 6.000 karakter = 302 satır / 956.300 bayt ölçüldü; bellek ayağı belgesiz → Y5 |
+| Ö7 | Araç satırları/izinler yenilemede kayboluyor | **ERTELEME REDDEDİLDİ → Y1** | §4/Y1 — kalıcı sessiz kilitlenme ölçüldü |
+| Ö8 | İzin kartının kolabe hâli yok | **KAPANDI** | Canlı: "Onayla"ya basınca kart tek satıra dönüyor → **`Onaylandı — npm test çalıştı`** (UX §7 (h)3 birebir) |
+
+## 6. Mutasyon tablosu (bu turda bağımsız koşturuldu)
+
+Yöntem: uygula → ilgili testleri tek başına koştur → çıkış kodunu kaydet → dosyayı **birebir**
+geri yaz (`cp` yedeği). Tur sonunda ürün kodu `git status` ile temiz doğrulandı.
+
+| # | Mutasyon | Hangi test(ler) | Sonuç |
+|---|---|---|---|
+| **M1** | `session.ts:454` `permissions: { ask: ['Bash'] }` satırı **silinir** (E1 çiti) | `session.test.ts` + `chat-api.test.ts` | **KIRMIZI** (2/39) |
+| **M2** | `index.css`'ten `@source "../features/chat/web"` **silinir** (yapısal @source çiti) | `build-css.test.ts` | **KIRMIZI** (2/19) |
+| **M3** | `chat_tool` **finished/`tool_result`** dalına `output: JSON.stringify(block)` eklenir (E3/B4 — 1. turda yanlış daldaydı) | `chat-api.test.ts` + `session.test.ts` | **KIRMIZI** (1/39) |
+| **M4** | `chat_permission_request` yüküne `raw_input: input` eklenir (1. turda YEŞİL kalmıştı) | `chat-api.test.ts` | **KIRMIZI** |
+| **M5** | `chat_permission_resolved` yüküne `raw_result: result` eklenir (1. turda YEŞİL kalmıştı) | `chat-api.test.ts` | **KIRMIZI** |
+| **M6** | `history-log.ts:20` katlama anahtarından `::${entry.role}` çıkarılır (B2 sunucu yarısı) | `history-log.test.ts` | **KIRMIZI** (1/24) |
+| **M7** | `session.ts:519` `if (turnQueue.length === 1) currentTurnId = turnId` → koşulsuz atama (B3) | `session.test.ts` | **KIRMIZI** (1/39) |
+| **M8** | `useChatSession.ts:131` katlama anahtarından `::${entry.role}` çıkarılır (B2 **istemci** yarısı) | `tests/features/chat/web` | **YEŞİL KALDI (18/18)** → **Y4** |
+
+**8 mutasyonun 7'si KIRMIZI.** 1. turda yeşil kalan üç mutasyonun (12b, 15, 16) **üçü de** artık
+KIRMIZI (M3, M4, M5) — zorunlu kontrol (a), (b), (c), (d) hepsi karşılandı.
+
+Yapısal `@source` çitinin kendisi de sağlam: `build-css.test.ts:206-222` gerçek dosya sistemine
+sahte bir `src/features/__mutation_probe_e2__/web` dizini yaratıp testin KIRMIZI verdiğini
+doğruluyor — yani "regex her zaman boş döner de yeşil kalır" totolojisi elenmiş. Önceki üç
+feature-bazlı çitin aksine bu, **bir sonraki** feature `@source` eklemeyi unutursa da yakalar.
+
+## 7. Puanlama
+
+| Boyut | Puan | Gerekçe |
+|---|---|---|
+| İşlevsellik | **5** / 10 | 1. turun altı bloklayıcısı da gerçekten çalışır hâlde (akış, kullanıcı balonları, tur kuyruğu, izin kartı, hook engelleme, hata sınırı) — bunlar canlı doğrulandı. Ama bekleyen izin varken yenileme paneli **kalıcı ve sessiz** kilitliyor (Y1) ve `e2e` sonrası özellik arayüzden tamamen kayboluyor (Y2). |
+| Özellik bütünlüğü | **5** / 10 | AC1-AC6, AC8-AC10 karşılanıyor; AC4'ün iki yönü canlı görüldü. AC7 hâlâ kısmi: araç satırları ve bekleyen izinler geçmişten yeniden kurulmuyor, ve bu kısmilik artık bir kilitlenmeye dönüşüyor. Ana ekranın tarayıcı kapsaması hâlâ sıfır ve erteleme gerekçesi yanlış (Ö5). |
+| Görsel / UX | **7** / 10 | B1 tam kapandı (üretim CSS'i, hesaplanmış stiller, birincil amber buton, `pre-wrap`, sticky şerit, "Gönder" etiketi). Ö1/Ö2/Ö8 kapandı; izin kartı UX §7'nin istediği tek satıra kolabe oluyor. Dar genişlik 1. turda geçmişti. Düşüren tek şey: yenilemeden sonra kullanıcının ekranda gördüğü araç/izin izlerinin sessizce kaybolması. |
+| Kod kalitesi (test, hata yönetimi) | **5** / 10 | 849 test yeşil, 8 mutasyonun 7'si KIRMIZI, yapısal `@source` çiti önceki üç denemeden gerçekten daha iyi, çevrimdışı K3 çiti SDK'nın kendi motorunu kullanıyor. Buna karşılık: B2'nin istemci yarısı çitsiz (Y4), B6'nın canlı testi 3/3 kırmızı ve model davranışına bağlı (Y3), geçmiş belleği sınırsız ve 159× amplifikasyonlu (Ö6), ana ekranda sıfır E2E — üstelik dikiş ürün kodunda hazır dururken. |
+
+**Herhangi biri < 7 → KALDI.** Üçü < 7.
+
+## 8. Karar
+
+**KARAR: KALDI.**
+
+Bu, "düzeltme işe yaramadı" kararı değil — tam tersi: altı bloklayıcının altısı da gerçekten
+kapandı ve en kritik olanı (E1) bağımsız canlı deneyle kanıtlandı; 1. turda yeşil kalan üç
+mutasyon artık kırmızı. Karar iki ölçüme dayanıyor:
+
+1. **Y1** — kullanıcının panelini sessizce ve kalıcı olarak kullanılamaz hâle getiren, kurtarma
+   yolu olmayan bir durum var; ve bu turun güvenlik düzeltmesi bu durumun olasılığını
+   **artırdı**. "Bilinçli ertelendi" gerekçesi bu etkileşimi değerlendirmemiş.
+2. **Y2** — belgelenmiş komut sırasının (`verify` → `e2e` → `npm start`) sonunda özelliğin
+   tamamı arayüzden sessizce kayboluyor, API tersini söylüyor.
+
+Her ikisi de bu deponun `CLAUDE.md`'de defalarca yazdığı aynı sınıf: **sessiz durma / yarı-başarı,
+temiz hatadan kötüdür.**
+
+Sonraki tur için en küçük yol: (a) Y1 için `chat_status`'a bekleyen izin sayısını koyup panelde
+görünür bir kurtarma satırı göstermek (şema değişikliği gerektirmez), (b) Y2 için
+`playwright.config.ts`'in `env`'ini yalnızca `npm start` adımına uygulamak ya da derleme
+bayrağını çalışma zamanına (`/api/chat/status.chat_enabled`) taşımak, (c) Y3 için canlı testin
+zaman aşımını yükseltip assert'i model davranışından mekanizmaya çevirmek, (d) Y4 için istemci
+katlama anahtarına bir test.
+
+## 9. Harcanan kota
+
+| Kalem | Oturum | Maliyet |
+|---|---|---|
+| E1 probe, yön A (`ask` var) | 2 | $0,0325 + $0,0338 (SDK `result.total_cost_usd`, **ölçüldü**) |
+| E1 probe, yön B (`ask` yok) | 1 | $0,0292 (**ölçüldü**) |
+| `npm run test:chat-live` × 3 | ≤ 9 | **ölçülmedi** (vitest maliyeti yüzeye çıkarmıyor); benzer tur profilinden **~$0,25 tahmin** |
+| Tarayıcı ölçümleri (B1, B2, B3, Ö7, Ö8, Y1, Y2) | 0 | **$0** — sahte `query()` enjekte edilmiş gerçek üretim sunucusu |
+| **Toplam** | | **$0,0955 ölçüldü + ~$0,25 tahmin ≈ $0,35** |
+
+Model: E1 probe ve canlı testler `claude-haiku-4-5` (kota kısıtı; test edilen mekanizma —
+SDK izin motoru ve hook zinciri — modelden bağımsız).
+
+## 10. Süreç ve port durumu
+
+- 7333 / 7434 / 7435 / 7436 portlarında dinleyen süreç: **yok** (`netstat -ano | grep LISTENING`).
+- `claude-agent-sdk-win32-x64claude.exe` (SDK'nın kendi alt süreci) sayısı: **0** — canlı testler ve E1 probe'u yetim bırakmadı.
+- Probe sunucularının `node.exe` süreçleri: **0** (üçü de `Stop-Process` ile kapatıldı; komut satırı taramasıyla doğrulandı).
+- Kalan `claude.exe` süreçleri yalnızca masaüstü uygulaması ve bu QA oturumunun kendi CLI süreci — tur başında da vardılar.
+- Depoya yazılanlar: bu rapor, `docs/qa/latest.md`, `docs/qa/screens/F-012-T2-*.png` (5 dosya),
+  `docs/features/F-012-ceo-sohbet-arayuzu.md` yalnızca `status` satırı.
+- `src/`, `tests/`, `package.json`, `vite.config.ts`, `playwright.config.ts` **hiç değişmedi**.
+- Geçici betikler (`e1-probe.mjs`, `probe-server.mts`, `probe-server2.mts`) ve veri dizinleri
+  scratchpad'de kaldı, depoya girmedi.
+
+## 11. Doğrulayamadıklarım
+
+1. **Ö4'ün canlı davranışı** — tur-içi hata balonu yalnızca kod okuması ve birim testleriyle
+   doğrulandı, gerçek bir `is_error` turu tetiklenmedi (kota).
+2. **`AskUserQuestion` kartı** — 1. turda da açık kalan madde; bu turda da canlı tetiklenmedi.
+3. **Ö6'nın uzun vadeli etkisi** — 6.000 karakterlik tek cevap ölçüldü; 100 cevaplık gerçek bir
+   günün `readPage`/açılış gecikmesi ölçülmedi, ekstrapolasyon.
+4. **Dar genişlik ve akış** — 1. turda GEÇTİ verdiğim maddeler, bu dar kapsamlı turda bilinçli
+   olarak yeniden ölçülmedi.
+5. **`npm run dev` donması (N1)** — bu turda da üretim yoluyla ölçtüm, `concurrently` senaryosu
+   bağımsız tekrar üretilmedi.

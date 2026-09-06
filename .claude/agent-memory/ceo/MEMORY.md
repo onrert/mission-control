@@ -2,3 +2,5 @@
 - [App Factory şablon klasörü](project_app-factory-sablon-klasoru.md) — C:/dev/app-factory şablondur, gerçek proje kopyada başlar; hat yalnızca G0–G1 kalibre edildi
 - [Bekleme turlarinda sessizlik](feedback_bekleme-turlarinda-sessizlik.md) — arka plan agent ucarken ara rapor yazma; yalnizca bitince haber ver
 - [Kesintisiz ilerleme](feedback_kesintisiz-ilerleme.md) — ara demo/duraklama onerme; feature sinirinda toplu push onayi iste
+- [Panel = CEO sohbet arayüzü vizyonu](project_panel-ceo-sohbet-vizyonu.md) — Veron'un asıl beklentisi; salt-izleyici panel ona yetmiyor
+- [Kanal gecikme ölçümü](project_spike-001-kanal-gecikme-olcumu.md) — CEO %87.5 boşta; arka plan agent düzeni "agent çalışırken konuşma"yı zaten çözüyor

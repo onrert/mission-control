@@ -162,7 +162,7 @@ async function runApp(electronApi, options = {}) {
   }
   app.on('second-instance', showAndFocus)
 
-  // §4 — port ön kontrolü, `createServer` çağrılmadan ÖNCE (MUTASYON M1 hedefi).
+  // §4 — port ön kontrolü, `createServer` çağrılmadan ÖNCE (mutasyon M1 hedefi, sözleşme §8).
   const port = resolvePortLike(env.MC_PORT, DEFAULT_PORT)
   const portFree = await ensurePortAvailable(port, isPortFreeFn)
   if (!portFree) {
@@ -177,7 +177,7 @@ async function runApp(electronApi, options = {}) {
   const serverModule = loadServerModuleFn()
   const server = serverModule.createServer(port, dataDir)
 
-  // §2 — tepsi "Çıkış": gerçek `shutdown()` çağrılır (MUTASYON M3 hedefi), callback'te `app.quit`.
+  // §2 — tepsi "Çıkış": gerçek `shutdown()` çağrılır (mutasyon M3 hedefi, sözleşme §8), callback'te `app.quit`.
   const shutdownViaTray = () => {
     serverModule.shutdown(server, server.sseHub, () => app.quit())
   }
@@ -191,7 +191,7 @@ async function runApp(electronApi, options = {}) {
   })
   mainWindow.loadURL(`http://127.0.0.1:${port}`)
   // §2 — pencere kapatma (X): sunucu çalışmaya devam eder, pencere yalnızca gizlenir
-  // (MUTASYON M4 hedefi).
+  // (mutasyon M4 hedefi, sözleşme §8).
   mainWindow.on('close', (event) => {
     event.preventDefault()
     mainWindow.hide()

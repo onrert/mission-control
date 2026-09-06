@@ -10,7 +10,7 @@ import {
   FakeTray,
 } from './helpers/fake-electron'
 
-// F-014 sözleşme §6 + §8 MUTASYON M5. Electron'un tek sorumluluğu `MC_CHAT_ENABLED`'a HİÇ
+// F-014 sözleşme §6 + §8 (mutasyon M5). Electron'un tek sorumluluğu `MC_CHAT_ENABLED`'a HİÇ
 // dokunmamaktır (ne set etmek ne kaldırmak) — gerçek `isChatEnabled(env)` bu yüzden bootstrap
 // öncesi/sonrası aynı sonucu vermeli. Gerçek üretim fonksiyonu kullanılıyor (elle yazılmış
 // beklenen değer değil), totoloji tuzağından kaçınılıyor.

@@ -10,8 +10,8 @@ import {
   FakeTray,
 } from './helpers/fake-electron'
 
-// F-014 sözleşme §2 + §8 MUTASYON M3 (tepsi "Çıkış" gerçek shutdown()'ı çağırır) ve
-// MUTASYON M4 (pencere kapatma varsayılan davranışa bırakılmaz, gizlenir).
+// F-014 sözleşme §2 + §8 (mutasyon M3, tepsi "Çıkış" gerçek shutdown()'ı çağırır) ve
+// mutasyon M4, pencere kapatma varsayılan davranışa bırakılmaz, gizlenir).
 
 function findMenuItem(template: unknown, label: string) {
   const items = template as Array<{ label?: string; click?: () => void; checked?: boolean }>

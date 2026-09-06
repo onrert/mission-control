@@ -9,7 +9,7 @@ import {
   FakeTray,
 } from './helpers/fake-electron'
 
-// F-014 sözleşme §4 + §8 MUTASYON M1.
+// F-014 sözleşme §4 + §8 (mutasyon M1).
 
 describe('electron port ön kontrolü (7333 dolu)', () => {
   it('port doluysa createServer hiç çağrılmadan okunabilir bir hata diyaloğu gösterilir ve app.quit() çağrılır', async () => {

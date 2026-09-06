@@ -10,7 +10,7 @@ import {
   FakeTray,
 } from './helpers/fake-electron'
 
-// F-014 sözleşme §5 + G1 (CEO kararı: varsayılan AÇIK ama GÖRÜNÜR) + §8 MUTASYON M6.
+// F-014 sözleşme §5 + G1 (CEO kararı: varsayılan AÇIK ama GÖRÜNÜR) + §8 (mutasyon M6).
 
 function findMenuItem(template: unknown, label: string) {
   const items = template as Array<{ label?: string; click?: () => void; checked?: boolean }>

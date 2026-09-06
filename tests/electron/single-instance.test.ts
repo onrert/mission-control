@@ -10,7 +10,7 @@ import {
   FakeTray,
 } from './helpers/fake-electron'
 
-// F-014 sözleşme §3 + §8 MUTASYON M2.
+// F-014 sözleşme §3 + §8 (mutasyon M2).
 
 describe('electron tek örnek (single instance)', () => {
   it('ikinci örnek kilidi alamazsa hiçbir şey başlatılmadan (createServer hiç çağrılmadan) app.quit() çağrılır', async () => {

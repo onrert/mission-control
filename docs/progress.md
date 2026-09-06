@@ -1703,3 +1703,77 @@ kaydı + Playwright `MC_CHAT_ENABLED=0`) · `42e6569` (chat-api entegrasyon test
 - B turu: React sohbet ekranı + üçüncü sekme (yeni bir developer oturumu, `docs/qa/
   F-012-contract.md` §2.2/§10'daki istemci sözleşmesine göre).
 - B turu bitince qa-evaluator tam feature'ı değerlendirsin, feature notu `status: qa` olsun.
+
+---
+
+## 2026-09-06 — F-012 kod turu B (istemci tarafı) tamamlandı, feature `status: qa`
+
+**Ne yapıldı**
+- Bu oturum önceki bir oturumun 150 tur sınırına takılmasından devam etti (CEO ölçümü: 836/836
+  yeşil, build başarılı, commit edilmemiş iş vardı). İlk iş: eldeki çalışan işi commit etmek
+  (`42c3848`) — `src/features/chat/web/{ChatScreen.tsx,useChatSession.ts,icons.tsx}`,
+  `tests/features/chat/web/ChatScreen.test.tsx`, `src/web/App.tsx` (D5 — üçüncü "Sohbet" sekmesi,
+  `MC_CHAT_ENABLED` build-time bayrağıyla kapılı), `src/web/lib/useEventStream.ts` (altı yeni
+  `chat_*` SSE kanalı + `onChatSync`), `vite.config.ts` (`MC_CHAT_ENABLED` derleme-zamanı
+  `define`'ı), 3 dar-genişlik ekran görüntüsü.
+- S2 çiti (`docs/03-ux.md` §7 CEO notu — ham araç çıktısı akışa basılmaz) **mutasyonla
+  doğrulandı**: hem `useChatSession.ts`'in `onChatToolEvent`'i hem `ChatScreen.tsx`'in
+  `toolStatusText`'i aynı anda "ham alanı taşı + render et" şeklinde mutasyona uğratıldı,
+  mevcut test KIRMIZI verdi, geri alındı.
+- AC10 çiti (`MC_CHAT_ENABLED` sekmeyi gerçekten gizler) **mutasyonla doğrulandı**:
+  `isChatUiEnabled()` her zaman `true` dönecek şekilde bozuldu, `App.test.tsx`'in 2 testi KIRMIZI
+  verdi (`role="tab"` sayısı 2 yerine 3), geri alındı.
+- B1/D7 çiti (`onChatSync` — native `EventSource` `'open'` olayında geçmiş/durum tazeleme) kablolu
+  ama **hiç test edilmiyordu** (kod taraması: hiçbir test dosyası `onChatSync`'i çağırmıyordu) —
+  bu turda `tests/features/chat/web/ChatScreen.test.tsx`'e yeni bir test eklendi (commit
+  `8af9d85`, 837. test), sonra `onChatSync`'in gövdesi boşaltılıp KIRMIZI gözlendi, geri alındı.
+- Dar genişlik ölçümü **kırpılmış görünür genişlikle** yapıldı (`toBeVisible()` DEĞİL —
+  `CLAUDE.md`'nin F-007 dersi: kaydırma kabındaki öğe için her zaman `true` döner). Geçici bir
+  Playwright script'iyle (kalıcı test dosyası değil, `tests/e2e/**` bu feature'ın sahipliğinde
+  değil) 320/375/480px'te `#tab-chat`'in kırpılmış görünür genişliği ölçüldü: **her üçünde de
+  50.4px (> 0)**, Ayarlar dişlisinin sağ kenarı her seferinde viewport içinde. Ekran
+  görüntüleriyle de doğrulandı (`docs/qa/screens/F-012-B-chat-{320,375,480}px.png`).
+- `docs/03-ux.md` §7 S2 çiti üstte anlatıldığı gibi koşuldu ve KIRMIZI verdiği doğrulandı.
+
+**Nasıl doğrulandı**
+- `npm run verify` (typecheck + lint + **837 test / 55 dosya** + build) = **0**.
+- `npm run e2e` (prod, `npm run build && npm start` webServer'ı, `concurrently`/`tsx watch`
+  KULLANMIYOR) = **0** (23/23).
+- 3 mutasyon (S2, AC10, B1/D7) uygulandı → KIRMIZI gözlendi → Edit ile birebir geri alındı;
+  `git diff` bu üç mutasyon için sıfır kalıcı iz gösteriyor.
+- Süreç/port temizliği: tur sonunda `tasklist | grep node.exe` boş, 7333/7334/7433/7434'te
+  dinleyen hiçbir süreç yok.
+
+**Yakalanan önemli bulgu (bloklayıcı DEĞİL, ürün kodu etkilenmiyor) — `npm run dev` bu sandbox'ta
+donuyor**
+- `npm run e2e:dev` 3 kez art arda **aynı şekilde** KIRMIZI verdi (F-004'ün "worker fork
+  kararsızlığı" gibi rastgele DEĞİL — kalıcı, tekrarlanabilir). Kök neden izole edildi: `import {
+  query } from '@anthropic-ai/claude-agent-sdk'` **tek başına**, `concurrently`'nin (veya sade bir
+  `cmd.exe /d /s /c` katmanının) sardığı bir çocuk süreçte **donuyor** (bellek sabit, CPU %0 —
+  yavaş değil, kilitli); AYNI import standalone'da 2.2 saniyede tamamlanıyor. `npm start` (`tsx`,
+  watch modu yok, `concurrently` yok) ve `npm run e2e` (aynı yol) sorunsuz — yalnızca `npm run
+  dev`'in `concurrently`+`tsx watch` orkestrasyonu etkileniyor.
+- Bu turda **düzeltilmedi**: kök neden üçüncü taraf `node_modules/@anthropic-ai/claude-agent-sdk`
+  içinde ve/veya bu spesifik sandbox'ın shell/konsol katmanlarında; düzeltme `package.json`'ın
+  `dev` script'ini (orkestrasyon aracını) değiştirmeyi gerektirir — bu bir mimari karar, CEO/
+  architect onayı gerekli, tek başına "cerrahi değişiklik" sınırının dışında. Ayrıca
+  `tests/e2e/dev-shell.spec.ts` bu feature'ın dosya sahipliğinde değil.
+- Tam teşhis, 7 adımlık bisect kanıtı: `docs/qa/F-012-kod-turu-B-notlari.md` §4.
+
+**Kalan risk / QA'ya devredilen açık maddeler**
+- **`npm run dev` bulgusu gerçek bir terminalde (bu sandbox DIŞINDA) doğrulanmalı.** Orada da
+  donarsa P1 mimari karar (dev script yeniden tasarımı); donmuyorsa yalnızca sandbox sınırlaması
+  olarak kapatılabilir.
+- Feature notunun 10 kabul kriteri kutusu **hiçbiri işaretlenmedi** — her biri qa-evaluator'ın
+  kendi değerlendirmesini gerektiriyor (developer kendi işini "geçti" ilan edemez, `CLAUDE.md`).
+- Round A'nın kendi açık risk listesi (bkz. yukarıdaki "kod turu A" kaydı) hâlâ geçerli: 7b'nin
+  alt süreç stdio dinleyicisi yerine mevcut hata sınırının kabul edilmesi, `resolveSettings`'in
+  Windows `reg.exe` yan etkisi test edilmedi, gerçek SDK oturumları bu turda AÇILMADI (tüm
+  testler sahte `query()` kullanır, bu turda ek kota harcanmadı).
+- Gerçek canlı akış (AC1 — panelde token-token görünme) ve arka planda alt agent çalışırken yeni
+  mesaja cevap verme (AC-ilgili) yalnızca sahte `query()` ile test edildi; gerçek SDK oturumuyla
+  uçtan uca elle doğrulama yapılmadı (ADR-014'ün K3 kanıtı için harcanan 7 oturum haricinde).
+
+**Sonraki adım**
+- qa-evaluator F-012'yi (round A sunucu + round B istemci, birlikte) değerlendirsin.
+- `npm run dev` bulgusunun gerçek terminalde doğrulanması CEO/kullanıcıya devredildi.

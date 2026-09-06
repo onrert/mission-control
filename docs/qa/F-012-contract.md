@@ -252,6 +252,12 @@ değişmiyor.
 `tests/e2e/shell.spec.ts`, `tests/web/App.interaction.test.tsx`, `tests/no-write-gate-bypass.test.ts`.
 **CEO'nun feature notunu bu listeyle güncellemesi isteniyor** — kod turu başlamadan.
 
+**Koşullu ek dosya (D10, Yol B) — feature notuna şimdiden not düşülsün:** §8a'nın Yol A canlı testi
+(kod turunun ilk işi) başarısız olursa, kod turu **durmadan** Yol B'ye geçer ve
+`src/features/chat/server/hook-bridge.ts` dosyasını **yazar** (§8a "Yol B" alt bölümü). Bu dosya
+Yol A başarılı olursa **hiç oluşturulmaz**. Feature notu bu koşullu genişlemeyi de kapsayacak
+şekilde güncellenmeli — kod turu sonunda hangi yol izlendiyse gerçek dosya listesi netleşir.
+
 ### 2.5 Yeni bağımlılıklar — `tests/deps.test.ts` etkisi (bu turda kurulu paketten doğrulandı)
 
 `@anthropic-ai/claude-agent-sdk`'nin `optionalDependencies`'i platforma-özgü önceden derlenmiş
@@ -301,6 +307,35 @@ fırlatırsa, `session.ts`'in döngüsü bunu **kendi** `try/catch`'i içinde ya
 Ö3), `chat_status` yayınlar. **Otomatik yeniden başlatma YOK** (v1 tasarım kararı, N4 — bilinen
 sınırlama olarak burada da not edilir: bekleyen bir izin isteği sunucu yeniden başlarsa/çökerse
 **kaybolur**, tur tamamlanmadan ölür; v1 için kabul edilebilir, ayrıca çitlenmiyor).
+
+**Bütçe tavanı (D11 — bu turda kapatıldı, Y-B3 düzeltmesi):**
+- **Sinyal ✓ DOĞRULANDI (bu turda kurulu paketten okundu, tur 2'nin varsaymadığı bir netlik):**
+  `Options.maxBudgetUsd` (`sdk.d.ts:1774-1777`): *"Maximum budget in USD for the query. The query
+  will stop if this budget is exceeded, returning an `error_max_budget_usd` result."* Bu bir
+  **istisna fırlatmaz** — normal mesaj akışına `SDKResultError` tipinde (`sdk.d.ts:4957-4964`)
+  `{ type: 'result', subtype: 'error_max_budget_usd', is_error: true, ... }` şeklinde bir mesaj
+  olarak gelir. **Gerçek risk bu yüzden çöküş değil, sessiz yutulmadır:** `session.ts`'in `for
+  await` döngüsündeki mesaj tipi `switch`'i bu `subtype`'ı **açıkça** ele almazsa (ör. yalnızca
+  bilinen tipleri işleyip geri kalanını sessizce yok sayan bir `default` dalına düşerse) bütçe
+  aşımı **hiçbir yayına dönüşmeden** kaybolur — tam olarak D11'in yasakladığı "sessizce dur" hatası.
+- **Ayarlanabilirlik (D11 şart 1):** `maxBudgetUsd` sabit gömülmez. `session.ts`,
+  `MC_CHAT_MAX_BUDGET_USD` ortam değişkeninden okur; `isChatEnabled`'ın (Ö12) aynı savunmacı
+  deseniyle: değer tanımsızsa **veya** sayıya çevrilemiyorsa **veya** `<= 0` ise, güvenli
+  varsayılana (**$20**) düşülür ve `process.stderr`'e bir uyarı satırı yazılır — sessizce yanlış
+  bir değerle (ör. `0` = "sınırsız" gibi yanlış yorumlanabilecek bir değer) devam edilmez.
+- **Sessiz durmama (D11 şart 2):** `session.ts`'in mesaj `switch`'i `type === 'result' && subtype
+  === 'error_max_budget_usd'` durumunu **kendi ayrı `case`'i** ile ele alır: oturum durumu
+  `crashed` yapılır, `last_error` **genel** bir "crashed" değil, özel bir kod taşır:
+  `'budget_exceeded'`. Bu kod `GET /api/chat/status` ve `chat_status`/`chat_error` SSE olayından
+  **anında** görünür (K2'nin "sessiz olmama" ilkesiyle aynı desen, §7). UX karşılığı §10'da yeni
+  bir satır (aşağıya bkz.).
+- **Devam etme:** kullanıcı `POST /api/chat/restart` ile (Ö5'in netleştirdiği "Yeniden bağlan"
+  butonuyla, §10) yeni bir bütçeyle (env değişkeni değişmediyse **aynı** $20 ile) devam edebilir —
+  oturum kapanmaz, panel diğer sekmelerde kullanılabilir kalır (mevcut hata sınırı deseni, §9).
+- **Çit (D11 şart 3):** mutasyon 14, §11.2 — bu özel `case` kaldırılırsa/genel `default`'a
+  düşürülürse `session.test.ts` (enjekte sahte `query`, bir `SDKResultError{subtype:
+  'error_max_budget_usd'}` mesajı yayınlar) **hiçbir `chat_status`/`chat_error` yayınlanmadığını**
+  görüp KIRMIZI verir.
 
 **Sohbet devre dışıyken (K6) — Ö12 düzeltmesi:** `resolveEnvInt`'i `index.ts`'ten import ETMEK
 döngüsel bağımlılık kurardı (chat modülü `index.ts`'i, `index.ts` da chat handler'larını import

@@ -356,3 +356,110 @@ kendi transkriptinden); panelin `history-log.ts`'i ise yalnızca **görüntülem
 kaynağın round-trip'te birebir aynı olması **gerekmez** (biri model bağlamı, diğeri ekran metni) —
 bu ayrım açıkça yazılmalı ki gelecekte biri "neden ikisi farklı" diye şaşırmasın.
 
+---
+
+## 7. Kimlik ve bariyer (K2)
+
+**Denetlenen tek değişken:** `ANTHROPIC_API_KEY` — yalnızca bu (AC ve ADR-014 "Sonuçlar"
+bölümünün literal ifadesi bununla sınırlı; `ANTHROPIC_AUTH_TOKEN`'ın da benzer bir riski olup
+olmadığı §13 açık soru 2'de CEO'ya soruluyor, **kendim karar vermiyorum**).
+
+**Mekanizma (kesin, doğrulanmış bir SDK `env` seçeneğine bağımlı DEĞİL):** Node'un
+`child_process.spawn` davranışı, açıkça `env` verilmezse çocuğun **ebeveynin `process.env`'ini
+spawn anında** miras aldığıdır — bu, Node'un kendi çekirdek davranışıdır (SDK'ya özgü bir API
+değil, dolayısıyla ✓ DOĞRULANDI sayılabilir bir platform garantisi). Bariyer bu yüzden SDK'nın
+belirsiz/doğrulanmamış bir `env` seçeneğine **dayanmaz** — `env-barrier.ts`, panelin **kendi**
+`process.env`'inden `ANTHROPIC_API_KEY`'i `query()` **ilk kez çağrılmadan önce** `delete` eder.
+Bu, hem modül yüklenirken (bir kerelik) hem de her `query()` çağrısından hemen önce (savunma
+katmanı, ör. bir şeyin değişkeni sonradan geri koyması ihtimaline karşı) tekrar uygulanır.
+
+**Sessiz olmama (K2'nin "temizle + görünür uyar" ikili şartı):** silme işlemi başlamadan önce
+`checkApiKeyBarrier(env)` çağrılır, sonucu (`tripped: boolean`) `session.ts`'in durum nesnesine
+yazılır ve **kalıcı olarak** `GET /api/chat/status`'un `api_key_barrier_tripped` alanından ve
+`chat_status` SSE olayından görünür kalır (tek seferlik bir toast/log **değil** — K2 açıkça
+"kalıcı, gözden kaçmayan bir uyarı" istiyor; panelin bunu nasıl göstereceği görsel bir karar ama
+**verinin her an sorgulanabilir olması** bu sözleşmenin garantisi). stderr'e de insan-okunur bir
+satır yazılır (`ingest.ts`'in hata loglama desemiyle aynı üslup) — ama **anahtarın değeri asla
+loglanmaz/döndürülmez**, yalnızca "bulundu ve kaldırıldı" bilgisi.
+
+**Sessiz kullanmama:** anahtar silindiği için `query()`'nin spawn ettiği alt süreç onu hiç
+görmez — SDK'nın kimlik önceliği listesine göre (SPIKE-002 §2.2, ✓ DOĞRULANDI) bir sonraki
+sıradaki kaynağa (abonelik `/login` mirası, madde 7) düşer. **Reddetme yolu seçilmedi** (K2'nin
+izin verdiği iki seçenekten biri "oturum açılmaz" idi) — çünkü temizleme yeterli ve daha az
+kesintili; bu bir tasarım tercihi olarak açıkça yazılıyor, CEO'nun onayına tabi (§13'e gerek yok,
+K2 zaten "ya… ya da" diyerek ikisini de meşru sayıyor, biz temizlemeyi seçtik).
+
+**Çitleme (AC "mutasyonla çitlenir"):** mutasyon 1/2, §11.
+
+---
+
+## 8. Hook kapıları
+
+**Yükleme mekanizması:** `query()` seçeneklerinde `settingSources: ['project']` — bu, SDK'nın
+`.claude/settings.json`'ı **CLI ile aynı şekilde** okumasını sağlar (✓ DOĞRULANDI, SPIKE-002 §3.1:
+*"those hooks run automatically in the SDK with no extra configuration"*) ve **SPIKE-002-asama0'da
+gerçek bir oturumla iki yönlü ölçülmüştür** (M2 — GEÇTİ, §0'da alıntılandı). Bu depodaki altı
+güvenlik hook'u (✓ DOĞRULANDI, `.claude/settings.json` bu turda okundu, tam liste): `session-
+start.cjs` (SessionStart), `gate-check.cjs` (PreToolUse, `Edit|Write`), `block-dangerous.cjs`
+(PreToolUse, `Bash`), `asset-guard.cjs` (PreToolUse, `mcp__higgsfield__.*`), `post-format.cjs`
+(PostToolUse, `Edit|Write`), `stop-check.cjs` (Stop). Ayrıca telemetri hook'u `send-event.cjs`
+(hemen hemen her olayda, `async: true`) — bu hook'un ateşlemesi K4'ü **ihlal etmez**: kendi
+projesinin (bu depo) hook olaylarını `POST /api/events`'e göndermesi, "izlenen **başka**
+projelerin" olaylarının CEO bağlamına **girmesinden** ayrı bir şey — CEO oturumu bu olayları asla
+**okumaz**, yalnızca üretir (§ K4 sınırı tersine işlemiyor, tek yönlü: dışarı telemetri gidiyor,
+içeri hiçbir olay-metni CEO'nun promptuna girmiyor).
+
+**"Yükleniyor" ≠ "engelliyor" (K7/M2 dersinin tekrarı, bu sözleşmede iki testle karşılanıyor):**
+1. **Zorunlu, varsayılan `verify`'de koşan birim/entegrasyon testi** (enjekte sahte `query`):
+   `session.ts`'in `query()`'e geçirdiği `Options` nesnesinde `settingSources: ['project']` VE
+   doğru `cwd` **gerçekten var** — bu "yükleniyor" seviyesinde bir kanıttır (mutasyon 3a).
+2. **Gerçek, iki yönlü kanıt** (K7/ADR-014 M2 yönteminin birebir tekrarı, gerçek bir oturumla):
+   `tests/integration/chat-hooks-live.test.ts` — varsayılan koşuda **atlanır** (§2.3), yalnızca
+   `MC_CHAT_LIVE_TESTS=1` ile elle çalıştırılır. Bu test SPIKE-002-asama0 M2 metodolojisini
+   birebir uygular: (a) hook aktifken `block-dangerous.cjs`'in yakaladığı zararsız bir işaretleyici
+   komutu dener, dosyanın **oluşmadığını** doğrular; (b) sandbox'a kopyalanmış (gerçek repo
+   dosyasına **dokunulmadan**) no-op bir `block-dangerous.cjs` ile **aynı** komutu tekrar dener,
+   dosyanın **oluştuğunu** doğrular. **Neden bu, varsayılan `verify`'de değil:** her koşu gerçek
+   abonelik kotası harcıyor (SPIKE-002-asama0'da ölçülen mertebe ~$0.36-2 kota-eşdeğeri/tur,
+   gerçek para değil ama sınırsız değil) — her `npm test` çalıştırmasında bunu harcamak orantısız.
+   Bu, §11 ve §13'te ne sıklıkla koşulacağı (ör. yalnızca hook zinciri değiştiğinde) sorusuyla
+   birlikte ele alınıyor.
+
+**Bilinen sınırlama (kayıt, düzeltme istenmiyor):** `ListAgents`'ın bu makinedeki **ilgisiz başka
+projelerin** oturumlarını listelediği (SPIKE-002-asama0 M3, ✓ DOĞRULANDI) bu feature'ın
+`.claude/` dosyalarına dokunmasıyla **değişmez** — mevcut, kabul edilmiş bir sınırlama (ADR-014
+"Kabul edilen riskler" madde 2). Bu sözleşme onu tekrar üretmiyor, yalnızca miras alıyor.
+
+---
+
+## 9. Hata sınırı
+
+**`CLAUDE.md`'nin üç kez tekrarlayan dersi burada dördüncü kez tekrarlanmayacak.** Kural:
+dağıtıcının `withDispatchErrorBoundary`'si (`index.ts:147`) yalnızca handler'ın **senkron çağrı
+yığınında** fırlayan hataları yakalar (✓ DOĞRULANDI, dosyanın kendi yorumu + kod okuması) — bir
+`async` fonksiyonun `await`'ten sonraki gövdesinde fırlayan hata bu sınırın **kapsamı dışındadır**.
+Bu feature'ın **tüm** yeni handler'ları (`handleChatMessage`, `handleChatInterrupt`,
+`handleChatPermission`, `handleChatRestart`) `ingest.ts`'in async-IIFE deseniyle **birebir aynı**
+şekilde yazılır: `req`/gövde okuma tamamlandıktan sonra `void (async () => { try { … } catch (err)
+{ sendJson(res, 5xx, {...}) } })()` — yani **her handler kendi hata sınırını taşır**, dağıtıcının
+senkron sınırına asla güvenmez.
+
+**Uzun ömürlü asenkron döngü (`session.ts`'in `for await` mesaj tüketicisi) ayrı bir risk
+sınıfıdır** — bu bir HTTP handler değil, sunucu başlangıcında bir kez başlatılan bağımsız bir
+asenkron görev. Bu döngü **kendi** `try/catch`'i içine alınır; döngü içinde fırlayan HERHANGİ bir
+hata (SDK mesaj ayrıştırma hatası, `hub.broadcast`'in kendisi fırlarsa, `history-log.ts`'in yazma
+hatası) yakalanır, oturum durumu `crashed` yapılır, `chat_error`/`chat_status` yayınlanır, döngü
+**temiz** sonlanır. Bu döngü **hiçbir zaman** `await` edilmeden bırakılmaz (`.catch()` zinciriyle
+de korunur) — aksi hâlde `index.ts:29`'daki `process.on('unhandledRejection')` güvenlik ağına
+düşerdi, ki o ağ zaten yorumunda "asıl çözüm DEĞİL, yalnızca son emniyet" diye işaretli (✓
+DOĞRULANDI, kod okundu) — bu feature o ağa **hiç düşmemeyi** hedefler, ona güvenmez.
+
+**Yarı-başarı dürüstlüğü (F-007'nin dersi, `CLAUDE.md`):** `POST /api/chat/message` bir mesajı
+SDK'nın girdi kuyruğuna **başarıyla** verdikten sonra herhangi bir aşamada (ör. `history-log.ts`'e
+yazma hatası) bir şey ters giderse, istemciye **her zaman** bir yanıt döner (202 veya 5xx) — asla
+"yazma oldu ama istemci hiç öğrenmedi" durumu yaratılmaz, çünkü HTTP yanıtı mesaj kuyruğa
+**verildiği anda** (SDK'nın `streamInput()`'una push edildiği anda), asistanın cevabını
+**beklemeden** dönülür (zaten AC bunu istiyor: "tamamlanmayı beklemeden"). Cevabın kendisi SSE
+üzerinden ayrı bir kanaldan gelir; SSE tarafında bir hata olursa (`chat_error`) bu da panelin
+görebileceği ayrı, dürüst bir sinyaldir — "sessizce kayboldu" hiçbir yol **yoktur**.
+

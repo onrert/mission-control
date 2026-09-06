@@ -240,3 +240,25 @@ zaten tarihli bir kopyası var mı diye bak (`diff -q`) — ikinci kez yanlış 
     cümlesi "mekanizma bozuk" değil, "bu koşu mekanizma hakkında hiçbir şey söylemiyor" olmalı.
     Daha iyi hata mesajı kararsızlığı gidermez — model işbirliğine bağlı her canlı assert,
     kadans şartını ("her QA turunda en az bir kez kanıt") karşılayamaz.
+38. **Kapanış turunda düzeltmeyi BİREBİR GERİ SARAN ikinci bir mutasyon at.** Brief'in istediği
+    mutasyon (F-012 tur 4: `onChatSync`'ten `loadStatus()` silinir) yalnızca YENİDEN BAĞLANMA
+    yolunu vurur; düzeltmenin asıl hedefi olan MOUNT/yenileme yolunu vurmaz. İkinci mutasyonu
+    düzeltilen satırın kendisine uygula (`onChatStatus(body.data)` → `setStatus(body.data)`).
+    F-012'de ikisi de kırmızı verdi ve "her iki yarı da çitli" cümlesi ancak böyle kanıtlandı.
+    Maliyeti 2 dakika; tek mutasyonla "kapandı" demek eksik kanıttır.
+39. **Model-bağımlı canlı testler ZAR ATIŞIDIR: kırmızı tur arası YER DEĞİŞTİRİR.** F-012 tur 3'te
+    AC4 kırmızı / E1-B5 yeşildi; tur 4'te düzeltilen AC4 yeşil geldi ama DOKUNULMAMIŞ E1/B5
+    kırmızı oldu (model hiç Bash çağırmadı). Paket yine exit 1. Bunu "düzeltme işe yaramadı" diye
+    okuma: kırılan testin bloğunu düzeltme öncesi/sonrası sürümlerden çıkarıp `diff`'le
+    (`git show <once>:<dosya>` + `awk` ile blok kes) — byte-byte aynıysa düzeltmenin ürünü
+    değildir. Ayrıca kırmızının "kanıt yok" dalı mı (araç hiç çağrılmadı) yoksa mekanizma
+    assert'i mi olduğunu ayır ([[37]]). Kardeş testler aynı kırılganlığı taşır: bir tanesine
+    uygulanan tedavi (direktif systemPrompt, persona kaldırma) diğerlerine de uygulanmalı —
+    rapora yaz, yoksa gelecek turda aynı yalancı kırmızı geri gelir.
+40. **Canlı ölçüm sırasında TARAYICI KONSOLUNU oku, ama bulduğunu tarihlendir.** F-012 tur 4'te
+    yenileme akışında React "two children with the same key" hatası aktı (`m:<turn_id>:text`);
+    kaynağı `ChatScreen.tsx`'in render anahtarının `role` içermemesiydi — B2'de `entryKey()` için
+    düzeltilen hatanın render tarafındaki ikizi. Dar kapsamlı kapanış turunda bunu bloklayıcı
+    yapmadan önce `git log -L <satır>,<satır>:<dosya>` ile satırın YAŞINI ölç ve o turun
+    commit'lerinin dosyaya dokunup dokunmadığını `git show --stat -- <dosya>` ile doğrula.
+    Önceden varsa: kayda geç, bir sonraki işe taşı, kararı yumuşatma ama kapsamı da genişletme.

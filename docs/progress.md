@@ -1606,3 +1606,100 @@ Toplam **732 birim + 23 E2E testi**, CI Windows'ta yeşil.
 - Sonra Faz 2: F-008 kapılar paneli → F-009 transkript spike → F-010 thread → F-011 token.
 - **F-008'e devredilen taahhüt:** `archiveDenial` bir handler'a bağlanmadan önce senkron bekleme
   içerip içermediği denetlenmeli (F-007 sözleşmesi §9, Karar 3).
+
+---
+
+## 2026-09-06 — F-012 (CEO sohbet arayüzü) kod turu A — sunucu tarafı tamamlandı
+
+Kullanıcı kararı (ADR-014, `docs/decisions/ADR-014-...md`) F-008'in önüne geçirdi: panel artık
+CEO oturumunun sohbet arayüzü olacak. Sözleşme (`docs/qa/F-012-contract.md`, 3 revizyon) daha
+önceki bir oturumda kapandı. Bu tur (150 tur sınırına iki kez takılıp devam ettirildi) sözleşmenin
+**A turu**nu (sunucu tarafı) bitirdi; **B turu** (React bileşenleri, üçüncü sekme) sonraki
+oturuma devredildi.
+
+**Ne yapıldı**
+- **Zorunlu ilk iş (sözleşme §8a):** K3'ün (izin motoru delinmesi) gerçek bir SDK oturumuyla
+  iki yönlü kanıtı toplandı — `docs/qa/F-012-kod-turu-A-notlari.md`. Sonuç: **Yol A çalışıyor**,
+  Yol B (kaçış planı) tetiklenmedi. Bu sırada sözleşmenin kendi önerisindeki bir hata bulundu ve
+  düzeltildi: `allowManagedPermissionRulesOnly` `permissions` içine değil, `Settings`'in **üst
+  seviyesine** yazılmalı — yanlış yazılsaydı sessizce hiçbir etkisi olmayacaktı.
+- **Sunucu kodu:** `src/features/chat/server/{session,env-barrier,history-log,session-store,
+  handlers}.ts`. SDK oturum yaşam döngüsü (`createChatSession`, streaming-input kuyruğu,
+  `resume` ile kaldığı yerden devam), `ANTHROPIC_*`/`CLAUDE_*`/`AWS_*`/`GOOGLE_*` **allowlist**
+  env bariyeri (3 istisna: `.claude/settings.json`'ın kendi `CLAUDE_CODE_*` operasyonel
+  değişkenleri), `canUseTool` tabanlı izin akışı (SSE `chat_permission_request`/`_resolved`),
+  ekleme-only sohbet geçmişi (`history-log.ts`, F-002'nin JSONL deposuyla aynı desen,
+  `no-write-gate-bypass.test.ts`'e D8 kategorisiyle eklendi), `session-id.txt` ile resume
+  kalıcılığı, D11 bütçe tavanı (`MC_CHAT_MAX_BUDGET_USD`, sessizce durmaz + `chat_error`
+  yayınlar). Altı uç `src/server/index.ts`'e bağlandı (`/api/chat/status|history|message|
+  interrupt|permission|restart`), hepsi `x-mc-write` kuralına tabi (GET'ler muaf). Her handler
+  kendi `try/catch`'ini taşıyor (CLAUDE.md'nin üç kez tekrarlayan hata sınıfı dersi).
+  Playwright config'lerine `MC_CHAT_ENABLED: '0'` eklendi — e2e sunucuları gerçek ücretli oturum
+  açmasın diye.
+- **Testler:** `env-barrier.test.ts`, `permission-mode-fence.test.ts` (statik grep guard),
+  `no-context-injection.test.ts` (K4 — olay akışı CEO bağlamına sızmaz, statik import taraması +
+  `createChatSession` çağrı-yeri kapalı `deps` kümesi), `history-log.test.ts`,
+  `session.test.ts` (21 test, enjekte edilmiş sahte SDK `query()` ile), ve bu turda eklenen
+  `tests/integration/chat-api.test.ts` (13 test — gerçek `createServer()` + gerçek HTTP + sahte
+  `query`, x-mc-write zorunluluğu, env bariyeri görünürlüğü, `canUseTool` SSE round-trip'i,
+  `chat_tool` kapalı alan allowlist'i, geçmiş sayfalama, çökme sonrası `/api/health` hâlâ 200,
+  `MC_CHAT_ENABLED=0` altında altı ucun da zarif 503 döndüğü).
+- `tests/setup/chat-disabled-by-default.ts` (`vitest.config.ts` `setupFiles`) — `MC_CHAT_ENABLED`
+  tanımsızsa `'0'`a sabitler, böylece mevcut ~800 testin hiçbiri gerçek SDK oturumu açmaz;
+  sohbeti test eden dosyalar kendi `beforeEach`'inde açıkça `'1'` yapar.
+
+**Nasıl doğrulandı**
+- `npm run verify` (typecheck + lint + **806 test/54 dosya** + build) = **0**.
+- **Sözleşme §11.2'nin 17 mutasyon maddesinin tamamı** (1, 2, 2b, 3, 4, 5, 6, 7, 8, 8b, 9, 10,
+  11, 12, 13 + 13'ün round A'da gerçekten bulunan nested-permissions varyantı, 14) tek tek
+  uygulandı → **KIRMIZI gözlendi** → Edit ile birebir geri alındı. Tam liste ve her mutasyonun
+  hangi testte nasıl kırmızı verdiği `docs/qa/F-012-kod-turu-A-notlari.md`'ye işlendi. Tur
+  sonunda `git status`/`git diff` temiz — mutasyon izi yok, `grep -rn "MUTASYON" src/ tests/`
+  boş (yalnızca `write-gate-manifest.test.ts:124`'teki önceden var olan meşru test adı kaldı,
+  ona dokunulmadı).
+- Bu turda **iki test totolojisi bulunup düzeltildi** (kod değil, test güçlendirildi): mutasyon 7
+  ilk hâliyle yalnızca `JSON.parse`'ın İÇ `try/catch`'ini ölçüyordu (dış `try/catch` kaldırılsa
+  bile yeşil kalıyordu) — 65536 baytı aşan bir gövde senaryosu eklendi, bu gerçekten dış
+  `try/catch`'in dışında oluşan bir hatayı hedefliyor ve mutasyon altında 5 sn zaman aşımına
+  düşüyor. Mutasyon 9 de aynı şekilde `session_not_ready`/`chat_disabled`'ın ikisinin de HTTP
+  503 dönmesi yüzünden yalnızca durum koduna bakan test yeşil kalıyordu — dört ucun da
+  gövdesindeki `error.code === 'chat_disabled'` açık assert'i eklendi.
+- Yetim süreç kontrolü: tur başında bu depoda (bu oturumun başlatmadığı) port 7333'ü tutan bir
+  `npm start`/`tsx` zinciri bulundu ve kapatıldı (`check-ports.test.ts`'in 2 testi bu yüzden
+  kırmızıydı, benim değişikliklerimle ilgisizdi). Tur sonunda `tasklist`/`netstat` temiz.
+- `.probe/*`, scratchpad canlı test betikleri repoya commit edilmedi (sözleşme D4 kısıtı — canlı
+  testler `verify`de koşmaz).
+
+**Commit'ler:** `51a96b8` (SDK bağımlılıkları + K3 canlı kanıt, önceki oturum) ·
+`e2c7535` (sunucu kodu: session/env-barrier/history-log/session-store/handlers + dispatcher
+kaydı + Playwright `MC_CHAT_ENABLED=0`) · `42e6569` (chat-api entegrasyon testleri + K3 offline
+çit) · `5d4b3a4`, `55f808d` (mutasyon totoloji düzeltmeleri).
+
+**Doğrulanan/doğrulanamayan [T]'ler (görev talimatının istediği liste)**
+- `.claude/settings.json`'ın `env` bloğu spawn'ı eziyor mu → **Ölçülemedi** (mekanizma Node
+  çekirdek davranışıyla ✓ DOĞRULANDI, canlı ölçüm yapılmadı, kapsam dışı bırakıldı).
+- Windows'ta ebeveyn ölünce `claude.exe` ne oluyor → **Ölçülemedi** (`Query.close()`'un varlığı
+  ✓ DOĞRULANDI, ayrı bir süreç-öldürme deneyi yapılmadı).
+- `"agent":"ceo"` personası yükleniyor mu → **✓ DOĞRULANDI** (canlı test, A-notları).
+- Admin-tier `managed-settings.json` var mı → **YOK göründü** (bu makinede kanıt yok, kesin
+  "yok" ispatı değil).
+- 7b (alt süreç stdio `'error'` dinleyicisi) → SDK bunu doğrudan expose etmiyor; mevcut §9 hata
+  sınırı (`consume()`'un `try/catch`'i, `session.test.ts` "hata sınırı" bloğu) bunun karşılığı
+  sayıldı, ayrı bir mekanizma eklenmedi (gerekçe A-notlarında).
+
+**Kalan risk / B turuna devredilenler**
+- React bileşenleri, sohbet ekranı, üçüncü kalıcı sekme, mevcut testlerin (`App.test.tsx` vb.)
+  üçüncü sekme için güncellenmesi — **hiç başlanmadı**, tamamen B turunun kapsamı.
+- AC1/AC5/AC10'un istemci tarafı (akış görünümü, arka planda çalışırken yeni mesaj, kapatılınca
+  panelin temiz görünmesi) test edilmedi — feature notunun kabul kriterleri bu yüzden **hâlâ
+  işaretlenmedi** (`status: dev`, `status: qa` DEĞİL — bu round tam feature'ı kapatmıyor).
+- `resolveSettings`'in Windows'ta ilk çağrıda `reg.exe` çalıştırabileceği (MDM tespiti,
+  SDK'nın kendi dokümantasyonu) — bu turda gözlemlenen bir yan etki olmadı, ama gelecekte bir
+  antivirüs/sandbox ortamında bu çağrı yavaşlayabilir/başarısız olabilir (test edilmedi).
+- Gerçek SDK oturumları bu turda **açılmadı** (yalnızca önceki oturumda K3 kanıtı için 7 oturum,
+  ≈$0,50 harcandı — bu turda ek harcama yok, tüm testler enjekte edilmiş sahte `query()` kullanır).
+
+**Sonraki adım**
+- B turu: React sohbet ekranı + üçüncü sekme (yeni bir developer oturumu, `docs/qa/
+  F-012-contract.md` §2.2/§10'daki istemci sözleşmesine göre).
+- B turu bitince qa-evaluator tam feature'ı değerlendirsin, feature notu `status: qa` olsun.

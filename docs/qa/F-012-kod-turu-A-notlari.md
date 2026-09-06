@@ -115,6 +115,54 @@ Yaklaşık **7 gerçek SDK oturumu** açıldı (2 hatalı tasarımlı deneme set
 **≈ $0,50** (haiku modeliyle, kısa turlar, `maxTurns` ≤ 3). Scratchpad betikleri (`.probe/*.mjs`)
 tur sonunda silindi, repoya commit edilmedi.
 
+## Mutasyon kanıtı — sözleşme §11.2'nin 17 maddesi (1,2,2b,3,4,5,6,7,8,8b,9,10,11,12,13,14 +
+13'ün nested-permissions varyantı), hepsi uygulandı → KIRMIZI gözlendi → geri alındı
+
+Uygulama sırası: her madde için ilgili dosyada tek satır/blok değiştirildi, sözleşmenin
+belirttiği test dosyası tek başına çalıştırıldı, KIRMIZI ekran görüntüsü (test çıktısı) burada
+özetlendi, sonra Edit ile birebir geri alındı. Tur sonunda `git status`/`git diff` boş —
+mutasyon izi yok (kontrol edildi).
+
+| # | Mutasyon | Test | Sonuç |
+|---|---|---|---|
+| 1 | `env-barrier.ts` `stripApiKey`'in `delete` döngüsü yorumlandı | `env-barrier.test.ts` | KIRMIZI: `ANTHROPIC_API_KEY` silinmedi |
+| 2 | `session.ts` `getStatus()`'ta `stripped_env_vars`/`api_key_barrier_tripped` sabitlendi | `chat-api.test.ts` (mutasyon 2) | KIRMIZI: `api_key_barrier_tripped` beklenen `true` yerine `false` |
+| 2b | `ALLOWED_ENV_EXCEPTIONS` kontrolü `if (false)` yapıldı | `env-barrier.test.ts` | KIRMIZI (2 test): `CLAUDE_CODE_SUBAGENT_MODEL` de silindi |
+| 3 | `buildOptions()` `settingSources: []` yapıldı | `session.test.ts` | KIRMIZI: `opts.settingSources` `['project']` değil `[]` |
+| 4 | `permissionMode: 'bypassPermissions'` yapıldı | `permission-mode-fence.test.ts` + `session.test.ts` | KIRMIZI (2 dosya, 3 test) |
+| 5 | `canUseTool` beklemeden `Promise.resolve({behavior:'allow',...})` döndü | `chat-api.test.ts` (mutasyon 5) | KIRMIZI: sonuç beklenenden önce geldi |
+| 6 | Dağıtıcıya `!pathname.startsWith('/api/chat/')` istisnası eklendi | `chat-api.test.ts` (AC1/mutasyon 6) | KIRMIZI (2 test): header'sız istek 403 yerine 202/409 döndü |
+| 7 | `handleChatMessage`'ın dış `try/catch`'i kaldırıldı | `chat-api.test.ts` (mutasyon 7, 65536+ bayt gövde) | KIRMIZI: istemci 5 sn zaman aşımına kadar yanıt almadı (bu turda testin kendisi de güçlendirildi, aşağıya bakınız) |
+| 8 | `session.ts`'e `'events/server/query'` içeren bir yorum satırı eklendi | `no-context-injection.test.ts` | KIRMIZI |
+| 8b | `index.ts`'teki `createChatSession(...)` çağrısına `store` eklendi | `no-context-injection.test.ts` | KIRMIZI |
+| 9 | `sendMessage()`'daki `if (!chatEnabled)` kontrolü yorumlandı | `session.test.ts` + `chat-api.test.ts` (mutasyon 9/AC10) | KIRMIZI (2 dosya; HTTP testi de bu turda `error.code` assert'iyle güçlendirildi, aşağıya bakınız) |
+| 10 | `historyLog.init()`'teki `markDanglingAsInterrupted()` çağrısı yorumlandı | `history-log.test.ts` | KIRMIZI: restart sonrası `streaming` satır düzeltilmedi |
+| 11 | `append()`'e `STORE_FILES` listesinde olmayan bir `fs.writeFileSync` eklendi | `no-write-gate-bypass.test.ts` | KIRMIZI |
+| 12 | `chat_tool` yayınına `raw_input: block.input` eklendi | `chat-api.test.ts` (mutasyon 12) | KIRMIZI |
+| 13 | `managedSettings` `{ allowManagedPermissionRulesOnly: false }` yapıldı | `session.test.ts` (K3 çevrimdışı çit) | KIRMIZI |
+| 13b (ek) | `managedSettings` **round A'nın gerçek bulduğu hata biçimine** (`{ permissions: { allowManagedPermissionRulesOnly: true } }`) geri döndürüldü | `session.test.ts` (K3 çevrimdışı çit) | KIRMIZI — bu turun offline çiti, önceki turda canlı oturumla bulunan **gerçek** regresyon sınıfını da yakalıyor |
+| 14 | `error_max_budget_usd` `case`'i `if (false && ...)` ile devre dışı bırakıldı | `session.test.ts` (D11 bütçe tavanı) | KIRMIZI |
+
+**Bu turda mutasyon koşarken bulunan 2 test zayıflığı, kalıcı olarak düzeltildi (kod DEĞİL, test
+güçlendirildi):**
+- **Mutasyon 7 totolojisi:** İlk yazılan test yalnızca bozuk JSON gövdesi gönderiyordu — bu,
+  `JSON.parse`'ın kendi İÇ `try/catch`'i tarafından yakalanıyor, dış `try/catch` kaldırılsa bile
+  yeşil kalıyordu. Düzeltme: `readBody()`'nin dış `try` dışında reddettiği bir senaryo (65536
+  baytı aşan gövde) eklendi — bu, dış `try/catch` kaldırıldığında gerçekten asılı kalıp 5 sn
+  zaman aşımına düşüyor.
+- **Mutasyon 9 totolojisi:** `session_not_ready` ve `chat_disabled` ikisi de HTTP 503 döner;
+  yalnızca durum kodunu kontrol eden test, `isChatEnabled` kaldırılsa bile yeşil kalıyordu.
+  Düzeltme: dört uç için de gövdedeki `error.code === 'chat_disabled'` açıkça assert edildi.
+
+**7b (alt süreç stdio `'error'` dinleyicisi) — CEO kararı gerektirmeden kapatıldı:** SDK,
+alt süreç yaşam döngüsünü bize doğrudan expose etmiyor (`Query` yalnızca async iterable +
+`interrupt()`/`close()`). Alt sürecin beklenmeyen şekilde ölmesi/çökmesi SDK'nın kendi async
+iterable'ının `throw` etmesi veya sessizce bitmesi olarak yüzeye çıkar — bu zaten `consume()`'un
+`try/catch`'i tarafından yakalanıyor ve `session.test.ts`'in "hata sınırı (§9)" bloğunda
+(`handle.throwError`) test ediliyor. Ayrı bir stdio-seviyesi dinleyici eklemek SDK'nın verdiği
+API'nin dışına çıkmak olurdu (Karpathy §2, gereksiz soyutlama) — bu yüzden §9'un mevcut hata
+sınırı 7b'nin karşılığı sayıldı, ayrı bir mekanizma YAZILMADI.
+
 ## Temizlik notu
 
 Bu turun ortasında bu depoda (benim başlatmadığım) yetim bir `npm start`/`tsx watch src/server/

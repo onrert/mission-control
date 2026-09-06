@@ -1,0 +1,45 @@
+# G4-1 — Faz 1 kilometre taşı onayı
+
+- **Tarih:** 2026-09-06
+- **Onaylayan:** Kullanıcı (Veron) — "G41 onaylandı"
+- **Kapı:** G4 (kilometre taşı), Faz 1 sonu
+
+## Onaylanan durum
+
+**7/7 feature `done`:**
+
+| Feature | Kapsam |
+|---|---|
+| F-001 | İskelet |
+| F-002 | Olay alma + JSONL depo + retention |
+| F-003 | SSE + canlı zaman çizelgesi + filtreler |
+| F-004 | `send-event` hook + kurulum |
+| F-005 | Proje kayıt + chokidar izleme + Ayarlar |
+| F-006 | Yazma kapısı |
+| F-007 | Kanban |
+
+**Ölçülen durum:** `npm run verify` = 0 → **732 birim testi / 48 dosya** · `npm run e2e` = 0 → **23** ·
+CI Windows'ta yeşil · `npm audit` temiz · **14 ADR**.
+
+Kullanıcı paneli **kendi denedi** (sürükleme dahil) ve onaydan önce bir tur bekletti.
+
+## Onayla birlikte kabul edilen açık maddeler
+
+- **`data/` altında düzeltme öncesi uzun özetli olaylar duruyor.** BUG-001 (özet kırpma) düzeltildi
+  ama geçmiş kayıtlar geriye dönük temizlenmedi — bilinçli karar (ADR-001 karar 6: geçmiş olaylar
+  depoda kalır).
+- **Vitest worker fork kararsızlığı** bu ortamda gerçek ve tekrarlıyor (dört kez, `exit code
+  3221226505`). Kod regresyonu değil; `verify` kırmızıysa bir kez daha koşturulur.
+- **F-008'e devredilen taahhüt:** `archiveDenial` bir handler'a bağlanmadan önce senkron bekleme
+  içerip içermediği denetlenecek (F-007 sözleşmesi §9, Karar 3).
+
+## Faz 1'in en pahalı dersi
+
+**"Yeşil ama hiçbir şey ölçmeyen test" on ikiden fazla kez çıktı.** Bu yüzden mutasyon testi
+(uygula → KIRMIZI gör → geri al) artık her feature'da zorunlu ve `CLAUDE.md`'de kayıtlı.
+
+## Faz 2 kapsamı bu onaydan sonra değişti
+
+Kullanıcı Faz 1'i denedikten sonra panelin salt-izleyici kalmasını reddetti; panel artık CEO
+oturumunu barındıracak (`ADR-014`, `docs/00-idea.md` kapsam değişikliği). Faz 2 sırası:
+**F-012** (sohbet arayüzü) → **F-013** (feature penceresinde içerik) → F-008 → F-009 → F-010 → F-011.

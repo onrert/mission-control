@@ -5,3 +5,5 @@
 - [Panel = CEO sohbet arayüzü vizyonu](project_panel-ceo-sohbet-vizyonu.md) — Veron'un asıl beklentisi; salt-izleyici panel ona yetmiyor
 - [Kanal gecikme ölçümü](project_spike-001-kanal-gecikme-olcumu.md) — CEO %87.5 boşta; arka plan agent düzeni "agent çalışırken konuşma"yı zaten çözüyor
 - [Kısa ve sade cevap](feedback_kisa-sade-cevap.md) — önce "olabiliyor mu", sonra detay; seçenek açıklamaları mini-rapor olmasın
+- [Faz 2 durumu](project_faz2-durum.md) — F-012 ve F-014 bitti, sırada F-013; iki CEO oturumu aynı depoda çakışır
+- [Tur bölme ve commit](feedback_tur-bolme-ve-commit.md) — turlar sürekli sınıra takılıyor; devam brief'inin ilk maddesi commit olsun

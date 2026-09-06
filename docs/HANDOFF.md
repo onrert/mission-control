@@ -7,6 +7,29 @@
 
 ---
 
+## YARIN BURADAN BAŞLA (2026-09-06 kapanış)
+
+**Durum: temiz ve güvende.** Depo commit'li, 30 commit push'landı (`3d024fe`), yetim süreç yok,
+port yok, son QA kararı **GEÇTİ**.
+
+**İlk üç iş:**
+1. **Bu dosyanın kendi commit'ini push et** — kapanış notu (`docs/HANDOFF.md` + hafıza) yerelde
+   duruyor, push onayı alınmadı. Kullanıcıya sor, `docs/approvals/PUSH.ok` yaz, **komutu tek
+   başına çalıştır** (zincirleme yapma — hook token'ı `PreToolUse`'da tüketiyor).
+2. **Kullanıcıya sor: devir yapılacak mı?** Masaüstü uygulamasından çalışmak isterse bu dosya
+   devir notu olarak tamamlanır ve bu oturum çekilir. ⚠ **İki CEO oturumuna aynı anda iş verme** —
+   ikisi de aynı depoya commit atıp birbirini bozar.
+3. **Sıradaki feature: F-013** (feature kartına tıklayınca içinde ne yapıldığını görmek).
+   Kullanıcının kendi isteği, `status: todo`. Ucuz yarısı: feature dosyasının gövdesi + sözleşme +
+   QA raporları. Pahalı yarısı (agent mesajları) F-009+F-010'da.
+
+**Kullanıcının elindeki çalışan şey:**
+`release\Mission Control-win32-x64\mission-control.exe` — çift tıkla açılır, terminal gerekmez,
+sohbet sekmesi çalışır, tepside kalır.
+
+---
+
+## Tek cümle
 ## Tek cümle
 **Faz 1 bitti (7/7 feature `done`).** Kullanıcı paneli denedi ve yön değiştirdi: panel artık
 salt-izleyici kalmayacak, **CEO oturumunu kendi içinde barındıracak** (`ADR-014`). Sırada

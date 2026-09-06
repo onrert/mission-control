@@ -20,36 +20,26 @@ salt-izleyici kalmayacak, **CEO oturumunu kendi içinde barındıracak** (`ADR-0
   her push ayrı onay ister; CEO `docs/approvals/PUSH.ok` yazar, hook kullanınca **siler**
   (tüketildiği doğrulandı).
 
-## Aktif iş: F-012 CEO sohbet arayüzü
-Panel, CEO oturumunu `@anthropic-ai/claude-agent-sdk` ile barındırır ve sohbet arayüzü olur.
+## Son biten: F-012 CEO sohbet arayüzü — **QA GEÇTİ, `done`**
+Panel artık CEO oturumunu `@anthropic-ai/claude-agent-sdk` ile **kendi içinde barındırıyor**.
+Kullanıcı panelden yazıyor, cevap akış hâlinde geliyor, alt agent'lar arka planda çalışırken
+sohbet devam ediyor.
 
-**SÖZLEŞME TURU KAPANDI — QA GEÇTİ** (3 tur: 7+13 bulgu → 3 yeni bloklayıcı → kapanış).
-`docs/qa/F-012-contract.md` · raporlar `F-012-contract-review-{1,2,3}.md` · UX `docs/03-ux.md` §7.
-Feature notu `status: contract`.
+**Ölçülen kapanış:** `verify` = 0 (**859 test + 2 atlandı / 57 dosya**) · `e2e` = 0 (23/23) ·
+`e2e:chat` = 0 (1/1, sıfır kota) · canlı hook testi 4/4 · puanlar 8/8/8/7.
 
-**SONRAKİ ADIM: KOD TURU.** Kullanıcı kararı: opus limiti sıfırlanınca (05:00) başlatılacak —
-bu tur güvenlik çitlerini kuruyor, sonnet'le yapılmayacak.
+**Turlar:** 3 sözleşme turu (20 bulgu) → 2 kod turu → 4 QA turu → 3 düzeltme turu.
+Üçüncü QA turunda kullanıcıya eskale edildi; kullanıcı tek bir dar tur onayladı ve kapandı.
 
-**Kod turunun ZORUNLU ilk işi (sözleşme §8a):** `managedSettings` +
-`allowManagedPermissionRulesOnly: true` gerçek bir oturumda **iki yönlü** test edilecek
-(override varken/yokken, allow-listeli aynı komut). Başarısız olursa **durmadan Yol B'ye geç**
-(programatik hook'lar + `settingSources:[]`); K3 pazarlığa kapalı (D10). Eskalasyon yalnızca
-Yol B de çalışmazsa.
-
-**⚠ TUZAK:** `allowManagedHooksOnly` ve `strictPluginOnlyCustomization` **asla set edilmeyecek** —
-ikisi de proje hook'larını devre dışı bırakır, altı güvenlik kapısı ölür.
-
-**Kod turunda doğrulanacak [T]'ler:** `.claude/settings.json` `env` bloğu spawn'ı eziyor mu ·
-Windows'ta yetim `claude.exe` · `"agent":"ceo"` personası yükleniyor mu · admin-tier
-`managed-settings.json` var mı.
-
-### CEO'nun F-012 için önden verdiği kararlar (K1-K8, brief'te tam metin)
-D1-D11 kararları da sözleşme gövdesine yayıldı (D6 izin deliği, D10 Yol B, D11 bütçe tavanı).
-K1 tek oturum · K2 `ANTHROPIC_API_KEY` temizlenir **ve** görünür uyarı (mutasyonla çitli) ·
-K3 izin akışı kullanıcıya çıkar, otomatik onay YASAK · K4 olay akışı CEO bağlamına girmez
-(prompt injection sınırı) · K5 ikinci `EventSource` yok, gerekçesiz ikinci kanal kabul edilmez ·
-K6 sohbet kapatılabilir, panel bugünkü hâline döner · K7 araç isim yüzeyi kurulu sürümden
-doğrulanır · K8 görsel düzen `docs/03-ux.md`'nin işi, sözleşmenin değil.
+**Kalan açık maddeler (hiçbiri bloklayıcı değil):**
+- **Ö7** — araç satırları yenilemede kayboluyor (veri `history.jsonl`'de duruyor).
+  `ADR-014` "Kabul edilen riskler" madde 5 + `docs/blockers.md`.
+- **React duplicate key** — `src/features/chat/web/ChatScreen.tsx:393` render anahtarında `role`
+  yok; aynı turda kullanıcı ve CEO aynı anahtarı alıyor, konsolda duplicate-key uyarısı.
+  `42c3848`'ten beri var. B2'de veri tarafı düzeltilen hatanın **render ikizi**.
+- **`npm run dev`** bu ortamda `concurrently` ile tekrarlanabilir biçimde bozuk; süreçler ayrı
+  başlatılınca sorunsuz. Ölçümler üretim sunucusuyla yapılıyor.
+- Geçmiş yazma amplifikasyonu ≈159× ve `entries` belleği sınırsız (`ADR-014` madde 4).
 
 ## Faz 2 sırası (kullanıcı kararlarıyla güncel)
 | # | Feature | Durum |

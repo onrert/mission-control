@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "electron/main.cjs",
   "engines": {
     "node": ">=20.11"
   },
@@ -25,7 +26,10 @@
     "format": "prettier --write .",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
     "install-hook": "node scripts/install-hook.mjs",
-    "test:chat-live": "vitest run tests/integration/chat-hooks-live.test.ts"
+    "test:chat-live": "vitest run tests/integration/chat-hooks-live.test.ts",
+    "electron:fetch": "node ./node_modules/electron/install.js",
+    "electron:start": "npm run build && electron .",
+    "electron:package": "npm run build && node scripts/package-electron.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.261",
@@ -45,11 +49,13 @@
     "@testing-library/dom": "^10",
     "@testing-library/react": "^16",
     "@testing-library/user-event": "^14",
+    "@electron/packager": "^20.3.0",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4",
     "concurrently": "^9",
+    "electron": "^44.2.0",
     "eslint": "^9",
     "jsdom": "27.0.1",
     "prettier": "^3",

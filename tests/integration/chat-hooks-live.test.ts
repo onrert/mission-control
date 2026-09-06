@@ -42,17 +42,26 @@ function makeSingleTurnPrompt(text: string) {
 /** Ham `query()` mesaj akışından `tool_result` içeriklerini toplar — hook'un `block()` mesajı
  *  (`.claude/hooks/block-dangerous.cjs`) modele bir `tool_result` hatası olarak geri döner; bu
  *  yardımcı o metni yakalar (yalnızca canlı testin gözlemi içindir, üretim kodu bu ham içeriği
- *  ASLA panele basmaz — S2/B4, bkz. `chat-api.test.ts`). */
+ *  ASLA panele basmaz — S2/B4, bkz. `chat-api.test.ts`). QA F-012 tur 2 Y3 düzeltmesi — ayrıca
+ *  gerçekten bir `Bash` `tool_use` çağrısı olup olmadığını da döner: eski test yalnızca
+ *  `tool_result` metnini ölçüyordu, model hiç Bash ÇAĞIRMADIYSA (ör. doğrudan metinle cevap
+ *  verdiyse) `blockedActive`/`blockedInactive` ikisi de sessizce `false` kalıp testi YANLIŞ
+ *  nedenle (mekanizma değil, model kararı) kırmızıya düşürüyordu; artık bu durum ayrı, okunabilir
+ *  bir hata olarak raporlanır (bkz. çağıran taraf). */
 async function collectToolResultTexts(
   q: AsyncIterable<Record<string, unknown>>
-): Promise<string[]> {
+): Promise<{ toolResultTexts: string[]; sawBashToolUse: boolean }> {
   const toolResultTexts: string[] = []
+  let sawBashToolUse = false
   for await (const message of q) {
     const type = message.type
+    if (process.env.MC_CHAT_LIVE_DEBUG)
+      console.error('[debug]', JSON.stringify(message).slice(0, 500))
     if (type === 'assistant' || type === 'user') {
       const content =
         (message.message as { content?: Array<Record<string, unknown>> } | undefined)?.content ?? []
       for (const block of content) {
+        if (block.type === 'tool_use' && block.name === 'Bash') sawBashToolUse = true
         if (block.type === 'tool_result') {
           const raw = block.content
           toolResultTexts.push(typeof raw === 'string' ? raw : JSON.stringify(raw))
@@ -61,7 +70,7 @@ async function collectToolResultTexts(
     }
     if (type === 'result') break
   }
-  return toolResultTexts
+  return { toolResultTexts, sawBashToolUse }
 }
 
 describe.skipIf(!process.env.MC_CHAT_LIVE_TESTS)(
@@ -113,7 +122,11 @@ describe.skipIf(!process.env.MC_CHAT_LIVE_TESTS)(
         expect(sawPermissionRequest).toBe(true)
         expect(sawToolName).toBe('Bash')
       },
-      30000
+      // QA F-012 tur 2 Y3 düzeltmesi — 30000ms gerçek CEO personasında (proje bağlamını önce
+      // okuma alışkanlığı, QA gözlemi) yetersizdi: bağımsız QA probu aynı yapılandırmayla
+      // 40-70 sn arası koştu (`docs/qa/F-012-2026-09-06-tur2.md` §4 Y3). 120 sn bu dağılımın
+      // üzerinde gerçekçi bir bütçe.
+      120000
     )
 
     it(
@@ -124,16 +137,32 @@ describe.skipIf(!process.env.MC_CHAT_LIVE_TESTS)(
         // listesiyle örtüşmüyor (yalnızca rm -rf/git push --force/git reset --hard var), ama
         // `.claude/hooks/block-dangerous.cjs`'in kendi `release` deseniyle eşleşiyor
         // (`npm\s+publish`) — QA'nın §3.5'te gerçek oturumda kullandığı KOMUTUN AYNISI.
+        //
+        // QA F-012 tur 2 Y3 düzeltmesi — eski hâli MODEL DAVRANIŞINA bağımlıydı: modelin
+        // doğal dille verilen talimatı harfiyen izleyip TAM OLARAK `markerCommand`'ı çalıştırması
+        // gerekiyordu; yapmazsa (ör. başka bir komut denerse/hiç Bash çağırmazsa) test yanlış
+        // nedenle kırmızı oluyordu (`docs/qa/F-012-2026-09-06-tur2.md` §4 Y3 kök neden 2). Artık
+        // `canUseTool`, modelin önerdiği komut NE OLURSA OLSUN `updatedInput.command`'ı
+        // `markerCommand`'a ZORLA çeviriyor — mekanizma (hook zincirinin bu komutu engelleyip
+        // engellemediği) artık modelin doğal dil talimatını ne kadar sadık izlediğinden
+        // BAĞIMSIZ; tek model bağımlılığı modelin (hâlâ) EN AZ BİR Bash çağrısı yapması, ki
+        // bu `sawBashToolUse` ile ayrıca doğrulanıp ayrı, okunabilir bir hata verir.
         const markerCommand = 'npm publish --dry-run'
-        const promptText = `İlk aracın Bash olsun: tam olarak şu komutu çalıştır: ${markerCommand}`
-        const alwaysAllow = async (_toolName: string, input: Record<string, unknown>) => ({
+        const promptText = 'İlk aracın Bash olsun, herhangi bir salt-okunur komut çalıştır.'
+        const forceMarkerCommand = async (toolName: string, input: Record<string, unknown>) => ({
           behavior: 'allow' as const,
-          updatedInput: input,
+          updatedInput: toolName === 'Bash' ? { ...input, command: markerCommand } : input,
         })
+        // QA F-012 tur 2 Y3 (2. deneme) — (b) kolu `settingSources: []` olduğu için `agent:'ceo'`
+        // YÜKLENEMEZ (persona proje ayarlarından okunur); persona olmadan model bazen Bash'i hiç
+        // çağırmadan düz metinle cevap veriyordu (ilk koşuda gözlemlendi, `sawBashToolUse:false`).
+        // `allowedTools: ['Bash']` araç yüzeyini TEK seçeneğe indirir (Karpathy §2'nin izin
+        // verdiği ölçüde agresif — bu yalnızca test determinizmi için, üretim koduna dokunmuyor).
+        const forceBashOnly = ['Bash']
 
         // (a) Hook zinciri AKTİF — Ö10 madde 2: gerçek cwd (repo kökü) üzerinden .claude/
         // settings.json'daki göreli hook yolu çözülüyor.
-        const activeToolResults = await collectToolResultTexts(
+        const active = await collectToolResultTexts(
           sdkQuery({
             prompt: makeSingleTurnPrompt(promptText),
             options: {
@@ -148,34 +177,57 @@ describe.skipIf(!process.env.MC_CHAT_LIVE_TESTS)(
                 allowManagedPermissionRulesOnly: true,
                 permissions: { ask: ['Bash'] },
               },
-              canUseTool: alwaysAllow,
+              canUseTool: forceMarkerCommand,
             },
           }) as unknown as AsyncIterable<Record<string, unknown>>
         )
-        const blockedActive = activeToolResults.some((t) => t.includes('Engellendi'))
+        if (!active.sawBashToolUse) {
+          throw new Error(
+            'Model hiç Bash çağırmadı (aktif kol) — bu, hook mekanizmasının kendisi hakkında ' +
+              'bir kanıt DEĞİL, yalnızca modelin bu turda aracı seçmediğini gösterir. Testi ' +
+              'tekrar çalıştırın; tekrarlıyorsa promptu güçlendirin.'
+          )
+        }
+        const blockedActive = active.toolResultTexts.some((t) => t.includes('Engellendi'))
 
         // (b) Hook zinciri DEVRE DIŞI — `settingSources: []` proje hook'larını hiç yüklemez
-        // (SDK isolation mode, ✓ DOĞRULANDI sözleşme §8a). Aynı komut, hook koruması olmadan.
-        const inactiveToolResults = await collectToolResultTexts(
+        // (SDK isolation mode, ✓ DOĞRULANDI sözleşme §8a). Aynı ZORLANMIŞ komut, hook
+        // koruması olmadan.
+        const inactive = await collectToolResultTexts(
           sdkQuery({
             prompt: makeSingleTurnPrompt(promptText),
             options: {
               cwd: repoRoot,
               settingSources: [],
               permissionMode: 'default',
-              disallowedTools: NO_EXPLORATION_TOOLS,
+              allowedTools: forceBashOnly,
+              // Persona (`agent:'ceo'`) bu kolda yüklenemediği için modeli doğrudan yönlendiren
+              // kısa bir sistem talimatı — hook zincirinin kendisiyle İLGİSİZ, yalnızca "hemen
+              // bir araç çağır" determinizmini artırır.
+              systemPrompt:
+                'Kullanıcının istediği kabuk komutunu ÇAĞIRMADAN ÖNCE hiçbir metinle cevap verme; ' +
+                'ilk aracın her zaman Bash olsun.',
               maxTurns: 3,
               model: 'claude-haiku-4-5',
-              canUseTool: alwaysAllow,
+              canUseTool: forceMarkerCommand,
             },
           }) as unknown as AsyncIterable<Record<string, unknown>>
         )
-        const blockedInactive = inactiveToolResults.some((t) => t.includes('Engellendi'))
+        if (!inactive.sawBashToolUse) {
+          throw new Error(
+            'Model hiç Bash çağırmadı (devre dışı kol) — mekanizma hakkında kanıt DEĞİL. ' +
+              'Testi tekrar çalıştırın.'
+          )
+        }
+        const blockedInactive = inactive.toolResultTexts.some((t) => t.includes('Engellendi'))
 
         expect(blockedActive).toBe(true)
         expect(blockedInactive).toBe(false)
       },
-      60000
+      // QA F-012 tur 2 Y3 düzeltmesi — bu test İKİ art arda tam oturum çalıştırıyor; eski
+      // 60000ms tek bir oturumun bile gözlemlenen dağılımının (40-70 sn) altındaydı. 240 sn iki
+      // oturum + payla gerçekçi bir bütçe.
+      240000
     )
   }
 )

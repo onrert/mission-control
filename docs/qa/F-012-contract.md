@@ -4,7 +4,8 @@ title: CEO sohbet arayüzü — panel, oturumu Agent SDK ile barındırır
 author: developer
 status: draft
 date: 2026-09-06
-revision: 2 (docs/qa/F-012-contract-review-1.md bulgularına yanıt — 7 BLOKLAYICI, 13 ÖNEMLİ, 6 NOT)
+revision: 3 (docs/qa/F-012-contract-review-2.md bulgularına yanıt — 3 BLOKLAYICI: Y-B1/Y-B2/Y-B3,
+  + Ö5/Ö6 kapatıldı. Tur 1 → docs/qa/F-012-contract-review-1.md, 7 BLOKLAYICI + 13 ÖNEMLİ + 6 NOT.)
 ---
 
 # F-012 Sözleşmesi — Panel CEO oturumunu `@anthropic-ai/claude-agent-sdk` ile barındırır
@@ -12,6 +13,16 @@ revision: 2 (docs/qa/F-012-contract-review-1.md bulgularına yanıt — 7 BLOKLA
 Kod yazılmadan önceki "ne yapılacağı + nasıl doğrulanacağı" sözleşmesi (`CLAUDE.md` §"Sözleşme").
 Bu turda da `src/`, `tests/`, `package.json` altında **hiçbir dosya değiştirilmedi**; yalnızca bu
 sözleşme metni düzeltildi. `git status --porcelain` bunu doğrular (tek satır: bu dosya).
+
+**Bu revizyon (3) neyi kapatıyor:** `docs/qa/F-012-contract-review-2.md`'nin dar kapsamlı denetimi
+üç yeni bloklayıcı buldu — Y-B1 (yanlış `sdk.d.ts` atfı), Y-B2 (D10 kararı gövdeye yayılmamış),
+Y-B3 (D11 kararı hiç işlenmemiş) — ve iki kısmi-önemli bulguyu (Ö5, Ö6) bloklayıcı olmasa da
+kapatılmamış bıraktı. Bu revizyon **yalnızca** bu beş maddeyi ve bunların doğurduğu iç çelişkileri
+kapatır; 1. turda QA'nın kapandığını doğruladığı hiçbir bölüm yeniden açılmadı. Değişen bölümler:
+§0.1 (D10/D11 satırları eklendi), §2.4 (Yol B'nin koşullu dosyası notu), §3 (bütçe tavanı alt
+bölümü, D11), §5 (izin olaylarının kapalı şeması, Ö6), §8a (mekanizma kanıtı düzeltildi + Yol
+B artık koşullu plana dahil, Y-B1/Y-B2), §10 (bütçe aşımı satırı + "Yeniden bağlan" butonunun
+gerçekte ne çağırdığı, D11/Ö5), §11 (mutasyon 13/14, D9), §13 (soru 1 kapatıldı, D10).
 
 **Kanıt işaretleri (bu belge boyunca):** **✓ DOĞRULANDI** (bu turda kendim okudum/çalıştırdım,
 alıntı/yol var) · **⊢ ÇIKARIM** (doğrulanmış kanıttan türetildi) · **[T] TAHMİN** (doğrulanmadı,
@@ -38,8 +49,11 @@ hatası düzeltildi) · `docs/03-ux.md:733-762` ("CEO notları §4" — S1/S2/S3
 (M1/M2/M3 GEÇTİ, bu sözleşme tekrar ölçmüyor) ·
 `docs/decisions/ADR-013-yazma-uclarinda-ozel-baslik-zorunlulugu.md` ·
 `docs/decisions/ADR-004-gercek-zamanli-tasima.md` · `docs/decisions/ADR-009-tek-platform-windows.md`
-· `CLAUDE.md` "Öğrenilen kurallar" (tamamı) · `docs/qa/F-012-contract-review-1.md` (bu turun görev
-listesi, dokunulmadı, yalnızca okundu).
+· `CLAUDE.md` "Öğrenilen kurallar" (tamamı) · `docs/qa/F-012-contract-review-1.md` (tur 1'in görev
+listesi) · `docs/qa/F-012-contract-review-2.md` (bu revizyonun görev listesi, dokunulmadı, yalnızca
+okundu) · kurulu SDK paketinin `sdk.d.ts`'i bu revizyonda **tekrar, satır satır** okunarak Y-B1'in
+yanlış atfı düzeltildi (§8a) ve D11'in bütçe-aşımı sinyali (`sdk.d.ts:1774-1777`, `:4957-4964`)
+doğrulandı (§3).
 
 **Kod okunarak bu turda YENİDEN doğrulandı (✓ DOĞRULANDI):** `src/web/lib/useEventStream.ts` (tam
 dosya — `hello` dinlenmiyor, ama `handleOpen`/native `'open'` olayı **her yeniden bağlanmada**
@@ -69,6 +83,8 @@ gövdeye yayılmazsa tur sonunda çelişki bırakır — bu yüzden madde madde 
 | D7 | Sohbet akışı boşluk-tespiti: `chat_seq` + **var olan** `handleOpen` kancası | §5 |
 | D8 | Sohbet geçmişi yazması **mevcut** `no-write-gate-bypass` deseniyle kapatılır, yeni istisna yok | §2.3, §2.4 (STORE_FILES notu) |
 | D9 | Mutasyon listesi: her madde "hangi test" + "türetilmiş mi/elle mi" taşır | §11.2 |
+| D10 | Yol A'nın canlı testi başarısız olursa **durmadan** Yol B'ye geç; K3/UX§7.3 gevşetme **kapalı**; yalnızca Yol B de başarısız olursa eskale | §8a (Yol B, D6/D10 sonucu), §13 (soru 1 kapandı) |
+| D11 | Bütçe tavanı: ayarlanabilir (sabit gömülmez) + tavana çarpınca sessiz durmaz + çitlenir | §3 (Bütçe tavanı alt bölümü), §10 (yeni satır), §11.1/§11.2 (mutasyon 14) |
 
 ### 0.2 Doğrulanamayanlar — güncel liste (tur 1'in 6 maddesinden 4'ü bu turda kapandı)
 

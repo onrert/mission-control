@@ -17,6 +17,8 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "e2e:dev": "playwright test -c playwright.dev.config.ts",
+    "e2e:chat": "playwright test -c playwright.chat.config.ts",
+    "e2e:chat:server": "tsx tests/e2e/helpers/chat-fake-server.ts",
     "test:e2e": "npm run e2e",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

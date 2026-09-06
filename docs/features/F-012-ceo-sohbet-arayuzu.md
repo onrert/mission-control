@@ -1,7 +1,7 @@
 ---
 id: F-012
 title: CEO sohbet arayüzü — panel, oturumu Agent SDK ile barındırır
-status: fix
+status: qa
 owner: developer
 deps: [F-003, F-006]
 sprint: 2
@@ -124,3 +124,76 @@ eklenmedi).
 **Doğrulama:** `npm run verify` (typecheck + lint + test + build) = **0**, 849 test yeşil (55
 dosya, +12 yeni test bu turda). `npm run e2e` = **0** (23/23). Süreç/port temizliği tur sonunda
 doğrulandı (`node.exe`/`claude.exe` yetim yok, 7333/7433/7434'te dinleyen yok).
+
+## QA düzeltme turu 2 (2026-09-06, `docs/qa/F-012-2026-09-06-tur2.md` KALDI kararına yanıt)
+
+QA tur2: 6/6 bloklayıcı gerçekten kapandı (canlı iki yönlü kanıtlı E1 dahil), ama **2 yeni
+bloklayıcı** (Y1, Y2) + **3 önemli** (Y3, Y4, Y5) bulgu KALDI kararını getirdi. Bu turda ele
+alınanlar:
+
+- **Y1 (BLOKLAYICI) — KAPANDI.** Bekleyen izin isteği artık **sunucu durumu**
+  (`getStatus().pending_permissions`), istemci belleği değil. `canUseTool`/`resolvePermission`
+  `chat_status` yayınını günceller; `useChatSession` `onChatStatus`'tan `pendingPermissions`'ı
+  otoriter olarak kurar. Sayfa yenilemesi/SSE yeniden bağlanması sonrası kart geri gelir ve
+  **gerçekten cevaplanabilir** (aynı `request_id`). Mutasyonla doğrulandı
+  (`pending_permissions:[]` ve `onChatStatus` gövdesi kaldırılınca KIRMIZI).
+- **Y2 (BLOKLAYICI) — KAPANDI.** `vite.config.ts`'in `MC_CHAT_ENABLED`'ı derleme anında `dist/`e
+  gömen `define`'i kaldırıldı. `App.tsx` artık sekme görünürlüğünü `GET /api/chat/status`'un
+  `chat_enabled` alanından **çalışma zamanında** okuyor. `npm run e2e` sonrası kalan `dist/`
+  artık hangi ortamda derlendiğinden bağımsız. Elle doğrulandı: `dist/` `MC_CHAT_ENABLED=0` ile
+  derlendi, sonra `MC_CHAT_ENABLED=1` + sahte `query()` (sıfır kota) ile başlatılan gerçek
+  sunucuda gerçek Chromium'da Sohbet sekmesinin geldiği gözlemlendi; bundle grep'i
+  `MC_CHAT_ENABLED` literalinin `dist/`te artık hiç geçmediğini gösterdi.
+- **Y2 artığı (ayrı commit) — KAPANDI.** Geçmiş artık yalnızca `chat_enabled` bilindikten sonra
+  yükleniyor (`useChatSession.ts`), Y2'nin çalışma-zamanı geçişiyle tutarlı.
+- **Y4 (ÖNEMLİ) — KAPANDI.** B2'nin istemci yarısına (`useChatSession.ts` katlama anahtarı
+  `turn_id::kind::role`) mutasyon çiti eklendi (M8 önceden çitsiz yeşil kalıyordu); `role`
+  kaldırılınca yeni test KIRMIZI, geri konunca yeşil.
+- **Y3 (ÖNEMLİ) — KISMEN KAPANDI, mimari bulgu.** `chat-hooks-live.test.ts`'in AC4 iki yönlü
+  testi 5 canlı denemede determinize edildi. **Mimari bulgu (4. deneme):** SDK'nın kendi belgesi
+  (`sdk.d.ts:4853`, `PermissionDenied` açıklaması) — "Denials that resolve before `canUseTool`
+  runs — `PreToolUse` hook denies… are not covered [by this event]." `PreToolUse` hook'u
+  **modelin önerdiği ham `tool_input` üzerinde çalışır ve `canUseTool` çağrılmadan ÖNCE karar
+  verir**; `canUseTool`'un `updatedInput`'u hook'un GÖRDÜĞÜ girdiyi değiştirmez, yalnızca
+  hook+izin ikisi de geçtikten SONRA fiilen ÇALIŞACAK komutu değiştirir. Test artık yalnızca
+  modelin GERÇEKTEN önerdiği komut (`proposedBashCommands`, hook'un gördüğü ham veri) beklenen
+  işaretleyiciyle eşleştiğinde mekanizma hakkında iddiada bulunuyor; eşleşmezse ayrı, okunabilir
+  bir tanı hatası veriyor (model-davranışına bağımlılığı ortadan kaldırıyor). **5. denemeden
+  sonra kota sınırı nedeniyle 6. bir canlı koşu bu turda YAPILMADI** — düzeltme mantıken doğru
+  ama bu hâliyle canlı **yeniden doğrulanmadı**; `ADR-014` M2'nin "her QA turunda en az bir kez"
+  kadansı bir sonraki turda karşılanmalı.
+- **F5 — Ö6 (koşullu erteleme) belgelendi.** Ölçülen rakamlar (302 satır/956.300 bayt, ~159×
+  amplifikasyon, `entries` dizisinin sınırsız büyümesi) `ADR-014`'ün "Kabul edilen riskler"
+  bölümüne (madde 4, yeniden ele alınma eşiğiyle) ve `docs/blockers.md`'ye açık madde olarak
+  yazıldı (QA tur2'nin koşulu).
+- **F6 (Ö5'in erteleme reddi'ne yanıt) — sohbet ekranı için gerçek tarayıcı E2E'si eklendi.**
+  QA'nın gösterdiği gibi enjeksiyon dikişi (`createServer(port, dataDir, chatQueryOverride)`)
+  ürün kodunda zaten vardı; yeni bir yetenek eklemek gerekmedi. `playwright.chat.config.ts`
+  (ayrı config, ana `npm run e2e` koşusuna dokunmaz) + `tests/e2e/helpers/chat-fake-server.ts`
+  (gerçek üretim sunucusu, sahte `query()`, **sıfır kota**) + `tests/e2e/chat.spec.ts` (tek
+  senaryo: mesaj gönder → akan cevap → izin kartı → onayla → kapanış cevabı → sayfa yenile →
+  geçmiş kalıcı). `tests/e2e-config-guard.test.ts`'in sabit iki-dosyalık config listesi
+  `readdirSync` ile YAPISAL bir taramaya çevrildi (B1'in `@source` çitiyle aynı ders — bir
+  sonraki feature yeni bir `playwright*.config.ts` eklerse guard onu otomatik kapsar).
+  Mutasyonla doğrulandı: eski sabit listeye dönülünce `chat.spec.ts` testi KIRMIZI verdi, geri
+  alınınca yeşil.
+
+**Kalan risk / QA'ya devredilen açık maddeler:**
+- **Y3'ün düzeltmesi bu turda canlı yeniden doğrulanmadı** (kota sınırı) — bir sonraki QA
+  turunda `MC_CHAT_LIVE_TESTS=1 npm run test:chat-live` ile en az bir kez koşulmalı.
+- **Y5 (Ö6'nın bellek ayağının belgesizliği)** artık `ADR-014` madde 4'te ve `docs/blockers.md`'de
+  yazılı — kapandı sayılabilir.
+- Ö7'nin geri kalanı (araç satırlarının — `toolRows` — kendisi, yalnızca bekleyen izin değil —
+  yenilemede hâlâ görüntülenmiyor) bilinçli olarak bu turun dışında kaldı; Y1'in çözümü yalnızca
+  **kilitlenmeyi** kapattı, görüntü eksikliğini değil.
+- **Mimari bulgu (Y3, CEO/architect değerlendirmesi bekliyor):** `PreToolUse` hook'unun
+  `canUseTool`'dan ÖNCE karar vermesi, güvenlik sınırının SDK'nın izin motorundan değil
+  doğrudan hook zincirinden geldiği anlamına geliyor — K3 garantisini değiştirmiyor (her iki
+  mekanizma da bağımsız olarak engelliyor, ikisi de canlı doğrulandı) ama sıralamayı netleştiriyor;
+  `ADR-014`'e yazılıp yazılmayacağına CEO karar versin.
+
+**Doğrulama (bu tur, tekrar ölçüldü):** `npm run verify` = **0** (855 test + 2 atlandı, 56 dosya
++ 1 atlandı geçti). `npm run e2e` = **0** (23/23). `npm run e2e:chat` (yeni, sıfır kota) = **0**
+(1/1, iki ayrı koşuda tekrarlandı). `grep -rn "MUTATION\|MUTASYON" src/ tests/` yalnızca meşru
+`write-gate-manifest.test.ts:124` test adını döndürüyor. Süreç/port temizliği: `tasklist`te
+node.exe yok, 7333-7436 arasında LISTENING yok.

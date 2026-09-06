@@ -1862,3 +1862,89 @@ kullanıyor.
 **Sonraki adım**
 - qa-evaluator F-012'yi (B1-B6 + Ö1/Ö2/Ö3/Ö4/Ö8 düzeltmeleri, Ö5/Ö6/Ö7 ertelemeleri dahil)
   yeniden değerlendirsin.
+
+---
+
+## 2026-09-06 — F-012 QA düzeltme turu 2 (KALDI → düzeltildi), feature yeniden `status: qa`
+
+**Ne yapıldı** — bu oturum 150 tur sınırına takılan önceki oturumdan devam etti; ilk iş
+commit'siz kalan F6 (E2E) çalışmasını (`package.json`, `tests/e2e-config-guard.test.ts`,
+`playwright.chat.config.ts`, `tests/e2e/chat.spec.ts`, `tests/e2e/helpers/`) commit etmekti.
+`docs/qa/F-012-2026-09-06-tur2.md`'nin (KARAR: KALDI, 2 bloklayıcı + 3 önemli) bulgularına
+yanıt, detay `docs/features/F-012-ceo-sohbet-arayuzu.md` "QA düzeltme turu 2" bölümünde:
+- **Y1 (bloklayıcı, kapandı)** — bekleyen izin isteği artık sunucu durumu
+  (`getStatus().pending_permissions`), istemci belleği değil; sayfa yenilemesi sonrası kart geri
+  gelir ve gerçekten cevaplanabilir. Mutasyonla çitlendi.
+- **Y2 (bloklayıcı, kapandı)** — `MC_CHAT_ENABLED` artık çalışma zamanı bilgisi
+  (`GET /api/chat/status`), derleme anında `dist/`e gömülen bir `define` değil; `npm run e2e`
+  sonrası kalan `dist/` artık "zehirli" olmuyor.
+- **Y4 (önemli, kapandı)** — istemci tarafı katlama anahtarına (`useChatSession.ts`) mutasyon
+  çiti eklendi.
+- **Y3 (önemli, kısmen kapandı)** — canlı hook testi 5 denemede determinize edildi; 4. denemede
+  mimari bulgu ortaya çıktı (aşağıya bakınız). Kota sınırı nedeniyle bu turda 6. bir canlı koşuyla
+  yeniden doğrulanmadı.
+- **F5** — Ö6'nın (geçmiş yazma amplifikasyonu) ölçülen rakamları `ADR-014` "Kabul edilen
+  riskler" madde 4'e ve `docs/blockers.md`'ye açık madde olarak yazıldı (QA'nın koşullu kabul
+  şartı).
+- **F6 (bu oturumda tamamlandı)** — Ö5'in "erteleme öncülü yanlış" bulgusuna yanıt: sohbet ekranı
+  için gerçek tarayıcı E2E'si. Enjeksiyon dikişi (`createServer(port, dataDir,
+  chatQueryOverride)`) ürün kodunda zaten vardı, QA'nın gösterdiği gibi yeni bir yetenek
+  eklemeye gerek kalmadı. Yeni dosyalar: `playwright.chat.config.ts` (ayrı config, ana `npm run
+  e2e`'ye dokunmuyor), `tests/e2e/helpers/chat-fake-server.ts` (gerçek üretim sunucusu, sahte
+  `query()`, sıfır kota), `tests/e2e/chat.spec.ts` (mesaj → akan cevap → izin kartı → onayla →
+  kapanış cevabı → yenile → geçmiş kalıcı tek senaryosu). `tests/e2e-config-guard.test.ts`'in
+  sabit iki dosyalık config listesi `readdirSync` ile yapısal taramaya çevrildi (B1'in `@source`
+  çitiyle aynı ders — bir sonraki `playwright*.config.ts` otomatik kapsanır).
+
+**Mimari bulgu (Y3, 4. deneme, `git log` `8cd089d`)** — SDK'nın kendi belgesi (`sdk.d.ts:4853`,
+`PermissionDenied` açıklaması): *"Denials that resolve before `canUseTool` runs — `PreToolUse`
+hook denies… are not covered [by this event]."* Yani `PreToolUse` hook'u modelin **önerdiği ham
+`tool_input`** üzerinde çalışır ve `canUseTool` **çağrılmadan önce** karar verir; `canUseTool`'un
+`updatedInput`'u hook'un GÖRDÜĞÜ girdiyi değiştirmez, yalnızca hook+izin ikisi de geçtikten SONRA
+fiilen ÇALIŞACAK komutu değiştirir. Bu, güvenlik sınırının SDK'nın izin motorundan değil
+doğrudan hook zincirinden geldiği anlamına gelir. **K3 garantisini değiştirmiyor** — her iki
+mekanizma (hook zinciri, `canUseTool`/`managedSettings.permissions.ask`) bağımsız olarak
+engelliyor ve ikisi de bu feature boyunca canlı/mutasyonla ayrı ayrı doğrulandı; bulgu yalnızca
+**sıralamayı** ve "hangi mekanizma neyi test ediyor" netliğini değiştiriyor. Test artık modelin
+gerçekten önerdiği komutu (hook'un gördüğü ham veri) ölçüyor, model davranışına kör bir assert
+değil. `ADR-014`'e yazılıp yazılmayacağı CEO kararına bırakıldı (dosya `docs/decisions/
+ADR-014-*.md` F-012'nin dosya sahipliği — `src/features/chat/**` — dışında).
+
+**Nasıl doğrulandı**
+- `npm run verify` = **0** (855 test + 2 atlandı, 56 dosya + 1 atlandı geçti).
+- `npm run e2e` (ana koşu, 23 senaryo, F6'ya dokunulmadı) = **0** (23/23).
+- `npm run e2e:chat` (yeni, sıfır kota — sahte `query()`) = **0** (1/1), iki ayrı koşuda
+  tekrarlandı, kırılganlık yok.
+- **Mutasyon kanıtı (bu oturumda bağımsız koşturuldu):** `tests/e2e-config-guard.test.ts`'in
+  `configFileNames()`'ı eski sabit iki-dosyalık listeye (`['playwright.config.ts',
+  'playwright.dev.config.ts']`) geri döndürüldü → `chat.spec.ts en az bir config metninde geçiyor`
+  testi KIRMIZI verdi (`tests/e2e/chat.spec.ts ne playwright.config.ts ne de
+  playwright.dev.config.ts içinde geçiyor`); Edit ile birebir geri alındı, `diff` orijinalle
+  farksız, tekrar 8/8 yeşil. Y1/Y2/Y4/Y3'ün mutasyon kanıtları önceki (bu oturumdan önceki)
+  commit mesajlarında zaten belgeli (`905029f`, `4e8943f`, `8cd089d`).
+- `grep -rn "MUTATION\|MUTASYON" src/ tests/` yalnızca meşru `write-gate-manifest.test.ts:124`
+  test adını döndürüyor — artık mutasyon izi yok.
+- Süreç/port temizliği: `tasklist` içinde `node`/`claude` yok, `netstat -ano | grep LISTENING`
+  7333/7334/7433-7436 için boş.
+
+**Harcanan kota (bu oturum)** — **$0**. Y1/Y2/Y4/F5/F6 tamamen kod okuma + sahte `query()` +
+mutasyon testiyle yapıldı; hiçbir gerçek SDK oturumu açılmadı. Önceki (bu oturumdan önceki,
+kesilen) oturumda Y3'ün 5 canlı denemesi (E1 + AC4 iki yönlü) için gerçek kota harcanmıştı —
+tutar o oturumun kendi commit mesajlarında (`8cd089d` ve öncesi) not edilmiş, bu oturumda TEKRAR
+harcanmadı (talimat gereği `test:chat-live` bu turda hiç çalıştırılmadı).
+
+**Kalan risk / QA'ya devredilen açık maddeler**
+- Y3'ün düzeltmesi bu turda **canlı yeniden doğrulanmadı** (kota sınırı, talimatla korunmuş) —
+  bir sonraki QA turunda `MC_CHAT_LIVE_TESTS=1 npm run test:chat-live` ile en az bir kez
+  koşulmalı (`ADR-014` M2 kadansı).
+- Ö7'nin geri kalanı (araç satırlarının kendisi, yalnızca bekleyen izin değil, yenilemede hâlâ
+  görüntülenmiyor) bilinçli olarak bu turun dışında kaldı.
+- Mimari bulgu (`PreToolUse` sıralaması) CEO/architect değerlendirmesi bekliyor —
+  `ADR-014`'e eklenip eklenmeyeceği bu oturumda karara bağlanmadı (dosya sahipliği dışı).
+- Ö6'nın kabul koşulu (`ADR-014` madde 4 + `docs/blockers.md`) zaten yazılı; bir sonraki
+  feature'ın planlamasına devredildi.
+
+**Sonraki adım**
+- qa-evaluator F-012'yi (Y1/Y2/Y4/Y3 düzeltmeleri + F5/F6 dahil) yeniden değerlendirsin.
+- CEO: mimari bulguyu (`PreToolUse`/`canUseTool` sıralaması) değerlendirip `ADR-014`'e eklenip
+  eklenmeyeceğine karar versin.

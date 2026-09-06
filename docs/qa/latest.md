@@ -1,292 +1,295 @@
-KARAR: GEÇTİ
+KARAR: KALDI
 ESKALE: false
 
+# F-014 — QA raporu (Electron masaüstü kabuğu, tepsi, açılışta başlama)
+
+- **Tarih:** 2026-09-06
+- **Tur:** kod turu (ilk QA)
+- **Test edilen artefakt:** `C:\dev\apps\mission-control\release\Mission Control-win32-x64\mission-control.exe`
+  (paketlenmiş `electron/main.cjs` deponunkiyle **birebir aynı** — `diff` farksız)
+- **Yöntem:** gerçek `.exe` çift tıklama eşdeğeri (npm/tsx yok), gerçek OS tepsi menüsü
+  (win32 fare otomasyonu + UIAutomation), gerçek Windows kayıt defteri, gerçek SSE akışı,
+  hata enjeksiyonu, 7 mutasyon.
+
 ---
-feature: F-012
-title: CEO sohbet arayüzü — panel oturumu Agent SDK ile barındırır
-reviewer: qa-evaluator
-date: 2026-09-06
-round: kapanış denetimi (tur 4, çok dar kapsam — üç madde)
-previous: docs/qa/F-012-2026-09-06-tur3.md (KALDI — Y1 bloklayıcı, Y3 kırmızı, Ö7 kabul edildi)
+
+## KARAR GEREKÇESİ (özet)
+
+Feature notunun kendi ölçütü: *"Başarı ölçütü 'masaüstü penceresi var mı' DEĞİL, 'elle sunucu
+başlatmak gerekiyor mu'dur."* Pencere, tepsi, tek örnek ve tepsiden çıkış **gerçekten çalışıyor**
+(aşağıda sayıyla kanıtlı). Ancak üç şey KALDI'yı zorunlu kılıyor:
+
+1. **Port çakışmasında kullanıcı HİÇBİR ŞEY görmüyor** (AC5 ihlali). `dialog.showErrorBox` bu
+   makinede **hiçbir pencere üretmiyor** — izole bir sonda uygulamasıyla kanıtlandı: aynı süreçte
+   `BrowserWindow` çiziliyor, hata kutusu çizilmiyor. Uygulama ~7 sn sonra sessizce ölüyor.
+2. **Masaüstü uygulamasındaki CEO sohbeti, deponun kendisinde değil paketlenmiş kopyada
+   (`release\...\resources\app`) çalışıyor**: `docs/` yok, `.git` yok, `.claude/settings.json`
+   (hook'lar/çitler) yok. F-012 + ADR-014 paneli CEO oturumunun arayüzü yaptı ve kullanıcı
+   *"artık oradan çalışırım"* dedi — bu hâliyle oradan çalışmak, sürüm alındığında silinecek ve
+   git'in görmediği bir kopyada, projenin tüm hook çitleri kapalıyken çalışmak demek.
+3. **Başlatma yolunda yakalanmamış hata → 3 zombi süreç, pencere yok, tepsi yok, hata mesajı
+   yok**; aynı userData ile sonraki her çift tıklama tek-örnek kilidine takılıp sessizce ölüyor.
+   `app.whenReady().then(async () => ...)` zincirinde `.catch` yok — CLAUDE.md'nin üç kez
+   tekrarlayan "yazma/başlatma yolundaki hata her şeyi öldürür" dersinin dördüncü biçimi.
+
+Ayrıca **teslim durumunda açılışta başlatma varsayılanı fiilen KAPALI** (ADR-011 ek kararının
+"AÇIK **ve** görünür" şartının ikisi de bu makinede sağlanmıyor, aşağıda Ö1/Ö2).
+
 ---
 
-# F-012 kapanış denetimi (tur 4)
+## 1. Kabul kriterleri — tek tek
 
-## 0. Özet
-
-**KARAR: GEÇTİ. ESKALE: false.**
-
-Dördüncü tur olduğu için `ESKALE` bayrağı KALDI hâlinde `true` olacaktı; karar GEÇTİ olduğu için
-eskale edilecek bir şey yok.
-
-Bu tur yalnızca üç maddeye baktı. Üçü de tuttu:
-
-| # | 3. tur bulgusu | İddia | Ölçüm sonucu |
+| # | Kriter | Sonuç | Kanıt |
 |---|---|---|---|
-| **Y1** | Bekleyen izin yenilemede kayboluyor (istemci `loadStatus` yanıtını indirgeyiciden geçirmiyor) | "`loadStatus` artık `onChatStatus`'tan geçiyor" | **KAPANDI** — canlı doğrulandı; mutasyon F artık **KIRMIZI** (§2) |
-| **Y3** | Canlı hook testi model davranışına bağımlı, dört turdur kırmızı | "tanı dalı kaldırıldı + kota-sıfır doğrudan hook bloğu" | **KAPANDI** — kota-sıfır blok deterministik yeşil; AC4 canlı kolu **ilk kez yeşil** (§3) |
-| **Paketler** | 859/57, 23/23, 1/1 iddiası | — | **DOĞRU** — üçü de kendim koşturuldu (§4) |
+| AC1 | Çift tıklamayla açılır, terminal komutu yok, `MC_CHAT_ENABLED` bilmek gerekmez, **sohbet varsayılan açık** | **GEÇTİ** | `.exe` doğrudan başlatıldı (npm/tsx yok) → 4 süreç, 7333 LISTENING, pencere "Mission Control" açıldı (`docs/qa/screens/F-014-01-exe-acilis.png`). `MC_CHAT_ENABLED` hiç set edilmeden `GET /api/chat/status` → `"chat_enabled":true` |
+| AC2 | Sunucu içeride başlar; pencere kapanınca **tepside devam** (olay toplama + dosya izleme durmaz) | **GEÇTİ** | Pencereye gerçek `WM_CLOSE` → pencere görünür listeden düştü, süreç 4, port hâlâ LISTENING, `/api/health` **aynı** `instance_id` (`5e494f50-…`). Pencere kapalıyken izlenen projeye yeni feature dosyası yazıldı → `/api/stream` üzerinden `event: features` **canlı geldi**, `/api/features` 1 → 2. `watchers:1` korundu |
+| AC3 | Tepsiden Çıkış: sunucu gerçekten kapanır, **yetim süreç kalmaz** | **GEÇTİ** | **Gerçek OS tepsi menüsü** tıklandı (test kancası değil): öncesi `mission-control.exe` **4**, sonrası **0**; 7333 LISTENING **boş**; `/api/health` HTTP=000. Menü ekran görüntüsü: `F-014-03-tepsi-menusu-autostart-kapali.png` |
+| AC4 | Windows açılışında başlama açılıp kapatılabilir; **varsayılanı belgede yazılı ve arayüzde görünür** | **KALDI** | Aç/kapa **çalışıyor** (tepsiden tıklandı → `HKCU\…\Run\electron.app.Mission Control` yazıldı; tekrar tıklandı → silindi; menüde ✓ göründü, `F-014-04-tepsi-menusu-autostart-acik.png`). **Ama:** teslim durumunda varsayılan fiilen KAPALI (Ö1) ve "görünür" yarısını taşıyan tepsi balonu **hiç çizilmiyor** (Ö2) |
+| AC5 | Port çakışması **okunabilir biçimde** bildirilir; yabancı sunucuya sessizce bağlanılmaz | **KALDI** | 7333'ü gerçek bir yabancı sunucu tuttu → `.exe` başlatıldı: **hiçbir diyalog yok** (tam ekran kare `F-014-05-port-dolu-diyalog-yok.png`, "Mission" başlıklı görünür pencere yok), süreç ~7 sn sonra sessizce öldü. Yabancı sunucuya bağlanma **yok** (N4 dersi korunuyor) ama kullanıcı hiçbir şey görmüyor → B1 |
+| AC6 | Tarayıcıdan kullanım (geri dönüş yolu) bozulmaz | **GEÇTİ** | `npm start` → `/api/health` 200 (`instance_id b163bf94…`), `/` 200, `/api/features` gerçek depo feature'larını döndürdü (F-001 …) |
+| AC7 | Tek örnek: ikinci açılış yeni sunucu başlatmaz, var olan pencereyi öne getirir | **GEÇTİ** | İkinci başlatma: PID listesi **birebir aynı** (30328 31652 33032 34376), `instance_id` değişmedi, gizli pencere **geri geldi** (handle 118491624 yeniden görünür) |
+| AC8 | ADR-009 — yalnızca Windows paketlenir | **GEÇTİ** | `scripts/package-electron.mjs`: `platform: 'win32'`, `arch: 'x64'` sabit; başka platform hedefi yok |
+| AC9 | Native derleme yok, `deps.test.ts`'in `hasInstallScript` guard'ına çarpılmaz; guard gevşetilmez | **GEÇTİ** | `git log 7ea0e9f..HEAD -- tests/deps.test.ts` **boş** (dosyaya dokunulmamış), `npx vitest run tests/deps.test.ts` → 3/3 yeşil. Kök `package-lock.json` `packages[""].hasInstallScript` **yok**; kökte `postinstall`/`prepare`/`preinstall` **yok** (script adı `electron:fetch`) |
+| AC10 | `npm run verify` ve mevcut E2E paketleri bozulmaz | **GEÇTİ (kayıtla)** | `npm run verify` = 0 (873 test/62 dosya), `npm run e2e` = 0 (23/23), `npm run e2e:electron` = 0 (1/1), `npx vitest run tests/electron` = 0 (12/12). Kayıt: tam paket koşusu bu ortamda **kararsız** (N3) |
+| Ek | `src/features/**`, `src/web/**`, `src/server/index.ts` değişmemiş | **GEÇTİ** | `git log 7ea0e9f..HEAD -- src/` **boş** — F-014 hiç `src/` dosyasına dokunmamış |
+| Ek | `release/` depoya girmemiş | **GEÇTİ** | `.gitignore:4` `release/`; `git ls-files release` → **0** dosya |
 
-## 1. Ölçüm ortamı
+---
 
-| Ne | Değer |
-|---|---|
-| Çalıştırma | `npm run verify`'nin ürettiği `dist/` + gerçek üretim `createServer()`; `npm run dev` **hiç kullanılmadı** (bu ortamda `concurrently` ile bozuk) |
-| Port / veri dizini | 7437, `MC_DATA_DIR=<scratchpad>/qa-data-t4` (depo `data/` kirletilmedi) |
-| Tarayıcı | Playwright (Chromium), masaüstü genişliği |
-| Sahte `query()` | `tests/e2e/helpers/chat-fake-server.ts` (ürün kodundaki `chatQueryOverride` dikişi) — tarayıcı ölçümlerinin kotası **$0** |
-| Canlı SDK | yalnızca `MC_CHAT_LIVE_TESTS=1 npm run test:chat-live`, **tek koşu** (talimat gereği) |
-| Ürün kodu değişikliği | **YOK** — mutasyonlar yedekten birebir geri alındı, `git status --porcelain` boş |
-| Artık mutasyon | **yok** — `grep -rn "MUTATION\|MUTASYON" src/ tests/` yalnızca `tests/server/write-gate-manifest.test.ts:124` (meşru test adı) |
-| Yeniden ölçülmeyenler | Akış, dar genişlik, bariyer, E1 güvenlik garantisi, B2, B3, Y2, Y4 — 1./2./3. turda GEÇTİ, talimat gereği açılmadı |
+## 2. Mutasyon tablosu
 
-## 2. Y1 — KAPANDI (canlı doğrulandı + iki mutasyonla çitlendi)
+Yöntem: uygula → ilgili paketi izole koştur → gözlemle → `git checkout` ile birebir geri al.
+Sözleşme §8'in zorunlu dördü (a-d) + kendi seçtiğim üç ek mutasyon.
 
-### 2.1 Canlı tekrar üretme (gerçek Chromium, gerçek üretim sunucusu, sıfır kota)
-
-1. `PORT=7437 MC_CHAT_ENABLED=1 MC_DATA_DIR=<scratchpad>/qa-data-t4 npx tsx tests/e2e/helpers/chat-fake-server.ts`
-2. `http://127.0.0.1:7437/` → **Sohbet** sekmesi → mesaj gönder. Sahte CEO akan cevap verir,
-   `Bash` (`ls -la`) için izin ister. Kart görünür, oturum bekler.
-   Ekran: `docs/qa/screens/F-012-T4-01-y1-yenileme-oncesi-izin-karti.png`
-3. Sunucu durumu 26 saniye boyunca 2 sn aralıkla yoklandı — bekleyen izin **kararlı** duruyor
-   (kendiliğinden çözülmüyor, zaman aşımı yok):
-   ```
-   09:17:14.511 busy= true pending= 1 req_bb93d9bb-8c38-4633-89de-917b0fd445ef
-   … (12 ölçüm, hepsi aynı) …
-   09:17:40.469 busy= true pending= 1 req_bb93d9bb-8c38-4633-89de-917b0fd445ef
-   ```
-4. **Sayfa yenilendi** (`docs/03-ux.md:443`'ün birebir senaryosu), Sohbet'e dönüldü, 3 sn beklendi.
-
-### 2.2 Beklenen
-
-`docs/03-ux.md:443` — *"panel yeniden başlasa/sekme kapatılıp açılsa bile bekleyen izin isteği
-geçmişte kaldığı hâliyle gösterilir."* Feature notu — *"kart geri gelir ve gerçekten
-cevaplanabilir."*
-
-### 2.3 Gerçek (ölçüldü)
-
-Yenileme sonrası, hiçbir ek mesaj göndermeden:
-
-```
-document.querySelectorAll('[role="group"]').length = 1        <- KART VAR  (tur 3: 0)
-role="group" adı: "İzin isteği"; içerik: "Komut: ls -la"
-buton listesi: ["⚙ Ayarlar","Duraklat","Filtreleri temizle","Ayarlar'a git","✕",
-                "Reddet","Onayla","Gönder","Ekle"]                <- Onayla/Reddet VAR (tur 3: YOK)
-body.innerText "İzin isteği" içeriyor: true
-```
-Ekran: `docs/qa/screens/F-012-T4-02-y1-yenileme-sonrasi-izin-karti-GERI-GELDI.png`
-
-**Cevaplanabilirlik ölçüldü** (tur 3'te ölçülemeyen asıl soru): yenileme sonrası gelen karttaki
-**Onayla**'ya tıklandı →
-
-```
-GET /api/chat/status -> busy: false, pending_permissions: []   <- sunucu AYNI request_id'yi çözdü
-DOM: "Onaylandı — ls -la çalıştı" kolabe satırı        (status rolü)
-     "✓ Bash tamamlandı (1 dk 25 sn)" araç satırı
-     "Klasörde iki dosya buldum, hazır."  <- tool_result sonrası kapanış cevabı akıp bitti
-     "İzin isteği" DOM'da yok, kompozer aktif (disabled=false)
-```
-Ekran: `docs/qa/screens/F-012-T4-03-y1-yenileme-sonrasi-onaylandi-oturum-devam.png`
-
-Yani tur 3'ün "kart yok → kullanıcı ancak ikinci bir mesajla kazara kurtarabiliyor" davranışı
-ortadan kalktı: kart yenilemeden sonra geri geliyor, aynı `request_id` ile gerçekten
-cevaplanıyor, tur normal tamamlanıyor ve oturum kilitlenmiyor.
-
-### 2.4 Kök nedenin kapandığı yer (kod okundu)
-
-```
-src/features/chat/web/useChatSession.ts:388-397
-  const loadStatus = useCallback(async () => {
-      …
-      onChatStatus(body.data)        // <- tur 3'te: setStatus(body.data)
-  }, [fetchImpl, onChatStatus])
-```
-`onChatStatus` (`:372-385`) hem `setStatus`'u hem `setPendingPermissions`'ı kuruyor ve artık her
-üç yol da (mount → `:417`, SSE `chat_sync` → `:428`, SSE `chat_status` olayı) aynı indirgeyiciden
-geçiyor. `permissionDataRef` bu yüzden dosyanın üstüne taşınmış (`:319`) — kolabe satırının metni
-`loadStatus` yolundan da doldurulabiliyor.
-
-### 2.5 Mutasyonlar (kendim koşturdum)
-
-| # | Mutasyon | Testler | Tur 3 | Tur 4 |
-|---|---|---|---|---|
-| **F** | `useChatSession.ts:428` — `onChatSync`'ten `void loadStatus()` silinir | **tüm paket** | **YEŞİL 855/855** | **KIRMIZI** — 1 failed / 858 passed, `ChatScreen.test.tsx:491` (`getByText('İzin isteği')` bulunamıyor) |
-| **F2** | `useChatSession.ts:393` — `onChatStatus(body.data)` → `setStatus(body.data)` (düzeltmenin birebir geri sarılması) | `tests/features/chat/web` | — | **KIRMIZI** — 2 failed / 21 passed |
-
-F2'yi ayrıca koşturdum çünkü F yalnızca **yeniden bağlanma** yolunu, F2 ise **mount/yenileme**
-yolunu da vuruyor; ikisi de kırmızı olduğuna göre Y1'in her iki yarısı da çitli. Her iki mutasyon
-sonrası dosya yedekten birebir geri yazıldı, `git status --porcelain` boş.
-
-## 3. Y3 — KAPANDI
-
-### 3.1 Kota-sıfır blok (bedava, `verify`'nin parçası) — **YEŞİL**
-
-```
-npx vitest run tests/integration/chat-hooks-live.test.ts     exit 0
-  Test Files  1 passed (1)
-       Tests  2 passed | 2 skipped (4)          675 ms
-  ✓ yayın komutunu ÇIKIŞ KODU 2 ile "Engellendi" mesajıyla durdurur
-  ✓ salt-okunur bir komutu (ls -la) engellemeden ÇIKIŞ KODU 0 ile geçirir
-```
-
-`tests/integration/chat-hooks-live.test.ts:104-119` `runHookDirect()`, gerçek
-`.claude/hooks/block-dangerous.cjs`'i `spawnSync` ile ayrı bir Node alt süreci olarak,
-PreToolUse'un göndereceği `{tool_input:{command}}` JSON'uyla besliyor ve çıkış kodunu okuyor.
-Modelden, SDK'dan ve kotadan **tamamen** bağımsız; `describe.skipIf` ile sarılmamış, yani
-**her `npm run verify` koşusunda** çalışıyor. `ADR-014` M2'nin "hook'ların engellediği otomatik
-testle kanıtlanmalı; 'yükleniyor' testi kabul edilmez" şartı böylece koşulsuz olarak
-karşılanıyor — bu tam olarak tur 3 §4'te önerdiğim iki model-bağımsız alternatiften biri.
-İddia boş değil: iki yönü de (engelle / geçir) çıkış kodu + stderr ile doğrudan ölçüyor.
-
-### 3.2 Canlı koşu (talimat gereği tek kez)
-
-```
-MC_CHAT_LIVE_TESTS=1 npm run test:chat-live       exit 1     (79,25 sn)
-  Test Files  1 failed (1)
-       Tests  1 failed | 3 passed (4)
-
-  ✓ block-dangerous.cjs kota-sıfır × 2                            -> YEŞİL
-  ✓ AC4 iki yönlü canlı kanıt (hook aktif / devre dışı)           -> YEŞİL  (tur 2-3: KIRMIZI)
-  × E1/B5 canlı izin motoru testi                     18260ms     -> KIRMIZI (tur 3: YEŞİL)
-      AssertionError: expected false to be true
-      tests/integration/chat-hooks-live.test.ts:180  expect(sawPermissionRequest).toBe(true)
-```
-
-**Y3'ün hedefi olan test (AC4) ilk kez yeşil.** Sözleşme §11.3'ün "her QA turunda en az bir kez
-alınan iki yönlü canlı kanıt" şartı **beş turdur ilk kez karşılandı**: aktif kolda canlı
-oturumun gözlenen kararı, modelin **gerçekten önerdiği ham komutun** aynı hook betiğine doğrudan
-verilmesiyle hesaplanan ground truth ile eşleşti (`:275`), devre dışı kolda hiçbir komut
-engellenmedi (`:278`). "Model işaretleyici komutu önerdi mi" tanı dalı gerçekten kaldırılmış —
-`git show d466044` ile doğrulandı.
-
-**Kırmızının nedenini ayırdım (talimatın istediği): mekanizma değil, kardeş testin model
-bağımlılığı.**
-- Kırmızı, hook mekanizmasını ölçen bir iddiada değil; **E1/B5** testinde
-  (`sawPermissionRequest === false`, yani model bu turda hiç `Bash` çağırmadı — 18 sn'de metinle
-  cevapladı). Mekanizma hakkında ne olumlu ne olumsuz bir şey söylüyor.
-- **Düzeltmenin ürünü değil:** E1/B5 test bloğunu düzeltme öncesi (`81276a8`) ve sonrası
-  (`d466044`) sürümlerden çıkarıp `diff`'ledim — **byte-byte aynı**, hiç dokunulmamış. Aynı
-  kırılganlık (persona + direktif systemPrompt yokluğu) orada başından beri vardı; tur 3'te
-  zarla yeşil geldi, bu turda zarla kırmızı geldi.
-- **Kapsam:** E1 güvenlik garantisi bu turda yeniden ölçülmeyecekler listesinde (1./2. turda
-  GEÇTİ). Yapılandırma yarısının çevrimdışı çiti de var ve `verify`'de yeşil:
-  `tests/features/chat/server/session.test.ts:487` "K3 çevrimdışı çit — allowManagedPermission
-  RulesOnly gerçekten etkili" (`:499`, `:506` `permissions.ask:['Bash']`'ı da doğruluyor).
-- Talimat gereği canlı test **tekrarlanmadı** (kota).
-
-Kayda geçiyorum, bloklayıcı olarak açmıyorum (talimat: düzeltmenin kendisi üretmediyse yeni
-bulgu açma): **E1/B5, AC4'ün kurtulduğu model-uyum kırılganlığını hâlâ taşıyor** — `agent:'ceo'`
-personasıyla koşuyor ve AC4'e eklenen direktif `systemPrompt`'u almadı. Bir sonraki turda canlı
-paketin kırmızı gelmesi muhtemel; kalıcı çözüm AC4'e uygulanan iki tedavinin (direktif prompt +
-"araç çağrılmadı" durumunu kanıt-yok sayan dal) E1/B5'e de uygulanmasıdır.
-
-## 4. Üç paket (iddiaya güvenilmedi, kendim koşturdum)
-
-| Komut | Çıkış | Sayı | Developer iddiası |
+| # | Mutasyon | Hedef | Sonuç |
 |---|---|---|---|
-| `npm run verify` | **0** | **859 geçti + 2 atlandı (861)**; **57 dosya** | 859 / 57 → **doğru** |
-| `npm run e2e` | **0** (2. koşu) | **23/23** | 23/23 → **doğru** |
-| `npm run e2e:chat` | **0** | **1/1** | 1/1 → **doğru** |
+| M-A (§8 M3, zorunlu) | Tepsi "Çıkış" `serverModule.shutdown(...)` yerine yalnızca `app.quit()` | `lifecycle.test.ts` | **KIRMIZI** (1 failed / 11 passed) |
+| M-B (§8 M1, zorunlu) | Port ön kontrolü kaldırıldı (`const portFree = true`) | `port-guard.test.ts` | **KIRMIZI** (1 failed / 11 passed) |
+| M-C (§8 M2, zorunlu) | Tek örnek kilidi yoksayıldı (`if (!gotLock)` bloğu silindi) | `single-instance.test.ts` | **KIRMIZI** (1 failed / 11 passed) |
+| M-D (§8 M5, zorunlu) | `runApp` içine `process.env.MC_CHAT_ENABLED = '0'` eklendi | `chat-enabled.test.ts` (gerçek `isChatEnabled`) | **KIRMIZI** (1 failed / 11 passed) |
+| M-E (benim) | `close` handler'ından `if (isQuitting) return` koruması kaldırıldı (tepsi Çıkış'ı sessizce iptal eden gerçek hata) | `tests/electron` → **12/12 YEŞİL**; `e2e:electron` → **KIRMIZI** (60 sn timeout) | **Birim testleri kör, E2E yakalıyor** — N1 |
+| M-F (benim) | Kullanıcıya görünen port hata metni "Error: EADDRINUSE" ile değiştirildi | `port-guard.test.ts` | **KIRMIZI** — UX metni çitlenmiş |
+| M-G (benim) | `app.on('second-instance', showAndFocus)` dinleyicisi kaldırıldı | `single-instance.test.ts` | **KIRMIZI** |
 
-`verify` **ilk koşuda temiz** geçti (9,69 sn test + tipkontrol + lint + build); vitest worker fork
-kararsızlığı bu turda görülmedi.
+Mutasyon kalıntısı taraması (bitirmeden):
+`grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca meşru test adı
+`tests/server/write-gate-manifest.test.ts:124`. `git status` temiz.
 
-`npm run e2e` **ilk koşuda 22 geçti / 1 kırmızı** verdi:
-`tests/e2e/kanban.spec.ts:261` (AC4 çakışma banner'ı, `:298 expect(banner).toHaveCount(0)`).
-İkinci koşuda **23/23 yeşil**. F-012'nin dosya sahipliğinin tamamen dışında (Kanban/dosya
-izleyici zamanlaması), bu turun düzeltmesiyle ilgisiz. Deponun `CLAUDE.md`'sindeki "kırmızıya
-alışma, her görüldüğünde rapora yaz" kuralı gereği kayda geçiyorum: **kanban AC4 e2e'si
-kararsız**, 1/2 koşuda kırmızı.
+**Mutasyonların ölçemediği yer:** M-B/M-F yalnızca `dialog.showErrorBox`'ın **çağrıldığını**
+doğruluyor; "kullanıcı bir şey **görüyor** mu" sorusunu hiçbir test sormuyor. B1 tam bu boşluktan
+geçti (N2).
 
-## 5. Ayrıca istenen iki tek satırlık kontrol
+---
 
-- **Mutasyon artığı temiz.** `grep -rn "MUTATION\|MUTASYON" src/ tests/` → tek sonuç
-  `tests/server/write-gate-manifest.test.ts:124` (meşru test adı). Tur sonunda tekrar kontrol
-  edildi, `git status --porcelain` boş.
-- **Ö7 yazılmış, kod değişmemiş.** `ADR-014` "Kabul edilen riskler" **madde 5** (satır 102-116:
-  `docs/03-ux.md:327` ile sapma, ne kaybolduğu, verinin `history.jsonl`'de durduğu, yeniden ele
-  alınma eşiği) **ve** `docs/blockers.md:212`'deki açık madde. Her ikisi de davranışın
-  değişmediğini, yalnızca belgelendiğini açıkça söylüyor; `git show` ile Ö7 için ürün kodu
-  değişikliği olmadığı doğrulandı.
+## 3. Bulgular
 
-## 6. Kapsam dışı, bloklayıcı değil — kayda geçirilen tek gözlem
+### B1 — BLOKLAYICI · Port çakışmasında kullanıcı hiçbir şey görmüyor (AC5)
 
-Canlı ölçüm sırasında tarayıcı konsolunda React `"Encountered two children with the same key"`
-hatası biriktiğini gördüm (anahtar: `m:<turn_id>:text`). Kaynağı
-`src/features/chat/web/ChatScreen.tsx:393`: render anahtarı `` `m:${entry.turn_id}:${entry.kind}` ``
-— `role` içermiyor, dolayısıyla aynı turdaki kullanıcı mesajı ve CEO cevabı **aynı React
-anahtarını** alıyor. Bu, B2'de `entryKey()` için düzeltilen hatanın (`::${entry.role}` eklenmesi,
-`useChatSession.ts:142`) render tarafındaki ikizi.
+**Tekrar üretme**
+1. 7333'ü tutan gerçek bir `net`/`http` dinleyicisi başlat.
+2. `release\Mission Control-win32-x64\mission-control.exe` çift tıkla (ben `cmd /c start` ile
+   başlattım — normal açılışta aynı yöntemle pencere sorunsuz açılıyor, yani yöntem farkı değil).
 
-**Bloklayıcı olarak açmıyorum**, çünkü:
-- **Bu turun düzeltmesi üretmedi:** satır `42c3848` (F-012'nin ilk UI commit'i, 07:22) tarihli;
-  `81276a8` ve `d466044` `ChatScreen.tsx`'e **hiç dokunmadı** (`git show --stat` ile doğrulandı).
-- Talimat: "Yeni bulgu açma — ancak düzeltmenin kendisi yeni bir bloklayıcı ürettiyse aç."
-- Görünen çıktı doğruydu: transkript ölçümlerimde kullanıcı balonu, CEO cevabı, araç satırı ve
-  kolabe satırı eksiksiz ve doğru sırada render edildi.
+**Beklenen** (`docs/03-ux.md` 618-622 + sözleşme §4/§9): başlık *"Mission Control başlatılamadı"*,
+gövde *"7333 portu başka bir uygulama tarafından kullanılıyor. Panel açılamıyor…"* diyaloğu.
 
-Bir sonraki sohbet ekranı işine taşınması için buraya yazdım.
+**Gerçek:** hiçbir pencere yok. Ölçüm:
+- t=2/4/6 sn → `mission-control.exe` **3 süreç**, t=8 sn → **0**. Kullanıcı etkileşimi olmadan öldü
+  (modal bir diyalog blokluyor olsaydı beklemesi gerekirdi).
+- t=3 sn'de tam ekran kare: `docs/qa/screens/F-014-05-port-dolu-diyalog-yok.png` — iki monitörde de
+  diyalog yok. `EnumWindows` ile "Mission" içeren görünür pencere: yalnızca Chrome.
 
-## 7. Puanlama
+**Kök neden (izole edilmiş):** `dialog.showErrorBox` bu ortamda (Electron 44 / Windows 11) hiçbir
+pencere üretmiyor. Kanıt — ürün kodundan bağımsız sonda uygulaması: aynı süreçte
+`new BrowserWindow(...)` **çizildi** (`EnumWindows`: `QA PROBE PENCERE`, handle 13436698),
+3 sn sonra çağrılan `dialog.showErrorBox('QA PROBE DIYALOG', …)` için **hiçbir pencere oluşmadı**
+ve süreç o çağrıda bloke kaldı (`DIALOG DONDU` satırı hiç yazılmadı).
+Ekran görüntüsü: `docs/qa/screens/F-014-06-showerrorbox-probe-diyalog-yok.png`.
+
+**Muhtemel dosya:satır:** `electron/main.cjs:174` (`dialog.showErrorBox(PORT_ERROR_TITLE, …)`).
+
+**Önerilen düzeltme:** kullanıcıya görünen kanalı **pencere üreten** bir mekanizmaya taşı — ör.
+küçük bir `BrowserWindow` ile hata ekranı (aynı süreçte çizildiği ölçüldü) — ve **gerçek pencere
+oluştuğunu** doğrulayan bir E2E ekle (`_electron.launch` + port tutulu + `electronApp.windows()`
+sayısı > 0). Sözleşmenin "okunabilir biçimde bildiriliyor" cümlesi ancak böyle çitlenebilir.
+
+**Ek not (kanıt hijyeni):** `docs/progress.md` bu senaryo için *"gerçek native `dialog.showErrorBox`
+göründü (ekran görüntüsüyle doğrulandı)"* diyor; `docs/qa/screens/` altında F-014'e ait
+**hiçbir geliştirici ekran görüntüsü yok** ve ölçüm bu iddiayı doğrulamıyor.
+
+### B2 — BLOKLAYICI · Masaüstü uygulamasındaki CEO sohbeti paketlenmiş kopyada çalışıyor
+
+**Tekrar üretme:** `.exe`'yi çalıştır → `GET /api/chat/status`.
+
+**Gerçek (canlı çıktı):** `session_active:true` ve bekleyen izin isteğinin komutu:
+`cd "C:\dev\apps\mission-control\release\Mission Control-win32-x64\resources\app" && ls docs docs/features docs/approvals …`
+Yani oturumun çalışma dizini **paketlenmiş kopya**. Kaynak:
+`src/features/chat/server/session.ts:22` → `CHAT_SESSION_CWD = path.resolve(__dirname, '..','..','..','..')`
+(paketlenmiş kopyada bu `resources\app`'e çözülür).
+
+Paketlenmiş kopyanın içeriği ölçüldü:
+- `docs/` **yok** (packager `ignore` listesinde) → CEO oturumu, CLAUDE.md'nin "kaynak gerçeği
+  `docs/`" kuralını **fiziksel olarak** uygulayamaz; ilk komutu zaten `ls docs` ile boşa düştü.
+- `.git` **yok** → orada yapılan hiçbir iş commit edilemez, kullanıcı ilerlemeyi göremez.
+- `.claude/settings.json` **yok** (yalnızca `.claude/agent-memory` sızmış) → yıkıcı komut engeli,
+  yazma kapısı, G2 kapısı, stop-check dâhil hook girdilerinin **hiçbiri çalışmaz**
+  (gerçek depoda `.claude/settings.json` içinde 41 "hooks" geçişi var).
+- `scripts/package-electron.mjs` `overwrite: true` → bir sonraki paketlemede o klasördeki her şey
+  **silinir**.
+
+**Neden bloklayıcı:** F-012 + ADR-014 paneli CEO oturumunun arayüzü yaptı; F-014'ün gerekçesi
+kullanıcının *"artık oradan çalışırım"* cümlesi. Bu hâliyle "oradan çalışmak" = git'siz, dokümansız,
+çitsiz ve geçici bir kopyada çalışmak.
+
+**Önerilen düzeltme (CEO kararı gerekir):** Electron ana süreci sohbet oturumunun kökünü açıkça
+belirlesin (ör. ayarlardan seçilen gerçek depo yolu); `session.ts`'in `__dirname` türetimi
+paketlenmiş kurulumda geçerli değil. Karar verilene kadar en azından "sohbet şu kökte çalışıyor: …"
+bilgisi arayüzde gösterilsin.
+
+### B3 — BLOKLAYICI · Başlatma yolunda yakalanmamış hata → sessiz zombi süreçler
+
+**Tekrar üretme:** `MC_ELECTRON_USER_DATA_DIR=<klasör>` ver ve o klasörde `data` adında bir
+**dosya** oluştur (gerçek karşılığı: AV kilidi / salt-okunur / dolu disk — CLAUDE.md'nin kendi
+tetikleyici listesi). `.exe`'yi çalıştır.
+
+**Gerçek:** `mission-control.exe` **3 süreç** açık kalıyor (35 sn sonra hâlâ), **pencere yok**,
+**tepsi ikonu yok** (UIAutomation ile arandı), **hata yok**, 7333 dinlenmiyor. Kullanıcı için:
+"çift tıkladım, hiçbir şey olmadı" + Görev Yöneticisi'nden temizlemesi gereken gizli süreçler.
+Aynı userData ile ikinci çift tıklama: süreç sayısı 7 → 7, **yeni pencere yok** (tek-örnek kilidi
+zombideki örnekte). Yani gerçek kullanıcı klasöründe bu hata oluşursa uygulama, zombi elle
+öldürülene kadar **kalıcı olarak açılamaz** hâle gelir.
+
+**Muhtemel dosya:satır:** `electron/main.cjs:287-297` — `app.whenReady().then(async () => { … })`
+zincirinde `.catch` yok; `runApp` içindeki `createServer` hatası hiçbir yere düşmüyor.
+
+**Önerilen düzeltme:** bootstrap'ı `try/catch` ile sar; hata hâlinde (a) görünür bir hata yüzeyi
+(B1 ile aynı mekanizma), (b) `app.exit(1)` — süreç **yaşamasın**. Bu, CLAUDE.md'nin
+"yazma/başlatma yolundaki yakalanmamış hata" dersinin dördüncü tekrarı; çitlenmeli.
+
+### Ö1 — ÖNEMLİ · Teslim durumunda açılışta başlatma varsayılanı fiilen KAPALI
+
+`ensureDefaultAutostart` yalnızca `%APPDATA%\mission-control\autostart-initialized.json` **yokken**
+varsayılanı açıyor. Geliştirici turu bu marker'ı yazdı (içerik
+`"setAt":"2026-09-06T11:25:20.733Z"`) ama `reg delete` ile kayıt defteri anahtarını sildi ve
+marker'ı **silemedi** (progress.md'de kendisi de not ediyor). Sonuç, benim ölçtüğüm teslim durumu:
+- `HKCU\…\Run` içinde Mission Control girdisi **yok**,
+- tepsi menüsünde "Bilgisayar açılışında başlat" **işaretsiz** (`F-014-03-…png`),
+- marker var olduğu için bir daha **asla** otomatik açılmayacak.
+
+Yani kullanıcının bu feature'ı istemesinin **asıl sebebi** (açılışta başlasın) bu makinede
+sağlanmıyor; ADR-011 ek kararının "AÇIK" şartı teslimde yok. (Temiz bir userData ile ölçtüm:
+kod doğru çalışıyor — kayıt defteri anahtarı yazıldı ve marker oluştu; sorun **teslim durumu**.)
+
+**Önerilen düzeltme:** `%APPDATA%\mission-control\autostart-initialized.json` silinsin (tek dosya)
+veya kullanıcıya "tepsiden bir kez işaretleyin" talimatı açıkça verilsin.
+
+### Ö2 — ÖNEMLİ · "Görünür varsayılan" şartını taşıyan tepsi balonu hiç çizilmiyor
+
+ADR-011 ek kararı: *"'açık' yetmez, **görünür olmak zorunda**"*. Kodda bunun tek taşıyıcısı
+`tray.displayBalloon` (`electron/main.cjs:247-253`).
+
+**Ölçüm:** tamamen taze bir userData ile gerçek `.exe` çalıştırıldı (ilk açılış: kayıt defteri
+anahtarı **yazıldı**, marker **oluştu** — yani `justEnabledAutostart === true` yolu koştu).
+t=3,4,5,6,7,8,9,11 sn'de sekiz tam ekran karesi alındı: **iki monitörde de hiçbir bildirim yok**.
+Windows bildirimleri kapalı değil (`HKCU\…\PushNotifications\ToastEnabled = 0x1`).
+Bu, B1 ile **aynı sınıf**: Electron'un native bildirim yüzeyleri bu makinede çizmiyor.
+Birim testi (`autostart.test.ts`) yalnızca `displayBalloon`'un **çağrıldığını** doğruluyor.
+
+**Önerilen düzeltme:** görünürlüğü uygulamanın kendi arayüzüne taşı (panelde ilk açılışta bir
+şerit/kart: "Bilgisayar açılışında başlatma açıldı — kapat"), balonu yalnızca ek kanal olarak
+bırak.
+
+### Ö3 — ÖNEMLİ · Masaüstüne geçiş, panelin tüm durumunu sıfırlıyor ve bu hiçbir yerde yazmıyor
+
+Sözleşme §1.4 gereği veri klasörü `app.getPath('userData')\data` — repo `./data`'sından ayrı.
+Sonuç ölçüldü: masaüstü uygulamasında `/api/projects` → `[]`, `/api/features` → `[]`, Kanban
+ekranında *"İzlenen projelerde henüz feature bulunamadı."* (`F-014-02-kanban-bos.png`), sohbet
+geçmişi ve olay tarihçesi yok. Tarayıcı yolunda (`npm start`) aynı anda depo feature'ları
+görünüyor. Karar savunulabilir ama **kullanıcıya söylenmemiş**: ne `docs/03-ux.md`'de ne
+`KURULUM.md`'de "masaüstü uygulamasında projeleri yeniden eklemelisiniz" cümlesi var.
+
+### Ö4 — ÖNEMLİ · Paketleme filtresi sızdırıyor, `prune` çalışmıyor (646 MB)
+
+- `ignore` listesi `/\.claude($|/)` içermesine rağmen `resources\app\.claude\agent-memory\`
+  **dağıtılan pakete girmiş** (agent hafıza dosyaları). Aynı liste `docs/`'u dışlarken
+  `.claude/settings.json`'ı da dışlıyor (B2'nin ikinci yarısı).
+- `prune: true` olmasına rağmen `resources\app\node_modules` içinde `@playwright`, `@vitest`,
+  `@vitejs`, `@testing-library`, `esbuild` gibi **devDependencies** duruyor; çıktı **646 MB**.
+
+**Önerilen düzeltme:** `ignore` desenlerini gerçek çıktı üzerinde **doğrulayan** bir test
+(paketleme sonrası `resources/app` içinde `.claude`, `docs`, `tests` **olmamalı**) + prune
+davranışının ölçülmesi.
+
+### Ö5 — ÖNEMLİ · Uygulamayı elde etmenin belgelenmiş yolu yok
+
+`release/` `.gitignore`'da; `KURULUM.md` içinde `electron` kelimesi **hiç geçmiyor**. Temiz bir
+kopyada kullanıcı `npm run electron:fetch` + `npm run electron:package` adımlarını bilmeden `.exe`
+elde edemez. Sözleşme §10 bunu bilinçli olarak kapsam dışı bıraktı, ama AC1'in "kullanıcı hiçbir
+terminal komutu yazmıyor" iddiasının bir kurulum adımı gerektirdiği hiçbir belgede yazılı değil.
+
+### N1 — NOT · Birim testleri, tepsi Çıkış'ı kilitleyen gerçek hatayı yakalayamıyor
+
+M-E mutasyonu (`isQuitting` koruması kaldırıldı — geliştiricinin `c12f891`'de düzelttiği gerçek
+hata) `tests/electron`'da **12/12 yeşil** bırakıyor; yalnızca `e2e:electron` 60 sn timeout ile
+kırmızı veriyor. Yani bu davranışın tek çiti E2E; sahte `app.quit()` pencere kapanışını taklit
+etmiyor. Kabul edilebilir (ikinci savunma hattı var, ölçtüm) ama bilinmeli.
+
+### N2 — NOT · Port çakışması yolunun gerçek-Electron kapsaması yok
+
+`tests/e2e/electron-smoke.spec.ts` yalnızca mutlu yolu koşuyor. Port dolu senaryosu sadece sahte
+`dialog` ile birim testinde. B1 tam bu boşluktan geçti.
+
+### N3 — NOT · Tam test paketi bu ortamda kararsız
+
+Bugün 8 tam koşu: 5 temiz, 2'sinde worker çöküşü (`exit code 3221226505` —
+`tests/integration/projects-api.test.ts`, CLAUDE.md'nin kayıtlı ortam hatası, **altıncı** görülüş),
+1'inde `tests/integration/send-event-hook.test.ts` assert hatası. O dosya **izole olarak 5/5
+yeşil**. Kod regresyonu değil, ama "873 test geçiyor" cümlesi tek koşuda garanti değil.
+
+### N4 — NOT · `MC_SKIP_AUTOSTART_DEFAULT` üretim ortamından da okunuyor
+
+Test izolasyonu için eklenen kapı (`electron/main.cjs:290`) üretimde de ortam değişkeniyle
+tetiklenebilir. Düşük risk; not.
+
+---
+
+## 4. Puanlama
 
 | Boyut | Puan | Gerekçe |
 |---|---|---|
-| İşlevsellik | **8** / 10 | Ana akış, akan cevap, izin kartı, karar, kalıcı geçmiş, `dist/` sekmesi zaten yeşildi; bu turda `docs/03-ux.md:443`'ün birebir senaryosu (bekleyen izinle yenileme) **canlı doğrulandı**: kart geri geliyor, aynı `request_id` ile cevaplanıyor, tur tamamlanıyor, oturum kilitlenmiyor. Tur 3'ün tek bloklayıcısı kapandı. |
-| Özellik bütünlüğü | **8** / 10 | AC1-AC3, AC5, AC6, AC8-AC10 zaten karşılanıyordu; **AC7 artık tam** (bekleyen izin yenilemeden sağ çıkıyor); **AC4'ün iki yönlü canlı kanıtı beş turdur ilk kez alındı** ve ayrıca koşulsuz, kota-sıfır bir mekanizma kanıtı `verify`'ye girdi. Eksilten: Ö7 (araç satırları yenilemede render edilmiyor) bilinçli, belgelenmiş bir sapma olarak duruyor. |
-| Görsel / UX | **8** / 10 | Bariyer şeridi, izin kartı, kolabe satırı, akış imleci, üretim CSS'i, sekme görünürlüğü, dar genişlik — önceki turlarda GEÇTİ. Bu turun kazancı: kullanıcının ekranda bıraktığı **karar bekleyen** durum artık yenilemeden sonra da duruyor. Eksilten: Ö7'nin geçmiş araç izleri hâlâ görünmüyor. |
-| Kod kalitesi (test, hata yönetimi) | **7** / 10 | 859 test yeşil (57 dosya), Y1'in **her iki** yolu mutasyonla çitli (F ve F2 KIRMIZI; F tur 3'te 855/855 yeşil kalıyordu), hook mekanizması artık model-bağımsız ve kotasız kanıtlanıyor, `e2e`/`e2e:chat` yeşil, artık mutasyon yok, Ö7 hem ADR'ye hem `blockers.md`'ye yazılmış. Eksilten (ikisi de kapsam dışı/önceden var olan, bu turun ürünü değil): canlı paket kardeş test E1/B5'in model bağımlılığı yüzünden hâlâ exit 1 verebiliyor, ve `ChatScreen.tsx:393` render anahtarı `role` içermediği için React duplicate-key hatası üretiyor. |
+| İşlevsellik | **4** | Pencere/tepsi/tek örnek/çıkış/geri dönüş yolu çalışıyor; ama port çakışmasında sessizlik (B1), başlatma hatasında zombi (B3), sohbet yanlış kökte (B2) |
+| Özellik bütünlüğü | **4** | ADR-011'in "açılışta başla + görünür" şartı teslimde karşılanmıyor (Ö1/Ö2); belgelenmemiş durum sıfırlanması (Ö3) ve kurulum yolu (Ö5) |
+| Görsel / UX | **5** | Pencere ve tepsi menüsü `docs/03-ux.md` ile **birebir** ("Paneli Aç" · "Bilgisayar açılışında başlat" · "Çıkış", tooltip "Mission Control"); ama kullanıcıya bilgi veren iki native yüzeyin ikisi de hiç çizilmiyor |
+| Kod kalitesi (test, hata yönetimi) | **5** | 7 mutasyonun 6'sı kırmızı, testler totoloji değil, `src/` hiç değişmemiş, guard'lar korunmuş; ama yeni giriş noktasında hata sınırı yok (B3) ve "kullanıcı gördü mü" hiçbir yerde ölçülmüyor (B1/Ö2) |
 
-**Eşik: herhangi biri < 7 → KALDI.** Dördü de ≥ 7.
+**Herhangi bir boyut < 7 → KALDI.**
 
-## 8. Karar
+---
 
-**KARAR: GEÇTİ. ESKALE: false.**
+## 5. Süreç/port hijyeni (bu turun kendi sızıntısı)
 
-Karar kuralının üç şartı da tuttu:
-1. **Y1 canlı doğrulandı** (kart yenilemeden sonra geri geliyor **ve** cevaplanıyor, oturum
-   kilitlenmiyor) **ve mutasyon F artık KIRMIZI** — üstelik düzeltmeyi birebir geri saran
-   mutasyon F2 de KIRMIZI.
-2. **Y3 deterministik:** kota-sıfır doğrudan hook bloğu her `verify`'de koşuyor ve iki yönü de
-   çıkış koduyla ölçüyor; AC4'ün canlı iki yönlü kanıtı bu turda alındı. Canlı paketin exit 1'i
-   dokunulmamış, önceden geçmiş ve kapsam dışı bir kardeş testin model uyumundan geliyor —
-   ayrımı §3.2'de kanıtladım.
-3. **Üç paket yeşil:** `verify` 859+2/57, `e2e` 23/23, `e2e:chat` 1/1.
+| An | `mission-control.exe` | `electron.exe` | 7333-7336 LISTENING |
+|---|---|---|---|
+| Tur başlangıcı (baz) | 0 | 0 | yok |
+| Tur sonu | **0** | **0** | **yok** |
 
-Feature notu `status: done` yapıldı.
+- Tepsi "Çıkış" ölçümü: 4 → 0 (yetim yok, port serbest).
+- Hata enjeksiyonu (B3) 3 zombi üretti; **bu turun sonunda `taskkill /IM` ile temizlendi** —
+  ürünün kendi davranışı olarak raporlandı, sızıntı bırakılmadı.
+- Kayıt defteri: test sırasında `HKCU\…\Run\electron.app.Mission Control` **iki kez yazıldı**
+  (tepsi toggle + taze userData ilk açılış) ve **ikisi de geri alındı**; tur sonunda `reg query`
+  ile doğrulandı: **girdi yok** (test öncesi hâl).
+- Kalıcı kalan (silmedim, ürün/CEO kararı): `%APPDATA%\mission-control\` (Ö1'in marker dosyası
+  dâhil) ve masaüstü uygulamasının veri klasörüne eklediğim tek test projesi kaydı
+  (geçici `scratchpad\qaproj`). Geçici userData klasörleri scratchpad içinde.
 
-## 9. Harcanan kota
+## 6. Doğrulayamadıklarım
 
-| Kalem | Oturum | Maliyet |
-|---|---|---|
-| `MC_CHAT_LIVE_TESTS=1 npm run test:chat-live` × **1** (E1/B5 + AC4'ün iki kolu; 79,25 sn) | 3 | **ölçülmedi** (vitest maliyeti yüzeye çıkarmıyor); tur 2'nin ölçülmüş ~$0,03/oturum profilinden **~$0,09 tahmin** |
-| Kota-sıfır hook bloğu (`spawnSync`, gerçek betik) | 0 | **$0** |
-| Tarayıcı ölçümleri (Y1 tam akış + yenileme + onay) | 0 | **$0** — sahte `query()` enjekte edilmiş gerçek üretim sunucusu |
-| `verify` (×1) / `e2e` (×2) / `e2e:chat` (×1) / mutasyon koşuları (×3) | 0 | **$0** |
-| **Toplam** | | **~$0,09 (tahmin)** |
-
-Model: canlı test `claude-haiku-4-5` (`chat-hooks-live.test.ts:145,232`).
-
-## 10. Süreç ve port durumu
-
-- 7333 / 7334 / 7433 / 7434 / 7435 / 7436 / **7437** portlarında **LISTENING yok** (probe sunucusu
-  PID 14420 ölçüm sonunda `taskkill //T //F` ile kapatıldı).
-- `tasklist` → kalan `node.exe`: **2** (PID 50720, 48568) — ikisi de bu QA oturumunun kendi
-  Playwright MCP sunucusu, oturum başındaki temel çizgiyle **aynı**. Yetim `npm run dev` veya
-  probe sunucusu **yok**.
-- `claude.exe` süreçleri: 16 adet, ama hepsinin `CreationDate`'i canlı testimden (12:12) **eski**
-  (en yenisi 11:50:41) — canlı SDK testi yetim alt süreç **bırakmadı**.
-- Depoya yazılanlar: bu rapor, `docs/qa/latest.md`, `docs/qa/screens/F-012-T4-*.png` (3 dosya),
-  `docs/features/F-012-ceo-sohbet-arayuzu.md` yalnızca `status` satırı.
-- `src/`, `tests/`, `package.json`, `*.config.ts` **hiç değişmedi**; mutasyonlar yedekten geri
-  alındı, `git status --porcelain` boş. `git push` yapılmadı.
-- Geçici dosyalar (probe logu, veri dizini, mutasyon yedekleri) scratchpad'de kaldı.
-
-## 11. Doğrulayamadıklarım
-
-1. **E1/B5'in canlı kanıtı bu turda** — model `Bash`'i hiç çağırmadı; yapılandırma yarısı
-   `session.test.ts:487` K3 çevrimdışı çitiyle `verify`'de yeşil, canlı yarısı 1./2. turda
-   GEÇTİ almıştı.
-2. **Dar genişlik, akış, bariyer, B2/B3, Y2, Y4** — önceki turlarda GEÇTİ, talimat gereği
-   yeniden ölçülmedi.
-3. **`AskUserQuestion` kartı** — dört turdur canlı tetiklenmedi.
-4. **Ö7'nin ve Ö6'nın gerçek kullanımdaki etkisi** — sentetik ölçümler dışında veri yok.
+- **Gerçek Windows yeniden başlatma** ile uygulamanın açılışta gerçekten başlaması (kayıt defteri
+  anahtarının doğru yazıldığını ölçtüm, reboot testi yapmadım).
+- Tepsi menüsünün otomasyonla ikinci kez açılması kararsızdı (Windows 11 taşma menüsü odak
+  kaybında kapanıyor); "Çıkış" ölçümü **bir kez** gerçek menüyle yapıldı, tekrarı E2E ile kanıtlı.
+- `dialog.showErrorBox`'ın **başka** bir Windows makinesinde çizip çizmediği (bu makinede
+  çizmediği, ürün kodundan bağımsız sondayla kanıtlı).
+- Paketlenmiş uygulamada sohbetle uçtan uca gerçek bir görev (ücret gerekçesiyle mesaj
+  göndermedim; oturumun kökünü ve bekleyen izin isteğini ölçtüm).

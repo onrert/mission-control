@@ -1,7 +1,7 @@
 ---
 id: F-014
 title: Masaüstü uygulaması — Electron kabuğu, tepsi ve açılışta başlama
-status: qa
+status: fix
 owner: developer
 deps: [F-012]
 sprint: 2

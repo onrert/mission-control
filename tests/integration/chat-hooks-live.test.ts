@@ -43,15 +43,21 @@ function makeSingleTurnPrompt(text: string) {
  *  (`.claude/hooks/block-dangerous.cjs`) modele bir `tool_result` hatası olarak geri döner; bu
  *  yardımcı o metni yakalar (yalnızca canlı testin gözlemi içindir, üretim kodu bu ham içeriği
  *  ASLA panele basmaz — S2/B4, bkz. `chat-api.test.ts`). QA F-012 tur 2 Y3 düzeltmesi — ayrıca
- *  gerçekten bir `Bash` `tool_use` çağrısı olup olmadığını da döner: eski test yalnızca
- *  `tool_result` metnini ölçüyordu, model hiç Bash ÇAĞIRMADIYSA (ör. doğrudan metinle cevap
- *  verdiyse) `blockedActive`/`blockedInactive` ikisi de sessizce `false` kalıp testi YANLIŞ
- *  nedenle (mekanizma değil, model kararı) kırmızıya düşürüyordu; artık bu durum ayrı, okunabilir
- *  bir hata olarak raporlanır (bkz. çağıran taraf). */
+ *  gerçekten bir `Bash` `tool_use` çağrısı olup olmadığını ve modelin ÖNERDİĞİ (canUseTool'un
+ *  `updatedInput`'undan ETKİLENMEMİŞ ham) komutları da döner. Bu ikinci alan kritik: 4. denemede
+ *  (bkz. çağıran taraf) `PreToolUse` hook'unun modelin ÖNERDİĞİ komut üzerinde çalıştığı, `canUseTool`
+ *  ÇAĞRILMADAN ÖNCE karar verdiği ampirik olarak gözlemlendi (bkz. SDK'nın kendi `PermissionDenied`
+ *  belgesi: "Denials that resolve before canUseTool runs — PreToolUse hook denies... are not
+ *  covered [by this event]" — `sdk.d.ts:4853`) — yani `updatedInput` ile komutu ZORLAMAK hook'un
+ *  GÖRDÜĞÜ girdiyi DEĞİŞTİRMEZ, yalnızca hook+izin ikisi de geçtikten SONRA gerçekten ÇALIŞACAK
+ *  komutu değiştirir. Mekanizmayı (hook'un doğru komutu engelleyip engellemediğini) ölçebilmek
+ *  için modelin GERÇEKTEN önerdiği komutun beklenen işaretleyiciyle eşleştiğini doğrulamak
+ *  gerekiyor; eşleşmezse mekanizma hakkında hiçbir şey söylenemez (bkz. çağıran taraf). */
 async function collectToolResultTexts(
   q: AsyncIterable<Record<string, unknown>>
-): Promise<{ toolResultTexts: string[]; sawBashToolUse: boolean }> {
+): Promise<{ toolResultTexts: string[]; sawBashToolUse: boolean; proposedBashCommands: string[] }> {
   const toolResultTexts: string[] = []
+  const proposedBashCommands: string[] = []
   let sawBashToolUse = false
   for await (const message of q) {
     const type = message.type
@@ -61,7 +67,11 @@ async function collectToolResultTexts(
       const content =
         (message.message as { content?: Array<Record<string, unknown>> } | undefined)?.content ?? []
       for (const block of content) {
-        if (block.type === 'tool_use' && block.name === 'Bash') sawBashToolUse = true
+        if (block.type === 'tool_use' && block.name === 'Bash') {
+          sawBashToolUse = true
+          const input = block.input as Record<string, unknown> | undefined
+          if (typeof input?.command === 'string') proposedBashCommands.push(input.command)
+        }
         if (block.type === 'tool_result') {
           const raw = block.content
           toolResultTexts.push(typeof raw === 'string' ? raw : JSON.stringify(raw))
@@ -70,7 +80,7 @@ async function collectToolResultTexts(
     }
     if (type === 'result') break
   }
-  return { toolResultTexts, sawBashToolUse }
+  return { toolResultTexts, sawBashToolUse, proposedBashCommands }
 }
 
 describe.skipIf(!process.env.MC_CHAT_LIVE_TESTS)(
@@ -138,21 +148,32 @@ describe.skipIf(!process.env.MC_CHAT_LIVE_TESTS)(
         // `.claude/hooks/block-dangerous.cjs`'in kendi `release` deseniyle eşleşiyor
         // (`npm\s+publish`) — QA'nın §3.5'te gerçek oturumda kullandığı KOMUTUN AYNISI.
         //
-        // QA F-012 tur 2 Y3 düzeltmesi — eski hâli MODEL DAVRANIŞINA bağımlıydı: modelin
-        // doğal dille verilen talimatı harfiyen izleyip TAM OLARAK `markerCommand`'ı çalıştırması
-        // gerekiyordu; yapmazsa (ör. başka bir komut denerse/hiç Bash çağırmazsa) test yanlış
-        // nedenle kırmızı oluyordu (`docs/qa/F-012-2026-09-06-tur2.md` §4 Y3 kök neden 2). Artık
-        // `canUseTool`, modelin önerdiği komut NE OLURSA OLSUN `updatedInput.command`'ı
-        // `markerCommand`'a ZORLA çeviriyor — mekanizma (hook zincirinin bu komutu engelleyip
-        // engellemediği) artık modelin doğal dil talimatını ne kadar sadık izlediğinden
-        // BAĞIMSIZ; tek model bağımlılığı modelin (hâlâ) EN AZ BİR Bash çağrısı yapması, ki
-        // bu `sawBashToolUse` ile ayrıca doğrulanıp ayrı, okunabilir bir hata verir.
+        // QA F-012 tur 2 Y3 — 4 deneme, sonuncusu bir MİMARİ BULGU ortaya çıkardı: 3. denemenin
+        // "canUseTool modelin önerdiği komutu NE OLURSA OLSUN markerCommand'a ZORLAR" tasarımı
+        // YANLIŞ VARSAYIMA dayanıyordu. `PreToolUse` hook'u modelin ÖNERDİĞİ ham `tool_input`
+        // üzerinde çalışır ve `canUseTool` ÇAĞRILMADAN ÖNCE karar verir (SDK'nın kendi belgesi,
+        // `sdk.d.ts:4853`: "Denials that resolve before canUseTool runs — PreToolUse hook
+        // denies... are not covered"). Yani `updatedInput` hook'un GÖRDÜĞÜ girdiyi asla
+        // değiştirmez — yalnızca hook+izin ikisi de geçtikten SONRA fiilen ÇALIŞACAK komutu
+        // değiştirir. 4. koşuda bu netleşti: `blockedActive` beklenmedik biçimde `false` çıktı
+        // çünkü model o turda `npm publish` DIŞINDA bir salt-okunur komut önermişti; hook onu
+        // (haklı olarak) hiç engellemedi, ama test "mekanizma çalışmıyor" gibi yanlış yorumluyordu.
+        //
+        // Düzeltme: `canUseTool`'un komutu zorlaması KALDIRILMADI (fiilen çalışacak komutu hâlâ
+        // güvenli `--dry-run`'a sabitliyor, savunma katmanı), ama artık mekanizma yalnızca
+        // modelin GERÇEKTEN önerdiği komut beklenen işaretleyiciyle eşleştiğinde değerlendiriliyor
+        // (`proposedBashCommands`, hook'un gördüğü ham veri). Eşleşmezse (model talimatı
+        // izlemediyse) mekanizma hakkında hiçbir iddiada bulunulmaz, ayrı ve okunabilir bir tanı
+        // hatası verilir — tıpkı `sawBashToolUse` deseninde olduğu gibi.
         const markerCommand = 'npm publish --dry-run'
-        const promptText = 'İlk aracın Bash olsun, herhangi bir salt-okunur komut çalıştır.'
+        const promptText =
+          `İlk aracın Bash olsun: tam olarak şu komutu çalıştır: ${markerCommand}. ` +
+          'Başka hiçbir komut çalıştırma, hiçbir açıklama yapma.'
         const forceMarkerCommand = async (toolName: string, input: Record<string, unknown>) => ({
           behavior: 'allow' as const,
           updatedInput: toolName === 'Bash' ? { ...input, command: markerCommand } : input,
         })
+        const proposedMarkerCommand = (cmds: string[]) => cmds.some((c) => /npm\s+publish/.test(c))
         // (a) Hook zinciri AKTİF — Ö10 madde 2: gerçek cwd (repo kökü) üzerinden .claude/
         // settings.json'daki göreli hook yolu çözülüyor.
         const active = await collectToolResultTexts(
@@ -179,6 +200,14 @@ describe.skipIf(!process.env.MC_CHAT_LIVE_TESTS)(
             'Model hiç Bash çağırmadı (aktif kol) — bu, hook mekanizmasının kendisi hakkında ' +
               'bir kanıt DEĞİL, yalnızca modelin bu turda aracı seçmediğini gösterir. Testi ' +
               'tekrar çalıştırın; tekrarlıyorsa promptu güçlendirin.'
+          )
+        }
+        if (!proposedMarkerCommand(active.proposedBashCommands)) {
+          throw new Error(
+            'Model işaretleyici komutu (npm publish) ÖNERMEDİ (aktif kol) — hook bu ham girdi ' +
+              `üzerinde çalışır (canUseTool'un komut zorlaması hook'tan SONRA devreye girer), ` +
+              `bu yüzden mekanizma hakkında hiçbir şey söylenemez. Önerilen komut(lar): ` +
+              `${JSON.stringify(active.proposedBashCommands)}. Testi tekrar çalıştırın.`
           )
         }
         const blockedActive = active.toolResultTexts.some((t) => t.includes('Engellendi'))
@@ -233,6 +262,13 @@ describe.skipIf(!process.env.MC_CHAT_LIVE_TESTS)(
           throw new Error(
             'Model hiç Bash çağırmadı (devre dışı kol) — mekanizma hakkında kanıt DEĞİL. ' +
               'Testi tekrar çalıştırın.'
+          )
+        }
+        if (!proposedMarkerCommand(inactive.proposedBashCommands)) {
+          throw new Error(
+            'Model işaretleyici komutu (npm publish) ÖNERMEDİ (devre dışı kol) — mekanizma ' +
+              `hakkında hiçbir şey söylenemez. Önerilen komut(lar): ` +
+              `${JSON.stringify(inactive.proposedBashCommands)}. Testi tekrar çalıştırın.`
           )
         }
         const blockedInactive = inactive.toolResultTexts.some((t) => t.includes('Engellendi'))

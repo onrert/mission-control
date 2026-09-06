@@ -143,6 +143,44 @@ describe('ChatScreen — akış hâlinde cevap (AC1 streaming)', () => {
   })
 })
 
+describe('ChatScreen — QA F-012 tur 2 Y4 (ÖNEMLİ): B2 fold anahtarının İSTEMCİ yarısı', () => {
+  it('aynı turn_id paylaşan kullanıcı (role:user) ve CEO (role:assistant) girdileri İKİSİ DE görünür kalır', async () => {
+    // Sunucu tarafı (`history-log.ts` `foldByTurn`) `docs/qa/F-012-2026-09-06.md` B2 ile
+    // çitlenmişti (`turn_id::kind::role`); istemcinin AYNI kuralı uygulayan `entryKey`
+    // (`useChatSession.ts:143`) hiç çitlenmemişti (QA F-012 tur 2 Y4, mutasyon M8 18/18 YEŞİL
+    // kalmıştı). `role` olmadan `${turn_id}::${kind}` anahtarı kullanıcı mesajını (düşük seq)
+    // CEO'nun aynı turdaki cevabıyla (yüksek seq) AYNI SEPETE koyar ve kullanıcı balonu SİLİNİR.
+    stubFetch()
+    const chatRef = await renderHarness()
+
+    await act(async () => {
+      chatRef.current!.handlers.onChatUserEcho({
+        turn_id: 't1',
+        chat_seq: 1,
+        text: 'merhaba CEO',
+        ts: new Date().toISOString(),
+      })
+    })
+    expect(screen.getByText('merhaba CEO')).toBeTruthy()
+
+    await act(async () => {
+      chatRef.current!.handlers.onChatMessage({
+        turn_id: 't1',
+        chat_seq: 2,
+        delta: 'merhaba, nasıl yardımcı olabilirim?',
+        done: false,
+      })
+    })
+    await act(async () => {
+      chatRef.current!.handlers.onChatMessage({ turn_id: 't1', chat_seq: 3, delta: '', done: true })
+    })
+
+    // İkisi de hâlâ DOM'da — biri diğerinin üzerine yazılmadı.
+    expect(screen.getByText('merhaba CEO')).toBeTruthy()
+    expect(screen.getByText('merhaba, nasıl yardımcı olabilirim?')).toBeTruthy()
+  })
+})
+
 describe('ChatScreen — Ö4 (QA KALDI): tur-içi hata kalıcı olarak transkriptte görünür', () => {
   it('onChatError turn_id/chat_seq taşıyorsa hata balonu SAYFA YENİLENMEDEN transkripte eklenir', async () => {
     // Tekrar üretme (QA KALDI Ö4): eskiden `chat.lastError` hiçbir yerde render edilmiyordu —

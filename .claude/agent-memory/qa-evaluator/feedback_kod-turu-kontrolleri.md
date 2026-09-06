@@ -98,3 +98,35 @@ mutasyon planlanmamış kod yollarını, (b) çok katmanlı savunmaların ikinci
    karşılığı (render sayacı, kesin eşitlik) deterministik KIRMIZI verdi → bulguyu ÖNEMLİ'ye
    indirdim, BLOKLAYICI yapmadım. Kural: flaky çit bulunca (a) 6-11 koşuluk örneklem al,
    (b) ikinci savunma hattı var mı diye bak, şiddeti ona göre ver.
+
+---
+
+## F-012 turunda eklenen dört teknik
+
+12. **Yeni bir `src/features/<x>/web` dizini varsa İLK İŞ `src/web/index.css`'in `@source`
+   listesine bak.** Vite `root: 'src/web'` olduğu için Tailwind v4 kökün dışını taramıyor;
+   her yeni web dizini kendi `@source` satırını ve `tests/build-css.test.ts`'te kendi
+   `describe` bloğunu gerektiriyor. F-003/B1 → F-005 → F-007 → **F-012: dördüncü tekrar.**
+   Bu sefer 24 sınıf düştü (`whitespace-pre-wrap`, `items-end`, `sticky`, `bg-amber-700`,
+   `sm:inline`…) ve UX'in görsel sözleşmesinin tamamı üretimde yoktu. Ölçüm 60 saniye:
+   `chat/web`'in `className` dizgelerini topla, diğer web köklerinde geçmeyenleri süz,
+   `dist/web/assets/*.css` içinde ara. "Yalnızca bu dizinde geçip CSS'te olmayan" listesi
+   boş değilse doğrudan bloklayıcı.
+13. **Mutasyonu, hassas verinin gerçekten aktığı DALA at — aynı fonksiyonun başka dalına
+   değil.** F-012'de sözleşme "chat_tool yayınına ham `tool_result` eklenirse KIRMIZI" diyordu;
+   developer mutasyonu `tool_use` (**girdi**) dalına uygulamıştı ve kırmızı almıştı. Aynı
+   fonksiyonun `tool_result` (**çıktı**) dalına ham çıktı eklemek 34/34 yeşil kaldı — yani
+   sızıntının gerçekten geçeceği yolda çit yoktu. Kural: "X sızmasın" çitinde X'in taşındığı
+   satırı koddan bul, mutasyonu oraya at.
+14. **Dedup/fold anahtarında ayırt edici alan eksik mi diye bak.** F-012'de hem sunucu
+   (`foldByTurn`) hem istemci (`upsertEntry`) `${turn_id}::${kind}` ile katlıyordu; `role`
+   anahtarda olmadığı için kullanıcının mesajı ile CEO'nun cevabı aynı kovaya düşüp
+   kullanıcının mesajı **siliniyordu**. Hiçbir test aynı turda iki farklı `role` kurmuyordu.
+   Teknik: her dedup anahtarını oku, "hangi iki farklı mantıksal kayıt aynı anahtara düşer"
+   diye sor, üç satırlık bir harness ile kanıtla.
+15. **E2E yapılandırmasının test ettiğin özelliği kapatıp kapatmadığını kontrol et.**
+   `playwright.config.ts` F-012'yi `MC_CHAT_ENABLED: '0'` ile koşturuyordu (ücret gerekçesiyle,
+   makul) — sonuç: özelliğin tarayıcı seviyesinde **sıfır** kapsaması ve 12. maddedeki
+   bloklayıcının oradan geçmesi. Ayrıca `package.json` script'lerinin gösterdiği dosyaların
+   var olduğunu `ls` ile doğrula: `test:chat-live` hiç yazılmamış bir dosyayı çağırıyordu ve
+   sözleşmenin "iki yönlü kanıt" şartı böylece sessizce düşmüştü.

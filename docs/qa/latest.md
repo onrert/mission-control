@@ -1,295 +1,303 @@
 KARAR: KALDI
 ESKALE: false
 
-# F-014 — QA raporu (Electron masaüstü kabuğu, tepsi, açılışta başlama)
+# F-014 — QA raporu, 2. tur (düzeltme turu denetimi)
 
 - **Tarih:** 2026-09-06
-- **Tur:** kod turu (ilk QA)
+- **Tur:** düzeltme turu (dar kapsam — yalnızca 1. turun bulguları + bloklayıcı seviyede yeni bulgu)
+- **1. tur raporu:** `docs/qa/F-014-2026-09-06.md` (KARAR: KALDI — B1, B2, B3)
 - **Test edilen artefakt:** `C:\dev\apps\mission-control\release\Mission Control-win32-x64\mission-control.exe`
-  (paketlenmiş `electron/main.cjs` deponunkiyle **birebir aynı** — `diff` farksız)
-- **Yöntem:** gerçek `.exe` çift tıklama eşdeğeri (npm/tsx yok), gerçek OS tepsi menüsü
-  (win32 fare otomasyonu + UIAutomation), gerçek Windows kayıt defteri, gerçek SSE akışı,
-  hata enjeksiyonu, 7 mutasyon.
+  (paketlenmiş `electron/main.cjs` depodakiyle **birebir aynı** — `diff` farksız; paket 2026-09-06 17:19'da üretilmiş)
+- **Yöntem:** gerçek `.exe` (npm/tsx yok, çalışma dizini bilerek `C:\` verildi), gerçek Windows
+  kayıt defteri, gerçek süreç ağacı (PEB üzerinden çalışma dizini okuma), hata enjeksiyonu,
+  5 mutasyon, dört test paketi, `e2e:electron` 17 kez.
 
 ---
 
 ## KARAR GEREKÇESİ (özet)
 
-Feature notunun kendi ölçütü: *"Başarı ölçütü 'masaüstü penceresi var mı' DEĞİL, 'elle sunucu
-başlatmak gerekiyor mu'dur."* Pencere, tepsi, tek örnek ve tepsiden çıkış **gerçekten çalışıyor**
-(aşağıda sayıyla kanıtlı). Ancak üç şey KALDI'yı zorunlu kılıyor:
+1. turun **üç bloklayıcısının üçü de gerçekten kapandı** ve canlı doğrulandı (aşağıda sayı ve
+ekran görüntüsüyle). Ö1/Ö2 de temiz profille sağlanıyor. Mutasyonların hepsi KIRMIZI.
 
-1. **Port çakışmasında kullanıcı HİÇBİR ŞEY görmüyor** (AC5 ihlali). `dialog.showErrorBox` bu
-   makinede **hiçbir pencere üretmiyor** — izole bir sonda uygulamasıyla kanıtlandı: aynı süreçte
-   `BrowserWindow` çiziliyor, hata kutusu çizilmiyor. Uygulama ~7 sn sonra sessizce ölüyor.
-2. **Masaüstü uygulamasındaki CEO sohbeti, deponun kendisinde değil paketlenmiş kopyada
-   (`release\...\resources\app`) çalışıyor**: `docs/` yok, `.git` yok, `.claude/settings.json`
-   (hook'lar/çitler) yok. F-012 + ADR-014 paneli CEO oturumunun arayüzü yaptı ve kullanıcı
-   *"artık oradan çalışırım"* dedi — bu hâliyle oradan çalışmak, sürüm alındığında silinecek ve
-   git'in görmediği bir kopyada, projenin tüm hook çitleri kapalıyken çalışmak demek.
-3. **Başlatma yolunda yakalanmamış hata → 3 zombi süreç, pencere yok, tepsi yok, hata mesajı
-   yok**; aynı userData ile sonraki her çift tıklama tek-örnek kilidine takılıp sessizce ölüyor.
-   `app.whenReady().then(async () => ...)` zincirinde `.catch` yok — CLAUDE.md'nin üç kez
-   tekrarlayan "yazma/başlatma yolundaki hata her şeyi öldürür" dersinin dördüncü biçimi.
+Ancak karar **KALDI**, iki nedenle:
 
-Ayrıca **teslim durumunda açılışta başlatma varsayılanı fiilen KAPALI** (ADR-011 ek kararının
-"AÇIK **ve** görünür" şartının ikisi de bu makinede sağlanmıyor, aşağıda Ö1/Ö2).
+1. **B4 (yeni, bloklayıcı):** tepsiden "Çıkış" akışı, ilk açılış bildirim penceresi açıkken
+   **koşuların ~%18'inde uygulamayı hiç kapatmıyor**. Ölçüldü: `shutdownViaTray()` çağrıldıktan
+   sonra **5 electron süreci 30 saniye boyunca hayatta kaldı** ve yalnızca test koşucusunun
+   `finally` bloğundaki zorla kapatması onları temizledi. Gerçek üründe böyle bir kurtarıcı yok:
+   kullanıcı "Çıkış"a basar, hiçbir şey olmaz, 5 yetim süreç portu tutmaya devam eder. Bu, feature
+   notunun **"Çitlenecek — bu projede yetim süreç tekrar eden bir sorun"** dediği AC3'ün tam
+   göbeği.
+2. **Geliştiricinin sayısal iddiası doğru değil.** İddia: *"`electron-autostart-smoke.spec.ts` …
+   5/5 + 3/3 yeşil"* ve *"retry kaldırıldı"*. Retry gerçekten kaldırılmış (doğrulandı), ama
+   retry'sız koşuda test **kararsız**: benim 17 koşumun 3'ü kırmızı. Config'in kendi yorumu bunu
+   zaten bir kural olarak yazmış: *"bir test retry olmadan kararsızsa bu BULGUDUR"*.
 
 ---
 
-## 1. Kabul kriterleri — tek tek
+## 1. Ölçülen maddeler
 
-| # | Kriter | Sonuç | Kanıt |
-|---|---|---|---|
-| AC1 | Çift tıklamayla açılır, terminal komutu yok, `MC_CHAT_ENABLED` bilmek gerekmez, **sohbet varsayılan açık** | **GEÇTİ** | `.exe` doğrudan başlatıldı (npm/tsx yok) → 4 süreç, 7333 LISTENING, pencere "Mission Control" açıldı (`docs/qa/screens/F-014-01-exe-acilis.png`). `MC_CHAT_ENABLED` hiç set edilmeden `GET /api/chat/status` → `"chat_enabled":true` |
-| AC2 | Sunucu içeride başlar; pencere kapanınca **tepside devam** (olay toplama + dosya izleme durmaz) | **GEÇTİ** | Pencereye gerçek `WM_CLOSE` → pencere görünür listeden düştü, süreç 4, port hâlâ LISTENING, `/api/health` **aynı** `instance_id` (`5e494f50-…`). Pencere kapalıyken izlenen projeye yeni feature dosyası yazıldı → `/api/stream` üzerinden `event: features` **canlı geldi**, `/api/features` 1 → 2. `watchers:1` korundu |
-| AC3 | Tepsiden Çıkış: sunucu gerçekten kapanır, **yetim süreç kalmaz** | **GEÇTİ** | **Gerçek OS tepsi menüsü** tıklandı (test kancası değil): öncesi `mission-control.exe` **4**, sonrası **0**; 7333 LISTENING **boş**; `/api/health` HTTP=000. Menü ekran görüntüsü: `F-014-03-tepsi-menusu-autostart-kapali.png` |
-| AC4 | Windows açılışında başlama açılıp kapatılabilir; **varsayılanı belgede yazılı ve arayüzde görünür** | **KALDI** | Aç/kapa **çalışıyor** (tepsiden tıklandı → `HKCU\…\Run\electron.app.Mission Control` yazıldı; tekrar tıklandı → silindi; menüde ✓ göründü, `F-014-04-tepsi-menusu-autostart-acik.png`). **Ama:** teslim durumunda varsayılan fiilen KAPALI (Ö1) ve "görünür" yarısını taşıyan tepsi balonu **hiç çizilmiyor** (Ö2) |
-| AC5 | Port çakışması **okunabilir biçimde** bildirilir; yabancı sunucuya sessizce bağlanılmaz | **KALDI** | 7333'ü gerçek bir yabancı sunucu tuttu → `.exe` başlatıldı: **hiçbir diyalog yok** (tam ekran kare `F-014-05-port-dolu-diyalog-yok.png`, "Mission" başlıklı görünür pencere yok), süreç ~7 sn sonra sessizce öldü. Yabancı sunucuya bağlanma **yok** (N4 dersi korunuyor) ama kullanıcı hiçbir şey görmüyor → B1 |
-| AC6 | Tarayıcıdan kullanım (geri dönüş yolu) bozulmaz | **GEÇTİ** | `npm start` → `/api/health` 200 (`instance_id b163bf94…`), `/` 200, `/api/features` gerçek depo feature'larını döndürdü (F-001 …) |
-| AC7 | Tek örnek: ikinci açılış yeni sunucu başlatmaz, var olan pencereyi öne getirir | **GEÇTİ** | İkinci başlatma: PID listesi **birebir aynı** (30328 31652 33032 34376), `instance_id` değişmedi, gizli pencere **geri geldi** (handle 118491624 yeniden görünür) |
-| AC8 | ADR-009 — yalnızca Windows paketlenir | **GEÇTİ** | `scripts/package-electron.mjs`: `platform: 'win32'`, `arch: 'x64'` sabit; başka platform hedefi yok |
-| AC9 | Native derleme yok, `deps.test.ts`'in `hasInstallScript` guard'ına çarpılmaz; guard gevşetilmez | **GEÇTİ** | `git log 7ea0e9f..HEAD -- tests/deps.test.ts` **boş** (dosyaya dokunulmamış), `npx vitest run tests/deps.test.ts` → 3/3 yeşil. Kök `package-lock.json` `packages[""].hasInstallScript` **yok**; kökte `postinstall`/`prepare`/`preinstall` **yok** (script adı `electron:fetch`) |
-| AC10 | `npm run verify` ve mevcut E2E paketleri bozulmaz | **GEÇTİ (kayıtla)** | `npm run verify` = 0 (873 test/62 dosya), `npm run e2e` = 0 (23/23), `npm run e2e:electron` = 0 (1/1), `npx vitest run tests/electron` = 0 (12/12). Kayıt: tam paket koşusu bu ortamda **kararsız** (N3) |
-| Ek | `src/features/**`, `src/web/**`, `src/server/index.ts` değişmemiş | **GEÇTİ** | `git log 7ea0e9f..HEAD -- src/` **boş** — F-014 hiç `src/` dosyasına dokunmamış |
-| Ek | `release/` depoya girmemiş | **GEÇTİ** | `.gitignore:4` `release/`; `git ls-files release` → **0** dosya |
+### B2 (H1) — **KAPANDI** · Sohbet oturumu gerçek proje dizininde, hook kapısı çalışıyor
+
+**İleri yön (oturum nerede çalışıyor?) — canlı, doğrudan ölçüm**
+
+`.exe` `Start-Process … -WorkingDirectory 'C:\'` ile başlatıldı (çalışma dizini bilerek yanlış
+verildi ki `process.cwd()` türetimi varsa yakalansın). Süreç ağacı:
+
+| PID | Süreç | PEB'den okunan çalışma dizini |
+|---|---|---|
+| 50476 | `mission-control.exe` (ana) | `C:\` |
+| 29148 | `claude.exe` (barındırılan CEO oturumu) | **`C:\dev\apps\mission-control\`** |
+
+`claude.exe`'nin komut satırında `--setting-sources=project` var → proje ayarları **bu** kökten
+okunuyor. 1. turda aynı ölçüm `…\release\Mission Control-win32-x64\resources\app` veriyordu.
+
+**Hook'lar gerçekten yükleniyor mu?** Evet — dolaylı değil, doğrudan gözlendi. Uygulama
+açılışında barındırılan oturumun kendi `session_id`'siyle (`bfa4e937-…`, `/api/chat/status`'ün
+döndürdüğü değerle birebir) hook olayları panele düştü:
+
+```
+14:28:27.657Z SessionStart      cwd=C:\dev\apps\mission-control  agent=ceo
+14:28:29.626Z UserPromptSubmit  cwd=C:\dev\apps\mission-control  agent=ceo
+14:28:42.142Z Stop              cwd=C:\dev\apps\mission-control  agent=ceo
+```
+
+Yani `.claude/settings.json` bulundu, `node .claude/hooks/send-event.cjs` **çalıştı** ve olay
+sunucuya ulaştı. Ekran görüntüsü: `docs/qa/screens/F-014-tur2-01-exe-acilis.png` (panelin Zaman
+Çizelgesi'nde `ceo SessionStart / UserPromptSubmit / Stop` satırları görünüyor).
+
+**Ters yön (hook yoksa ne oluyor?)** `MC_PROJECT_DIR` `.claude` içermeyen bir klasöre
+gösterildi → **sunucu hiç başlamadı** (7333 LISTENING **yok**) ve **görünür, okunabilir** bir
+pencere çizildi (480x260, başlık "Mission Control başlatılamadı"):
+`docs/qa/screens/F-014-tur2-02-hook-yok-hata-penceresi.png`. Metin `docs/03-ux.md:628-631` ile
+birebir. Pencere kapatılınca süreç **4 → 0** (yetim yok).
+
+### B1 (H2) — **KAPANDI** · Port çakışmasında gerçek pencere çıkıyor
+
+7333'ü gerçek bir yabancı `http` sunucusu tuttu (`curl` → "YABANCI SUNUCU"), `.exe` başlatıldı.
+
+| Ölçüm | Sonuç |
+|---|---|
+| Görünür pencere | **VAR** — 480x260, "Mission Control başlatılamadı" |
+| Metin | `docs/03-ux.md:624-627` ile **birebir**: *"7333 portu başka bir uygulama tarafından kullanılıyor. Panel açılamıyor. Önce o portu kullanan programı kapatın veya MC_PORT ortam değişkeniyle farklı bir port seçin."* |
+| t=30 sn'de süreç | **4** (1. turdaki "~7 sn sonra sessiz ölüm" yok — pencere kullanıcı kapatana kadar duruyor) |
+| Yabancı sunucuya bağlanma | **yok** (ana pencere hiç açılmadı; N4 dersi korunuyor) |
+| Pencere kapatıldıktan sonra | süreç **0** |
+
+Ekran görüntüsü: `docs/qa/screens/F-014-tur2-03-port-dolu-hata-penceresi.png`.
+
+### B3 (H3) — **KAPANDI** · Başlatma hatasında görünür hata, zombi yok
+
+Senaryo 1. turdakiyle birebir: `MC_ELECTRON_USER_DATA_DIR=<klasör>` ve o klasörde `data` adında
+bir **dosya**.
+
+| Ölçüm | 1. tur | 2. tur |
+|---|---|---|
+| Görünür hata | yok | **VAR** (ekran görüntüsü aşağıda) |
+| Hata metni | — | *"Uygulama başlatılırken beklenmeyen bir hata oluştu: ENOTDIR: not a directory, mkdir '…\ud-b3a\data\events'. Uygulama güvenli şekilde kapatılıyor."* (`docs/03-ux.md:633-634` ile birebir) |
+| Pencere kapatıldıktan sonra süreç | **3 zombi** (35 sn sonra hâlâ) | **0** |
+| Aynı userData ile ikinci başlatma | tek-örnek kilidine takılıp **sessiz ölüm** | **hata penceresi yeniden çıktı** (kilit temiz) |
+| 7333 LISTENING | — | **yok** (sunucu hiç açılmadı) |
+
+Ekran görüntüsü: `docs/qa/screens/F-014-tur2-04-baslatma-hatasi-penceresi.png`.
+
+### Ö1 / Ö2 (H5) — **KAPANDI (temiz profilde)** · Açılışta başlama AÇIK ve GÖRÜNÜR
+
+Marker'sız (tamamen taze) bir `MC_ELECTRON_USER_DATA_DIR` ile gerçek `.exe` çalıştırıldı:
+
+| Ölçüm | Sonuç |
+|---|---|
+| Kayıt defteri | `HKCU\…\Run\electron.app.Mission Control` = `"…\mission-control.exe"` **yazıldı** |
+| Marker | `autostart-initialized.json` `{"autostartInitialized":true,"setAt":"2026-09-06T14:37:17.573Z"}` |
+| Görünür bildirim | **VAR** — ikinci bir `BrowserWindow` (420x220, başlık "Mission Control"), metin `docs/03-ux.md:637-641` ile birebir: *"Bilgisayar açılışında otomatik başlayacak şekilde ayarlandı. Tepsi menüsünden kapatabilirsiniz."* |
+| Ana pencere | aynı anda açık (1280x800) |
+
+Ekran görüntüsü: `docs/qa/screens/F-014-tur2-05-acilista-baslama-bildirimi.png`.
+**Kayıt defteri girdisi ölçümden hemen sonra geri alındı** (`Remove-ItemProperty`), tur sonunda
+`reg query` ile doğrulandı: Mission Control girdisi **yok** (test öncesi hâl).
+
+Kalan (1. turdan devreden, geliştirici de "kapsam dışı" diye kaydetmiş): bu makinenin gerçek
+profilinde `%APPDATA%\mission-control\autostart-initialized.json` hâlâ duruyor (11:25'ten kalma),
+kayıt defterinde girdi yok → **bu makinede teslim hâli hâlâ fiilen KAPALI**. Kod doğru; tek
+gereken o marker dosyasının bir kez silinmesi ya da kullanıcının tepsiden bir kez işaretlemesi.
+
+### H6 — **KAPANDI** · progress.md'deki kanıtsız iddia düzeltildi
+
+`docs/progress.md` 5. maddesinin altına açık bir **DÜZELTME (H6)** notu eklenmiş: iddianın
+yanlış olduğu, hiçbir ekran görüntüsünün onu desteklemediği, kök nedenin `4ce8f9e` ile
+düzeltildiği yazılı; orijinal satır tahrif edilmemiş. Bölümde kalan tek "ekran görüntüsüyle
+doğrulandı" ifadesi (madde 1 — pencere açıldı) QA'nın kendi bağımsız görüntüleriyle
+örtüşüyor. Kanıtsız iddia kalmadı.
+
+### Retry kontrolü — config temiz, **ama testin kendisi kararsız**
+
+`playwright.electron.config.ts`'te `retries` anahtarı **yok** (varsayılan 0); kaldırılma gerekçesi
+yorumda yazılı. `workers: 2` gerekçeli korunmuş. Bu kısım doğrulandı — kararsızlık bulgusu B4'te.
 
 ---
 
-## 2. Mutasyon tablosu
+## 2. Mutasyon tablosu (5 bağımsız mutasyon)
 
-Yöntem: uygula → ilgili paketi izole koştur → gözlemle → `git checkout` ile birebir geri al.
-Sözleşme §8'in zorunlu dördü (a-d) + kendi seçtiğim üç ek mutasyon.
+Yöntem: uygula → `npx vitest run tests/electron` → gözle → `git checkout` ile birebir geri al.
+Temel (mutasyonsuz) koşu: **26/26 yeşil, 8 dosya**.
 
 | # | Mutasyon | Hedef | Sonuç |
 |---|---|---|---|
-| M-A (§8 M3, zorunlu) | Tepsi "Çıkış" `serverModule.shutdown(...)` yerine yalnızca `app.quit()` | `lifecycle.test.ts` | **KIRMIZI** (1 failed / 11 passed) |
-| M-B (§8 M1, zorunlu) | Port ön kontrolü kaldırıldı (`const portFree = true`) | `port-guard.test.ts` | **KIRMIZI** (1 failed / 11 passed) |
-| M-C (§8 M2, zorunlu) | Tek örnek kilidi yoksayıldı (`if (!gotLock)` bloğu silindi) | `single-instance.test.ts` | **KIRMIZI** (1 failed / 11 passed) |
-| M-D (§8 M5, zorunlu) | `runApp` içine `process.env.MC_CHAT_ENABLED = '0'` eklendi | `chat-enabled.test.ts` (gerçek `isChatEnabled`) | **KIRMIZI** (1 failed / 11 passed) |
-| M-E (benim) | `close` handler'ından `if (isQuitting) return` koruması kaldırıldı (tepsi Çıkış'ı sessizce iptal eden gerçek hata) | `tests/electron` → **12/12 YEŞİL**; `e2e:electron` → **KIRMIZI** (60 sn timeout) | **Birim testleri kör, E2E yakalıyor** — N1 |
-| M-F (benim) | Kullanıcıya görünen port hata metni "Error: EADDRINUSE" ile değiştirildi | `port-guard.test.ts` | **KIRMIZI** — UX metni çitlenmiş |
-| M-G (benim) | `app.on('second-instance', showAndFocus)` dinleyicisi kaldırıldı | `single-instance.test.ts` | **KIRMIZI** |
+| M1 (H1a) | `resolveProjectDir`'in paketlenmiş dalı silindi → her durumda `path.join(__dirname,'..')` (yani paket kopyasına geri dönüş) | `project-dir-and-hooks.test.ts` | **KIRMIZI** (1 failed / 25 passed) |
+| M2 (H1b) | Hook kapısı devre dışı: `if (false && !hasHookInfrastructureFn(projectDir))` | `hooks-gate.test.ts` | **KIRMIZI** (1 failed / 25 passed) |
+| M3 (H7) | `close` handler'ından `if (isQuitting) return` koruması kaldırıldı | `lifecycle.test.ts` | **KIRMIZI** (1 failed / 25 passed) — 1. turdaki M-E artık **birim seviyesinde** yakalanıyor (N1 kapandı) |
+| M4 (B3 çiti) | Başlatma hatası `catch`'inde `app.exit(1)` → `app.quit()` (süreç kesin ölmesin) | `startup-error-guard.test.ts` | **KIRMIZI** (2 failed / 24 passed) |
+| M5 (B1 çiti) | Port hatası tekrar `dialog.showErrorBox` ile gösterildi (1. turun tam regresyonu) | `port-guard.test.ts` | **KIRMIZI** (1 failed / 25 passed) |
 
-Mutasyon kalıntısı taraması (bitirmeden):
+Geri alım sonrası `tests/electron` yeniden **26/26**; `git status` **temiz**.
 `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca meşru test adı
-`tests/server/write-gate-manifest.test.ts:124`. `git status` temiz.
-
-**Mutasyonların ölçemediği yer:** M-B/M-F yalnızca `dialog.showErrorBox`'ın **çağrıldığını**
-doğruluyor; "kullanıcı bir şey **görüyor** mu" sorusunu hiçbir test sormuyor. B1 tam bu boşluktan
-geçti (N2).
+`tests/server/write-gate-manifest.test.ts:124`.
 
 ---
 
-## 3. Bulgular
+## 3. Test paketleri (hepsi kendim koşturuldu)
 
-### B1 — BLOKLAYICI · Port çakışmasında kullanıcı hiçbir şey görmüyor (AC5)
+| Paket | Sonuç | Sayı |
+|---|---|---|
+| `npm run verify` | **0** (tek koşu, tekrar gerekmedi) | 890 passed + 2 skipped (892), 65 dosya; typecheck + lint + build yeşil |
+| `npm run e2e` | **0** | 23/23 |
+| `npx vitest run tests/electron` | **0** | 26/26, 8 dosya |
+| `npm run e2e:electron` | **1. koşu KIRMIZI (1 failed / 2 passed)**, 2.–5. koşular 3/3 | bkz. B4 |
+
+`e2e:electron`'un kararsız testi tek başına da koşturuldu: **17 koşuda 3 kırmızı** (≈%18).
+Aynı paketteki `electron-smoke.spec.ts` tek başına **10/10 yeşil** — kararsızlık yalnızca
+bildirim penceresi açılan yolda.
+
+---
+
+## 4. Bulgular
+
+### B4 — BLOKLAYICI · Tepsiden "Çıkış" ~%18 koşuda uygulamayı hiç kapatmıyor (AC3)
 
 **Tekrar üretme**
-1. 7333'ü tutan gerçek bir `net`/`http` dinleyicisi başlat.
-2. `release\Mission Control-win32-x64\mission-control.exe` çift tıkla (ben `cmd /c start` ile
-   başlattım — normal açılışta aynı yöntemle pencere sorunsuz açılıyor, yani yöntem farkı değil).
+1. `npx playwright test -c playwright.electron.config.ts electron-autostart-smoke`
+2. Birkaç kez tekrarla (bende 17 koşunun 3'ü kırmızı: 1., 5. ve 11.).
 
-**Beklenen** (`docs/03-ux.md` 618-622 + sözleşme §4/§9): başlık *"Mission Control başlatılamadı"*,
-gövde *"7333 portu başka bir uygulama tarafından kullanılıyor. Panel açılamıyor…"* diyaloğu.
+Bu testin ölçtüğü ürün yolu: **ilk açılış** (marker yok) → açılışta başlama açılır → bildirim
+penceresi (`data:` URL'li ikinci `BrowserWindow`) çizilir → ardından **gerçek** `shutdownViaTray()`
+çağrılır (tepsi "Çıkış" menü öğesinin bağlandığı fonksiyonun aynısı).
 
-**Gerçek:** hiçbir pencere yok. Ölçüm:
-- t=2/4/6 sn → `mission-control.exe` **3 süreç**, t=8 sn → **0**. Kullanıcı etkileşimi olmadan öldü
-  (modal bir diyalog blokluyor olsaydı beklemesi gerekirdi).
-- t=3 sn'de tam ekran kare: `docs/qa/screens/F-014-05-port-dolu-diyalog-yok.png` — iki monitörde de
-  diyalog yok. `EnumWindows` ile "Mission" içeren görünür pencere: yalnızca Chrome.
+**Beklenen:** uygulama kapanır (`electron-smoke.spec.ts`'te olduğu gibi ~2 sn içinde).
 
-**Kök neden (izole edilmiş):** `dialog.showErrorBox` bu ortamda (Electron 44 / Windows 11) hiçbir
-pencere üretmiyor. Kanıt — ürün kodundan bağımsız sonda uygulaması: aynı süreçte
-`new BrowserWindow(...)` **çizildi** (`EnumWindows`: `QA PROBE PENCERE`, handle 13436698),
-3 sn sonra çağrılan `dialog.showErrorBox('QA PROBE DIYALOG', …)` için **hiçbir pencere oluşmadı**
-ve süreç o çağrıda bloke kaldı (`DIALOG DONDU` satırı hiç yazılmadı).
-Ekran görüntüsü: `docs/qa/screens/F-014-06-showerrorbox-probe-diyalog-yok.png`.
+**Gerçek:** `TimeoutError: electronApplication.waitForEvent: … waiting for event "close"` —
+30 saniye. Testin kendi iddiaları (kayıt defteri AÇIK, bildirim penceresi çizildi, marker yazıldı)
+**geçti**; kırılan yer **kapanma**.
 
-**Muhtemel dosya:satır:** `electron/main.cjs:174` (`dialog.showErrorBox(PORT_ERROR_TITLE, …)`).
+**Süreç sayacı (1 sn örnekleme, `Get-Process`) — kanıt:**
 
-**Önerilen düzeltme:** kullanıcıya görünen kanalı **pencere üreten** bir mekanizmaya taşı — ör.
-küçük bir `BrowserWindow` ile hata ekranı (aynı süreçte çizildiği ölçüldü) — ve **gerçek pencere
-oluştuğunu** doğrulayan bir E2E ekle (`_electron.launch` + port tutulu + `electronApp.windows()`
-sayısı > 0). Sözleşmenin "okunabilir biçimde bildiriliyor" cümlesi ancak böyle çitlenebilir.
+```
+17:48:40 electron=3   ← uygulama ayağa kalkıyor
+17:48:41 electron=5   ← shutdownViaTray() çağrıldıktan sonra
+17:48:42 … 17:49:10  electron=5  (30 saniye boyunca DEĞİŞMEDİ)
+17:49:11 electron=0   ← Playwright'ın finally bloğu zorla kapattı
+```
 
-**Ek not (kanıt hijyeni):** `docs/progress.md` bu senaryo için *"gerçek native `dialog.showErrorBox`
-göründü (ekran görüntüsüyle doğrulandı)"* diyor; `docs/qa/screens/` altında F-014'e ait
-**hiçbir geliştirici ekran görüntüsü yok** ve ölçüm bu iddiayı doğrulamıyor.
+Başarılı koşularda aynı süreçler ~2 saniyede 0'a düşüyor.
 
-### B2 — BLOKLAYICI · Masaüstü uygulamasındaki CEO sohbeti paketlenmiş kopyada çalışıyor
+**Neden bloklayıcı:** ürün üzerinde karşılığı, kullanıcının **ilk açılıştan sonra** tepsiden
+"Çıkış" demesi. Kurtarıcı bir `finally` yok — 5 süreç ayakta kalır, 7333 tutulmaya devam eder,
+kullanıcı Görev Yöneticisi'ne gitmek zorunda kalır. Feature notu bu tam senaryoyu
+*"Çitlenecek — bu projede yetim süreç tekrar eden bir sorun"* diye ayrıca işaretlemiş.
+CLAUDE.md'nin "yetim süreç" ve "yarı-başarı" derslerinin aynı ailesi.
 
-**Tekrar üretme:** `.exe`'yi çalıştır → `GET /api/chat/status`.
+**İzolasyon:** `MC_SKIP_AUTOSTART_DEFAULT=1` ile koşan `electron-smoke.spec.ts` (bildirim
+penceresi **yok**) 10/10 yeşil. Fark tek değişken: ikinci pencere.
 
-**Gerçek (canlı çıktı):** `session_active:true` ve bekleyen izin isteğinin komutu:
-`cd "C:\dev\apps\mission-control\release\Mission Control-win32-x64\resources\app" && ls docs docs/features docs/approvals …`
-Yani oturumun çalışma dizini **paketlenmiş kopya**. Kaynak:
-`src/features/chat/server/session.ts:22` → `CHAT_SESSION_CWD = path.resolve(__dirname, '..','..','..','..')`
-(paketlenmiş kopyada bu `resources\app`'e çözülür).
+**Muhtemel dosya:satır:** `electron/main.cjs:274-299` (`showAutostartEnabledNotice` — oluşturulan
+pencereye hiçbir referans tutulmuyor, `close` handler'ı yok, yüklemesi beklenmiyor) ile
+`electron/main.cjs:391-394` (`shutdownViaTray` → `serverModule.shutdown(…, () => app.quit())`)
+arasındaki yarış. Fatal hata penceresi (`showFatalErrorWindow`) `closed` olayını **bekliyor**;
+bildirim penceresi hiçbir şeyi beklemiyor ve kimse onu kapatmıyor.
 
-Paketlenmiş kopyanın içeriği ölçüldü:
-- `docs/` **yok** (packager `ignore` listesinde) → CEO oturumu, CLAUDE.md'nin "kaynak gerçeği
-  `docs/`" kuralını **fiziksel olarak** uygulayamaz; ilk komutu zaten `ls docs` ile boşa düştü.
-- `.git` **yok** → orada yapılan hiçbir iş commit edilemez, kullanıcı ilerlemeyi göremez.
-- `.claude/settings.json` **yok** (yalnızca `.claude/agent-memory` sızmış) → yıkıcı komut engeli,
-  yazma kapısı, G2 kapısı, stop-check dâhil hook girdilerinin **hiçbiri çalışmaz**
-  (gerçek depoda `.claude/settings.json` içinde 41 "hooks" geçişi var).
-- `scripts/package-electron.mjs` `overwrite: true` → bir sonraki paketlemede o klasördeki her şey
-  **silinir**.
+**Çit durumu:** bu davranışın tek çiti kararsız olan E2E'nin kendisi; hiçbir birim testi
+"bildirim penceresi açıkken Çıkış" senaryosunu ölçmüyor (`lifecycle.test.ts`'in sahte `app.quit()`'i
+ikinci pencereyi taklit etmiyor — 1. turun N1 dersinin aynısı, bu kez ikinci pencere için).
 
-**Neden bloklayıcı:** F-012 + ADR-014 paneli CEO oturumunun arayüzü yaptı; F-014'ün gerekçesi
-kullanıcının *"artık oradan çalışırım"* cümlesi. Bu hâliyle "oradan çalışmak" = git'siz, dokümansız,
-çitsiz ve geçici bir kopyada çalışmak.
+### N1 (2. tur) — NOT · Feature notunun dosya sahipliği kuralı aşıldı
 
-**Önerilen düzeltme (CEO kararı gerekir):** Electron ana süreci sohbet oturumunun kökünü açıkça
-belirlesin (ör. ayarlardan seçilen gerçek depo yolu); `session.ts`'in `__dirname` türetimi
-paketlenmiş kurulumda geçerli değil. Karar verilene kadar en azından "sohbet şu kökte çalışıyor: …"
-bilgisi arayüzde gösterilsin.
+Feature notu: *"`src/features/**` ve `src/web/**` DEĞİŞMEZ — bu bir başlatma katmanı, ürün
+değişikliği değil."* Düzeltme turu `src/features/chat/server/session.ts`'i değiştirdi
+(`4ce8f9e`, +16/−4: `resolveChatSessionCwd`). Değişiklik küçük, testli
+(`tests/features/chat/server/session.test.ts`) ve tarayıcı yolunu birebir koruyor
+(`MC_CHAT_SESSION_CWD` tanımsızsa eski `__dirname` türetimi) — teknik olarak savunulabilir, ama
+feature notunda/sözleşmede bu istisna **yazılı değil**. Not düzeltilmeli (bloklayıcı değil).
 
-### B3 — BLOKLAYICI · Başlatma yolunda yakalanmamış hata → sessiz zombi süreçler
+### N2 (2. tur) — NOT · Uygulama açılışında kullanıcı hiçbir şey yazmadan ücretli bir CEO turu koşuyor
 
-**Tekrar üretme:** `MC_ELECTRON_USER_DATA_DIR=<klasör>` ver ve o klasörde `data` adında bir
-**dosya** oluştur (gerçek karşılığı: AV kilidi / salt-okunur / dolu disk — CLAUDE.md'nin kendi
-tetikleyici listesi). `.exe`'yi çalıştır.
+Ölçüm: taze profille açılışta `SessionStart` (14:37:18) → `UserPromptSubmit` (14:37:21) →
+`Stop` (14:37:36) → `Stop` (14:37:46); `GET /api/chat/history` ise **boş**. Yani model turu
+koştu, ücret oluştu, panelde hiçbir şey görünmüyor.
+**F-014'ün sorumluluğu değil:** aynı desen (SessionStart → ~2,6 sn sonra UserPromptSubmit → Stop)
+`data/events/2026-09-06.jsonl`'de F-014 daha başlamadan (02:44–03:09, F-012 dönemi, tarayıcı yolu)
+zaten var; ayrıca 1. turda paketlenmiş kopyada (hook'suz) da bir oturum turu koştuğu gözlenmişti.
+**Ayrı bir madde olarak açılmalı** (CLAUDE.md: ücret/kredi = kullanıcı onayı).
 
-**Gerçek:** `mission-control.exe` **3 süreç** açık kalıyor (35 sn sonra hâlâ), **pencere yok**,
-**tepsi ikonu yok** (UIAutomation ile arandı), **hata yok**, 7333 dinlenmiyor. Kullanıcı için:
-"çift tıkladım, hiçbir şey olmadı" + Görev Yöneticisi'nden temizlemesi gereken gizli süreçler.
-Aynı userData ile ikinci çift tıklama: süreç sayısı 7 → 7, **yeni pencere yok** (tek-örnek kilidi
-zombideki örnekte). Yani gerçek kullanıcı klasöründe bu hata oluşursa uygulama, zombi elle
-öldürülene kadar **kalıcı olarak açılamaz** hâle gelir.
+### N3 (2. tur) — NOT · Hook-eksik penceresinde metnin son satırı kırpılıyor
 
-**Muhtemel dosya:satır:** `electron/main.cjs:287-297` — `app.whenReady().then(async () => { … })`
-zincirinde `.catch` yok; `runApp` içindeki `createServer` hatası hiçbir yere düşmüyor.
+480x260 sabit boyutlu pencerede uzun proje yolu metni taşıyor; pencere kaydırılabilir (kaydırma
+çubuğu görünüyor) ve asıl bilgi (hangi klasör eksik) tam görünür. Bloklayıcı değil, kayıt için.
 
-**Önerilen düzeltme:** bootstrap'ı `try/catch` ile sar; hata hâlinde (a) görünür bir hata yüzeyi
-(B1 ile aynı mekanizma), (b) `app.exit(1)` — süreç **yaşamasın**. Bu, CLAUDE.md'nin
-"yazma/başlatma yolundaki yakalanmamış hata" dersinin dördüncü tekrarı; çitlenmeli.
+### N4 (2. tur) — NOT · Paket boyutu iddiası doğrulandı
 
-### Ö1 — ÖNEMLİ · Teslim durumunda açılışta başlatma varsayılanı fiilen KAPALI
-
-`ensureDefaultAutostart` yalnızca `%APPDATA%\mission-control\autostart-initialized.json` **yokken**
-varsayılanı açıyor. Geliştirici turu bu marker'ı yazdı (içerik
-`"setAt":"2026-09-06T11:25:20.733Z"`) ama `reg delete` ile kayıt defteri anahtarını sildi ve
-marker'ı **silemedi** (progress.md'de kendisi de not ediyor). Sonuç, benim ölçtüğüm teslim durumu:
-- `HKCU\…\Run` içinde Mission Control girdisi **yok**,
-- tepsi menüsünde "Bilgisayar açılışında başlat" **işaretsiz** (`F-014-03-…png`),
-- marker var olduğu için bir daha **asla** otomatik açılmayacak.
-
-Yani kullanıcının bu feature'ı istemesinin **asıl sebebi** (açılışta başlasın) bu makinede
-sağlanmıyor; ADR-011 ek kararının "AÇIK" şartı teslimde yok. (Temiz bir userData ile ölçtüm:
-kod doğru çalışıyor — kayıt defteri anahtarı yazıldı ve marker oluştu; sorun **teslim durumu**.)
-
-**Önerilen düzeltme:** `%APPDATA%\mission-control\autostart-initialized.json` silinsin (tek dosya)
-veya kullanıcıya "tepsiden bir kez işaretleyin" talimatı açıkça verilsin.
-
-### Ö2 — ÖNEMLİ · "Görünür varsayılan" şartını taşıyan tepsi balonu hiç çizilmiyor
-
-ADR-011 ek kararı: *"'açık' yetmez, **görünür olmak zorunda**"*. Kodda bunun tek taşıyıcısı
-`tray.displayBalloon` (`electron/main.cjs:247-253`).
-
-**Ölçüm:** tamamen taze bir userData ile gerçek `.exe` çalıştırıldı (ilk açılış: kayıt defteri
-anahtarı **yazıldı**, marker **oluştu** — yani `justEnabledAutostart === true` yolu koştu).
-t=3,4,5,6,7,8,9,11 sn'de sekiz tam ekran karesi alındı: **iki monitörde de hiçbir bildirim yok**.
-Windows bildirimleri kapalı değil (`HKCU\…\PushNotifications\ToastEnabled = 0x1`).
-Bu, B1 ile **aynı sınıf**: Electron'un native bildirim yüzeyleri bu makinede çizmiyor.
-Birim testi (`autostart.test.ts`) yalnızca `displayBalloon`'un **çağrıldığını** doğruluyor.
-
-**Önerilen düzeltme:** görünürlüğü uygulamanın kendi arayüzüne taşı (panelde ilk açılışta bir
-şerit/kart: "Bilgisayar açılışında başlatma açıldı — kapat"), balonu yalnızca ek kanal olarak
-bırak.
-
-### Ö3 — ÖNEMLİ · Masaüstüne geçiş, panelin tüm durumunu sıfırlıyor ve bu hiçbir yerde yazmıyor
-
-Sözleşme §1.4 gereği veri klasörü `app.getPath('userData')\data` — repo `./data`'sından ayrı.
-Sonuç ölçüldü: masaüstü uygulamasında `/api/projects` → `[]`, `/api/features` → `[]`, Kanban
-ekranında *"İzlenen projelerde henüz feature bulunamadı."* (`F-014-02-kanban-bos.png`), sohbet
-geçmişi ve olay tarihçesi yok. Tarayıcı yolunda (`npm start`) aynı anda depo feature'ları
-görünüyor. Karar savunulabilir ama **kullanıcıya söylenmemiş**: ne `docs/03-ux.md`'de ne
-`KURULUM.md`'de "masaüstü uygulamasında projeleri yeniden eklemelisiniz" cümlesi var.
-
-### Ö4 — ÖNEMLİ · Paketleme filtresi sızdırıyor, `prune` çalışmıyor (646 MB)
-
-- `ignore` listesi `/\.claude($|/)` içermesine rağmen `resources\app\.claude\agent-memory\`
-  **dağıtılan pakete girmiş** (agent hafıza dosyaları). Aynı liste `docs/`'u dışlarken
-  `.claude/settings.json`'ı da dışlıyor (B2'nin ikinci yarısı).
-- `prune: true` olmasına rağmen `resources\app\node_modules` içinde `@playwright`, `@vitest`,
-  `@vitejs`, `@testing-library`, `esbuild` gibi **devDependencies** duruyor; çıktı **646 MB**.
-
-**Önerilen düzeltme:** `ignore` desenlerini gerçek çıktı üzerinde **doğrulayan** bir test
-(paketleme sonrası `resources/app` içinde `.claude`, `docs`, `tests` **olmamalı**) + prune
-davranışının ölçülmesi.
-
-### Ö5 — ÖNEMLİ · Uygulamayı elde etmenin belgelenmiş yolu yok
-
-`release/` `.gitignore`'da; `KURULUM.md` içinde `electron` kelimesi **hiç geçmiyor**. Temiz bir
-kopyada kullanıcı `npm run electron:fetch` + `npm run electron:package` adımlarını bilmeden `.exe`
-elde edemez. Sözleşme §10 bunu bilinçli olarak kapsam dışı bıraktı, ama AC1'in "kullanıcı hiçbir
-terminal komutu yazmıyor" iddiasının bir kurulum adımı gerektirdiği hiçbir belgede yazılı değil.
-
-### N1 — NOT · Birim testleri, tepsi Çıkış'ı kilitleyen gerçek hatayı yakalayamıyor
-
-M-E mutasyonu (`isQuitting` koruması kaldırıldı — geliştiricinin `c12f891`'de düzelttiği gerçek
-hata) `tests/electron`'da **12/12 yeşil** bırakıyor; yalnızca `e2e:electron` 60 sn timeout ile
-kırmızı veriyor. Yani bu davranışın tek çiti E2E; sahte `app.quit()` pencere kapanışını taklit
-etmiyor. Kabul edilebilir (ikinci savunma hattı var, ölçtüm) ama bilinmeli.
-
-### N2 — NOT · Port çakışması yolunun gerçek-Electron kapsaması yok
-
-`tests/e2e/electron-smoke.spec.ts` yalnızca mutlu yolu koşuyor. Port dolu senaryosu sadece sahte
-`dialog` ile birim testinde. B1 tam bu boşluktan geçti.
-
-### N3 — NOT · Tam test paketi bu ortamda kararsız
-
-Bugün 8 tam koşu: 5 temiz, 2'sinde worker çöküşü (`exit code 3221226505` —
-`tests/integration/projects-api.test.ts`, CLAUDE.md'nin kayıtlı ortam hatası, **altıncı** görülüş),
-1'inde `tests/integration/send-event-hook.test.ts` assert hatası. O dosya **izole olarak 5/5
-yeşil**. Kod regresyonu değil, ama "873 test geçiyor" cümlesi tek koşuda garanti değil.
-
-### N4 — NOT · `MC_SKIP_AUTOSTART_DEFAULT` üretim ortamından da okunuyor
-
-Test izolasyonu için eklenen kapı (`electron/main.cjs:290`) üretimde de ortam değişkeniyle
-tetiklenebilir. Düşük risk; not.
+`631,0 MiB` (7.096 dosya) — geliştiricinin "646 MB → 631 MB" iddiasıyla uyumlu.
+(`du -sm` 646 diyor; fark blok tahsisinden, gerçek toplam bayt 661,7 MB / 631,0 MiB.)
+`resources\app\.claude` **artık yok** (1. turdaki `agent-memory` sızıntısı kapanmış).
 
 ---
 
-## 4. Puanlama
+## 5. Puanlama
 
 | Boyut | Puan | Gerekçe |
 |---|---|---|
-| İşlevsellik | **4** | Pencere/tepsi/tek örnek/çıkış/geri dönüş yolu çalışıyor; ama port çakışmasında sessizlik (B1), başlatma hatasında zombi (B3), sohbet yanlış kökte (B2) |
-| Özellik bütünlüğü | **4** | ADR-011'in "açılışta başla + görünür" şartı teslimde karşılanmıyor (Ö1/Ö2); belgelenmemiş durum sıfırlanması (Ö3) ve kurulum yolu (Ö5) |
-| Görsel / UX | **5** | Pencere ve tepsi menüsü `docs/03-ux.md` ile **birebir** ("Paneli Aç" · "Bilgisayar açılışında başlat" · "Çıkış", tooltip "Mission Control"); ama kullanıcıya bilgi veren iki native yüzeyin ikisi de hiç çizilmiyor |
-| Kod kalitesi (test, hata yönetimi) | **5** | 7 mutasyonun 6'sı kırmızı, testler totoloji değil, `src/` hiç değişmemiş, guard'lar korunmuş; ama yeni giriş noktasında hata sınırı yok (B3) ve "kullanıcı gördü mü" hiçbir yerde ölçülmüyor (B1/Ö2) |
+| İşlevsellik | **5** | B1/B2/B3'ün üçü de canlı kapandı; ama çıkış yolu ~%18 koşuda kilitleniyor ve 5 yetim süreç bırakıyor (AC3, feature notunun özellikle çitlenmesini istediği madde) |
+| Özellik bütünlüğü | **6** | Açılışta başlama temiz profilde AÇIK + GÖRÜNÜR; hook kapısı iki yönde de çalışıyor; ama ilk-açılış yolu (bildirim penceresi) ile çıkış yolu birlikte çalışmıyor, Ö1'in teslim hâli bu makinede hâlâ kapalı, Ö3 açık |
+| Görsel / UX | **7** | Üç hata penceresi ve bildirim penceresi `docs/03-ux.md` ile **birebir**, gerçekten çiziliyor ve okunabilir; tek kusur hook-eksik penceresinde son satırın kırpılması (kaydırılabilir) |
+| Kod kalitesi (test, hata yönetimi) | **5** | 5 mutasyonun 5'i KIRMIZI, `isQuitting` artık birim seviyesinde çitli, hata sınırları gerçek senaryoyla doğrulandı; ama yeni eklenen ikinci pencerenin çıkış yolu **çitsiz ve kararsız**, ve "5/5 + 3/3 yeşil" iddiası ölçümle çürüdü |
 
 **Herhangi bir boyut < 7 → KALDI.**
 
 ---
 
-## 5. Süreç/port hijyeni (bu turun kendi sızıntısı)
+## 6. Düzeltme turuna giden liste
 
-| An | `mission-control.exe` | `electron.exe` | 7333-7336 LISTENING |
-|---|---|---|---|
-| Tur başlangıcı (baz) | 0 | 0 | yok |
-| Tur sonu | **0** | **0** | **yok** |
+1. **B4** — `showAutostartEnabledNotice` penceresini yaşam döngüsüne bağla (referansını tut,
+   `shutdownViaTray` içinde açıkça kapat veya `closed` olayını bekle) ve
+   **"bildirim penceresi açıkken tepsi Çıkış"** senaryosunu birim seviyesinde çitle
+   (`lifecycle.test.ts`). Ardından `e2e:electron`'u **retry'sız en az 10 kez** koştur ve sayıyı
+   raporla — 10/10 olmadan kapatma.
+2. **N1** — feature notuna/sözleşmeye `src/features/chat/server/session.ts` istisnasını yaz.
+3. **N2** — ayrı madde olarak CEO'ya taşı (açılışta ücretli tur).
+4. Ö1'in teslim hâli: `%APPDATA%\mission-control\autostart-initialized.json` bir kez silinsin ya
+   da `KURULUM.md`'ye "tepsiden bir kez işaretleyin" cümlesi eklensin.
 
-- Tepsi "Çıkış" ölçümü: 4 → 0 (yetim yok, port serbest).
-- Hata enjeksiyonu (B3) 3 zombi üretti; **bu turun sonunda `taskkill /IM` ile temizlendi** —
-  ürünün kendi davranışı olarak raporlandı, sızıntı bırakılmadı.
-- Kayıt defteri: test sırasında `HKCU\…\Run\electron.app.Mission Control` **iki kez yazıldı**
-  (tepsi toggle + taze userData ilk açılış) ve **ikisi de geri alındı**; tur sonunda `reg query`
-  ile doğrulandı: **girdi yok** (test öncesi hâl).
-- Kalıcı kalan (silmedim, ürün/CEO kararı): `%APPDATA%\mission-control\` (Ö1'in marker dosyası
-  dâhil) ve masaüstü uygulamasının veri klasörüne eklediğim tek test projesi kaydı
-  (geçici `scratchpad\qaproj`). Geçici userData klasörleri scratchpad içinde.
+---
 
-## 6. Doğrulayamadıklarım
+## 7. Süreç/port/kayıt defteri hijyeni (bu turun sızıntısı)
 
-- **Gerçek Windows yeniden başlatma** ile uygulamanın açılışta gerçekten başlaması (kayıt defteri
-  anahtarının doğru yazıldığını ölçtüm, reboot testi yapmadım).
-- Tepsi menüsünün otomasyonla ikinci kez açılması kararsızdı (Windows 11 taşma menüsü odak
-  kaybında kapanıyor); "Çıkış" ölçümü **bir kez** gerçek menüyle yapıldı, tekrarı E2E ile kanıtlı.
-- `dialog.showErrorBox`'ın **başka** bir Windows makinesinde çizip çizmediği (bu makinede
-  çizmediği, ürün kodundan bağımsız sondayla kanıtlı).
-- Paketlenmiş uygulamada sohbetle uçtan uca gerçek bir görev (ücret gerekçesiyle mesaj
-  göndermedim; oturumun kökünü ve bekleyen izin isteğini ölçtüm).
+| An | `mission-control.exe` | `electron.exe` | 7333-7336/7350 LISTENING | `HKCU\…\Run` Mission Control |
+|---|---|---|---|---|
+| Tur başlangıcı | 0 | 0 | yok | yok |
+| Tur sonu | **0** | **0** | **yok** | **yok** |
+
+- Bu turda 5 elle `.exe` başlatması + 27 Playwright Electron koşusu yapıldı; hepsi kapatıldı.
+- B3 hata enjeksiyonu bu turda **zombi üretmedi** (düzeltmenin kendisi bu).
+- Kayıt defterine **bir kez** yazıldı (temiz profil ölçümü, Ö1/Ö2) ve **geri alındı**;
+  `e2e:electron`'un kendi yazımlarını testin kendisi aynı round-trip'te geri alıyor — her koşudan
+  sonra `reg query` ile doğrulandı, girdi yok.
+- Kalıcı bırakılanlar (ürün/CEO kararı, silmedim): `%APPDATA%\mission-control\` ve içindeki
+  1. turdan kalma marker. Geçici userData klasörleri scratchpad içinde.
+
+## 8. Doğrulayamadıklarım
+
+- Gerçek Windows yeniden başlatmasıyla açılışta başlama (kayıt defteri yazımı ölçüldü, reboot
+  yapılmadı).
+- Gerçek OS tepsi menüsünden "Çıkış" tıklamasının B4'ü **elle** tetiklemesi: B4 gerçek
+  `electron.exe` + gerçek `shutdownViaTray()` üzerinden ölçüldü (tepsi menü öğesinin bağlandığı
+  aynı fonksiyon), ama fare ile menü tıklaması tekrarlanmadı.
+- Barındırılan sohbetle uçtan uca gerçek bir görev (ücret gerekçesiyle mesaj gönderilmedi;
+  oturumun çalışma dizini ve hook olayları ölçüldü).

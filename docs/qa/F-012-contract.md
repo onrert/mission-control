@@ -693,11 +693,14 @@ alanına özgü bir JSDoc cümlesiydi (`sdk.d.ts:6377-6391`, bu turda kurulu pak
 ✓ DOĞRULANDI), `permissions`/`managedSettings` ile hiçbir ilgisi yoktu. Doğru kanıt aşağıda, üç
 ayrı alandan, bu turda satır satır tekrar okunarak:
 
-1. **`Options.managedSettings` (`sdk.d.ts:2051-2074`, ✓ DOĞRULANDI):** *"Restrictive policy-tier
-   settings … Feeds the lowest-precedence policy sub-source and is filtered through a
-   restrictive-key allowlist (`allowManaged*Only` locks, `permissions.deny`/`ask`, sandbox
-   restrictions); non-restrictive keys such as `model`, `env`, `cleanupPeriodDays` are silently
-   dropped."* → `permissions.ask` **ve** `allowManaged*Only` kilitleri bu filtreden **geçer**.
+1. **`Options.managedSettings` — alan `sdk.d.ts:2051-2074`'te tanımlı; aşağıdaki davranış
+   açıklaması `ResolveSettingsOptions.managedSettings` (`sdk.d.ts:3037-3045`) altındadır ve
+   kendisi *"equivalent to `Options.managedSettings` on `query()`"* der (✓ DOĞRULANDI, QA tur 3
+   N-B1 düzeltmesi — ilk yazımda alıntı yanlış satır aralığına atfedilmişti):**
+   *"Restrictive policy-tier settings … Feeds the lowest-precedence policy sub-source and is
+   filtered through a restrictive-key allowlist (`allowManaged*Only` locks, `permissions.deny`/`ask`,
+   sandbox restrictions); non-restrictive keys such as `model`, `env`, `cleanupPeriodDays` are
+   silently dropped."* → `permissions.ask` **ve** `allowManaged*Only` kilitleri bu filtreden **geçer**.
 2. **Deliği fiilen kapatan alan: `allowManagedPermissionRulesOnly` (`sdk.d.ts:6320-6322`, ✓
    DOĞRULANDI, bu turda kurulu paketten okundu):** *"When true (and set in managed settings),
    permission rules from user, project, local, and `--settings` files and allow rules from

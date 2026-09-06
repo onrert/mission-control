@@ -1,6 +1,6 @@
 ---
 name: sozlesme-turu-kontrolleri
-description: Sözleşme turu incelemesinde ilk bakılacak kontroller — ADR uyumu ve ADR'nin verdiği ödevler, kanıtın okuma yolu, düzeltmenin ürettiği regresyon, mutasyon hedefinin belirsizliği, zaman aşımı bütçesi, E2E'nin gerçekten koşup koşmadığı, yeni bağımlılığın gerçek davranışı
+description: Sözleşme turu incelemesinde ilk bakılacak kontroller — ADR uyumu ve ADR ödevleri, kanıt yolu, düzeltme regresyonu, mutasyon belirsizliği, süre bütçesi, E2E gerçekten koşuyor mu, bağımlılık davranışı, belgenin öncülleri repo durumuyla uyuşuyor mu, yeni sekme/yazma yolunun kırdığı çitler, alt süreç hata sınırı
 metadata:
   type: feedback
 ---
@@ -71,3 +71,25 @@ bölümleri yeniden açma. Bulguları `## ADR uyum kontrolü`, `## Ölçmeyen te
    ve ters bölüleri teke düşürüyor. Doğru yol: bölümü **Write aracıyla** scratchpad'e yaz,
    sonra tek satır `cat scratchpad/bolum.md >> docs/qa/<feature>-contract.md`. Tek çağrıda,
    kayıpsız, regex/backtick içeren alıntılar bozulmadan geçer.
+
+9. **Sözleşmenin ÖNCÜLLERİNİ repo durumuyla doğrula — "henüz yazılmadı" cümlelerini tek tek ara.**
+   Uzun bir sözleşme, paralel çalışan turlar sırasında yazıldığı için "UX bölümü henüz yok",
+   "ADR eki yazılmadı", "bu CEO'ya soruldu" diyebilir; o belgeler o sırada **yazılmış** olur.
+   Her böyle cümle için dosyayı aç. F-012 tur 1: `ADR-005` F-012 eki ve `docs/03-ux.md` §7
+   ikisi de mevcuttu; sözleşme altı ayrı yerde yokmuş gibi kurulmuştu → 2 bloklayıcı.
+   Aynı kontrolün ikinci yarısı: CEO'nun tur öncesi verdiği kararların gövdeye **yayılıp
+   yayılmadığı** (CLAUDE.md F-005 dersi) — bir kararı tek cümleyle "kabul edildi" diye eklemek
+   yetmez, tablolar/§13 açık sorular/kapanış paragrafı da güncellenmeli.
+10. **Yeni ekran/sekme veya yeni disk yazma yolu = mevcut çitler kırılır. Dosya planında olmalı.**
+   Bu depoda iki çit sınıfı sabit sayı/kapalı liste tutuyor: (a) tablist sayıcıları
+   (`tests/web/App.test.tsx` `toHaveLength(2)`, `tests/e2e/shell.spec.ts` `toBe(3)`/`toBe(2)`,
+   `App.interaction.test.tsx`'in `End` tuşu assert'i); (b) `tests/no-write-gate-bypass.test.ts`
+   tüm `src/**`'ı tarar ve muafiyeti **dört dosya + tam çağrı metni** olarak tutar. Sözleşme yeni
+   bir sekme ya da yeni bir `appendFile`/`mkdirSync` yolu öneriyorsa bu test dosyaları
+   "değiştireceğim dosyalar"da olmalı ve yeni allowlist satırları şimdiden yazılmalı; yoksa kod
+   turu ilk `verify`de durur ve "testi geçirmek için çiti gevşetme" baskısı doğar.
+11. **Alt süreç barındıran feature'da hata sınırı üç yolludur.** Senkron dağıtıcı + her async
+   handler'ın kendi `try/catch`'i yetmez: alt sürecin stdio akışlarının EventEmitter `'error'`
+   olayları hiçbir `try/catch`'e düşmez ve `src/server/index.ts`'te yalnızca `unhandledRejection`
+   ağı var, `uncaughtException` **yok**. Ayrıca Windows'ta (ADR-009) ebeveyn ölünce çocuk
+   otomatik ölmez — "alt süreç ebeveynle birlikte ölür" cümlesi ⊢ ÇIKARIM'dır, ✓ DOĞRULANDI değil.

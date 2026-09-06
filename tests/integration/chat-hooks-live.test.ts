@@ -153,13 +153,6 @@ describe.skipIf(!process.env.MC_CHAT_LIVE_TESTS)(
           behavior: 'allow' as const,
           updatedInput: toolName === 'Bash' ? { ...input, command: markerCommand } : input,
         })
-        // QA F-012 tur 2 Y3 (2. deneme) — (b) kolu `settingSources: []` olduğu için `agent:'ceo'`
-        // YÜKLENEMEZ (persona proje ayarlarından okunur); persona olmadan model bazen Bash'i hiç
-        // çağırmadan düz metinle cevap veriyordu (ilk koşuda gözlemlendi, `sawBashToolUse:false`).
-        // `allowedTools: ['Bash']` araç yüzeyini TEK seçeneğe indirir (Karpathy §2'nin izin
-        // verdiği ölçüde agresif — bu yalnızca test determinizmi için, üretim koduna dokunmuyor).
-        const forceBashOnly = ['Bash']
-
         // (a) Hook zinciri AKTİF — Ö10 madde 2: gerçek cwd (repo kökü) üzerinden .claude/
         // settings.json'daki göreli hook yolu çözülüyor.
         const active = await collectToolResultTexts(
@@ -193,6 +186,20 @@ describe.skipIf(!process.env.MC_CHAT_LIVE_TESTS)(
         // (b) Hook zinciri DEVRE DIŞI — `settingSources: []` proje hook'larını hiç yüklemez
         // (SDK isolation mode, ✓ DOĞRULANDI sözleşme §8a). Aynı ZORLANMIŞ komut, hook
         // koruması olmadan.
+        //
+        // QA F-012 tur 2 Y3 (3. deneme) — `allowedTools: ['Bash']` (2. denemede eklenmişti)
+        // KALDIRILDI: gerçek SDK bu koşuda `[CLAUDE_SDK_CAN_USE_TOOL_SHADOWED]` uyarısı verdi —
+        // "bare allowedTools entries auto-approve the whole tool before the callback is
+        // consulted" — yani `canUseTool` (dolayısıyla `forceMarkerCommand`'ın komut zorlaması)
+        // BAŞTAN İTİBAREN hiç çağrılmıyordu, sonucun kendisi güvenilmezdi. Bunun yerine
+        // `resolveSettings`'in kendi dokümantasyonunun doğruladığı gerçek: `managedSettings`
+        // (`Options.managedSettings`), `settingSources`'tan BAĞIMSIZ ayrı bir politika katmanı —
+        // "Pass [] to skip user/project/local sources — the managed-settings policy tier is
+        // still read" (`sdk.d.ts` `ResolveSettingsOptions.settingSources`). Yani buraya da (a)
+        // kolundaki AYNI `permissions.ask:['Bash']`'i eklemek `settingSources:[]`'i BOZMAZ
+        // (proje `.claude/hooks/**` hâlâ hiç yüklenmez) ama `canUseTool`'un HER Bash çağrısında
+        // (salt-okunur olsa bile) tetiklenmesini garantiler — tam da E1/B5'in ölçtüğü mekanizma,
+        // burada test determinizmi için kullanılıyor.
         const inactive = await collectToolResultTexts(
           sdkQuery({
             prompt: makeSingleTurnPrompt(promptText),
@@ -200,7 +207,6 @@ describe.skipIf(!process.env.MC_CHAT_LIVE_TESTS)(
               cwd: repoRoot,
               settingSources: [],
               permissionMode: 'default',
-              allowedTools: forceBashOnly,
               // Persona (`agent:'ceo'`) bu kolda yüklenemediği için modeli doğrudan yönlendiren
               // kısa bir sistem talimatı — hook zincirinin kendisiyle İLGİSİZ, yalnızca "hemen
               // bir araç çağır" determinizmini artırır.
@@ -209,6 +215,10 @@ describe.skipIf(!process.env.MC_CHAT_LIVE_TESTS)(
                 'ilk aracın her zaman Bash olsun.',
               maxTurns: 3,
               model: 'claude-haiku-4-5',
+              managedSettings: {
+                allowManagedPermissionRulesOnly: true,
+                permissions: { ask: ['Bash'] },
+              },
               canUseTool: forceMarkerCommand,
             },
           }) as unknown as AsyncIterable<Record<string, unknown>>

@@ -474,6 +474,46 @@ interface ChatToolEvent {
 `tool_input`, `tool_result`, SDK mesajının **hiçbir ham alanı** bu şemaya girmez. Mutasyon 12
 (§11.2) bunun tersini test eder: `chat_tool` yayınına ham `tool_result`/`content` eklenirse KIRMIZI.
 
+**`chat_permission_request`/`chat_permission_resolved` alan şeması — Ö6 kapatıldı (bu turda,
+kapalı şema tanımlandı, `chat_tool`/B7'nin aynı ilkesi tekrarlanıyor):** bunlar §8a'nın
+`canUseTool` akışının SSE karşılığıdır — `AskUserQuestion` (`kind: 'question'`, §6) ile
+**karıştırılmaz**, yalnızca **araç izin isteği** (İzin kartı, `docs/03-ux.md` madde 3) için.
+
+```ts
+interface ChatPermissionRequestEvent {
+  request_id: string        // /api/chat/permission'ın body'sindeki request_id ile aynı
+  turn_id: string
+  tool_name: string         // "CEO şu aracı çalıştırmak istiyor: {tool_name}"
+  input_preview: string     // sunucu tarafında ÜRETİLİR — ham tool_input nesnesi DEĞİL, en
+                             // fazla 500 karakterlik, tek satıra indirgenmiş bir önizleme metni
+                             // ("Komut: {komut önizlemesi}", madde 3) — S2'nin "ham araç çıktısı
+                             // arayüze basılmaz" kuralı yalnızca sonuçlar için değil, GİRDİLER
+                             // için de geçerli (K3'ün gözlemiyle aynı gerekçe, mutasyon 12'nin
+                             // ruhu burada da uygulanıyor)
+  ts: string
+}
+
+interface ChatPermissionResolvedEvent {
+  request_id: string
+  turn_id: string
+  outcome: 'allow' | 'deny' | 'unknown'  // /api/chat/permission'ın `result` gövdesi §4'ün kendi
+                                          // ifadesiyle "doğrulanmadan" canUseTool'a iletiliyor;
+                                          // bu alan yalnızca EKRANA yansıtmak için `result`'ın
+                                          // `behavior` alanı VARSA ve 'allow'/'deny' ise okunur —
+                                          // bu bir doğrulama/red DEĞİLDİR (§4'teki kuralla
+                                          // çelişmez), yalnızca best-effort bir görüntüleme
+                                          // yorumudur; tanınmayan/eksik `behavior` → 'unknown'
+                                          // (UX'in "Çelişkili durum" görsel dilini kullanır)
+  ts: string
+}
+```
+`tool_input` (ham nesne) ve `result`'ın kendisi (ham `unknown`) bu iki olayın **hiçbirine**
+kopyalanmaz — yalnızca yukarıdaki kapalı alan kümeleri yayınlanır. Kod turunda bu iki şema da
+`chat-api.test.ts`'e mutasyon 12'yle **aynı desende** (yalnızca-şu-alanlar) eklenir; ayrı bir
+mutasyon numarası açılmaz çünkü aynı ilkeyi (S2) test ediyor, mutasyon 12'nin kapsamı bu iki olayı
+da içerecek şekilde genişletilir (kod turunda `chat_tool`/`chat_permission_request`/
+`chat_permission_resolved` üçü için tek bir "kapalı şema" yardımcı assert fonksiyonu yazılabilir).
+
 ---
 
 ## 6. Kalıcılık
@@ -812,12 +852,31 @@ değildir" DEĞİL, **UX §7'nin veri karşılığıdır** ve UX'in metinleri/s�
 |---|---|---|
 | `chat_disabled` | `MC_CHAT_ENABLED=0` | Sohbet sekmesi hiç render edilmez (§2.4, AC10) |
 | `stripped_env_vars: string[]` | Bariyer bir/daha çok değişken temizledi | Kalıcı uyarı şeridi (`docs/03-ux.md` madde 6, `sticky top-0 bg-amber-950`) |
-| `session_active: false, last_error` | Bootstrap/oturum çöktü | Sistem mesajı satırı + "Yeniden bağlan" (`docs/03-ux.md` madde 5) |
+| `session_active: false, last_error` (genel `crashed`) | Bootstrap/oturum çöktü | Sistem mesajı satırı + "Yeniden bağlan" (`docs/03-ux.md` madde 5) |
+| `session_active: false, last_error: 'budget_exceeded'` | `maxBudgetUsd` aşıldı (D11, §3) | Aynı kart/buton (madde 5) ama **özel** metin: "Oturum bu oturum için ayrılan bütçe tavanına (${budget} USD) ulaştı." + "Yeniden bağlan" — genel "crashed" metniyle karıştırılmaz |
 | `busy: true` | Bir tur işleniyor | Kompozer **kilitlenmez** (S1 gerekçesi, `docs/03-ux.md:327`) |
 | `permission_request` bekleniyor | `canUseTool`/allow'a rağmen ask tetiklendi (§8a) | İzin kartı, amber kenarlık (`docs/03-ux.md` madde 3) — **otomatik onay yok** |
 | `kind:'question'` | `AskUserQuestion` | Soru kartı, 2-4 seçenek (`docs/03-ux.md` madde 4) |
 | `status:'interrupted'` | Sunucu çöktükten sonra yeniden yüklendi | "Yarıda kesildi" işareti |
 | `has_more: true` | Daha eski mesaj var | "▲ Daha eski mesajları yükle" (madde 7) |
+
+**"Yeniden bağlan" butonu ne çağırıyor — Ö6 değil Ö5 kapatıldı (bu turda, koddan/mimari
+karardan okunarak, varsayılmadı):** `docs/03-ux.md`'nin S3 kararı (satır 754-761) bu ekranın
+"ikinci bir yeniden bağlanma mantığı taşımadığını", tek bağlantı ilkesinin (K5) `useEventStream`'in
+**kendi** politikasıyla aynı olduğunu söylüyor — ama bu, **SSE taşımasının** (native `EventSource`,
+sunucu `retry:` alanı göndermiyor, ✓ DOĞRULANDI `src/server/sse/stream.ts` bu turda taranarak,
+tarayıcı varsayılan aralığıyla **kendiliğinden** yeniden bağlanır, kod gerekmez) politikasıdır ve
+sohbetin kendi "Oturum bağlantısı koptu" kartıyla (§3, §10 yukarıdaki iki satır) **aynı şey
+değildir**: o kart SSE taşımasının değil, **barındırılan CEO oturumunun** (`session.ts`'in
+`crashed` durumu) koptuğunu gösterir — SSE bağlantısı sapasağlam kalabilirken oturum çökebilir
+(§3 "Çöker ne olur"). Bu yüzden **"Yeniden bağlan" butonu `POST /api/chat/restart`'ı çağırır**
+(§4) — yeni bir `EventSource` AÇMAZ, mevcut tek paylaşılan bağlantıya (K5) dokunmaz. Başarılı
+olursa (`session_active: true`, `last_error` temizlenir) sistem satırı "Yeniden bağlandı"na döner
+ve kompozer aktifleşir (UX akış j.3, madde 5); başarısız olursa (`restart` kendisi `internal_error`
+döndürürse) aynı hata kartı kalır, buton tekrar tıklanabilir kalır — **kaç deneme sonra kalıcı
+mesaja dönüleceği sorusu (UX §7.3 açık soru 3) bu davranışı değiştirmez**: buton her zaman aynı
+işi (`restart` çağrısı) yapar, bir "deneme sayacı"/otomatik-vazgeçme mantığı bu sözleşmenin
+kapsamında YOK (v1, Karpathy §2 — istenmeyen ek durum makinesi).
 
 ---
 

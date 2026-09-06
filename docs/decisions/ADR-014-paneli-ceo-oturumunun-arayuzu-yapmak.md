@@ -129,3 +129,31 @@ başarısız olmuş olabilirdi.
 - **Dar yetkili ayrı oturum** (SPIKE-002 seçenek B) — maliyetin %70'i, değerin %40'ı.
 - **Hiç yapmama** — Faz 2 planlandığı gibi sürerdi, ama kullanıcının panelden beklediği asıl şey
   hiç gelmezdi.
+
+## Ek — İki koruma mekanizmasının sırası (2026-09-06, F-012 düzeltme turu 2)
+
+F-012'nin canlı testlerini determinize etme çabası bir mimari ayrıntıyı ortaya çıkardı. Kayda
+geçiyor çünkü **hangi testin neyi ölçtüğünü** belirliyor.
+
+**Bulgu (`sdk.d.ts:4853`, ✓ DOĞRULANDI):** `PreToolUse` hook'u modelin **önerdiği ham
+`tool_input`** üzerinde çalışır ve kararını `canUseTool` çağrılmadan **ÖNCE** verir.
+`canUseTool`'un döndürdüğü `updatedInput`, hook'un gördüğü girdiyi geriye dönük değiştirmez;
+yalnızca hook **ve** izin geçtikten sonra fiilen çalışacak komutu değiştirir.
+
+**K3 garantisi DEĞİŞMEDİ.** Panelin iki koruması **bağımsız** iki mekanizmadır ve ikisi de ayrı
+ayrı canlı doğrulandı:
+
+1. **Hook zinciri** (`.claude/hooks/*.cjs`) — yıkıcı komut, uzak depoya gönderme, kapı onayı.
+   Önce çalışır. İki yönlü kanıt: `SPIKE-002-asama0-olcum.md` M2 ve
+   `tests/integration/chat-hooks-live.test.ts`.
+2. **İzin sorusu** (`canUseTool` + `managedSettings.permissions.ask`) — kullanıcıya çıkar.
+   İki yönlü kanıt: `docs/qa/F-012-2026-09-06-tur2.md` (QA'nın bağımsız probe'u: çit varken
+   `git log` soruldu ve reddedilince çıktı hiç üretilmedi; çit yokken aynı komut sorulmadan
+   çalıştı).
+
+Yani bir komutun kullanıcıya ulaşmadan çalışması için **ikisinin birden** delinmesi gerekir.
+
+**Pratik sonucu — test yazarken:** hook'un engellediği bir komut `canUseTool`'a **hiç ulaşmaz**.
+Bu yüzden "izin kartı çıktı mı" testi, hook'un zaten reddettiği bir komutla yazılamaz; iki
+mekanizma **ayrı ayrı** test edilmek zorundadır. F-012'de canlı testin beş denemede kararsız
+kalmasının sebebi buydu — assert yanlış katmanı ölçüyordu.

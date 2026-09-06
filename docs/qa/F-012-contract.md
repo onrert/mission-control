@@ -121,8 +121,12 @@ gövdeye yayılmazsa tur sonunda çelişki bırakır — bu yüzden madde madde 
 - **`Options.managedSettings` (`sdk.d.ts:2051-2074`)** ve **`Options.hooks` (`sdk.d.ts:1582-1595`,
   programatik JS callback, dosya-tabanlı değil)** ve **`Options.systemPrompt` (`sdk.d.ts:2237+`)**
   — üçü de var. D6'nın (§8a) ve D2/N6'nın teknik temeli.
-- **Settings precedence, SDK'nın kendi dokümantasyonunda (`sdk.d.ts:6391`):** *"Settings precedence
-  is user < project < local < flag < policy"* — D6'nın analizinin temeli.
+- **Y-B1 düzeltmesi (bu revizyon):** tur 2'nin burada verdiği `sdk.d.ts:6391` alıntısı
+  (*"Settings precedence is user < project < local < flag < policy"*) **yanlış alana** aitti —
+  o cümle `enabledPlugins`'e özgüydü (`sdk.d.ts:6377-6391`), `managedSettings`/`permissions` ile
+  ilgisi yoktu. D6'nın gerçek temeli `allowManagedPermissionRulesOnly` (`sdk.d.ts:6320-6322`) ve
+  `resolveSettings()`/`ResolveSettingsOptions.managedSettings` (`sdk.d.ts:2989-3054`) — tam metin
+  ve gerekçe §8a'da.
 
 ---
 
@@ -168,7 +172,7 @@ gövdeye yayılmazsa tur sonunda çelişki bırakır — bu yüzden madde madde 
 | Dosya | Amaç |
 |---|---|
 | `src/features/chat/server/env-barrier.ts` | Saf fonksiyonlar: `checkApiKeyBarrier(env)` → `{ strippedVars: string[] }` (D2 — **isimlerin listesi**, tek bir boolean değil, çünkü K2 "her temizlenen değişkenin adı" görünür olsun istiyor), `stripApiKey(env)` → env'i **mutate eder**, kaldırılan değerleri asla döndürmez/loglamaz. `process.env`'e doğrudan dokunmaz — çağıran (`session.ts`) hangi env nesnesine uygulanacağını seçer (saf obje ile test edilebilir). Ayrıca `hasApiKeyHelperConfigured(settingsJsonPath)` (N6, aşağıda §7). |
-| `src/features/chat/server/session.ts` | Oturumun tek sahibi: bootstrap (env bariyeri + `query()` çağrısı + `cwd`/`settingSources`/`permissionMode`/`maxBudgetUsd`/`managedSettings`(§8a)/`includePartialMessages` sabitleri), streaming-input kuyruğu, mesaj döngüsü (`for await`), `canUseTool` → bekleyen istekler haritası, `interrupt()`, restart, durum makinesi (`idle\|busy\|crashed\|disabled`), her SDK mesajını hem SSE'ye yayınlar hem `history-log.ts`'e yazar. `query` fonksiyonu **enjekte edilebilir** parametre (`createChatSession(deps)` — `deps`'in alan kümesi **kapalı**: yalnızca `{ query, dataDir, hub, now, env }`, Ö7'nin istediği statik assert bu kapalı kümeyi kontrol eder, `store`/`projectsService` **asla** geçirilmez). Kendi 3 satırlık `isChatEnabled(env)` çözücüsünü taşır — `index.ts`'ten **import ETMEZ** (Ö12, döngü kırılıyor). |
+| `src/features/chat/server/session.ts` | Oturumun tek sahibi: bootstrap (env bariyeri + `query()` çağrısı + `cwd`/`settingSources`/`permissionMode`/`managedSettings`(§8a)/`includePartialMessages` sabitleri + `maxBudgetUsd` — **sabit değil**, `MC_CHAT_MAX_BUDGET_USD`'den okunur, D11/§3), streaming-input kuyruğu, mesaj döngüsü (`for await`), `canUseTool` → bekleyen istekler haritası, `interrupt()`, restart, durum makinesi (`idle\|busy\|crashed\|disabled`), her SDK mesajını hem SSE'ye yayınlar hem `history-log.ts`'e yazar. `query` fonksiyonu **enjekte edilebilir** parametre (`createChatSession(deps)` — `deps`'in alan kümesi **kapalı**: yalnızca `{ query, dataDir, hub, now, env }`, Ö7'nin istediği statik assert bu kapalı kümeyi kontrol eder, `store`/`projectsService` **asla** geçirilmez). Kendi 3 satırlık `isChatEnabled(env)` çözücüsünü taşır — `index.ts`'ten **import ETMEZ** (Ö12, döngü kırılıyor). |
 | `src/features/chat/server/history-log.ts` | Kendi basit ekleme-log dosyası (`<dataDir>/chat/history.jsonl`) — SDK'nın kendi transkript formatını **ayrıştırmaz**, yalnızca bu sunucunun zaten ürettiği/aldığı görüntüleme mesajlarını kalıcı hale getirir. **Ekleme-only, düzeltme-satırı deseni** (Ö3 — aşağıda tam tanım): `append(entry)`, `readPage({ limit, beforeSeq })` (Ö4 sayfalama), `foldByTurn(entries)` (aynı `turn_id`+`kind` için en yüksek `seq`'li satır kazanır), `markDanglingAsInterrupted()` (init'te, yarım kalan `streaming` girdileri için **yeni bir `interrupted` düzeltme satırı ekler**, var olan satırı YENİDEN YAZMAZ). |
 | `src/features/chat/server/handlers.ts` | HTTP işleyicileri: `handleChatMessage`, `handleChatInterrupt`, `handleChatPermission`, `handleChatRestart`, `handleChatStatus`, `handleChatHistory`. Her biri kendi `try/catch`'ini taşır (§9) — `ingest.ts`'in async-IIFE deseniyle **birebir aynı**. |
 
@@ -999,23 +1003,29 @@ kanıt" şartı için), (c) §8a'nın izin-motoru testi **kod turunun ilk işi o
 
 ## 13. Açık sorular (CEO karar verecek — uydurulmadı)
 
-Tur 1'in beş sorusundan **dördü bu turda kapandı** (D1→soru 1, D2→soru 2, D3→soru 3, D5→soru 5).
-Kalan ve yeni açık sorular:
+Tur 1'in beş sorusundan **dördü tur 2'de kapandı** (D1→soru 1, D2→soru 2, D3→soru 3, D5→soru 5).
+Tur 2'nin kalan sorusu (eski soru 1) **bu turda D10 ile kapandı** — aşağıda yalnızca gerçekten açık
+olan tek soru kaldı.
 
-1. **§8a'nın canlı testi başarısız olursa ne olur?** Bu sözleşme Yol A'yı (managedSettings ask
-   override) plana aldı ve başarısızlık durumunda "DUR, eskale et" dedi — ama CEO'nun bunu ŞİMDİDEN
-   bir tercihle (ör. "Yol B'ye otomatik geç" ya da "K3'ü gözden geçir, UX §7.3'ü yumuşat") önceden
-   cevaplamak isteyip istemediği soruluyor. Cevaplanmazsa kod turu, canlı test başarısız olursa
-   gerçekten **durup** CEO'ya döner (varsayım yapılmaz).
-2. **`maxBudgetUsd` için somut bir sayı** (N3, tur 1'de hiç yoktu) — bu sözleşme geçici olarak
-   **$20/oturum** öneriyor (bilinçli bir tahmin, [T] işaretli) — aşılırsa oturum `crashed` +
-   `error_max_budget_usd`, kullanıcı `restart` ile yeni bütçeyle devam eder. CEO bu sayıyı
-   değiştirebilir/onaylayabilir; onaylanmazsa kod turu bu değerle başlar ve CEO'nun ilk geri
-   bildiriminde değişir (engelleyici değil, Karpathy §2 gereği "makul bir varsayılan + kolay
-   değiştirilebilir sabit").
-3. **`"agent": "ceo"` persona alanının gerçekten yüklendiği** (§0.2 madde 3b) kod turunun ilk
+**Kapanan (D10, Y-B2 düzeltmesi):** ~~"§8a'nın canlı testi başarısız olursa ne olur?"~~ — CEO bu
+turda cevapladı: canlı test başarısız olursa kod turu **durmaz**, doğrudan Yol B'ye geçer; K3'ü
+veya UX §7.3'ü gevşetme seçeneği **kesin kapalı**; yalnızca Yol B'nin **kendi** canlı testi de
+başarısız olursa CEO/architect'e eskale edilir (§8a "D6/D10 sonucu"). Bu artık bir açık soru değil,
+gövdeye yayılmış bir karar.
+
+**Kapanan (D11, Y-B3 düzeltmesi):** ~~"`maxBudgetUsd` için somut bir sayı"~~ — mekanizma bu turda
+tanımlandı: `MC_CHAT_MAX_BUDGET_USD` env değişkeni, varsayılan **$20**, sabit gömülü değil (§3
+"Bütçe tavanı"). Kalan tek [T]: **$20'nin kendisi** hâlâ CEO'nun onayına açık bir varsayılan
+değer — CEO değiştirebilir, onaylanmazsa kod turu bu değerle başlar (Karpathy §2, "makul
+varsayılan + kolay değiştirilebilir"). Mekanizmanın kendisi (ayarlanabilirlik + sessiz durmama
+çiti) artık açık soru değil, D11 ile kapalı.
+
+Kalan tek açık soru:
+
+1. **`"agent": "ceo"` persona alanının gerçekten yüklendiği** (§0.2 madde 3b) kod turunun ilk
    işlerinden biri olarak **elle** doğrulanacak — bu bir CEO kararı değil ama sonucu olumsuzsa
    (persona yüklenmiyor) bu yeni bir bloklayıcı doğurur ve CEO'ya o noktada haber verilir.
 
-Bu üç madde **engelleyici değildir** — kod turu bu sözleşmedeki en muhafazakâr/açık varsayımlarla
-(§8a'nın "dur, eskale et" kuralı, $20 bütçe, elle persona kontrolü) başlar.
+Bu madde **engelleyici değildir** — kod turu bu sözleşmedeki en muhafazakâr/açık varsayımla (elle
+persona kontrolü, sonucu olumsuzsa hemen haber) başlar. D10/D11'in kendisi artık varsayım değil,
+karardır; kod turu bunları **sorgulamadan** uygular.

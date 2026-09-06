@@ -388,8 +388,22 @@ async function runApp(electronApi, options = {}) {
   let isQuitting = false
 
   // §2 — tepsi "Çıkış": gerçek `shutdown()` çağrılır (mutasyon M3 hedefi, sözleşme §8), callback'te `app.quit`.
+  //
+  // QA F-014 tur2 I1 (B4, bloklayıcı) — `app.quit()`'in kendi dahili pencere kapatma denemesi
+  // (`close()`, iptal edilebilir olay) ikinci bir pencere (ör. açılışta başlama bildirimi,
+  // `showAutostartEnabledNotice`) açıkken ~%18 koşuda süresiz asılı kalıyordu (ölçüldü: 5 electron
+  // süreci 30 sn boyunca değişmedi). Kök neden: `close()` renderer'ın "kapanmaya hazır" onayını
+  // bekler ve ikinci pencerenin `data:` URL'i henüz yüklenme sürecindeyken bu round-trip
+  // gecikebilir/kaybolabilir. Çözüm: kaç pencere açık olursa olsun, çıkıştan hemen önce HEPSİNİ
+  // `destroy()` ile kapat — `destroy()` (`close()`'un aksine) senkron, kayıtsız-şartsızdır, `close`
+  // olayını hiç tetiklemez (dolayısıyla `preventDefault` ile iptal edilemez) ve `closed`'ı garanti
+  // eder (Electron'un kendi belgelenmiş `destroy()` semantiği). Bu yüzden `app.quit()` çağrıldığında
+  // kapatılacak pencere kalmamış olur, herhangi bir renderer round-trip'ine bağımlılık kalmaz.
   const shutdownViaTray = () => {
     isQuitting = true
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.destroy()
+    }
     serverModule.shutdown(server, server.sseHub, () => app.quit())
   }
 

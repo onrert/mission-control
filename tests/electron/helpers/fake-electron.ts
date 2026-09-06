@@ -42,6 +42,12 @@ export class FakeBrowserWindow {
    *  diye `resetFakeBrowserWindowInstances()` ile temizlenmeli. */
   static instances: FakeBrowserWindow[] = []
 
+  /** QA F-014 tur2 I1 fix — gerçek `BrowserWindow.getAllWindows()` API'sinin sahtesi.
+   *  `shutdownViaTray` bunu kullanarak açık kaç pencere olursa olsun hepsini `destroy()` eder. */
+  static getAllWindows() {
+    return FakeBrowserWindow.instances.filter((w) => !w.destroyed)
+  }
+
   handlers: Record<string, (...args: unknown[]) => void> = {}
   hidden = false
   destroyed = false
@@ -81,6 +87,13 @@ export class FakeBrowserWindow {
   }
   isDestroyed() {
     return this.destroyed
+  }
+  /** QA F-014 tur2 I1 fix — gerçek `BrowserWindow.destroy()` semantiğinin sahtesi: `close`
+   *  olayını TETİKLEMEZ (iptal edilemez), yalnızca `closed`'ı senkron olarak garanti eder. */
+  destroy() {
+    if (this.destroyed) return
+    this.destroyed = true
+    this.handlers.closed?.()
   }
 }
 

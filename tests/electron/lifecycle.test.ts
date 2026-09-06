@@ -8,6 +8,7 @@ import {
   createFakeMenu,
   FakeBrowserWindow,
   FakeTray,
+  resetFakeBrowserWindowInstances,
 } from './helpers/fake-electron'
 
 // F-014 sözleşme §2 + §8 (mutasyon M3, tepsi "Çıkış" gerçek shutdown()'ı çağırır) ve
@@ -136,5 +137,54 @@ describe('electron tepsi "Çıkış" — gerçek kapanma', () => {
     mainWindow.handlers.close?.({ preventDefault })
 
     expect(preventDefault).not.toHaveBeenCalled()
+  })
+
+  // QA F-014 (2026-09-06 tur2, KALDI) I1/B4 düzeltmesi — ilk açılış bildirim penceresi
+  // (`showAutostartEnabledNotice`) AÇIKKEN tepsi "Çıkış" gerçek `electron.exe`'de ~%18 koşuda
+  // uygulamayı hiç kapatmıyordu (5 süreç 30 sn boyunca yaşıyordu, yalnızca test kaçırıcının zorla
+  // kapatması onları temizliyordu). Bu test o senaryoyu birim seviyesinde çitler: `fsImpl` marker
+  // dosyasının OLMADIĞINI söyler (ilk açılış), bu yüzden `runApp` ikinci bir pencere açar; sonra
+  // tepsi "Çıkış" tıklanır ve HER İKİ pencerenin de `destroy()` edildiği + `app.quit()`'in
+  // çağrıldığı doğrulanır. Koruma (BrowserWindow.getAllWindows() döngüsü) kaldırılırsa bu test
+  // KIRMIZI verir: sahte `app.quit()` hiçbir pencereyi kendiliğinden kapatmaz.
+  it('bildirim penceresi AÇIKKEN tepsi Çıkış TÜM pencereleri kapatır (I1 — QA F-014 tur2 B4)', async () => {
+    resetFakeBrowserWindowInstances()
+    const app = createFakeApp(false)
+    const fakeServer = {
+      sseHub: { closeAll: vi.fn() },
+      close: vi.fn((cb?: () => void) => cb?.()),
+    }
+    const serverModule = {
+      createServer: vi.fn(() => fakeServer),
+      shutdown: vi.fn((server: unknown, hub: { closeAll: () => void }, exit?: () => void) => {
+        hub.closeAll()
+        exit?.()
+      }),
+    }
+    // Marker yok → ilk açılış → açılışta başlama bildirim penceresi de açılır (2 pencere).
+    const fsImpl = { existsSync: () => false, mkdirSync: vi.fn(), writeFileSync: vi.fn() }
+
+    const result = await runApp(
+      {
+        app,
+        BrowserWindow: FakeBrowserWindow,
+        Tray: FakeTray,
+        Menu: createFakeMenu(),
+        dialog: createFakeDialog(),
+      },
+      { isPortFreeFn: async () => true, loadServerModuleFn: () => serverModule, fsImpl }
+    )
+    assertStarted(result)
+    expect(result.justEnabledAutostart).toBe(true)
+    expect(FakeBrowserWindow.instances).toHaveLength(2) // [0]=ana pencere, [1]=bildirim penceresi
+    const [mainWindow, noticeWindow] = FakeBrowserWindow.instances
+
+    const tray = result.tray as FakeTray
+    const exitItem = findMenuItem(tray.contextMenu, 'Çıkış')
+    exitItem.click?.()
+
+    expect(mainWindow.destroyed).toBe(true)
+    expect(noticeWindow.destroyed).toBe(true)
+    expect(app.quit).toHaveBeenCalledTimes(1)
   })
 })

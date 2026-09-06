@@ -209,10 +209,16 @@ describe.skipIf(!process.env.MC_CHAT_LIVE_TESTS)(
               permissionMode: 'default',
               // Persona (`agent:'ceo'`) bu kolda yüklenemediği için modeli doğrudan yönlendiren
               // kısa bir sistem talimatı — hook zincirinin kendisiyle İLGİSİZ, yalnızca "hemen
-              // bir araç çağır" determinizmini artırır.
+              // bir araç çağır" determinizmini artırır. QA F-012 tur2 Y3 (3. deneme, 2. düzeltme)
+              // — iki canlı koşuda da model persona olmadan Bash'i HİÇ çağırmadan düz metinle
+              // cevap verdi; talimat daha buyurgan hâle getirildi ve `TodoWrite`/keşif araçları
+              // da (`NO_EXPLORATION_TOOLS`) devre dışı bırakıldı ki model bir ara adıma
+              // sığınmasın.
               systemPrompt:
-                'Kullanıcının istediği kabuk komutunu ÇAĞIRMADAN ÖNCE hiçbir metinle cevap verme; ' +
-                'ilk aracın her zaman Bash olsun.',
+                'SADECE Bash aracını çağırarak cevap ver. Metinle cevap vermek veya açıklama ' +
+                'yapmak YASAK. İlk ve tek aracın Bash olmalı; kullanıcının istediği komutu ' +
+                'doğrudan çalıştır.',
+              disallowedTools: [...NO_EXPLORATION_TOOLS, 'TodoWrite'],
               maxTurns: 3,
               model: 'claude-haiku-4-5',
               managedSettings: {

@@ -3,17 +3,23 @@ import path from 'node:path'
 import type { ChatLogEntry } from '../../../shared/types'
 
 /**
- * Aynı `(turn_id, kind)` çiftine sahip birden çok satırı **en yüksek `seq`'li olanla** temsil
- * eder (sözleşme §6, Ö3) — istemci asla aynı mantıksal mesajın iki kopyasını görmez. `Map.set`
- * var olan bir anahtarın ILK GÖRÜLME sırasını değiştirmez (yalnızca değeri günceller), bu yüzden
- * `map.values()` sırası zaten "ilk görülme" sırasıdır; sonuç ayrıca kendi (güncel) `seq`'ine göre
- * artan sıralanır ki döndürülen dizi her zaman `seq` bakımından monoton olsun (sayfalama bunu
- * varsayar).
+ * Aynı `(turn_id, kind, role)` üçlüsüne sahip birden çok satırı **en yüksek `seq`'li olanla**
+ * temsil eder (sözleşme §6, Ö3) — istemci asla aynı mantıksal mesajın iki kopyasını görmez.
+ *
+ * QA F-012 B2 düzeltmesi — anahtar `role` İÇERMELİYDİ: bir turda kullanıcının kendi mesajı
+ * (`role:'user', kind:'text'`) ve CEO'nun cevabı (`role:'assistant', kind:'text'`) **aynı
+ * `turn_id`'yi paylaşır** (`session.ts` `sendMessage` ile `finalizeTurn` aynı `turnId`'yi
+ * kullanır). `role` olmadan ikisi de `${turn_id}::${kind}` anahtarına düşüyordu ve yüksek `seq`'li
+ * assistant girdisi kullanıcının kendi mesajını **eziyordu** — kullanıcı balonu CEO cevaplar
+ * cevaplamaz transkriptten/geçmişten kayboluyordu (AC7 ihlali). `Map.set` var olan bir anahtarın
+ * ILK GÖRÜLME sırasını değiştirmez (yalnızca değeri günceller), bu yüzden `map.values()` sırası
+ * zaten "ilk görülme" sırasıdır; sonuç ayrıca kendi (güncel) `seq`'ine göre artan sıralanır ki
+ * döndürülen dizi her zaman `seq` bakımından monoton olsun (sayfalama bunu varsayar).
  */
 export function foldByTurn(entries: ChatLogEntry[]): ChatLogEntry[] {
   const map = new Map<string, ChatLogEntry>()
   for (const entry of entries) {
-    map.set(`${entry.turn_id}::${entry.kind}`, entry)
+    map.set(`${entry.turn_id}::${entry.kind}::${entry.role}`, entry)
   }
   return [...map.values()].sort((a, b) => a.seq - b.seq)
 }

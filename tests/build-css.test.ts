@@ -166,3 +166,60 @@ describe('F-007: üretim CSS çıktısı src/features/kanban/web sınıflarını
     }
   )
 })
+
+describe('F-012 QA E2 — yapısal çit: src/features/*/web dizinlerinin TÜMÜ index.css @source listesinde', () => {
+  // QA F-012 KALDI B1/E2: bu, aynı hata sınıfının (yeni bir `src/features/<x>/web` dizini
+  // `@source` listesine eklenmeyi unutur) DÖRDÜNCÜ tekrarıydı (F-003/B1, F-005, F-007, F-012).
+  // Önceki üç düzeltmenin hepsi feature-bazlı (yalnızca o feature'ın kendi sınıflarını arayan)
+  // bir `it.each` bloğuydu — bir SONRAKİ feature yine unutabilirdi. Bu test FEATURE-BAZLI DEĞİL:
+  // `src/features/*/web` dizinlerini gerçek dosya sisteminden numaralandırıp her birinin
+  // `index.css`'in `@source` listesinde bir satırı olduğunu doğrular. Yeni bir feature `@source`
+  // eklemeyi unutursa bu test (vite build'e gerek kalmadan, saniyeler içinde) KIRMIZI verir.
+  const featuresDir = path.join(repoRoot, 'src', 'features')
+  const cssPath = path.join(repoRoot, 'src', 'web', 'index.css')
+
+  function listFeatureWebDirs(root: string): string[] {
+    return fs
+      .readdirSync(root, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .filter((name) => fs.existsSync(path.join(root, name, 'web')))
+      .sort()
+  }
+
+  function readSourcedDirNames(cssContent: string): Set<string> {
+    const sourced = new Set<string>()
+    const regex = /@source\s+"\.\.\/features\/([^/"]+)\/web"/g
+    let match: RegExpExecArray | null
+    while ((match = regex.exec(cssContent)) !== null) {
+      sourced.add(match[1]!)
+    }
+    return sourced
+  }
+
+  it('her src/features/<x>/web dizini için index.css içinde bir @source satırı var', () => {
+    const cssContent = fs.readFileSync(cssPath, 'utf8')
+    const sourcedDirs = readSourcedDirNames(cssContent)
+    const actualDirs = listFeatureWebDirs(featuresDir)
+    const missing = actualDirs.filter((d) => !sourcedDirs.has(d))
+    expect(missing).toEqual([])
+  })
+
+  // Çitin kendisini mutasyonla doğrula: gerçekte var olan ama @source'da OLMAYAN sahte bir
+  // dizin eklenince test KIRMIZI vermeli — böylece "regex her zaman boş döner de yeşil kalır"
+  // gibi sessiz bir totoloji olasılığı da elenmiş olur.
+  it('mutasyon kanıtı: @source listesinde olmayan yeni bir src/features/<x>/web dizini KIRMIZI verir', () => {
+    const probeName = '__mutation_probe_e2__'
+    const probeWebDir = path.join(featuresDir, probeName, 'web')
+    fs.mkdirSync(probeWebDir, { recursive: true })
+    try {
+      const cssContent = fs.readFileSync(cssPath, 'utf8')
+      const sourcedDirs = readSourcedDirNames(cssContent)
+      const actualDirs = listFeatureWebDirs(featuresDir)
+      const missing = actualDirs.filter((d) => !sourcedDirs.has(d))
+      expect(missing).toEqual([probeName])
+    } finally {
+      fs.rmSync(path.join(featuresDir, probeName), { recursive: true, force: true })
+    }
+  })
+})

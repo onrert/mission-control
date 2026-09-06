@@ -114,6 +114,39 @@ describe('createHistoryLog — append + readPage', () => {
   })
 })
 
+describe('createHistoryLog — B2 (QA KALDI): aynı turdaki kullanıcı mesajı ve CEO cevabı', () => {
+  it('kullanıcı (role:user) ve CEO (role:assistant) girdileri AYNI turn_id paylaşsa bile ikisi de kalır', async () => {
+    // Tekrar üretme: `session.ts` `sendMessage` ile `finalizeTurn` aynı `turnId`'yi kullanır —
+    // kullanıcının kendi mesajı ve CEO'nun cevabı gerçekte hep aynı turn_id'yi paylaşır. `role`
+    // olmadan `foldByTurn`'ün `${turn_id}::${kind}` anahtarı ikisini de aynı sepete koyup yüksek
+    // `seq`'li (assistant) girdiyi kullanıcının mesajının ÜZERİNE yazıyordu (AC7 ihlali, B2).
+    const userEntry = log.append({
+      turn_id: 't1',
+      role: 'user',
+      kind: 'text',
+      status: 'done',
+      text: 'merhaba CEO',
+      ts: 'x',
+    })
+    const assistantEntry = log.append({
+      turn_id: 't1',
+      role: 'assistant',
+      kind: 'text',
+      status: 'done',
+      text: 'merhaba, nasıl yardımcı olabilirim?',
+      ts: 'x',
+    })
+    await log.flush()
+    const page = log.readPage()
+    expect(page.entries).toHaveLength(2)
+    const byRole = new Map(page.entries.map((e) => [e.role, e]))
+    expect(byRole.get('user')?.text).toBe('merhaba CEO')
+    expect(byRole.get('user')?.seq).toBe(userEntry.seq)
+    expect(byRole.get('assistant')?.text).toBe('merhaba, nasıl yardımcı olabilirim?')
+    expect(byRole.get('assistant')?.seq).toBe(assistantEntry.seq)
+  })
+})
+
 describe('createHistoryLog — markDanglingAsInterrupted (Ö3, init() çağırır)', () => {
   it('restart sonrası yarım kalan streaming girdisi yeni bir interrupted satırla düzeltilir, eski satır silinmez', async () => {
     log.append({

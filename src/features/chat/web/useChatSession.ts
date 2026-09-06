@@ -61,6 +61,7 @@ export interface ChatStatus {
   chat_enabled: boolean
   last_error?: string
   api_key_helper_configured: boolean
+  max_budget_usd: number
 }
 
 export interface ToolRow {
@@ -109,13 +110,14 @@ const INTERRUPT_URL = '/api/chat/interrupt'
 const PERMISSION_URL = '/api/chat/permission'
 const RESTART_URL = '/api/chat/restart'
 
-function entryKey(entry: Pick<ChatLogEntry, 'turn_id' | 'kind'>): string {
-  return `${entry.turn_id}::${entry.kind}`
+function entryKey(entry: Pick<ChatLogEntry, 'turn_id' | 'kind' | 'role'>): string {
+  return `${entry.turn_id}::${entry.kind}::${entry.role}`
 }
 
-/** `history-log.ts`'in `foldByTurn`'üyle AYNI kural: aynı (turn_id, kind) için en yüksek `seq`
- *  kazanır — istemci sunucudan bağımsız olarak aynı katlamayı uygular (SSE ile gelen canlı
- *  güncellemeler de bu haritaya aynı kuralla girer). */
+/** `history-log.ts`'in `foldByTurn`'üyle AYNI kural: aynı (turn_id, kind, role) için en yüksek
+ *  `seq` kazanır — istemci sunucudan bağımsız olarak aynı katlamayı uygular (SSE ile gelen canlı
+ *  güncellemeler de bu haritaya aynı kuralla girer). QA F-012 B2 düzeltmesi: `role` eksikti,
+ *  aynı turdaki kullanıcı mesajı ve CEO cevabı aynı anahtara düşüp kullanıcı mesajını eziyordu. */
 function upsertEntry(
   map: Map<string, ChatLogEntry>,
   entry: ChatLogEntry

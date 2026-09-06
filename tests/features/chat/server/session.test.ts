@@ -106,7 +106,15 @@ describe('createChatSession — bootstrap seçenekleri (mutasyon 3/4)', () => {
     expect(opts.permissionMode).toBe('default')
     expect(opts.includePartialMessages).toBe(true)
     expect(opts.maxBudgetUsd).toBe(20)
-    expect(opts.managedSettings).toEqual({ allowManagedPermissionRulesOnly: true })
+    // QA F-012 E1 düzeltmesi (B5) — `allowManagedPermissionRulesOnly` TEK BAŞINA salt-okunur
+    // sınıflandırılan Bash komutlarını `canUseTool`'a hiç sormadan geçiriyordu (gerçek oturumda
+    // ölçüldü, `docs/qa/F-012-2026-09-06.md` §3.2). `permissions.ask: ['Bash']` bu deliği kapatır
+    // (iki yönlü kanıt: `.probe/live-test-e1.mjs`/`live-test-e1b.mjs`, `tests/integration/
+    // chat-hooks-live.test.ts`).
+    expect(opts.managedSettings).toEqual({
+      allowManagedPermissionRulesOnly: true,
+      permissions: { ask: ['Bash'] },
+    })
   })
 
   it('MC_CHAT_ENABLED=0 iken query() hiç çağrılmaz', async () => {
@@ -175,6 +183,99 @@ describe('createChatSession — mesaj kuyruklama + durum makinesi', () => {
 
     expect(session.getStatus().busy).toBe(false)
   })
+})
+
+describe('createChatSession — AC5/B3 (alt agent çalışırken ikinci mesaj, tur kuyruğu)', () => {
+  it(
+    "ikinci mesaj gönderilse bile ilk turun akan cevabı KENDİ turn_id'sinde kalır, " +
+      'ikinci turun cevabıyla karışmaz',
+    async () => {
+      // Tekrar üretme (QA KALDI B3, docs/qa/F-012-2026-09-06.md §5): turn A akarken (bir alt
+      // agent — tool_use — çalışırken) ikinci bir mesaj (turn B) gönderilirse, eski kod
+      // `currentTurnId`'yi KOŞULSUZ B'ye geçiriyordu; A'nın devam eden delta'sı B'ye yazılıyordu
+      // ve A sonsuza dek 'streaming' kalıyordu.
+      const { session, getHandles, broadcasts } = await bootstrapSession()
+      const resultA = session.sendMessage('turn A — bir agent başlat')
+      await flush()
+      const turnIdA = 'turn_id' in resultA ? resultA.turn_id : undefined
+      expect(turnIdA).toBeDefined()
+      const handle = getHandles()[0]!
+
+      // Turn A: ilk delta parçası akıyor.
+      handle.emit({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: 'A-cevabi-basladi ' },
+        },
+      })
+      await flush()
+
+      // Turn A: bir alt agent (tool_use) başlıyor — hâlâ turn A'nın içinde.
+      handle.emit({
+        type: 'assistant',
+        parent_tool_use_id: null,
+        message: {
+          content: [
+            { type: 'tool_use', id: 'tu1', name: 'Agent', input: { description: 'alt agent' } },
+          ],
+        },
+      })
+      await flush()
+
+      // Alt agent HÂLÂ çalışırken kullanıcı ikinci bir mesaj gönderiyor (turn B).
+      const resultB = session.sendMessage('turn B — araya giren mesaj')
+      await flush()
+      const turnIdB = 'turn_id' in resultB ? resultB.turn_id : undefined
+      expect(turnIdB).toBeDefined()
+      expect(turnIdB).not.toBe(turnIdA)
+
+      // Turn A'nın devamı geliyor — B3 düzeltmesi olmadan bu B'nin turn_id'sine yazılırdı.
+      handle.emit({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: 'A-cevabinin-DEVAMI' },
+        },
+      })
+      await flush()
+
+      // Turn A tamamlanıyor.
+      handle.emit({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.01 })
+      await flush()
+
+      // Turn B şimdi işlenmeye başlar.
+      handle.emit({
+        type: 'stream_event',
+        event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'B-cevabi' } },
+      })
+      await flush()
+      handle.emit({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.01 })
+      await flush()
+
+      const page = session.getHistoryPage()
+      const turnAText = page.entries.find(
+        (e) => e.turn_id === turnIdA && e.role === 'assistant' && e.kind === 'text'
+      )
+      const turnBText = page.entries.find(
+        (e) => e.turn_id === turnIdB && e.role === 'assistant' && e.kind === 'text'
+      )
+      expect(turnAText?.text).toBe('A-cevabi-basladi A-cevabinin-DEVAMI')
+      expect(turnAText?.status).toBe('done')
+      expect(turnBText?.text).toBe('B-cevabi')
+      expect(turnBText?.status).toBe('done')
+
+      const chatMessages = broadcasts.filter((b) => b.name === 'chat_message')
+      // Turn A'nın delta'larının HİÇBİRİ turn B'nin turn_id'sine yazılmamalı.
+      expect(
+        chatMessages.some(
+          (b) =>
+            (b.data as { turn_id: string }).turn_id === turnIdB &&
+            (b.data as { delta: string }).delta.includes('DEVAMI')
+        )
+      ).toBe(false)
+    }
+  )
 })
 
 describe('createChatSession — izin akışı (canUseTool, K3)', () => {
@@ -311,6 +412,12 @@ describe('K3 çevrimdışı çit (mutasyon 13, Y-B1) — allowManagedPermissionR
       (managedSource!.settings as { allowManagedPermissionRulesOnly?: boolean })
         .allowManagedPermissionRulesOnly
     ).toBe(true)
+    // QA F-012 E1 (B5) — `permissions.ask: ['Bash']`'ın da gerçekten etkin ayar kademesine
+    // ulaştığını doğrula. Bu tek başına "SDK izin motoru buna uyuyor mu" sorusunu KANITLAMAZ
+    // (o yalnızca canlı testle kanıtlanır, `tests/integration/chat-hooks-live.test.ts`) — ama
+    // yapılandırmanın sessizce kaybolmadığını (§8a'nın kendi uyarısı: "raw cascade, not a
+    // security decision") çevrimdışı, `verify` içinde, kota harcamadan doğrular.
+    expect(resolved.effective.permissions?.ask).toEqual(['Bash'])
   })
 })
 

@@ -43,6 +43,7 @@ function stubFetch() {
             stripped_env_vars: [],
             chat_enabled: true,
             api_key_helper_configured: false,
+            max_budget_usd: 20,
           },
         }),
       } as Response
@@ -275,11 +276,34 @@ describe('ChatScreen — kalıcı uyarı şeridi (madde 6) ve hata/yeniden bağl
         stripped_env_vars: ['ANTHROPIC_API_KEY'],
         chat_enabled: true,
         api_key_helper_configured: false,
+        max_budget_usd: 20,
       })
     })
-    expect(screen.getByText(/Ortamda ANTHROPIC_API_KEY bulundu/)).toBeTruthy()
+    expect(screen.getByText(/Ortamda şu ortam değişkenleri bulundu/)).toBeTruthy()
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Uyarıyı kapat' }))
+    expect(screen.queryByText(/Ortamda şu ortam değişkenleri bulundu/)).toBeNull()
+  })
+
+  // QA F-012 KALDI Ö1 — şerit sabit "ANTHROPIC_API_KEY bulundu" metnini ANTHROPIC_API_KEY hiç
+  // temizlenmemişken bile gösteriyordu. Bu test gerçekte temizlenen (ve ANTHROPIC_API_KEY
+  // İÇERMEYEN) değişkenlerin adının şeritte göründüğünü, sabit metnin YAZILMADIĞINI doğrular.
+  it('Ö1 düzeltmesi: şerit gerçekten temizlenen değişkenleri gösterir, ANTHROPIC_API_KEY YOKKEN bile onu iddia etmez', async () => {
+    stubFetch()
+    const chatRef = await renderHarness()
+    await act(async () => {
+      chatRef.current!.handlers.onChatStatus({
+        session_active: true,
+        session_id: 's1',
+        busy: false,
+        api_key_barrier_tripped: true,
+        stripped_env_vars: ['AWS_PROFILE', 'GOOGLE_API_KEY'],
+        chat_enabled: true,
+        api_key_helper_configured: false,
+        max_budget_usd: 20,
+      })
+    })
+    expect(screen.getByText(/AWS_PROFILE, GOOGLE_API_KEY/)).toBeTruthy()
     expect(screen.queryByText(/Ortamda ANTHROPIC_API_KEY bulundu/)).toBeNull()
   })
 
@@ -296,6 +320,7 @@ describe('ChatScreen — kalıcı uyarı şeridi (madde 6) ve hata/yeniden bağl
         chat_enabled: true,
         last_error: 'crashed',
         api_key_helper_configured: false,
+        max_budget_usd: 20,
       })
     })
     expect(screen.getByText(/Oturum bağlantısı koptu\. Geçmiş mesajlarınız kayıtlı/)).toBeTruthy()
@@ -309,7 +334,7 @@ describe('ChatScreen — kalıcı uyarı şeridi (madde 6) ve hata/yeniden bağl
     expect(calls.some((c) => c.url.includes('/api/chat/restart'))).toBe(true)
   })
 
-  it('budget_exceeded özel metnini gösterir (D11)', async () => {
+  it('budget_exceeded özel metnini gösterir, tutar dahil (D11 + QA Ö2)', async () => {
     stubFetch()
     const chatRef = await renderHarness()
     await act(async () => {
@@ -322,9 +347,13 @@ describe('ChatScreen — kalıcı uyarı şeridi (madde 6) ve hata/yeniden bağl
         chat_enabled: true,
         last_error: 'budget_exceeded',
         api_key_helper_configured: false,
+        max_budget_usd: 7,
       })
     })
-    expect(screen.getByText(/Oturum bu oturum için ayrılan bütçe tavanına ulaştı\./)).toBeTruthy()
+    // QA F-012 KALDI Ö2 — sözleşme §10 birebir "(${budget} USD)" şart koşuyordu, tutar eksikti.
+    expect(
+      screen.getByText(/Oturum bu oturum için ayrılan bütçe tavanına \(7 USD\) ulaştı\./)
+    ).toBeTruthy()
   })
 })
 

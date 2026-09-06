@@ -256,12 +256,21 @@ function QuestionCard({
   )
 }
 
-function WarningBanner({ onDismiss }: { onDismiss: () => void }) {
+function WarningBanner({
+  strippedVars,
+  onDismiss,
+}: {
+  strippedVars: string[]
+  onDismiss: () => void
+}) {
+  // QA F-012 düzeltmesi (Ö1) — şerit artık sabit "ANTHROPIC_API_KEY bulundu" metni DEĞİL,
+  // gerçekten temizlenen değişkenlerin adını gösterir (docs/03-ux.md §7 madde 6).
+  const list = strippedVars.join(', ')
   return (
     <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-amber-800 bg-amber-950 px-3 py-2 text-sm text-amber-200">
       <span className="flex items-center gap-2">
         <KeyRound className="h-4 w-4 shrink-0" />
-        Ortamda ANTHROPIC_API_KEY bulundu; bu oturum için temizlendi ve kullanılmadı. Abonelik
+        Ortamda şu ortam değişkenleri bulundu ve bu oturum için temizlendi: {list}. Abonelik
         üzerinden çalışılıyor.
       </span>
       <button
@@ -278,9 +287,11 @@ function WarningBanner({ onDismiss }: { onDismiss: () => void }) {
 
 function ErrorRow({
   lastErrorCode,
+  maxBudgetUsd,
   onReconnect,
 }: {
   lastErrorCode: string | undefined
+  maxBudgetUsd: number | undefined
   onReconnect: () => void
 }) {
   const budgetExceeded = lastErrorCode === 'budget_exceeded'
@@ -292,7 +303,9 @@ function ErrorRow({
       <div className="flex items-center gap-2 text-red-300">
         <AlertTriangle className="h-4 w-4 shrink-0" />
         {budgetExceeded
-          ? 'Oturum bu oturum için ayrılan bütçe tavanına ulaştı.'
+          ? // QA F-012 düzeltmesi (Ö2, sözleşme §10 birebir): tutar artık metne dahil —
+            // `ChatStatusPayload.max_budget_usd` sabit gömülü değil, `MC_CHAT_MAX_BUDGET_USD`den.
+            `Oturum bu oturum için ayrılan bütçe tavanına (${maxBudgetUsd} USD) ulaştı.`
           : 'Oturum bağlantısı koptu. Geçmiş mesajlarınız kayıtlı, yeni mesaj gönderilemiyor.'}
       </div>
       <div>
@@ -405,7 +418,10 @@ export function ChatScreen({ chat }: ChatScreenProps) {
   return (
     <div data-testid="chat-screen" className="flex h-full flex-col">
       {chat.status?.api_key_barrier_tripped && !chat.warningDismissed && (
-        <WarningBanner onDismiss={chat.dismissWarning} />
+        <WarningBanner
+          strippedVars={chat.status.stripped_env_vars}
+          onDismiss={chat.dismissWarning}
+        />
       )}
       <div ref={listRef} className="flex-1 overflow-y-auto p-3">
         {chat.hasMore && (
@@ -463,6 +479,7 @@ export function ChatScreen({ chat }: ChatScreenProps) {
           {sessionDown && (
             <ErrorRow
               lastErrorCode={chat.status?.last_error}
+              maxBudgetUsd={chat.status?.max_budget_usd}
               onReconnect={() => void chat.restart()}
             />
           )}

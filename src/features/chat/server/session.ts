@@ -67,6 +67,9 @@ export interface ChatStatusPayload {
   chat_enabled: boolean
   last_error?: string
   api_key_helper_configured: boolean
+  /** QA F-012 Ö2/E6 — bütçe mesajının `(${budget} USD)` kısmını doldurmak için istemciye
+   *  taşınır (sözleşme §10). `resolveChatBudget(deps.env)`'in aynı değeri, sabit gömülü değil. */
+  max_budget_usd: number
 }
 
 export type ChatQueryFn = (params: {
@@ -141,6 +144,16 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
   let sessionId: string | undefined
   let lastError: string | undefined
   let strippedVars: string[] = []
+  // QA F-012 B3 düzeltmesi — FIFO tur kuyruğu. Eskiden `currentTurnId` her `sendMessage`
+  // çağrısında KOŞULSUZ üzerine yazılıyordu: alt agent çalışırken (turn A hâlâ akarken) ikinci
+  // bir mesaj gönderilince `currentTurnId` turn B'ye atlıyor, turn A'nın devam eden
+  // `stream_event` delta'ları yanlışlıkla turn B'ye yazılıyordu (ilk cevap yarıda kesiliyor,
+  // devamı ikinci balona yapışıyordu). Artık `currentTurnId` her zaman kuyruğun BAŞI — SDK'nın
+  // tek `for await` döngüsü turları sırayla işlediği için (bir `result` gelmeden bir sonraki
+  // kullanıcı mesajı işlenmeye başlamaz) bu, akan cevabın her zaman doğru turn'e yazılmasını
+  // garanti eder. Yeni bir mesaj yalnızca kuyruk BOŞSA hemen aktif olur; doluysa kuyruğa eklenir
+  // ve `finalizeTurn` öndeki turu bitirince bir sonrakine geçilir.
+  const turnQueue: string[] = []
   let currentTurnId: string | undefined
   let queryHandle: Query | undefined
   let inputPush: ((msg: SDKUserMessage) => void) | undefined
@@ -272,8 +285,11 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
       done: true,
     })
     accumulatedTextByTurn.delete(turnId)
-    currentTurnId = undefined
-    if (state !== 'crashed') state = 'idle'
+    // B3 — biten turu kuyruktan çıkar, bir sonraki (varsa) kuyruğun başı olur.
+    const idx = turnQueue.indexOf(turnId)
+    if (idx !== -1) turnQueue.splice(idx, 1)
+    currentTurnId = turnQueue[0]
+    if (state !== 'crashed') state = currentTurnId !== undefined ? 'busy' : 'idle'
     deps.hub.broadcast('chat_status', getStatus())
   }
 
@@ -339,6 +355,7 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
           })
         }
         currentTurnId = undefined
+        turnQueue.length = 0
         deps.hub.broadcast('chat_status', getStatus())
         deps.hub.broadcast('chat_error', {
           code: 'budget_exceeded',
@@ -371,6 +388,9 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
       if (currentTurnId !== undefined) {
         finalizeTurn('interrupted')
       }
+      // B3 — tüm `query()` oturumu öldüğü için kuyrukta bekleyen (henüz hiç işlenmemiş) turlar
+      // artık asla teslim edilmeyecek; kalıntı `turnId`'ler bir sonraki bootstrap'a sızmasın.
+      turnQueue.length = 0
       deps.hub.broadcast('chat_status', getStatus())
       deps.hub.broadcast('chat_error', {
         code: 'internal_error',
@@ -389,7 +409,24 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
       permissionMode: 'default',
       includePartialMessages: true,
       maxBudgetUsd: resolveChatBudget(deps.env),
-      managedSettings: { allowManagedPermissionRulesOnly: true },
+      // QA F-012 E1 düzeltmesi (KALDI kararı B5) — `allowManagedPermissionRulesOnly` TEK BAŞINA
+      // yetersizdi: SDK'nın `permissionMode:'default'` dahili "salt-okunur komut" sınıflandırıcısı
+      // (`git log`, `ls`, salt-okunur `grep` vb. içeren bileşik Bash komutları dahil) allow
+      // listesinden/override'dan TAMAMEN BAĞIMSIZ olarak `canUseTool`'u hiç çağırmadan otomatik
+      // geçiyordu — gerçek oturumda ölçüldü (`docs/qa/F-012-2026-09-06.md` §3.2/B5). Kanıt
+      // (`.probe/live-test-e1.mjs` / `.probe/live-test-e1b.mjs`, bu turda çalıştırıldı, iki
+      // yönlü): `permissions.ask` YOKKEN `git log --oneline -3` `canUseTool`'u hiç tetiklemedi;
+      // `permissions.ask:['Bash']` VARKEN aynı komut (ve dört başka salt-okunur Bash çağrısı)
+      // `canUseTool`'u her seferinde tetikledi. `managedSettings`'in kendi filtresi
+      // `permissions.ask`'i restrictive-key allowlist'ine dahil ediyor (sdk.d.ts:3037-3045,
+      // "Feeds the lowest-precedence policy sub-source ... permissions.deny/ask ... layer in").
+      // `Bash` dışındaki araçlar bu listeye eklenmedi (Karpathy §2 — kanıtlanmamış bir sınıfa karşı
+      // savunma eklenmez; `Read`/`Grep`/`Glob`/`WebSearch` zaten `.claude/settings.json`'ın kendi
+      // allow listesinde CEO'nun bilinçli tercihiyle her zaman izinli, bu yüzden `ask`'a alınmadı).
+      managedSettings: {
+        allowManagedPermissionRulesOnly: true,
+        permissions: { ask: ['Bash'] },
+      },
       canUseTool,
       resume: resumeSessionId,
     }
@@ -427,6 +464,7 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
       chat_enabled: chatEnabled,
       last_error: lastError,
       api_key_helper_configured: hasApiKeyHelperConfigured(settingsJsonPath),
+      max_budget_usd: resolveChatBudget(deps.env),
     }
   }
 
@@ -450,7 +488,10 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
       ts,
     })
     deps.hub.broadcast('chat_user_echo', { turn_id: turnId, chat_seq: userEntry.seq, text, ts })
-    currentTurnId = turnId
+    // B3 — kuyruk boşsa bu tur hemen aktif olur; doluysa (bir önceki tur hâlâ akıyor) yalnızca
+    // kuyruğa eklenir, `currentTurnId` DEĞİŞMEZ (akan cevabın turn'ü karışmasın).
+    turnQueue.push(turnId)
+    if (turnQueue.length === 1) currentTurnId = turnId
     state = 'busy'
     deps.hub.broadcast('chat_status', getStatus())
     inputPush({

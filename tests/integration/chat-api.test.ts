@@ -239,8 +239,17 @@ describe("chat API — mutasyon 7 (asenkron handler kendi try/catch'ini taşır)
   })
 })
 
-describe("chat API — mutasyon 12 (chat_tool kapalı alan allowlist'i, B7/S2)", () => {
-  it('chat_tool yayını yalnızca izin verilen alanları taşır', async () => {
+describe("chat API — mutasyon 12/12b (chat_tool kapalı alan allowlist'i, B7/S2/B4)", () => {
+  const ALLOWED_CHAT_TOOL_KEYS = new Set([
+    'tool_use_id',
+    'tool_name',
+    'description',
+    'status',
+    'elapsed_ms',
+    'parent_tool_use_id',
+  ])
+
+  it('chat_tool (started) yayını yalnızca izin verilen alanları taşır', async () => {
     const { queryFn, getHandles } = createFakeQueryFactory()
     const handle = await startServer(dataDir, queryFn)
     try {
@@ -260,17 +269,141 @@ describe("chat API — mutasyon 12 (chat_tool kapalı alan allowlist'i, B7/S2)",
       })
       const frame = await sse.waitForFrame((f) => f.event === 'chat_tool')
       const data = JSON.parse(frame.data) as Record<string, unknown>
-      const allowed = new Set([
-        'tool_use_id',
-        'tool_name',
-        'description',
-        'status',
-        'elapsed_ms',
-        'parent_tool_use_id',
-      ])
+      for (const key of Object.keys(data)) {
+        expect(ALLOWED_CHAT_TOOL_KEYS.has(key)).toBe(true)
+      }
+      sse.close()
+    } finally {
+      await stopServer(handle)
+    }
+  })
+
+  // QA F-012 KALDI B4 — round A'nın mutasyon 12'si yalnızca `started` (girdi) dalını ölçüyordu.
+  // `docs/03-ux.md` CEO notu S2 ("ham araç çıktısı arayüze basılmaz") FİNİSHED (`tool_result`,
+  // yani gerçek çıktı) dalını hedefliyor — QA `output: JSON.stringify(block)`'u finished dalına
+  // ekleyip 34/34 testin yeşil kaldığını ölçtü (`docs/qa/F-012-2026-09-06.md` §3.3/B4). Bu test
+  // finished dalını da kapalı allowlist ile ölçer; `session.ts:246-252`'ye ham bir alan eklenirse
+  // bu test KIRMIZI verir.
+  it('chat_tool (finished/tool_result) yayını yalnızca izin verilen alanları taşır', async () => {
+    const { queryFn, getHandles } = createFakeQueryFactory()
+    const handle = await startServer(dataDir, queryFn)
+    try {
+      const sse = await connectSse(handle.port)
+      await fetch(`${handle.base}/api/chat/message`, {
+        method: 'POST',
+        headers: writeHeaders(),
+        body: JSON.stringify({ text: 'çalıştır' }),
+      })
+      const fake = getHandles()[0]!
+      fake.emit({
+        type: 'assistant',
+        parent_tool_use_id: null,
+        message: {
+          content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { description: 'test' } }],
+        },
+      })
+      await sse.waitForFrame((f) => f.event === 'chat_tool')
+      fake.emit({
+        type: 'user',
+        parent_tool_use_id: null,
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'tu1',
+              is_error: false,
+              content: 'ham çıktı burada',
+            },
+          ],
+        },
+      })
+      const finishedFrame = await sse.waitForFrame((f) => {
+        if (f.event !== 'chat_tool') return false
+        const parsed = JSON.parse(f.data) as { status?: string }
+        return parsed.status === 'finished'
+      })
+      const data = JSON.parse(finishedFrame.data) as Record<string, unknown>
+      for (const key of Object.keys(data)) {
+        expect(ALLOWED_CHAT_TOOL_KEYS.has(key)).toBe(true)
+      }
+      // `content`/`tool_result` gibi ham SDK alanlarının SIZMADIĞINI açıkça da doğrula.
+      expect(data).not.toHaveProperty('content')
+      expect(data).not.toHaveProperty('tool_result')
+      expect(data).not.toHaveProperty('output')
+      sse.close()
+    } finally {
+      await stopServer(handle)
+    }
+  })
+})
+
+describe("chat API — Ö3 (chat_permission_request/resolved kapalı alan allowlist'i, B7/S2 deseni)", () => {
+  it('chat_permission_request yalnızca izin verilen alanları taşır (mutasyon: raw_input eklenirse KIRMIZI)', async () => {
+    const { queryFn, getHandles } = createFakeQueryFactory()
+    const handle = await startServer(dataDir, queryFn)
+    try {
+      const sse = await connectSse(handle.port)
+      await fetch(`${handle.base}/api/chat/message`, {
+        method: 'POST',
+        headers: writeHeaders(),
+        body: JSON.stringify({ text: 'bir komut çalıştır' }),
+      })
+      const fake = getHandles()[0]!
+      void fake.options!.canUseTool!(
+        'Bash',
+        { command: 'echo hi' },
+        {
+          signal: new AbortController().signal,
+          toolUseID: 'tu1',
+          requestId: 'req-closed-1',
+        }
+      )
+      const frame = await sse.waitForFrame((f) => f.event === 'chat_permission_request')
+      const data = JSON.parse(frame.data) as Record<string, unknown>
+      const allowed = new Set(['request_id', 'turn_id', 'tool_name', 'input_preview', 'ts'])
       for (const key of Object.keys(data)) {
         expect(allowed.has(key)).toBe(true)
       }
+      expect(data).not.toHaveProperty('raw_input')
+      sse.close()
+    } finally {
+      await stopServer(handle)
+    }
+  })
+
+  it('chat_permission_resolved yalnızca izin verilen alanları taşır (mutasyon: raw_result eklenirse KIRMIZI)', async () => {
+    const { queryFn, getHandles } = createFakeQueryFactory()
+    const handle = await startServer(dataDir, queryFn)
+    try {
+      const sse = await connectSse(handle.port)
+      await fetch(`${handle.base}/api/chat/message`, {
+        method: 'POST',
+        headers: writeHeaders(),
+        body: JSON.stringify({ text: 'bir komut çalıştır' }),
+      })
+      const fake = getHandles()[0]!
+      void fake.options!.canUseTool!(
+        'Bash',
+        { command: 'echo hi' },
+        {
+          signal: new AbortController().signal,
+          toolUseID: 'tu1',
+          requestId: 'req-closed-2',
+        }
+      )
+      await sse.waitForFrame((f) => f.event === 'chat_permission_request')
+      await fetch(`${handle.base}/api/chat/permission`, {
+        method: 'POST',
+        headers: writeHeaders(),
+        body: JSON.stringify({ request_id: 'req-closed-2', result: { behavior: 'allow' } }),
+      })
+      const frame = await sse.waitForFrame((f) => f.event === 'chat_permission_resolved')
+      const data = JSON.parse(frame.data) as Record<string, unknown>
+      const allowed = new Set(['request_id', 'turn_id', 'outcome', 'ts'])
+      for (const key of Object.keys(data)) {
+        expect(allowed.has(key)).toBe(true)
+      }
+      expect(data).not.toHaveProperty('raw_result')
       sse.close()
     } finally {
       await stopServer(handle)

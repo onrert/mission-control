@@ -49,6 +49,11 @@ export type ErrorCode =
    *  features`'a bağlanınca ilk kez bir HTTP handler'ın ürettiği birleşime eklendi. */
   | 'write_denied'
   | 'write_failed'
+  /** F-012 sözleşme §4 — CEO sohbet uçlarının kendi hata kodları. */
+  | 'chat_disabled'
+  | 'session_not_ready'
+  | 'no_active_turn'
+  | 'request_not_found'
 
 export interface ApiResponse<T> {
   success: boolean
@@ -89,6 +94,22 @@ export interface ProjectListItem extends ProjectRecord {
  */
 export const WRITE_HEADER_NAME = 'x-mc-write'
 export const WRITE_HEADER_VALUE = '1'
+
+/**
+ * F-012 sözleşme §6 — panelin CEO sohbet ekranının **görüntüleme** geçmişi. Oturumun kendi
+ * kaynak gerçeği SDK'nın transkriptidir (`resume: <session_id>`); bu tip yalnızca
+ * `history-log.ts`'in ekleme-only kaydının tel biçimidir. `seq`, SSE'nin `chat_seq` alanıyla
+ * AYNI sayaç (boşluk tespiti, sözleşme §5).
+ */
+export interface ChatLogEntry {
+  seq: number
+  turn_id: string
+  role: 'user' | 'assistant' | 'system'
+  kind: 'text' | 'tool' | 'permission_request' | 'permission_resolved' | 'question' | 'error'
+  text?: string
+  status: 'streaming' | 'done' | 'interrupted'
+  ts: string
+}
 
 /**
  * Kanban kartı (F-007 sözleşme §3 madde 1, mimari §5.3). `docs/features/<file>.md`

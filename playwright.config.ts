@@ -29,7 +29,10 @@ export default defineConfig({
     url: 'http://127.0.0.1:7333/api/health',
     reuseExistingServer: false,
     timeout: 120_000,
-    env: { MC_DATA_DIR: e2eDataDir },
+    // F-012 — chat kapalı: bu webServer'ın gerçek `@anthropic-ai/claude-agent-sdk` `query()`'si
+    // enjekte etmesi mümkün değil (Playwright ayrı bir süreç başlatıyor), varsayılan açık kalırsa
+    // her `npm run e2e` gerçek, ÜCRETLİ bir Claude oturumu açardı.
+    env: { MC_DATA_DIR: e2eDataDir, MC_CHAT_ENABLED: '0' },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 })

@@ -160,6 +160,17 @@ const STORE_FILES: Record<string, string[]> = {
     'fs.unlinkSync(tmpPath)',
   ],
   [path.join(ROOT, 'src', 'server', 'store', 'retention.ts')]: ['fs.unlinkSync(target)'],
+  // F-012 (D8/B5, §2.1) — `jsonl-store.ts`'in zaten yaptığı şeyin birebir aynısı: sunucunun
+  // kendi görüntüleme kaydını append-only bir dosyaya yazması. Yeni bir kategori/mekanizma
+  // İCAT EDİLMEDİ, var olan desen tekrarlanıyor.
+  [path.join(ROOT, 'src', 'features', 'chat', 'server', 'history-log.ts')]: [
+    'fs.mkdirSync(chatDir, { recursive: true })',
+    'fs.promises.appendFile(historyFile, line)',
+  ],
+  [path.join(ROOT, 'src', 'features', 'chat', 'server', 'session-store.ts')]: [
+    'fs.mkdirSync(chatDir, { recursive: true })',
+    'fs.writeFileSync(sessionIdFile, sessionId)',
+  ],
 }
 
 const WORD_OR_DOT = /[\w.]/

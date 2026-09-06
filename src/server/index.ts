@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk'
 import { createJsonlStore } from './store/jsonl-store'
 import { startRetentionScheduler } from './store/retention'
 import { handleIngest } from '../features/events/server/ingest'
@@ -16,6 +17,15 @@ import {
   handleRemoveProject,
 } from '../features/projects/server/handlers'
 import { handleListFeatures, handlePatchFeatureStatus } from '../features/kanban/server/handlers'
+import { createChatSession } from '../features/chat/server/session'
+import {
+  handleChatStatus,
+  handleChatHistory,
+  handleChatMessage,
+  handleChatInterrupt,
+  handleChatPermission,
+  handleChatRestart,
+} from '../features/chat/server/handlers'
 import { WRITE_HEADER_NAME, WRITE_HEADER_VALUE } from '../shared/types'
 
 // QA düzeltme turu 1 (B1 madde f) — güvenlik ağı, ASIL çözüm değil: asıl çözüm `jsonl-store.ts`
@@ -285,7 +295,11 @@ export interface ServerWithHub extends http.Server {
   readonly projectsService: import('../features/projects/server/service').ProjectsService
 }
 
-export function createServer(port: number, dataDir?: string): ServerWithHub {
+export function createServer(
+  port: number,
+  dataDir?: string,
+  chatQueryOverride?: Parameters<typeof createChatSession>[0]['query']
+): ServerWithHub {
   const resolvedDataDir = dataDir ?? process.env.MC_DATA_DIR ?? path.join(process.cwd(), 'data')
   const instanceId = crypto.randomUUID()
 
@@ -301,6 +315,18 @@ export function createServer(port: number, dataDir?: string): ServerWithHub {
   const maxPayload = resolveEnvInt(process.env, 'MC_MAX_PAYLOAD', 65536)
   const hub = createSseHub()
   const projectsService = createProjectsService(resolvedDataDir, hub)
+
+  // F-012 — `deps`'in alan kümesi KAPALI (Ö7): yalnızca bu beşi, `store`/`projectsService`
+  // ASLA geçirilmez (K4, olay akışı CEO bağlamına beslenmez). Bootstrap arka planda,
+  // engellemeden başlar (sözleşme §3).
+  const chatSession = createChatSession({
+    query: chatQueryOverride ?? sdkQuery,
+    dataDir: resolvedDataDir,
+    hub,
+    now: () => new Date(),
+    env: process.env,
+  })
+  void chatSession.bootstrap()
 
   const server = http.createServer(
     withDispatchErrorBoundary((req, res) => {
@@ -392,6 +418,30 @@ export function createServer(port: number, dataDir?: string): ServerWithHub {
         handlePatchFeatureStatus(req, res, projectsService, rawProjectId, rawFile)
         return
       }
+      if (pathname === '/api/chat/status' && req.method === 'GET') {
+        handleChatStatus(res, chatSession)
+        return
+      }
+      if (pathname === '/api/chat/history' && req.method === 'GET') {
+        handleChatHistory(req, res, chatSession)
+        return
+      }
+      if (pathname === '/api/chat/message' && req.method === 'POST') {
+        handleChatMessage(req, res, chatSession)
+        return
+      }
+      if (pathname === '/api/chat/interrupt' && req.method === 'POST') {
+        handleChatInterrupt(req, res, chatSession)
+        return
+      }
+      if (pathname === '/api/chat/permission' && req.method === 'POST') {
+        handleChatPermission(req, res, chatSession)
+        return
+      }
+      if (pathname === '/api/chat/restart' && req.method === 'POST') {
+        handleChatRestart(req, res, chatSession)
+        return
+      }
       if (pathname?.startsWith('/api/projects/') && req.method === 'DELETE') {
         const id = pathname.slice('/api/projects/'.length)
         if (id === '' || id.includes('/')) {
@@ -425,6 +475,7 @@ export function createServer(port: number, dataDir?: string): ServerWithHub {
   server.on('close', () => {
     stopRetention()
     projectsService.stopAll()
+    chatSession.stopAll()
   })
   server.listen(port, '127.0.0.1')
   return Object.assign(server, { sseHub: hub, projectsService })

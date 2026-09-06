@@ -1,0 +1,170 @@
+import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import {
+  createHistoryLog,
+  foldByTurn,
+  type HistoryLog,
+} from '../../../../src/features/chat/server/history-log'
+import type { ChatLogEntry } from '../../../../src/shared/types'
+
+let dataDir: string
+let log: HistoryLog
+
+beforeEach(() => {
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-chat-history-'))
+  log = createHistoryLog(dataDir)
+  log.init()
+})
+
+afterEach(() => {
+  fs.rmSync(dataDir, { recursive: true, force: true })
+})
+
+function entry(overrides: Partial<ChatLogEntry> & { seq: number }): ChatLogEntry {
+  return {
+    turn_id: 't1',
+    role: 'assistant',
+    kind: 'text',
+    status: 'done',
+    ts: '2026-09-06T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
+describe('foldByTurn (saf fonksiyon)', () => {
+  it('aynı (turn_id, kind) çiftinde en yüksek seq kazanır, sonuç seq artan sıralı', () => {
+    const entries = [
+      entry({ seq: 1, turn_id: 'a', kind: 'text', status: 'streaming', text: 'me' }),
+      entry({ seq: 2, turn_id: 'b', kind: 'text', status: 'done', text: 'other' }),
+      entry({ seq: 3, turn_id: 'a', kind: 'text', status: 'done', text: 'merhaba' }),
+    ]
+    const folded = foldByTurn(entries)
+    expect(folded.map((e) => e.seq)).toEqual([2, 3])
+    expect(folded.find((e) => e.turn_id === 'a')?.text).toBe('merhaba')
+    expect(folded.find((e) => e.turn_id === 'a')?.status).toBe('done')
+  })
+
+  it('farklı kind aynı turn_id için ayrı kayıt kalır', () => {
+    const entries = [
+      entry({ seq: 1, turn_id: 'a', kind: 'text' }),
+      entry({ seq: 2, turn_id: 'a', kind: 'tool' }),
+    ]
+    expect(foldByTurn(entries)).toHaveLength(2)
+  })
+})
+
+describe('createHistoryLog — append + readPage', () => {
+  it('eklenen kayıt diskten okunabilir', async () => {
+    log.append({
+      turn_id: 't1',
+      role: 'user',
+      kind: 'text',
+      status: 'done',
+      text: 'merhaba',
+      ts: 'x',
+    })
+    await log.flush()
+    const page = log.readPage()
+    expect(page.entries).toHaveLength(1)
+    expect(page.entries[0]?.text).toBe('merhaba')
+    expect(page.entries[0]?.seq).toBe(1)
+  })
+
+  it('seq monoton artar, ekleme-only (var olan satır yeniden yazılmaz)', async () => {
+    const first = log.append({ turn_id: 't1', role: 'user', kind: 'text', status: 'done', ts: 'x' })
+    const second = log.append({
+      turn_id: 't1',
+      role: 'assistant',
+      kind: 'text',
+      status: 'streaming',
+      ts: 'x',
+    })
+    expect(first.seq).toBe(1)
+    expect(second.seq).toBe(2)
+    await log.flush()
+    const raw = fs.readFileSync(path.join(dataDir, 'chat', 'history.jsonl'), 'utf8')
+    expect(raw.split('\n').filter(Boolean)).toHaveLength(2)
+  })
+
+  it('sayfalama: limit ve beforeSeq (Ö4)', async () => {
+    for (let i = 0; i < 5; i++) {
+      log.append({
+        turn_id: `t${i}`,
+        role: 'user',
+        kind: 'text',
+        status: 'done',
+        text: `m${i}`,
+        ts: 'x',
+      })
+    }
+    const page1 = log.readPage({ limit: 2 })
+    expect(page1.entries.map((e) => e.text)).toEqual(['m3', 'm4'])
+    expect(page1.has_more).toBe(true)
+
+    const cursor = page1.entries[0]!.seq
+    const page2 = log.readPage({ limit: 2, beforeSeq: cursor })
+    expect(page2.entries.map((e) => e.text)).toEqual(['m1', 'm2'])
+    expect(page2.has_more).toBe(true)
+
+    const page3 = log.readPage({ limit: 50, beforeSeq: page2.entries[0]!.seq })
+    expect(page3.entries.map((e) => e.text)).toEqual(['m0'])
+    expect(page3.has_more).toBe(false)
+  })
+})
+
+describe('createHistoryLog — markDanglingAsInterrupted (Ö3, init() çağırır)', () => {
+  it('restart sonrası yarım kalan streaming girdisi yeni bir interrupted satırla düzeltilir, eski satır silinmez', async () => {
+    log.append({
+      turn_id: 't1',
+      role: 'assistant',
+      kind: 'text',
+      status: 'streaming',
+      text: 'yarım',
+      ts: 'x',
+    })
+    await log.flush()
+
+    // "restart" — yeni bir HistoryLog örneği aynı dataDir'i açar (gerçek dünyadaki init() çağrısı).
+    const restarted = createHistoryLog(dataDir)
+    restarted.init()
+    await restarted.flush()
+
+    const raw = fs.readFileSync(path.join(dataDir, 'chat', 'history.jsonl'), 'utf8')
+    const lines = raw
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as ChatLogEntry)
+    // Eski satır DEĞİŞMEDİ (hâlâ streaming olarak duruyor, diskte).
+    expect(lines[0]?.status).toBe('streaming')
+    // Yeni bir düzeltme satırı eklendi.
+    expect(lines).toHaveLength(2)
+    expect(lines[1]?.status).toBe('interrupted')
+    expect(lines[1]?.turn_id).toBe('t1')
+
+    const page = restarted.readPage()
+    expect(page.entries).toHaveLength(1)
+    expect(page.entries[0]?.status).toBe('interrupted')
+  })
+
+  it('done durumundaki girdiler restart sonrası dokunulmaz kalır', async () => {
+    log.append({
+      turn_id: 't1',
+      role: 'assistant',
+      kind: 'text',
+      status: 'done',
+      text: 'tamam',
+      ts: 'x',
+    })
+    await log.flush()
+
+    const restarted = createHistoryLog(dataDir)
+    restarted.init()
+    await restarted.flush()
+
+    const page = restarted.readPage()
+    expect(page.entries).toHaveLength(1)
+    expect(page.entries[0]?.status).toBe('done')
+  })
+})

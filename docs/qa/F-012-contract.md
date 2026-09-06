@@ -136,6 +136,7 @@ olmadığı için kabul edilebilir; §11'deki "canlı" testler bu boşluğu **uy
 | `src/web/App.tsx` | Yeni sekme (Ayarlar dişlisinin solunda, mevcut sekme listesine bir eleman) veya sohbetin panel kabuğunda nerede yaşayacağı — **görsel/gezinme kararı `docs/03-ux.md`'nin konusu** (K8). Bu dosyada yapılacak **teknik** değişiklik yalnızca: `useEventStream`'e `onChatMessage`/`onChatStatus`/vb. callback'lerini geçirmek (mevcut `onFeatures` deseni) ve `ChatScreen.minimal.tsx`'i mevcut `stream`/bağlantı prop'larıyla bağlamak — **ikinci bir `EventSource` açılmaz** (K5). Sekme yerleşiminin kendisi UX dokümanı onaylanınca netleşir; bu turda geçici/en az invaziv bir bağlama noktası kullanılır (§13 açık soru 1). | Her ekran ekleyen feature bu dosyaya dokunur (F-005/F-007 emsali) — tek kabuk. |
 | `src/web/lib/useEventStream.ts` | `onFeatures` ile **birebir aynı** desende `onChatMessage`/`onChatStatus`/`onChatToolEvent`/`onChatPermissionRequest`/`onChatPermissionResolved`/`onChatError` seçenekleri + `es.addEventListener(...)` eklenir. | ADR-004 "tek bağlantı çok kanal" — yeni kanal eklemenin **zaten kurulu** yolu. |
 | `package.json` | `dependencies`'e `@anthropic-ai/claude-agent-sdk@^0.3.261`, `zod@^4`, `@anthropic-ai/sdk@>=0.93.0`, `@modelcontextprotocol/sdk@^1.29.0` eklenir (peer bağımlılıkların hepsi doğrudan bağımlılık olarak eklenir — SDK'nın kendisi `dependencies` taşımıyor, ✓ DOĞRULANDI §2.1 registry kaydı). `scripts`'e `"test:chat-live": "vitest run tests/integration/chat-hooks-live.test.ts"` eklenir (varsayılan `test`/`verify` bunu **çağırmaz**). | SDK'nın peer gereksinimleri; `npm ci`'nin `--omit=optional` **kullanılmadığı** doğrulanmalı (CI script'i bu sözleşmenin kapsamı dışında, mevcut `package.json` script'lerinde zaten yok ✓ DOĞRULANDI). |
+| `src/shared/types.ts` | `ErrorCode` birleşimine `'chat_disabled' \| 'session_not_ready' \| 'no_active_turn' \| 'request_not_found'` eklenir (mekanik tek satır — F-007'nin aynı dosyaya `write_denied`/`write_failed` eklediği emsal, §2.4). `ChatLogEntry` tipi (§6) burada tanımlanır — sunucu ve istemci aynı şekli import eder. | Paylaşılan tip deposu; her feature kendi tip genişletmesini burada yapıyor (mimari emsal). |
 
 **Not — dokunulmayacağını doğruladığım dosyalar (olumsuz iddia, ✓ DOĞRULANDI):**
 `src/server/store/jsonl-store.ts`, `src/server/store/retention.ts`, `src/server/write-gate.ts`,
@@ -156,3 +157,95 @@ beyaz listeye (`ALLOWED_INSTALL_SCRIPT_PACKAGES`) gerekçeli bir ekleme gerekir 
 zaten işaret ettiği risk — burada da devralınıyor, yeni değil). (2) native araç isimleri
 (`node-gyp` vb.) SDK'nın bağımlılık ağacında **yok** (paket `dependencies` taşımıyor, yalnızca
 `peerDependencies`, ✓ DOĞRULANDI). (3) `better-sqlite3` ilgisiz.
+
+---
+
+## 3. Oturum yaşam döngüsü
+
+**Nerede yaşıyor:** mevcut `127.0.0.1:7333` Node sürecinin **içinde**, ayrı bir süreç/port
+**değil** (SPIKE-002 §5.1 önerisi, gerekçeler ✓ DOĞRULANDI: SDK zaten kendi `claude` CLI alt
+sürecini `spawn` ediyor — izolasyon zaten var; `scripts/check-ports.mjs` tek-süreç modeline kurulu;
+ikinci port yönetmek istenmiyor). Panel süreci **ebeveyn**, SDK'nın açtığı `claude.exe` **çocuk**
+(Windows, ADR-009).
+
+**`cwd` açıkça verilir** (varsayılana güvenilmez): `path.resolve(__dirname, '..', '..', '..')`
+(`src/features/chat/server/session.ts`'ten repo köküne) — `process.cwd()` **kullanılmaz**, çünkü
+`npm run dev`/`tsx watch` her zaman repo kökünden çalıştırılmayabilir ve yanlış `cwd` = `.claude/`
+ve `CLAUDE.md`'nin **sessizce yüklenmemesi** (SPIKE-002 §5.1, bu deponun "sessiz kayıp" hata
+sınıfının bir başka görünümü). Test: session bootstrap'a geçirilen `cwd` değerinin `path.join(cwd,
+'.claude', 'settings.json')`'da gerçekten bir dosya bulduğu doğrulanır (mutasyon 3a, §11).
+
+**Ne zaman açılır:** sunucu başlarken, **arka planda, engellemeden** (`createServer()`'ın kendisi
+`await` etmez — asenkron bootstrap `void` ile başlatılır, hata `session.ts`'in kendi `try/catch`'i
+içinde yakalanır, asla `createServer()`'ı fırlatmaz). Gerekçe: "gecikme olmadan" beklentisi (ADR-014
+bağlam) ilk mesajda oturum açılış gecikmesi yaşanmamasını gerektiriyor; sohbet **kapalıysa**
+(`MC_CHAT_ENABLED=0`, K6) bootstrap hiç çağrılmaz. Sohbet açıksa ama bariyer/SDK hatası **varsa**,
+bootstrap başarısız olur, durum `crashed` olarak işaretlenir, panel bunu `GET /api/chat/status` /
+`chat_status` SSE olayıyla görür — **sunucu ayakta kalır, diğer ekranlar çalışmaya devam eder**
+(AC "barındırılan oturumdaki bir hata paneli çökertmez").
+
+**Ne zaman kapanır:** (a) sunucu `SIGINT`/`SIGTERM` alıp `shutdown()` çağrıldığında —
+`server.on('close', ...)`'a eklenen `chatSession.stopAll()` aktif `Query`'yi `interrupt()`'ler ve
+alt süreç referansını bırakır (SDK alt süreç ebeveynle birlikte ölür, ✓ DOĞRULANDI SPIKE-002 §5.5,
+ebeveyn/çocuk ilişkisi). (b) kullanıcı `POST /api/chat/restart` çağırdığında — mevcut oturum
+kapatılır, `resume: <son session_id>` ile yeni bir `query()` açılır (SPIKE-002 §5.5,
+`resume: <session_id>` ✓ DOĞRULANDI). (c) panel sekmesi kapanır — **oturum kapanmaz**, K1'in tek
+oturumu panelin tarayıcı sekmesinden **bağımsızdır**; sekme kapansa da sunucu süreci (dolayısıyla
+CEO oturumu) ayaktadır, yeniden açılan sekme `GET /api/chat/history` ile kaldığı yeri görür.
+
+**Çöker ne olur:** SDK'nın `for await (const message of query(...))` döngüsü bir istisna
+fırlatırsa veya alt süreç beklenmedik şekilde çıkarsa (`SDKResultMessage` `is_error: true` ile
+biterse ya da iterator hata fırlatırsa), `session.ts`'in döngüsü bunu **kendi** `try/catch`'i
+içinde yakalar (§9), durumu `crashed` yapar, `history-log.ts`'e yarım kalan (`streaming`) son
+girdiyi **`interrupted`** olarak işaretler (`markDanglingAsInterrupted`, §6), `chat_status`
+yayınlar. **Otomatik yeniden başlatma YOK** (v1 tasarım kararı) — çöküş döngüsü riskini (crash-loop)
+almamak için kullanıcı `POST /api/chat/restart`'ı elle tetikler; panel bunu tek tıkla sunar
+(görsel detay UX'in konusu, buton **verinin** varlığı bu sözleşmenin konusu).
+
+**Sohbet devre dışıyken (K6):** `MC_CHAT_ENABLED` ortam değişkeni (varsayılan `1`, mevcut
+`resolveEnvInt`'in 0/1 yorumuyla — `resolveEnvInt(env, 'MC_CHAT_ENABLED', 1) !== 0`, `index.ts`'ten
+**içe aktarılır**, kopyalanmaz) `0` ise: `createChatSession(...)` hiç çağrılmaz, chat route'ları
+dispatcher'da kayıtlı **kalır** ama her biri sabit `{ success: false, error: { code:
+'chat_disabled', message: '...' } }` (503) döner — 404 değil, çünkü uç "yok" değil "kapalı" (ayrım
+panelin doğru mesaj göstermesi için önemli). Mevcut beş uç (`/api/health`, `/api/events`,
+`/api/stream`, `/api/projects`, `/api/features`) ve ekranları **hiçbir şekilde etkilenmez** —
+bunların hiçbiri chat modülüne bağımlı değil (mimari izolasyon, §2.4).
+
+---
+
+## 4. Uçlar (endpoints)
+
+Tümü `POST /api/chat/*` **`x-mc-write` başlığına tabidir** (ADR-013, muafiyet yok — `POST
+/api/events`'in `send-event.cjs`'e özel istisnası burada **geçerli değil**, çünkü bu uçların tek
+istemcisi panelin kendi tarayıcı arayüzüdür, SPIKE-002 §5.3). Bu kontrol dağıtıcıda **zaten**
+otomatik uygulanıyor (`index.ts:333`, ✓ DOĞRULANDI) — chat route'ları eklenince ek kod
+gerekmiyor, yalnızca regresyon testi (mutasyon 6, §11).
+
+Tüm yanıtlar `ApiResponse<T>` zarfını kullanır (`src/shared/types.ts`, değişmeden).
+`ErrorCode` birleşimine eklenecek yeni kodlar: `'chat_disabled' | 'session_not_ready' |
+'no_active_turn' | 'request_not_found' | 'invalid_body'` (`invalid_body`/`internal_error` zaten
+var). **`src/shared/types.ts` bu feature'ın dosya sahipliğinde DEĞİL** — bu genişletme `ErrorCode`
+birleşimine eklenmek zorunda, ama dosya `src/shared/**` altında; F-007'nin de aynı dosyaya
+`write_denied`/`write_failed` eklediği emsal var (§2.4 tablosu bu satırı **eksik bırakmıştı**,
+burada düzeltiliyor): **`src/shared/types.ts`'e `ErrorCode` genişletmesi de dokunacağım dosyalar
+listesine eklenir** (mekanik, tek satır, mevcut birleşime ekleme).
+
+| Uç | Metot | Gövde | Başarı | Hata kodları |
+|---|---|---|---|---|
+| `/api/chat/status` | GET | — | `200 { session_active, session_id, busy, api_key_barrier_tripped, chat_enabled, last_error }` | — (her zaman 200, durumun kendisi bilgi taşır) |
+| `/api/chat/history` | GET | — | `200 { data: { entries: ChatLogEntry[] } }` | `chat_disabled` (503) |
+| `/api/chat/message` | POST | `{ text: string }` (1-8000 karakter, boş/trim-sonrası-boş reddedilir) | `202 { data: { turn_id, queued } }` | `invalid_body`(400) · `chat_disabled`(503) · `session_not_ready`(503) · `internal_error`(500) |
+| `/api/chat/interrupt` | POST | `{}` | `200 { data: { interrupted: true } }` | `no_active_turn`(409) · `chat_disabled`(503) |
+| `/api/chat/permission` | POST | `{ request_id: string, result: unknown }` | `200 { data: { resolved: true } }` | `request_not_found`(404) · `invalid_body`(400) · `chat_disabled`(503) |
+| `/api/chat/restart` | POST | `{}` | `200 { data: { session_id } }` | `chat_disabled`(503) · `internal_error`(500) |
+
+**`result` alanının şekli (`/api/chat/permission`):** sunucu bunu **doğrulamadan** (şema
+zorlamadan) bekleyen `canUseTool`/`AskUserQuestion` promise'ine olduğu gibi iletir — SDK'nın
+beklediği şekil çağrı tipine göre değişir (izin: `{behavior:'allow'|'deny', updatedInput?,
+message?}`; soru: `{answers: Record<string,string>}`, SPIKE-002 §3.1 ✓ DOĞRULANDI). Sunucu
+tarafında **tek** kontrol: `request_id` bilinen bir bekleyen istekle eşleşmeli (yoksa `404`) ve
+her `request_id` **yalnızca bir kez** çözülebilir (ikinci POST `404` döner — "zaten çözüldü" ile
+"hiç var olmadı" aynı koda düşer, bilgi sızdırmaz). Bu, K3'ün "otomatik onay yok" kuralının HTTP
+seviyesindeki karşılığıdır: sunucu hiçbir zaman kendi başına `{behavior:'allow'}` üretmez, yalnızca
+panelden gelen kararı **yönlendirir**.
+

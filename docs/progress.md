@@ -1948,3 +1948,71 @@ harcanmadı (talimat gereği `test:chat-live` bu turda hiç çalıştırılmadı
 - qa-evaluator F-012'yi (Y1/Y2/Y4/Y3 düzeltmeleri + F5/F6 dahil) yeniden değerlendirsin.
 - CEO: mimari bulguyu (`PreToolUse`/`canUseTool` sıralaması) değerlendirip `ADR-014`'e eklenip
   eklenmeyeceğine karar versin.
+
+---
+
+## 2026-09-06 — F-012 QA tur 3 dar kapsamlı düzeltme turu (kullanıcı onaylı, yalnızca Y1 + Y3 + Ö7 belgelemesi)
+
+**Bağlam:** `docs/qa/F-012-2026-09-06-tur3.md` üçüncü QA turuydu, KALDI/ESKALE kararıyla
+kullanıcıya gitti. Kullanıcı tek bir dar kapsamlı düzeltme turu onayladı: yalnızca Y1
+(bekleyen izin yenilemede geri gelmiyor, BLOKLAYICI), Y3 (canlı hook testi hâlâ model
+davranışına bağımlı, ÖNEMLİ) ve Ö7'nin belgelenmesi (davranış değişmeden, `ADR-014` +
+`docs/blockers.md`). QA'nın GEÇTİ verdiği hiçbir şeye dokunulmadı.
+
+**Ne yapıldı**
+
+*Y1 (kapandı):* `src/features/chat/web/useChatSession.ts`'in `loadStatus`'u (mount effect +
+`onChatSync` SSE yeniden bağlanması) yanıtı doğrudan `setStatus(body.data)`'ya yazıyordu;
+kartı kuran tek yer olan `onChatStatus` indirgeyicisinden hiç geçmiyordu. Tek satırlık düzeltme:
+`loadStatus` artık `onChatStatus(body.data)` çağırıyor (`onChatStatus`'un tanımı,
+`permissionDataRef`'e olan bağımlılığı yüzünden `loadStatus`'un üstüne taşındı — TDZ nedeniyle
+aksi mümkün değildi). `tests/features/chat/web/ChatScreen.test.tsx`'e GERÇEK yolu (mount/
+`onChatSync` → stub `fetch` → DOM, handler elle çağrılmadan) ölçen iki yeni test eklendi;
+`tests/e2e/chat.spec.ts`'e "bekleyen izin varken yenile → kart geri gelir → cevaplanabilir"
+adımı eklendi (sahte `query()` dikişi, sıfır kota).
+
+*Y3 (kapandı, bu koşuda):* Eski tasarım modelin belirli bir yayın komutunu birebir önermesini
+şart koşuyordu ve önermezse "kararsız, tekrar dene" diye kırılıyordu (4 art arda canlı koşuda bu
+tanı dalına takıldı). O tanı dalı tamamen kaldırıldı. İki parçalı çözüm: (1)
+`tests/integration/chat-hooks-live.test.ts`'e kota harcamayan, modelden tamamen bağımsız yeni
+bir `describe` bloğu eklendi — `.claude/hooks/block-dangerous.cjs`'i gerçek bir alt süreç olarak
+`PreToolUse`'un göndereceği JSON'un aynısıyla çalıştırıp çıkış kodunu doğrudan ölçer (her
+`npm run verify`'de çalışır); (2) AC4'ün canlı testi artık modelin ÖNERDİĞİ HAM komutu (ne
+olursa olsun) `runHookDirect` ile aynı betiğe verip "olması gereken karar"ı (ground truth)
+hesaplıyor ve canlı oturumun gözlenen kararıyla karşılaştırıyor — `agent:'ceo'` aktif koldan
+kaldırıldı (hook yükleme `settingSources`'a bağlı, personadan bağımsız).
+
+*Ö7 (belgelendi, kod değişmedi):* `docs/03-ux.md:327`'nin "kalıcı kalır" iddiası ile araç/agent
+durum satırlarının yenilemede kaybolması arasındaki çelişki `ADR-014` "Kabul edilen riskler"
+madde 5'e ve `docs/blockers.md`'ye (2026-09-06 kaydı) yazıldı.
+
+**Nasıl doğrulandı**
+- `npm run verify` = **0** (**859 test + 2 atlandı, 57 dosya** — yeni deterministik hook testi
+  ikisi de dahil, önceki turdan +2/+1).
+- `npm run e2e` = **0** (23/23, değişmedi).
+- `npm run e2e:chat` = **0** (1/1, yenileme adımı dahil).
+- **Mutasyon kanıtı (Y1):** `onChatSync`'ten `void loadStatus()` çağrısı silinince yeni
+  reconnect testi KIRMIZI verdi (22 passed | 1 failed); satır Edit ile birebir geri alındı,
+  `diff` orijinalle farksız, tekrar 23/23 yeşil.
+- **Canlı koşu (Y3):** `MC_CHAT_LIVE_TESTS=1 npm run test:chat-live` = **exit 0, 4/4 yeşil**
+  (2 yeni deterministik + E1/B5 + AC4) — önceki 4 art arda başarısız koşudan sonra ilk yeşil
+  sonuç. Talimat gereği en fazla 2 koşu izinliydi; 1 koşu yetti, 2. koşu harcanmadı.
+- `grep -rn "MUTATION\|MUTASYON" src/ tests/` yalnızca meşru `write-gate-manifest.test.ts:124`.
+- Süreç/port temizliği: canlı koşu sonrası `tasklist` içinde `node.exe` **yok** (yalnızca bu
+  makinedeki ilgisiz `claude.exe` süreçleri var, bu oturumun ürettiği bir şey değil).
+
+**Harcanan kota (bu oturum):** yalnızca `MC_CHAT_LIVE_TESTS=1 npm run test:chat-live`'ın **1**
+koşusu (E1/B5 + AC4 iki kolu, ~87 sn). Y1 ve Ö7 tamamen kod okuma + jsdom testleri + statik
+doküman düzenlemesiyle yapıldı, sıfır kota.
+
+**Kalan risk**
+- Ö7'nin kod düzeltmesi hâlâ yapılmadı (bilinçli, görev kapsamı dışıydı) — `docs/blockers.md`'de
+  açık madde, bir sonraki sohbet/Thread feature'ına devredildi.
+- AC4'ün ground-truth karşılaştırması modelin ne önerdiğine bakılmaksızın her zaman doğru sonuç
+  verir, ama bu turda `MC_CHAT_LIVE_DEBUG` açılmadığı için modelin gerçekte hangi komutu
+  önerdiği ve `blockedActive`'in hangi değeri aldığı ayrıca loglanmadı — yalnızca her iki
+  `expect`'in de geçtiği (exit 0) bilgisi var. Yeni deterministik doğrudan-betik testi bu
+  boşluğu her koşuda gerçek bir blok/geçiş kanıtı vererek dengeliyor.
+
+**Sonraki adım**
+- qa-evaluator bu dar kapsamlı turu (yalnızca Y1 + Y3 + Ö7 belgelemesi) değerlendirsin.

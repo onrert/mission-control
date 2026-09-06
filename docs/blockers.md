@@ -208,3 +208,37 @@ gözle görülür hâle gelirse.
 
 **Durum:** F-012'yi bekletmiyor (QA'nın kendi kararıyla koşullu kabul edildi); yalnızca bir
 sonraki feature'ın planlamasına bilgi taşıyor.
+
+## 2026-09-06 — bilgilendirme + açık madde (developer, F-012 QA tur3 dar kapsamlı düzeltme turu) — Ö7 araç/agent satırları yenilemede kaybolur, `docs/03-ux.md:327` ile çelişir
+
+**Görev:** `docs/qa/F-012-2026-09-06-tur3.md` §6 Ö7'nin kalanını "kabul edilebilir sapma
+(bloklayıcı değil)" olarak kapatıyor; QA'nın kararı `ADR-014`'ün "Kabul edilen riskler"
+bölümüne (yapıldı, madde 5) ve bu dosyaya açık madde olarak girmesini şart koşuyordu.
+
+**Durum (davranış DEĞİŞMEDİ, yalnızca ölçüldü ve belgelendi, kod değişmedi):**
+`docs/03-ux.md:327` alt agent durum satırı için "kalıcı kalır (silinmez) — kullanıcı geçmişe
+döndüğünde hangi agent'ın ne zaman çalıştığını görebilir" diyor. Gerçek davranış: sayfa
+yenilenince yalnızca `kind:'text'`/`'error'` transkript girdileri (`GET /api/chat/history`
+üzerinden) geri geliyor; `kind:'tool'` araç/agent özet satırları (`✓ Bash tamamlandı (…)` gibi)
+istemci tarafında yeniden çizilmiyor.
+
+**Ne kayboluyor:** yalnızca araç/agent durum satırlarının EKRANDAKİ görünümü. Kullanıcı
+balonları, CEO'nun nihai cevabı ve tur-içi hata satırları yenilemeden sonra da eksiksiz kalıyor
+(QA canlı ölçtü, `docs/qa/F-012-2026-09-06-tur3.md` §6).
+
+**Verinin nerede durduğu:** kaybolmuyor — `history.jsonl`'e `kind:'tool'` olarak yazılıyor ve
+diskte duruyor (bkz. `session.ts`/`history-log.ts`). Yalnızca istemcinin `useChatSession.ts`
+geçmiş-yükleme/render yolu bu girdi tipini şu an atlıyor.
+
+**Neden bu turda düzeltilmedi:** Bu tur kullanıcı tarafından yalnızca Y1 (bekleyen izin
+yenilemede kaybolması) + Y3 (canlı hook testi) için dar kapsamlı onaylandı; Ö7 QA'nın kendi
+kararıyla zaten "bloklayıcı değil" sayılmıştı ve görev tanımı açıkça "kod değiştirme, yalnızca
+belgele" diyordu.
+
+**Yeniden ele alınma eşiği:** bir sonraki sohbet ekranı feature'ında (ör. Thread/derin detay
+ekranı F-010, ya da `history-log.ts`'in `kind:'tool'` girdilerini de fold edip render etmesi)
+ele alınmalı. O zamana kadar `docs/03-ux.md:327` ile gerçek davranış arasında bilinen, kabul
+edilmiş bir sapma vardır.
+
+**Durum:** F-012'yi bekletmiyor (QA zaten "bloklayıcı değil" kararı vermişti); yalnızca bir
+sonraki feature'ın planlamasına bilgi taşıyor.

@@ -99,6 +99,21 @@ başarısız olmuş olabilirdi.
    gözle görülür hâle gelirse (mevcut sentetik ölçüm dışında ilk gerçek belirti), bu bir sonraki
    feature'da (yazma sıklığı sınırlama + `entries` için ring buffer) ele alınmalı;
    `docs/blockers.md`'ye de bir sonraki feature için açık madde olarak yazıldı.
+5. **Araç/agent durum satırları sayfa yenilemesinde ekrandan kaybolur (F-012 QA tur 3 Ö7,
+   koşullu kabul — `docs/qa/F-012-2026-09-06-tur3.md` §6).** `docs/03-ux.md:327` şunu şart
+   koşuyor: alt agent durum satırı "kalıcı kalır (silinmez) — kullanıcı geçmişe döndüğünde
+   hangi agent'ın ne zaman çalıştığını görebilir." Gerçek davranış bunu karşılamıyor: istemci
+   `kind:'tool'` girdilerini sayfa yenilemesi sonrası **render etmiyor** (yalnızca `kind:'text'`/
+   `'error'` transkriptte geri geliyor). **Kaybolan tam olarak şu:** `✓ Bash tamamlandı (…)` gibi
+   araç/agent özet satırları. **Veri kaybolmuyor** — `history.jsonl`'e `kind:'tool'` olarak
+   yazılıyor ve diskte duruyor, yalnızca istemcinin `history-log.ts`/`useChatSession.ts` yeniden
+   çizim yolu bunları atlıyor. **Bloklayıcı değil** kabul edildi (QA gerekçesi): oturum durumu
+   bozulmuyor, kullanıcı akışında kilitlenme veya sessiz yarı-başarı üretmiyor, yalnızca **geçmiş
+   bir olayın izini** gizliyor (Y1'in aksine karar bekleyen bir durumu gizlemiyor). **Yeniden ele
+   alınma eşiği:** bir sonraki sohbet ekranı feature'ında (ör. Thread/derin detay ekranı, F-010,
+   ya da `history-log.ts`'in `kind:'tool'` girdilerini de fold edip render etmesi) ele alınmalı;
+   o zamana kadar `docs/03-ux.md:327`'nin "kalıcı kalır" ifadesi ile gerçek davranış arasında
+   bilinen bir sapma vardır. Ayrıca `docs/blockers.md`'ye açık madde olarak yazıldı.
 
 ## Sonuçlar (uygulamayı bağlayan kurallar)
 

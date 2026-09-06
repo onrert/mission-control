@@ -439,6 +439,13 @@ describe('chat API — AC8 (oturum çökse bile panel ayakta kalır)', () => {
     const { queryFn, getHandles } = createFakeQueryFactory()
     const handle = await startServer(dataDir, queryFn)
     try {
+      // I2 — query() artık ilk mesaja kadar tembel; handle'ın var olması için önce bir mesaj
+      // gönderilmeli (gerçek kullanım akışıyla aynı).
+      await fetch(`${handle.base}/api/chat/message`, {
+        method: 'POST',
+        headers: writeHeaders(),
+        body: JSON.stringify({ text: 'merhaba' }),
+      })
       const fake = getHandles()[0]!
       fake.throwError(new Error('boom'))
       await new Promise((resolve) => setTimeout(resolve, 30))

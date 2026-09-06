@@ -8,7 +8,7 @@ import type {
   Query,
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk'
-import { stripApiKey, hasApiKeyHelperConfigured } from './env-barrier'
+import { stripApiKey, checkApiKeyBarrier, hasApiKeyHelperConfigured } from './env-barrier'
 import { createHistoryLog, type HistoryLog } from './history-log'
 import { readSessionId, writeSessionId } from './session-store'
 import type { SseHub } from '../../../server/sse/hub'
@@ -191,6 +191,11 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
   const toolStartedAt = new Map<string, number>()
   const toolNameByUseId = new Map<string, string>()
   const accumulatedTextByTurn = new Map<string, string>()
+  // I2 (CEO kararı, QA F-014 tur2 N2) — uygulama açılışı tek başına gerçek bir model çağrısı
+  // yapmamalı (ADR-011: bu uygulama Windows açılışında HER GÜN otomatik başlıyor). `bootstrap()`
+  // artık `deps.query()`'yi (SDK'nın alt sürecini spawn eden çağrı) çağırmaz, yalnızca önceki
+  // `session_id`'yi burada saklar; gerçek başlatma ilk `sendMessage()`'a ertelenir.
+  let pendingResumeSessionId: string | undefined
 
   function createInputStream(): {
     iterator: AsyncIterable<SDKUserMessage>
@@ -499,17 +504,21 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
     }
   }
 
-  async function bootstrap(): Promise<void> {
-    if (!chatEnabled) return
-    historyLog.init()
-    const previousSessionId = readSessionId(deps.dataDir)
+  /**
+   * Gerçek `deps.query()` çağrısı (SDK'nın alt sürecini spawn eder). I2 gereği bu fonksiyon
+   * `bootstrap()`'tan DEĞİL, yalnızca ilk `sendMessage()`'dan (tembel) veya `restart()`'tan
+   * (kullanıcının açık talebi, hemen) çağrılır. İçinde hiçbir `await` yok — senkron tamamlanır,
+   * `async` yalnızca imza uyumu (try/catch içinde `queryHandle?.close()` benzeri kullanımlarla
+   * tutarlı) içindir.
+   */
+  async function startSession(resumeSessionId: string | undefined): Promise<void> {
     const stream = createInputStream()
     inputPush = stream.push
     inputStop = stream.stop
     try {
       queryHandle = deps.query({
         prompt: stream.iterator,
-        options: buildOptions(previousSessionId),
+        options: buildOptions(resumeSessionId),
       })
       void consume(queryHandle)
       state = 'idle'
@@ -521,13 +530,28 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
     }
   }
 
+  async function bootstrap(): Promise<void> {
+    if (!chatEnabled) return
+    historyLog.init()
+    // I2 — burada BİLEREK `startSession()` çağrılmıyor (bkz. yukarıdaki yorum). Uygulama açılışı
+    // (bu fonksiyonun çağrıldığı an) böylece sıfır model çağrısı yapar.
+    pendingResumeSessionId = readSessionId(deps.dataDir)
+  }
+
   function getStatus(): ChatStatusPayload {
+    // I2 — gerçek `stripApiKey` (mutasyon) yalnızca ilk `sendMessage()`'da (`buildOptions`
+    // içinde) çalışır. Alt süreç henüz başlamamışken bile "bariyer devrede mi?" sorusu doğru
+    // yanıtlanabilsin diye, henüz hiçbir şey silinmemişse `checkApiKeyBarrier` (SAF, mutasyonsuz)
+    // ile CANLI bir önizleme yapılır. Gerçek strip bir kez olduktan sonra `strippedVars` (aşağıda
+    // `deps.env`'den zaten SİLİNMİŞ anahtarları taşıyan closure değişkeni) önceliklidir.
+    const barrierVars =
+      strippedVars.length > 0 ? strippedVars : checkApiKeyBarrier(deps.env).strippedVars
     return {
       session_active: state === 'idle' || state === 'busy',
       session_id: sessionId,
       busy: state === 'busy',
-      api_key_barrier_tripped: strippedVars.length > 0,
-      stripped_env_vars: strippedVars,
+      api_key_barrier_tripped: barrierVars.length > 0,
+      stripped_env_vars: barrierVars,
       chat_enabled: chatEnabled,
       last_error: lastError,
       api_key_helper_configured: hasApiKeyHelperConfigured(settingsJsonPath),
@@ -550,7 +574,18 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
     text: string
   ): { turn_id: string } | { errorCode: 'chat_disabled' | 'session_not_ready' } {
     if (!chatEnabled) return { errorCode: 'chat_disabled' }
-    if (state === 'crashed' || inputPush === undefined) return { errorCode: 'session_not_ready' }
+    if (state === 'crashed') return { errorCode: 'session_not_ready' }
+    if (inputPush === undefined) {
+      // I2 — ilk gerçek kullanıcı mesajı: model çağrısı potansiyeli taşıyan alt süreç burada,
+      // tam da bu anda başlar (`startSession` içinde `await` yok, çağrı tamamen senkron biter).
+      void startSession(pendingResumeSessionId)
+    }
+    // `startSession` (yukarıda) `state`'i eşzamanlı olarak 'crashed' yapabilir — TS'in dar
+    // akış analizi bunu göremediği için (kapanıştaki mutasyon, çağrı sınırının ötesinde) tip
+    // burada bilerek genişletiliyor.
+    if ((state as ChatSessionState) === 'crashed' || inputPush === undefined) {
+      return { errorCode: 'session_not_ready' }
+    }
     const turnId = crypto.randomUUID()
     const ts = deps.now().toISOString()
     const userEntry = historyLog.append({
@@ -616,7 +651,9 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
       queryHandle?.close()
       inputStop?.()
       lastError = undefined
-      await bootstrap()
+      // I2 — `restart()` kullanıcının açık talebidir (açılış değil), bu yüzden `bootstrap()`'ın
+      // aksine tembel DEĞİLDİR: `startSession()` hemen çağrılır.
+      await startSession(readSessionId(deps.dataDir))
       return { session_id: sessionId }
     } catch (err) {
       state = 'crashed'

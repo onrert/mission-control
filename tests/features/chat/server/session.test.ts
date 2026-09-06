@@ -108,9 +108,23 @@ async function bootstrapSession(env: NodeJS.ProcessEnv = {}) {
   return { session, getHandles, broadcasts }
 }
 
+describe('createChatSession — I2 (CEO kararı) — bootstrap() query() çağırmaz, açılış tembel', () => {
+  it('bootstrap() sonrası, sendMessage() ÇAĞRILMADAN query() hiç çağrılmaz (sıfır model çağrısı)', async () => {
+    const { session, getHandles } = await bootstrapSession()
+    expect(getHandles()).toHaveLength(0)
+    // Sohbet yine de "kullanılabilir" görünür — arayüz kapalı göstermez, yalnızca alt süreç
+    // henüz spawn edilmemiştir.
+    const status = session.getStatus()
+    expect(status.chat_enabled).toBe(true)
+    expect(status.session_active).toBe(true)
+  })
+})
+
 describe('createChatSession — bootstrap seçenekleri (mutasyon 3/4)', () => {
-  it('query() beklenen seçeneklerle çağrılır', async () => {
-    const { getHandles } = await bootstrapSession()
+  it('ilk sendMessage() sonrası query() beklenen seçeneklerle çağrılır (I2 — tembel başlatma)', async () => {
+    const { session, getHandles } = await bootstrapSession()
+    session.sendMessage('merhaba')
+    await flush()
     const handles = getHandles()
     expect(handles).toHaveLength(1)
     const opts = handles[0]!.options
@@ -408,6 +422,8 @@ describe('createChatSession — interrupt', () => {
 describe('createChatSession — restart', () => {
   it('eski Query.close() çağrılır, yeni query() resume ile açılır', async () => {
     const { session, getHandles } = await bootstrapSession()
+    session.sendMessage('ilk mesaj (I2 — query() ilk kez burada başlar)')
+    await flush()
     const firstHandle = getHandles()[0]!
     firstHandle.emit({ type: 'system', subtype: 'init', session_id: 'sess-abc' })
     await flush()
@@ -504,7 +520,9 @@ describe('K3 çevrimdışı çit (mutasyon 13, Y-B1) — allowManagedPermissionR
     // buildOptions() çıktısından (sahte query()'e geçirilen `options.managedSettings`) okunuyor.
     // Bu turun mutasyonu (D6/D10, F-012-kod-turu-A-notlari.md) bu alanın `permissions` içine
     // gömülürse veya kaldırılırsa `resolveSettings`'in `managed` kaynağı hiç belirmez.
-    const { getHandles } = await bootstrapSession()
+    const { session, getHandles } = await bootstrapSession()
+    session.sendMessage('bir şey yap (I2 — query() ilk kez burada başlar)')
+    await flush()
     const opts = getHandles()[0]!.options
     const resolved = await resolveSettings({
       cwd: CHAT_SESSION_CWD,
@@ -529,6 +547,8 @@ describe('K3 çevrimdışı çit (mutasyon 13, Y-B1) — allowManagedPermissionR
 describe('createChatSession — stopAll', () => {
   it('Query.close() çağırır', async () => {
     const { session, getHandles } = await bootstrapSession()
+    session.sendMessage('bir şey yap (I2 — query() ilk kez burada başlar)')
+    await flush()
     session.stopAll()
     expect(getHandles()[0]!.closeCalls).toBe(1)
   })

@@ -95,10 +95,12 @@ async function main(): Promise<void> {
     process.stdout.write(`[chat-fake-server] 127.0.0.1:${port} adresinde dinliyor (kota: 0).\n`)
   })
 
-  // `bootstrap()` `createServer` içinde arka planda, engellemeden başlar (F-012 sözleşme §3) —
-  // handle'ın hazır olması birkaç mikro görev turu alabilir.
+  // I2 (CEO kararı) — `bootstrap()` artık `query()`'yi TEMBEL çağırır: alt süreç yalnızca
+  // tarayıcıdan gerçek bir sohbet mesajı gönderildiğinde (ilk `sendMessage()`) spawn edilir.
+  // Bu yüzden bekleme, eski "birkaç mikro görev turu" bütçesinden çok daha uzun olmalı —
+  // Playwright'ın kendi test zaman aşımının güvenle altında (30 sn, 20 ms aralıkla).
   let handle: FakeQueryHandle | undefined
-  for (let i = 0; i < 100 && !handle; i++) {
+  for (let i = 0; i < 1500 && !handle; i++) {
     handle = getHandles()[0]
     if (!handle) await sleep(20)
   }

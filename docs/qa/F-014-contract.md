@@ -329,3 +329,45 @@ Bulgu 3, kanıtlı).
 - Packager'ın devDependencies'i çıktıya dahil edip etmediği (özellikle `tsx`+`esbuild`'in
   paketlenmiş `node_modules`'a girmesi gerekiyor, `--prune` varsayılanı bunları silebilir) —
   kodlama turunda `package-electron.mjs`'in `ignore`/`prune` ayarıyla ölçülüp doğrulanmalı.
+
+---
+
+## Ek — I2 (CEO kararı, 2026-09-06): barındırılan sohbet oturumu TEMBEL başlar
+
+**Bağlam:** QA F-014 tur2 N2 (`docs/qa/F-014-2026-09-06-tur2.md`) uygulama açılışında kullanıcı
+hiçbir şey yazmadan bir `SessionStart → UserPromptSubmit → Stop` deseni gözlemledi — kesin kök
+neden ayrı ayrı kanıtlanamadı (paylaşılan proje dizininde başka bir Claude Code oturumunun aynı
+event sunucusuna yazması da mümkün), ama CEO bağımsız olarak karar verdi: **uygulama açılışı tek
+başına gerçek bir model çağrısı YAPAMAMALI** — ADR-011 ile bu uygulama Windows açılışında her gün
+otomatik başlayacak, bu yüzden potansiyel günlük kota sızıntısı riskli.
+
+**Ne değişiyor (dosya sahipliği genişletmesi, bkz. `docs/features/F-014-masaustu-uygulamasi.md`
+"Dosya sahipliği" bölümü, I3 notu):** `src/features/chat/server/session.ts`'in `bootstrap()`'ı
+artık gerçek `deps.query()` (SDK'nın alt süreci spawn eden, model çağrısı potansiyeli taşıyan
+çağrısı) YAPMAZ — yalnızca `historyLog.init()` + önceki `session_id`'yi okuyup saklar. Gerçek
+`query()` çağrısı yeni bir `startSession()` fonksiyonuna taşınır ve İLK `sendMessage()`
+çağrısında (kullanıcı gerçekten bir şey yazdığında) tembelce tetiklenir. `restart()` kullanıcının
+açık talebi olduğu için `startSession()`'ı HER ZAMAN hemen çağırır (tembel değildir — bu bilinçli
+bir kullanıcı eylemi, açılış değil).
+
+**Davranış nasıl doğrulanacak:**
+1. Birim testi (`tests/features/chat/server/session.test.ts`): `bootstrap()` çağrıldıktan sonra,
+   `sendMessage()` HİÇ çağrılmadan, sahte `query()` fabrikasının **hiç çağrılmadığı**
+   (`getHandles()` uzunluk **0**) doğrulanır. Aynı testte `getStatus().chat_enabled`/
+   `session_active`'in hâlâ kullanılabilir durumda olduğu (arayüz "kapalı" göstermez) ayrıca
+   ölçülür.
+2. Mutasyon çiti: `sendMessage()`'daki tembel-başlatma dalı (`if (inputPush === undefined) { void
+   startSession(...) }`) kaldırılınca, "ilk mesaj sonrası query() çağrılır" testinin **KIRMIZI**
+   verdiği gösterilir (uygula → kırmızı gözlemle → geri al).
+3. Var olan `bootstrapSession()` tabanlı testler (mevcut 18 kullanım) `sendMessage()`'ı zaten
+   `getHandles()`'tan ÖNCE çağırıyor — bunlar davranış değişikliğinden etkilenmez. Yalnızca
+   `getHandles()`'a `sendMessage()` OLMADAN erişen 3 test (bootstrap seçenekleri, restart, K3
+   çevrimdışı çit, stopAll) güncellenip başlarına bir `sendMessage()` eklenir (gerçek kullanım
+   akışını yansıtan, davranışı gizlemeyen bir düzeltme).
+4. `tests/e2e/helpers/chat-fake-server.ts`'in `getHandles()[0]` bekleme döngüsü artık ilk
+   tarayıcı mesajını bekleyeceği için süresini büyütmek gerekir (2 sn → E2E test timeout'unun
+   güvenle altında bir değer) — davranış değişmiyor, yalnızca bekleme bütçesi büyüyor.
+
+**Kapsam dışı bırakılan:** N2'nin kesin kök nedeni (paylaşılan event sunucusunun başka bir
+oturumdan mı yoksa gerçekten hosted session'dan mı kaynaklandığı) bu ekin konusu değil — tembel
+başlatma, kaynak ne olursa olsun "açılış = sıfır model çağrısı" garantisini sağlar.

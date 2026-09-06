@@ -46,6 +46,24 @@ feature'ı **karşılamaz**.
 ilgili testler. **`src/features/**` ve `src/web/**` DEĞİŞMEZ** — bu bir başlatma katmanı,
 ürün değişikliği değil.
 
+**İstisna 1 (H1, QA F-014 B2, CEO onaylı):** `src/features/chat/server/session.ts`'in
+`resolveChatSessionCwd`'i — Electron paketlenmiş kopyada dosyanın kendi `__dirname`'i
+`resources/app/...`'a çözülüp barındırılan CEO oturumunun güvenlik kancalarını (hook'ları) hiç
+bulamaması sorunu için gerekliydi. `electron/main.cjs` gerçek proje dizinini bulup
+`MC_CHAT_SESSION_CWD`'i set eder; değişken tanımsızsa (tarayıcıdan `npm start`, testler) eski
+`__dirname` türetimi DEĞİŞMEDEN çalışır — tarayıcı yolu bu istisnadan etkilenmez.
+
+**İstisna 2 (I2, CEO kararı, QA F-014 tur2 N2):** aynı dosyada `bootstrap()`/`sendMessage()`/
+`restart()` — barındırılan sohbet oturumu artık TEMBEL başlar: gerçek `deps.query()` (model
+çağrısı potansiyeli taşıyan alt süreç) yalnızca ilk `sendMessage()`'da spawn edilir, uygulama
+açılışı (`bootstrap()`) tek başına çağırmaz. Gerekçe: bu uygulama `ADR-011` ile Windows
+açılışında HER GÜN otomatik başlıyor; açılışın tek başına kota harcaması kabul edilemez. Detay ve
+doğrulama planı: `docs/qa/F-014-contract.md` "Ek — I2" bölümü. Her iki istisna da küçük, testli
+(`tests/features/chat/server/session.test.ts`) ve tarayıcı/`npm start` yolunu davranışsal olarak
+korur — feature notunun asıl kısıtladığı şey ürünün GÖRÜNÜR davranışının/ekranlarının
+değişmemesidir, bu ikisi de görünür davranışı değiştirmez (yalnızca çalışma dizini çözümü ve
+alt sürecin başlatılma ANI).
+
 ## Notlar / kararlar
 - **İlk iş:** Electron bağımlılığının `deps.test.ts` guard'ına çarpıp çarpmadığını **ölç**.
   Çarpıyorsa kod yazmadan dur.

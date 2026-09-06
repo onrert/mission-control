@@ -1777,3 +1777,88 @@ donuyor**
 **Sonraki adım**
 - qa-evaluator F-012'yi (round A sunucu + round B istemci, birlikte) değerlendirsin.
 - `npm run dev` bulgusunun gerçek terminalde doğrulanması CEO/kullanıcıya devredildi.
+
+---
+
+## 2026-09-06 — F-012 QA düzeltme turu (KALDI → düzeltildi), feature yeniden `status: qa`
+
+**Ne yapıldı**
+Bu oturum önceki bir oturumun 150 tur sınırına takılmasından devam etti. İlk iş: eldeki 11
+dosyalık commit'siz WIP'i işlemek (`02db8eb`) — bu da `docs/qa/F-012-2026-09-06.md`'nin (KARAR:
+KALDI, 6 bloklayıcı + 8 önemli bulgu) E1-E6 CEO kararlarına yanıttı. `.probe/` (izlenmeyen,
+geçici canlı-oturum betikleri) scratchpad'e taşındı, depoda bırakılmadı.
+
+Kapatılan 6 bloklayıcı (detay `docs/features/F-012-ceo-sohbet-arayuzu.md` "QA düzeltme turu"
+bölümünde):
+- **B1** — `@source "../features/chat/web"` eklendi + `tests/build-css.test.ts`'e YAPISAL bir çit
+  (feature-bazlı değil, `src/features/*/web`'i dosya sisteminden numaralandırıp hepsinin
+  `@source`'da olduğunu doğruluyor, mutasyonla da kanıtlandı) — bu hata sınıfının deposunda 4.
+  tekrarıydı, artık BİR DAHA hiçbir yeni feature bunu unutamaz.
+- **B2** — `foldByTurn`/`upsertEntry` anahtarına `role` eklendi; kullanıcı mesajları artık CEO
+  cevabı tarafından ezilip kaybolmuyor.
+- **B3** — `session.ts`'e FIFO tur kuyruğu eklendi; alt agent çalışırken gelen ikinci mesaj artık
+  ilk turun akan cevabını bozmuyor (yeni test: iki turun delta'ları asla karışmıyor).
+- **B4** — `chat_tool` finished/`tool_result` dalı da kapalı allowlist ile test edildi (round A
+  yalnızca started dalını ölçüyordu, ham çıktı sızma riski vardı).
+- **B5/E1 (en kritik)** — `managedSettings.permissions.ask: ['Bash']` eklendi. Kurulu SDK'dan
+  doğrulandı (`sdk.d.ts:3037-3045`), gerçek oturumla İKİ YÖNLÜ kanıtlandı (`.probe/live-test-e1*
+  .mjs`, bu turda çalıştırıldı — gerçek kota harcandı, tutar aşağıda). `allowManagedPermissionRulesOnly`
+  TEK BAŞINA salt-okunur sınıflandırılan Bash komutlarını `canUseTool`'a hiç sormadan geçiriyordu;
+  artık geçmiyor. Çit: `session.test.ts`'in çevrimdışı K3 testi + yeni
+  `tests/integration/chat-hooks-live.test.ts`'in canlı testi (varsayılan `verify`de KOŞMAZ,
+  `MC_CHAT_LIVE_TESTS=1 npm run test:chat-live` ile elle).
+- **B6** — `chat-hooks-live.test.ts` yazıldı (`package.json:26`'nın çağırdığı, önceden HİÇ var
+  olmayan dosya); AC4'ün iki yönlü kanıtını (hook aktifken engelliyor / `settingSources:[]`
+  iken geçiyor) da içeriyor.
+
+Kapatılan önemli bulgular: **Ö1** (bariyer şeridi artık `stripped_env_vars`'ı gösteriyor, sabit
+"ANTHROPIC_API_KEY bulundu" yanlış iddiası kalktı), **Ö2** (bütçe mesajına `(${budget} USD)`
+eklendi), **Ö3** (chat_permission_request/resolved yükleri kapalı allowlist ile test edildi),
+**Ö4** (oturumu çökertmeyen tur-içi hatalar artık `kind:'error'` kalıcı transkript girdisi olarak
+görünüyor — `chat_error` yayınına `turn_id`/`chat_seq` eklendi, `finalizeTurn`'ün `done` durumuna
+döndüğü ama kullanıcının hiçbir şey görmediği durum kapandı), **Ö8** (izin kartı kararla
+`Onaylandı — <komut> çalıştı` / `Reddedildi` tek satırına kolabe oluyor, artık TAMAMEN silinmiyor).
+
+**Bilinçli olarak ERTELENEN (mimari karar gerektirir, bu turda risk/kapsam gerekçesiyle
+YAPILMADI — round A'nın bildiği sınırlamaların ÜZERİNE yeni bir regresyon eklenmedi):**
+- **Ö5** — sohbet ekranı hâlâ sıfır tarayıcı E2E kapsamında (`playwright.config.ts` sekmeyi
+  kapatarak derliyor); düzeltme sahte-`query()` enjekte edilebilen ayrı bir E2E modu gerektirir.
+- **Ö6** — geçmiş yazma amplifikasyonu (her delta'da BİRİKMİŞ metnin tamamı yeniden yazılıyor);
+  düzeltme `markDanglingAsInterrupted`'ın restart-sonrası davranışını etkileyebilecek bir
+  dayanıklılık tasarım kararı gerektiriyor.
+- **Ö7** — araç satırları/bekleyen izinler sayfa yenilendiğinde hâlâ yok (hiç yüklenmiyorlar);
+  düzgün çözüm `ChatLogEntry` şema değişikliği + sunucu + istemci değişikliği gerektiriyor.
+
+Bu üçü `docs/features/F-012-ceo-sohbet-arayuzu.md`'ye gerekçeleriyle yazıldı; CEO/architect karar
+verirse yeni bir feature notu/ADR olarak ayrılabilir.
+
+**Nasıl doğrulandı**
+- `npm run verify` (typecheck + lint + **849 test / 55 dosya** + build) = **0** (bu turda +12
+  yeni test: B3 tur kuyruğu, B4/Ö3 kapalı-şema, Ö4 tur-içi hata, Ö8 kolabe, B2 tekrar-doğrulama).
+- `npm run e2e` = **0** (23/23, prod webServer, `concurrently` kullanmıyor).
+- Üretim build'i elle kontrol edildi: `dist/web/assets/*.css` içinde `bg-amber-700`,
+  `whitespace-pre-wrap`, `sticky` artık VAR (B1 doğrulaması, QA'nın kullandığı yöntemle aynı).
+  `grep -rn "MUTATION\|MUTASYON" src/ tests/` yalnızca meşru `write-gate-manifest.test.ts:124`
+  eşleşmesini döndürüyor.
+  BEST-EFFORT `git diff`'i kontrol edildi: `.probe/` scratchpad'e taşındı, hiçbir geçici dosya
+  depoda kalmadı.
+- Süreç/port temizliği: tur sonunda `tasklist` node.exe orphan YOK, 7333/7433/7434'te LISTENING
+  yok (yalnızca TIME_WAIT — kapanmış bağlantılar).
+
+**Harcanan kota (bu turda)**
+Önceki (kesilen) oturumda E1 araştırması için gerçek SDK oturumları açılmıştı (`.probe/live-test-
+e1*.mjs`, `haiku` model, düşük maliyetli — tam tutar bu oturumda ölçülmedi, dosyalar scratchpad'e
+taşındı). Bu oturumda YENİ bir gerçek SDK oturumu AÇILMADI — tüm yeni testler sahte `query()`
+kullanıyor.
+
+**Kalan risk / QA'ya devredilen açık maddeler**
+- Ö5/Ö6/Ö7 kasıtlı olarak ertelendi (yukarıda gerekçeli); qa-evaluator bunları ya kabul edilmiş
+  sapma olarak imzalar ya da ayrı bir düzeltme turu açar.
+- E1'in canlı kanıtı bu turda TEKRAR koşulmadı (önceki kesilen oturumda koşulmuştu, kod hâlâ
+  aynı); `chat-hooks-live.test.ts` `MC_CHAT_LIVE_TESTS=1` ile manuel çalıştırılıp gerçek kotayla
+  yeniden doğrulanmalı (ADR-014 M2'nin "her QA turunda en az bir kez" kadansı).
+- `npm run dev` bulgusu (N1, önceki turdan) hâlâ gerçek bir terminalde doğrulanmadı.
+
+**Sonraki adım**
+- qa-evaluator F-012'yi (B1-B6 + Ö1/Ö2/Ö3/Ö4/Ö8 düzeltmeleri, Ö5/Ö6/Ö7 ertelemeleri dahil)
+  yeniden değerlendirsin.

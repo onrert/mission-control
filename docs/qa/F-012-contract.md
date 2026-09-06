@@ -642,83 +642,129 @@ yüzden **fiilen deliniyor**.
 **D6 önceliği izlendi: (1) kurulu paketten yol arandı → (2) kısmen bulundu, tam doğrulanamadı →
 (3) UYDURULMADI, aşağıda hem önerilen yapılandırma hem de doğrulanamayan kısmın açık kaydı var.**
 
-### Bulunan mekanizma (SDK tip yüzeyinde ✓ VAR, davranışı [T] TAHMİN)
+### Bulunan mekanizma (SDK tip yüzeyinde ✓ DOĞRULANDI VAR, davranışı kısmen [T] TAHMİN)
 
-`Options.managedSettings` (`sdk.d.ts:2051-2074`, ✓ DOĞRULANDI VAR) — SDK'nın kendi
-dokümantasyonuna göre bu, "politika katmanı"na (`user < project < local < flag < policy`
-sıralamasında **en yüksek**, `sdk.d.ts:6391`) beslenir ve **yalnızca kısıtlayıcı anahtarları**
-kabul eder: `ResolveSettingsOptions.managedSettings` dokümantasyonu (`sdk.d.ts:3038-3043`) bunu
-açıkça sayıyor: *"filtered through a restrictive-key allowlist (`allowManaged*Only` locks,
-`permissions.deny`/`ask`, sandbox restrictions)"*. Yani projenin `permissions.allow`'unu bu
-kanaldan **silemeyiz** ama üzerine `permissions.ask` kuralı **ekleyebiliriz** — ve bu depoda zaten
-kabul edilmiş bir ilke olan "denylist/kısıtlayıcı kural allow'dan önce gelir" deseniyle tutarlı
-(`sdk.d.ts:6016`, MCP sunucu örneği: *"Denylist takes precedence - if a server is on both lists, it
-is denied"*).
+**Y-B1 düzeltmesi — tur 2'nin `sdk.d.ts:6391` atfı yanlıştı, kaldırıldı:** o satır `enabledPlugins`
+alanına özgü bir JSDoc cümlesiydi (`sdk.d.ts:6377-6391`, bu turda kurulu paketten tekrar okundu,
+✓ DOĞRULANDI), `permissions`/`managedSettings` ile hiçbir ilgisi yoktu. Doğru kanıt aşağıda, üç
+ayrı alandan, bu turda satır satır tekrar okunarak:
 
-**Önerilen yapılandırma (session.ts'e eklenecek):**
+1. **`Options.managedSettings` (`sdk.d.ts:2051-2074`, ✓ DOĞRULANDI):** *"Restrictive policy-tier
+   settings … Feeds the lowest-precedence policy sub-source and is filtered through a
+   restrictive-key allowlist (`allowManaged*Only` locks, `permissions.deny`/`ask`, sandbox
+   restrictions); non-restrictive keys such as `model`, `env`, `cleanupPeriodDays` are silently
+   dropped."* → `permissions.ask` **ve** `allowManaged*Only` kilitleri bu filtreden **geçer**.
+2. **Deliği fiilen kapatan alan: `allowManagedPermissionRulesOnly` (`sdk.d.ts:6320-6322`, ✓
+   DOĞRULANDI, bu turda kurulu paketten okundu):** *"When true (and set in managed settings),
+   permission rules from user, project, local, and `--settings` files and allow rules from
+   `--allowedTools` are ignored; only managed settings can add allow rules through settings.
+   `--disallowedTools` and other deny and ask rules from the command line or the current session
+   still apply."* → `.claude/settings.json`'ın 40 satırlık `permissions.allow` listesi **tamamen
+   yok sayılır**. `managedSettings` içine **hiçbir allow kuralı eklenmiyor** (yalnızca bu bayrak
+   `true` yapılıyor) — sonuç: hiçbir araç çağrısı otomatik onaylanamaz, hepsi `canUseTool`'a düşer.
+   Bu, önceki turun kanıtsız "policy `ask`'i `allow`'un üstüne bindirir" varsayımından daha güçlü
+   bir çözüm: precedence tartışmasına hiç girmiyor, çünkü allow listesi kaynağında etkisizleşiyor.
+3. **Çevrimdışı çit imkânı: `resolveSettings()` (`sdk.d.ts:3020`, fonksiyon; `ResolveSettingsOptions`
+   `sdk.d.ts:3026-3054`, ✓ DOĞRULANDI, bu turda kurulu paketten okundu):** *"Resolve the effective
+   Claude Code settings for the given options using the same merge engine as the CLI, without
+   spawning the Claude CLI."* — etkin ayar kademesini (`managedSettings` dahil) **kota harcamadan,
+   deterministik olarak**, `verify` içinde ölçebiliriz. **Ama yeterli değil**: aynı doküman açıkça
+   uyarıyor (`sdk.d.ts:3002-3003`): *"This reports the **raw settings cascade, not a security
+   decision**."* Bu çevrimdışı çit **gerekli ama yetersiz** — aşağıdaki canlı iki yönlü test
+   (adım 1-3) **yine de zorunlu** (D4).
+
+**⚠ TUZAK — bu iki bayrak KESİNLİKLE `managedSettings`'e eklenmeyecek:**
+- `allowManagedHooksOnly` (`sdk.d.ts:6307-6310`, ✓ DOĞRULANDI): *"When true (and set in managed
+  settings), only hooks from managed settings run. User, project, and local hooks are ignored."*
+  → bu depodaki **altı proje hook'unu** (§8) devre dışı bırakır.
+- `strictPluginOnlyCustomization` (`sdk.d.ts:6331-6334`, ✓ DOĞRULANDI): proje `hooks`/`skills`/
+  `agents`/`mcp` kaynaklarını topyekûn bloklar (yalnızca yönetilen/plugin kaynaklarına izin verir).
+Bu iki bayrak set edilirse altı güvenlik hook'u **sessizce** devre dışı kalır — CLAUDE.md'nin
+en pahalı hata sınıfı ("iş yapıldı, kimse bilmiyor")'nın en tehlikeli örneği olurdu.
+**`session.ts`'in `managedSettings` nesnesi yalnızca `{ permissions: { allowManagedPermission
+RulesOnly: true } }` içerir — başka hiçbir anahtar eklenmez.**
+
+**Güncellenmiş önerilen yapılandırma (session.ts'e eklenecek, tur 2'nin `ask` override'ının yerini
+alır):**
 ```ts
 managedSettings: {
   permissions: {
-    ask: ['Bash', 'Edit', 'Write', 'WebFetch', 'WebSearch'],
+    allowManagedPermissionRulesOnly: true,
   },
 }
 ```
-Amaç: `.claude/settings.json`'ın 40 satırlık `permissions.allow`'unu **silmeden** (dosyayı
-değiştirmiyoruz, panelin kendi dışındaki hiçbir Claude Code oturumunu etkilemiyoruz), yalnızca
-**barındırılan CEO oturumu için** bunun üzerine "her zaman sor" kısıtını bindirmek.
+Amaç: `.claude/settings.json`'ın 40 satırlık `permissions.allow`'unu **dosyayı değiştirmeden**
+(panelin kendi dışındaki hiçbir Claude Code oturumunu etkilemeden) yalnızca **barındırılan CEO
+oturumu için** etkisiz kılmak.
 
-### Neden bu [T] TAHMİN — ve nasıl kapatılacak
+### Neden hâlâ [T] TAHMİN — ve nasıl kapatılacak
 
 `session.test.ts`'in enjekte edilmiş sahte `query`'si SDK'nın **gerçek izin motorunu hiç
-çalıştırmıyor** — yani bu spesifik mekanizmayı test EDEMEZ (tıpkı hook'lar gibi, `M2`'nin
-gerekçesi burada da geçerli: "yükleniyor" ölçmek "engelliyor" ölçmek değildir). Bu yalnızca
-**gerçek bir SDK oturumuyla** kanıtlanabilir.
+çalıştırmıyor** — yani bu spesifik mekanizmayı test EDEMEZ (`M2`'nin gerekçesi burada da geçerli:
+"yükleniyor" ölçmek "engelliyor" ölçmek değildir). `resolveSettings()` (madde 3, yukarıda) da
+yalnızca **hangi ayarların yükleneceğini** doğrular, izin motorunun bunlara **fiilen uyup
+uymadığını** değil (kendi uyarısı: "raw cascade, not a security decision"). Bu yalnızca **gerçek
+bir SDK oturumuyla** kanıtlanabilir.
 
-**Kod turunun ZORUNLU ilk işi (diğer her şeyden önce, `chat-hooks-live.test.ts` kapsamı
-genişletilerek veya yeni bir `chat-permission-live.test.ts` ile, `MC_CHAT_LIVE_TESTS` gate'i
-altında):**
-1. `managedSettings.permissions.ask` override'ı **VARKEN**, `.claude/settings.json`'ın
-   `permissions.allow`'unda zaten bulunan bir komut (ör. `Bash(npm run test:chat-live)`) denenir —
-   beklenen: `chat_permission_request` yayınlanır (host'a soruldu, otomatik onaylanmadı).
+**Kod turunun ZORUNLU ilk işi (diğer her şeyden önce):**
+0. **Çevrimdışı çit (yeni, madde 3'ün karşılığı, `verify`'de koşar):** `resolveSettings({ cwd,
+   managedSettings: { permissions: { allowManagedPermissionRulesOnly: true } } })` çağrılır ve
+   dönen `ResolvedSettings`'te bu bayrağın/kaynağın gerçekten yüklendiği assert edilir — güvenlik
+   kararı değil, "yapılandırma doğru mu" sorusuna deterministik bir cevap (mutasyon 13, §11.2).
+1. `managedSettings.permissions.allowManagedPermissionRulesOnly: true` **VARKEN**,
+   `.claude/settings.json`'ın `permissions.allow`'unda zaten bulunan bir komut (ör.
+   `Bash(npm run test:chat-live)`) denenir — beklenen: `chat_permission_request` yayınlanır.
 2. Override **YOKKEN** (aynı komut, `managedSettings` verilmeden), aynı komut denenir — beklenen
-   (bugünkü ölçülen davranış, SPIKE-002 M2/M3'ün de dolaylı gösterdiği): komut hiçbir
-   `chat_permission_request` olmadan çalışır.
-3. **Eğer adım 1'de `chat_permission_request` YAYINLANMAZSA** (yani `ask` override'ı da allow'u
-   ezemiyorsa): kod turu **DURUR**, bu bloklayıcı **CEO/architect'e eskale edilir** — aşağıdaki
-   "Yol B" ve "hiçbiri işe yaramazsa" seçenekleri onlara sunulur. Developer kendi başına ikinci bir
-   varsayımla ilerlemez (bu belgenin kendi kuralı, `CLAUDE.md`).
+   (bugünkü ölçülen davranış): komut hiçbir `chat_permission_request` olmadan çalışır.
+3. **Eğer adım 1'de `chat_permission_request` YAYINLANMAZSA** (override de allow'u ezemiyorsa, ör.
+   bu makinede bir admin-tier `managed-settings.json` mevcutsa ve `parentSettingsBehavior` farklı
+   davranmayı zorluyorsa — aşağıdaki [T] koşulu): **D10 — kod turu DURMAZ, doğrudan Yol B'ye
+   geçilir** (aşağıda). Yalnızca Yol B'nin **kendi** canlı testi de başarısız olursa CEO/architect'e
+   eskale edilir.
 
-### Alternatif — Yol B (daha güvenli, çok daha maliyetli, bu sözleşmenin kapsamına ALINMADI)
+**[T] TAHMİN — admin-tier koşulu:** `Options.managedSettings`'in kendi JSDoc'u (`sdk.d.ts:2052-
+2061`, ✓ DOĞRULANDI) şunu söylüyor: *"When an IT-controlled managed-settings tier (server / MDM /
+managed-settings.json) exists on the user's machine, these are **dropped by default** — they only
+layer in if that admin opts in via `parentSettingsBehavior: 'merge'`."* Bu makinede böyle bir
+yönetici katmanı olup olmadığı bu turda **doğrulanamadı** — yukarıdaki 3 adımlı canlı test bunu
+**dolaylı olarak** zaten kapsıyor: varsa ve `merge` açık değilse adım 1 `chat_permission_request`
+görmez, D10 devreye girer.
 
-`settingSources: []` (hiç proje ayarı yüklenmez — `permissions.allow` **garanti** yüklenmez, bu
-davranış SDK dokümantasyonunda "SDK isolation mode" olarak net yazılı, ✓ DOĞRULANDI) +
-**programatik** `Options.hooks` (`sdk.d.ts:1582-1595`, ✓ DOĞRULANDI VAR — JS callback, dosya-
-tabanlı DEĞİL: `hooks: { PreToolUse: [{ hooks: [async (input) => ...] }] }`) ile altı `.cjs`
-dosyasını `spawn` ederek JS callback içinden çağırıp çıkış koduna göre `{continue: boolean}`
-üretmek + CLAUDE.md'yi `systemPrompt` seçeneğine (`sdk.d.ts:2237+`, ✓ DOĞRULANDI VAR) elle
-enjekte etmek. Bu, "izin motoru allow'u hiç görmüyor" belirsizliğini **tamamen ortadan kaldırır**
-(precedence tartışması yok, çünkü allow hiç yüklenmiyor) ama:
-- Altı hook dosyasının matcher'larını (`Edit|Write`, `Bash`, `mcp__higgsfield__.*`) ve giriş/çıkış
-  biçimini JS callback köprüsüne **yeniden** yazmak gerekir — bu, `src/features/chat/server/`
-  içine **yeni bir dosya** (`hook-bridge.ts`) ve **yeni bir dosya sahipliği genişlemesi** demektir.
-  `.claude/hooks/`'a **dokunulmuyor**, sarmalanıyor.
-  `"agent": "ceo"` persona alanının (§0.2 madde 3b) `settingSources: []` ile **kesin kaybolacağı**
-  bilinen bir bedel — persona ayrıca `systemPrompt`'a elle yazılmalı, ki bu da CLAUDE.md'nin
-  **tam olarak** CLI'nin okuduğu formatta (agent frontmatter dahil) yeniden üretilmesini
-  gerektirir — kolay taklit edilemeyen bir yüzey.
-- Bu, sözleşmenin dosya/kapsam sınırını **önemli ölçüde** genişletir ve bu turda tek başına karar
-  verilecek bir şey değil.
+### Yol B — koşullu olarak plana dahil (D10, artık "kapsam dışı" değil)
 
-**Bu yüzden Yol B bu sözleşmenin planına ALINMADI** — yalnızca Yol A'nın canlı testi
-başarısız olursa CEO/architect'in önüne konacak somut bir alternatif olarak kayıtlı.
+**Y-B2 düzeltmesi:** tur 2'de bu bölüm "kapsama alınmadı" diye çerçevelenmişti; CEO'nun bu turda
+verdiği **D10** kararı bunu değiştirdi. Yol A'nın canlı testi (adım 1-3, yukarıda) başarısız
+olursa kod turu **otomatik olarak** Yol B'ye geçer — durmaz, CEO'ya sormaz, K3'ü veya UX §7.3'ü
+gevşetmeyi bir seçenek olarak değerlendirmez (bu seçenek **kesin REDDEDİLDİ**, D10, pazarlığa
+kapalı).
 
-### D6 sonucu — özet
+Yol B: `settingSources: []` (hiç proje ayarı yüklenmez — `permissions.allow` **garanti**
+yüklenmez, ✓ DOĞRULANDI "SDK isolation mode") + **programatik** `Options.hooks` (`sdk.d.ts:1582-
+1595`, ✓ DOĞRULANDI VAR — JS callback, dosya-tabanlı DEĞİL) ile altı `.cjs` dosyasını `spawn`
+ederek JS callback içinden çağırıp çıkış koduna göre `{continue: boolean}` üretmek + CLAUDE.md'yi
+`systemPrompt` seçeneğine (`sdk.d.ts:2237+`, ✓ DOĞRULANDI VAR) elle enjekte etmek.
 
-**Yol kısmen bulundu (Yol A: `managedSettings.permissions.ask`), tam doğrulanamadı.** Kod turu bu
-yapılandırmayla başlar AMA yukarıdaki 3 adımlık canlı test **her şeyden önce** çalıştırılıp
-sonuç raporlanmadan geri kalan implementasyona devam edilmez. Test başarısız olursa **DUR, CEO'ya
-eskale et** — Yol B'nin maliyeti ve "bilinçli risk kabulü" (K3'ün UX §7.3 metninin gözden
-geçirilmesi) seçenekleri CEO'nun kararı, developer'ın değil.
+**Yol B'nin bedeli (koşullu olarak önceden kabul edilmiş, D10):**
+- **Koşullu yeni dosya:** `src/features/chat/server/hook-bridge.ts` — yalnızca Yol A'nın canlı
+  testi başarısız olursa yazılır; başarılı olursa hiç oluşturulmaz (§2.4'e not düşüldü). Altı hook
+  dosyasının matcher'larını (`Edit|Write`, `Bash`, `mcp__higgsfield__.*`) ve giriş/çıkış biçimini
+  bu köprüye **yeniden** yazmak gerekir. `.claude/hooks/`'a **dokunulmuyor**, yalnızca sarmalanıyor.
+- `"agent": "ceo"` persona alanının (§0.2 madde 3b) `settingSources: []` ile **kesin kaybolacağı**
+  bilinen bir bedel — persona ayrıca `systemPrompt`'a elle yazılmalı, CLAUDE.md'nin CLI'nin okuduğu
+  formatta (agent frontmatter dahil) yeniden üretilmesini gerektirir.
+- Yol B'nin **kendi** canlı testi: aynı 3 adımlık desen `settingSources: []` + `hooks`
+  callback'leriyle tekrarlanır — programatik hook'un gerçekten bir `Bash` çağrısını
+  engellediği/sorduğu ölçülür. Bu da başarısız olursa (ve **yalnızca** o zaman) CEO/architect'e
+  eskale edilir.
+
+### D6/D10 sonucu — özet
+
+**Yol bulundu (Yol A: `managedSettings.permissions.allowManagedPermissionRulesOnly`), kanıt bu
+turda düzeltildi (Y-B1), ama SDK'nın izin motorunun buna fiilen uyup uymadığı hâlâ [T] TAHMİN.**
+Kod turu şu sırayla ilerler: (0) çevrimdışı çit → (1-3) Yol A canlı test → başarılı ise
+implementasyona devam; **başarısız ise DURMADAN Yol B'ye geç** (D10) → Yol B'nin kendi canlı testi
+→ o da başarısız olursa CEO/architect'e eskale. K3 ("otomatik onay yasak") ve UX §7.3 metni bu
+zincirin **hiçbir adımında** gevşetilmez (D10, pazarlığa kapalı).
 
 ---
 

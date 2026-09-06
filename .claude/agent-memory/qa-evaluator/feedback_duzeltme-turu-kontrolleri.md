@@ -187,3 +187,38 @@ zaten tarihli bir kopyası var mı diye bak (`diff -q`) — ikinci kez yanlış 
     yolu ikinci bir işlemi arıza hâlâ açıkken denemek: aynı kart ikinci kez taşındı ve BAŞARILI
     oldu → yarı-başarı çıkmaz sokak değil. Tek istek ölçmek bu iddiayı doğrulamaz; ikinci istek
     409 verseydi düzeltme kullanıcıyı sahte "dosya dışarıdan değişti" uyarısına düşürüyor olurdu.
+
+31. **"Bilinçli ertelendi" gerekçesinin TEKNİK ÖNCÜLÜNÜ kodda doğrula — çoğu zaman yanlıştır.**
+    F-012 tur 2: Ö5'in ertelemesi "sahte `query()` enjekte edilebilen ayrı bir E2E modu mevcut
+    harness'e YENİ BİR YETENEK eklemek demektir" diyordu. Oysa dikiş ürün kodunda hazırdı
+    (`createServer(port, dataDir, chatQueryOverride)`); ~100 satırlık bir başlatıcı betikle
+    (scratchpad, depoya girmeden) gerçek üretim sunucusunu sahte `query()` ile ayağa kaldırıp
+    O turun BÜTÜN tarayıcı ölçümlerini **sıfır kota** ile yaptım. Kural: erteleme metnindeki
+    "gerektirir / mümkün değil" cümlelerini grep'le doğrula; dependency-injection parametresi,
+    `*Override`, `deps.` gibi isimleri ara. Yan fayda: aynı dikiş, pahalı canlı oturum yerine
+    ücretsiz uçtan uca QA sağlar — bunu her LLM/dış-servis feature'ında ilk iş olarak ara.
+32. **Ertelenen maddenin GERÇEK ETKİSİNİ ölç; "görüntüleme kaybı" diye yazılan şey kilitlenme
+    olabilir.** F-012 Ö7 "araç satırları yenilemede kayboluyor" diye ertelenmişti; ölçünce
+    bekleyen İZİN İSTEĞİ de kayboluyordu ve `request_id` yalnızca istemci belleğinde yaşadığı
+    için oturum **kalıcı, sessiz** kilitleniyordu (90 sn sonra hâlâ `busy:true`, arayüzde
+    kurtarma butonu yok, gönderilen mesaj `202 queued` alıp hiç cevaplanmıyor). Erteleme
+    gerekçesini okuyup geçme — senaryoyu tarayıcıda yürüt ve **kurtarma yolu var mı** diye bak.
+33. **Bir düzeltmenin ertelenen bir kusurun OLASILIĞINI artırıp artırmadığını sor.** F-012'de
+    `permissions.ask:['Bash']` (güvenlik düzeltmesi) her Bash çağrısını izin kartına çevirdi;
+    böylece Ö7'nin kilitlenme penceresi tur başına 5-10 kat arttı. Erteleme kararı düzeltmeden
+    ÖNCE verildiği için bu etkileşim değerlendirilmemişti. Kapanış tablosunu yazarken
+    "kapanan X, ertelenen Y'yi daha sık tetikler mi?" çapraz sorusunu her ikili için sor.
+34. **Derleme-anı bayrakları (`vite define`) özelliği SESSİZCE yok edebilir — test koşusundan
+    sonra `dist/`'i denetle.** F-012'de `playwright.config.ts` `webServer.env`'i
+    `npm run build && npm start`'ın TAMAMINA uygulanıyor; `MC_CHAT_ENABLED:'0'` bundle'a gömülüyor
+    ve `npm run e2e` sonrası panelde sohbet sekmesi HİÇ yok, `GET /api/chat/status` ise
+    `chat_enabled:true` diyor. Kural: `vite.config.ts`'te `define:` varsa, o bayrağın E2E/CI
+    ortamında farklı bir değer aldığı her yolu ara; test koşusundan sonra üretim sunucusunu
+    açıp özelliğin GÖRÜNDÜĞÜNÜ doğrula (sunucu API'sine değil, DOM'a bak).
+35. **Canlı/ücretli testlerde assert MEKANİZMAYA bağlanmalı, MODEL DAVRANIŞINA değil.** F-012'nin
+    `chat-hooks-live.test.ts`'i "model gerçekten şu komutu çalıştırsın" varsayıyordu; 3 koşunun
+    3'ü de kırmızı geldi (1× 30 sn zaman aşımı, 2× `blockedActive=false` — mekanizma sağlamken).
+    Sözleşme "her QA turunda koşulur" diyorsa bu yanlış alarm üretir ve kanıta güveni aşındırır.
+    Canlı bir testi kabul etmeden önce **en az 2 kez koştur**; tek yeşil koşu kanıt değildir.
+    Ayrıca kendi bağımsız probe'unu yazmak genelde daha ucuz ve daha kesindir (F-012 E1 iki yönlü
+    kanıtı 3 kısa oturum / $0,10).

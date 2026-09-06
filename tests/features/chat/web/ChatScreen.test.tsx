@@ -230,6 +230,96 @@ describe('ChatScreen — izin isteği: otomatik onay YOK (K3)', () => {
   })
 })
 
+describe('ChatScreen — QA F-012 tur 2 Y1 (BLOKLAYICI): sayfa yenilemesi/yeniden bağlanma sonrası bekleyen izin GERİ GELİR ve cevaplanabilir', () => {
+  it('onChatStatus (chat_sync sonrası GET /api/chat/status yanıtı) tek başına kartı kurar ve Onayla gerçekten POST atar', async () => {
+    // Tekrar üretme (QA KALDI Y1): eskiden bekleyen izin yalnızca `onChatPermissionRequest`
+    // SSE olayıyla (canlı, yalnızca isteğin ANINDA açık olan sekmede) kuruluyordu. Sayfa
+    // yenilenince/`EventSource` yeniden bağlanınca istemci belleği sıfırlanıyor, `onChatSync`
+    // yalnızca `onChatPermissionRequest`'i DEĞİL `onChatStatus`'u tetikliyor — bu test
+    // `onChatPermissionRequest` HİÇ ÇAĞRILMADAN yalnızca `onChatStatus` ile kartın kurulduğunu
+    // ve gerçekten cevaplanabildiğini (POST /api/chat/permission doğru request_id ile) kanıtlar.
+    const { calls } = stubFetch()
+    const chatRef = await renderHarness()
+
+    await act(async () => {
+      chatRef.current!.handlers.onChatStatus({
+        session_active: true,
+        session_id: 's1',
+        busy: true,
+        api_key_barrier_tripped: false,
+        stripped_env_vars: [],
+        chat_enabled: true,
+        api_key_helper_configured: false,
+        max_budget_usd: 20,
+        pending_permissions: [
+          {
+            request_id: 'r-reload',
+            turn_id: 't1',
+            tool_name: 'Bash',
+            input_preview: 'npm test',
+            ts: new Date().toISOString(),
+          },
+        ],
+      })
+    })
+
+    expect(screen.getByText('İzin isteği')).toBeTruthy()
+    expect(screen.getByText(/CEO şu aracı çalıştırmak istiyor: Bash/)).toBeTruthy()
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Onayla' }))
+
+    const permCall = calls.find((c) => c.url.includes('/api/chat/permission'))
+    expect(permCall).toBeTruthy()
+    expect(JSON.parse(permCall!.init!.body as string)).toEqual({
+      request_id: 'r-reload',
+      result: { behavior: 'allow' },
+    })
+  })
+
+  it('sunucu bir isteği listeden çıkarınca (çözüldü) kart de istemciden kaybolur — kalıntı bırakmaz', async () => {
+    stubFetch()
+    const chatRef = await renderHarness()
+    await act(async () => {
+      chatRef.current!.handlers.onChatStatus({
+        session_active: true,
+        session_id: 's1',
+        busy: true,
+        api_key_barrier_tripped: false,
+        stripped_env_vars: [],
+        chat_enabled: true,
+        api_key_helper_configured: false,
+        max_budget_usd: 20,
+        pending_permissions: [
+          {
+            request_id: 'r-gone',
+            turn_id: 't1',
+            tool_name: 'Bash',
+            input_preview: 'npm test',
+            ts: new Date().toISOString(),
+          },
+        ],
+      })
+    })
+    expect(screen.getByText('İzin isteği')).toBeTruthy()
+
+    await act(async () => {
+      chatRef.current!.handlers.onChatStatus({
+        session_active: true,
+        session_id: 's1',
+        busy: false,
+        api_key_barrier_tripped: false,
+        stripped_env_vars: [],
+        chat_enabled: true,
+        api_key_helper_configured: false,
+        max_budget_usd: 20,
+        pending_permissions: [],
+      })
+    })
+    expect(screen.queryByText('İzin isteği')).toBeNull()
+  })
+})
+
 describe('ChatScreen — Ö8 (QA KALDI): izin kartı kararla TEK SATIRA kolabe olur, silinmez', () => {
   it("onChatPermissionResolved (allow) sonrası 'Onaylandı — <komut> çalıştı' kalıcı satırı görünür", async () => {
     // Tekrar üretme (QA KALDI Ö8, docs/03-ux.md §7 madde (h)2 birebir): eskiden

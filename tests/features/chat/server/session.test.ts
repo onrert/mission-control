@@ -314,6 +314,58 @@ describe('createChatSession — izin akışı (canUseTool, K3)', () => {
     expect((resolvedEvent!.data as { outcome: string }).outcome).toBe('allow')
   })
 
+  // QA F-012 tur 2 Y1 (BLOKLAYICI) düzeltmesi — "bekleyen izin isteği varken sayfa yenilenirse
+  // oturum sessizce ve kalıcı olarak kilitleniyor" (`docs/qa/F-012-2026-09-06-tur2.md` §4).
+  // Sunucu artık bekleyen isteği KENDİ durumunda taşıyor: `getStatus()` her çağrıldığında
+  // (sayfa yenileme sonrası `GET /api/chat/status` dahil) hâlâ bekleyen isteği listeler ve o
+  // istek GERÇEKTEN cevaplanabilir kalır (aynı `request_id`, `resolvePermission` haritasından).
+  it('CEO kararı F1 — bekleyen izin getStatus().pending_permissions içinde görünür ve "sayfa yenilemesi" sonrası da cevaplanabilir', async () => {
+    const { session, getHandles, broadcasts } = await bootstrapSession()
+    session.sendMessage('npm test çalıştır')
+    await flush()
+    const handle = getHandles()[0]!
+
+    let resolved: unknown
+    const promise = handle.options.canUseTool!(
+      'Bash',
+      { command: 'npm test' },
+      { signal: new AbortController().signal, toolUseID: 'tu1', requestId: 'req-reload' }
+    ).then((r) => {
+      resolved = r
+    })
+    await flush()
+
+    // "Sayfa yenilemesi" simülasyonu — istemcinin `GET /api/chat/status`'u tekrar çağırdığı an,
+    // yani `session.getStatus()`'un TAZE bir çağrısı (istemci belleği hiç kullanılmadı).
+    const statusAfterReload = session.getStatus()
+    expect(statusAfterReload.pending_permissions).toEqual([
+      {
+        request_id: 'req-reload',
+        turn_id: expect.any(String),
+        tool_name: 'Bash',
+        input_preview: 'npm test',
+        ts: expect.any(String),
+      },
+    ])
+    // canUseTool anında `chat_status` da yayınlanmış olmalı (canlı sekmeler için) — yalnızca
+    // `GET /api/chat/status`'a bel bağlanmıyor.
+    const liveStatus = broadcasts.filter((b) => b.name === 'chat_status')
+    expect(
+      liveStatus.some(
+        (b) => (b.data as { pending_permissions: unknown[] }).pending_permissions.length === 1
+      )
+    ).toBe(true)
+
+    // "Yenilenmiş sayfa"nın gördüğü `request_id` ile karar veriliyor — hâlâ çalışıyor.
+    const outcome = session.resolvePermission('req-reload', { behavior: 'allow' })
+    expect(outcome).toEqual({ resolved: true })
+    await promise
+    expect(resolved).toEqual({ behavior: 'allow' })
+
+    // Çözülünce liste boşalır (kalıcı kilitlenme kalıntısı bırakmaz).
+    expect(session.getStatus().pending_permissions).toEqual([])
+  })
+
   it('bilinmeyen request_id için request_not_found döner', async () => {
     const { session } = await bootstrapSession()
     expect(session.resolvePermission('yok', {})).toEqual({ errorCode: 'request_not_found' })

@@ -59,6 +59,18 @@ export interface ChatErrorEvent {
 /** `src/features/chat/server/session.ts` `ChatStatusPayload`'ın tel biçimi — sunucu dosyasından
  *  import EDİLMEZ (istemci/sunucu sınırı, bu projede hiçbir `src/web/**` dosyası `src/server/**`
  *  içe aktarmıyor), burada aynı alanlarla ayrıca tanımlanır. */
+/** QA F-012 tur 2 Y1 düzeltmesi — sunucudan gelen bekleyen izin özeti (`session.ts`
+ *  `ChatPendingPermissionInfo` ile aynı alanlar). Sunucu her zaman doldurur; alan yine de
+ *  `?` (opsiyonel) bırakılır ki eski/sahte `fetch` gövdeleriyle yazılmış testler kırılmasın
+ *  (`onChatStatus` `?? []` ile savunmacı okur). */
+export interface ChatPendingPermissionInfo {
+  request_id: string
+  turn_id: string
+  tool_name: string
+  input_preview: string
+  ts: string
+}
+
 export interface ChatStatus {
   session_active: boolean
   session_id: string | undefined
@@ -69,6 +81,7 @@ export interface ChatStatus {
   last_error?: string
   api_key_helper_configured: boolean
   max_budget_usd: number
+  pending_permissions?: ChatPendingPermissionInfo[]
 }
 
 export interface ToolRow {
@@ -450,8 +463,26 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
     }
   }, [])
 
+  // QA F-012 tur 2 Y1 düzeltmesi — bekleyen izinler artık İSTEMCİ belleğinde değil, SUNUCUDAN
+  // gelen `pending_permissions` listesinden kurulur. `chat_status` hem SSE ile canlı yayınlanır
+  // (`session.ts` `canUseTool`/`resolvePermission`) hem de ilk yüklemede/`chat_sync` sonrasında
+  // `GET /api/chat/status` ile çekilir (yukarıdaki `loadStatus`) — bu yüzden sayfa yenilendiğinde
+  // veya SSE yeniden bağlandığında bekleyen bir izin kartı varsa GERİ GELİR ve gerçekten
+  // cevaplanabilir (aynı `request_id`, sunucunun kendi haritasından). Liste sunucu tarafından
+  // OTORİTER kabul edilir — tam olarak değiştirilir (birleştirilmez), çünkü sunucu zaten
+  // çözülmüş istekleri listeden çıkarıyor.
   const onChatStatus = useCallback((payload: ChatStatus) => {
     setStatus(payload)
+    const pending = payload.pending_permissions ?? []
+    for (const p of pending) {
+      permissionDataRef.current.set(p.request_id, { input_preview: p.input_preview })
+    }
+    setPendingPermissions(
+      pending.map((p) => ({
+        ...p,
+        question: parseAskUserQuestion(p.tool_name, p.input_preview),
+      }))
+    )
   }, [])
 
   const onChatError = useCallback((payload: ChatErrorEvent) => {

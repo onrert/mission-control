@@ -58,6 +58,19 @@ export function isChatEnabled(env: NodeJS.ProcessEnv): boolean {
 
 export type ChatSessionState = 'idle' | 'busy' | 'crashed' | 'disabled'
 
+/** QA F-012 tur 2 Y1 düzeltmesi — bekleyen izin isteği SUNUCU tarafında bir durumdur, istemci
+ *  belleğinde değil (CEO kararı F1). `getStatus()`'un her çağrısı (ilk yükleme, `chat_sync`
+ *  sonrası `GET /api/chat/status`, ve canlı `chat_status` yayını) bu listeyi taşır ki sayfa
+ *  yenilenince kart geri gelsin VE gerçekten cevaplanabilsin (aynı `request_id`,
+ *  `resolvePermission`'ın haritasından geliyor). */
+export interface ChatPendingPermissionInfo {
+  request_id: string
+  turn_id: string
+  tool_name: string
+  input_preview: string
+  ts: string
+}
+
 export interface ChatStatusPayload {
   session_active: boolean
   session_id: string | undefined
@@ -70,6 +83,7 @@ export interface ChatStatusPayload {
   /** QA F-012 Ö2/E6 — bütçe mesajının `(${budget} USD)` kısmını doldurmak için istemciye
    *  taşınır (sözleşme §10). `resolveChatBudget(deps.env)`'in aynı değeri, sabit gömülü değil. */
   max_budget_usd: number
+  pending_permissions: ChatPendingPermissionInfo[]
 }
 
 export type ChatQueryFn = (params: {
@@ -158,7 +172,10 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
   let queryHandle: Query | undefined
   let inputPush: ((msg: SDKUserMessage) => void) | undefined
   let inputStop: (() => void) | undefined
-  const pendingPermissions = new Map<string, (result: PermissionResult) => void>()
+  interface PendingPermissionRecord extends ChatPendingPermissionInfo {
+    resolve: (result: PermissionResult) => void
+  }
+  const pendingPermissions = new Map<string, PendingPermissionRecord>()
   const toolStartedAt = new Map<string, number>()
   const toolNameByUseId = new Map<string, string>()
   const accumulatedTextByTurn = new Map<string, string>()
@@ -222,7 +239,19 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
       ts,
     })
     return new Promise<PermissionResult>((resolve) => {
-      pendingPermissions.set(requestId, resolve)
+      pendingPermissions.set(requestId, {
+        resolve,
+        request_id: requestId,
+        turn_id: turnId,
+        tool_name: toolName,
+        input_preview: inputPreview,
+        ts,
+      })
+      // QA F-012 tur 2 Y1 düzeltmesi — kart yalnızca CANLI SSE olayıyla değil, sonraki her
+      // `chat_status` okumasında (sayfa yenileme sonrası `GET /api/chat/status` dahil) da
+      // görünür olsun diye durum hemen yayınlanır. `getStatus()` bu anda pendingPermissions
+      // haritasını (bu isteği de içerecek şekilde) okur.
+      deps.hub.broadcast('chat_status', getStatus())
     })
   }
 
@@ -491,6 +520,13 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
       last_error: lastError,
       api_key_helper_configured: hasApiKeyHelperConfigured(settingsJsonPath),
       max_budget_usd: resolveChatBudget(deps.env),
+      pending_permissions: [...pendingPermissions.values()].map((r) => ({
+        request_id: r.request_id,
+        turn_id: r.turn_id,
+        tool_name: r.tool_name,
+        input_preview: r.input_preview,
+        ts: r.ts,
+      })),
     }
   }
 
@@ -543,17 +579,20 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
     result: unknown
   ): { resolved: true } | { errorCode: 'chat_disabled' | 'request_not_found' } {
     if (!chatEnabled) return { errorCode: 'chat_disabled' }
-    const resolver = pendingPermissions.get(requestId)
-    if (!resolver) return { errorCode: 'request_not_found' }
+    const record = pendingPermissions.get(requestId)
+    if (!record) return { errorCode: 'request_not_found' }
     pendingPermissions.delete(requestId)
     const outcome = derivePermissionOutcome(result)
     deps.hub.broadcast('chat_permission_resolved', {
       request_id: requestId,
-      turn_id: currentTurnId ?? 'unknown',
+      turn_id: record.turn_id,
       outcome,
       ts: deps.now().toISOString(),
     })
-    resolver(result as PermissionResult)
+    // Y1 düzeltmesiyle simetrik — bekleyen liste küçüldüğünde de `chat_status` yayınlanır ki
+    // başka bir sekme/yenilenmiş sayfa da kartın çözüldüğünü görsün.
+    deps.hub.broadcast('chat_status', getStatus())
+    record.resolve(result as PermissionResult)
     return { resolved: true }
   }
 

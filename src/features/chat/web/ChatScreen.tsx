@@ -5,6 +5,7 @@ import { Cog, HelpCircle, KeyRound, Lock, Send } from './icons'
 import type {
   AskUserQuestionItem,
   PendingPermission,
+  ResolvedPermission,
   ToolRow,
   UseChatSessionResult,
 } from './useChatSession'
@@ -150,6 +151,20 @@ function PermissionCard({
         </button>
       </div>
     </div>
+  )
+}
+
+/** QA F-012 Ö8 düzeltmesi — `docs/03-ux.md §7` madde (h)2/(h)3 birebir metin: karar verilen
+ *  izin kartı listeden SİLİNMEZ, tek satıra kolabe olur. */
+function ResolvedPermissionRow({ resolved }: { resolved: ResolvedPermission }) {
+  const text =
+    resolved.outcome === 'deny' || resolved.outcome === 'unknown'
+      ? 'Reddedildi'
+      : `Onaylandı — ${resolved.input_preview} çalıştı`
+  return (
+    <p role="status" className="px-1 text-xs text-zinc-500">
+      {text}
+    </p>
   )
 }
 
@@ -457,6 +472,9 @@ export function ChatScreen({ chat }: ChatScreenProps) {
           </p>
         )}
         <div className="mt-3 flex flex-col gap-3">
+          {chat.resolvedPermissions.map((resolved) => (
+            <ResolvedPermissionRow key={resolved.request_id} resolved={resolved} />
+          ))}
           {chat.pendingPermissions.map((perm) =>
             perm.question ? (
               <QuestionCard

@@ -230,6 +230,63 @@ describe('ChatScreen — izin isteği: otomatik onay YOK (K3)', () => {
   })
 })
 
+describe('ChatScreen — Ö8 (QA KALDI): izin kartı kararla TEK SATIRA kolabe olur, silinmez', () => {
+  it("onChatPermissionResolved (allow) sonrası 'Onaylandı — <komut> çalıştı' kalıcı satırı görünür", async () => {
+    // Tekrar üretme (QA KALDI Ö8, docs/03-ux.md §7 madde (h)2 birebir): eskiden
+    // `onChatPermissionResolved` kartı listeden TAMAMEN siliyordu, geriye hiçbir iz kalmıyordu.
+    stubFetch()
+    const chatRef = await renderHarness()
+    await act(async () => {
+      chatRef.current!.handlers.onChatPermissionRequest({
+        request_id: 'r-collapse-1',
+        turn_id: 't1',
+        tool_name: 'Bash',
+        input_preview: 'npm test',
+        ts: new Date().toISOString(),
+      })
+    })
+    expect(screen.getByText('İzin isteği')).toBeTruthy()
+
+    await act(async () => {
+      chatRef.current!.handlers.onChatPermissionResolved({
+        request_id: 'r-collapse-1',
+        turn_id: 't1',
+        outcome: 'allow',
+        ts: new Date().toISOString(),
+      })
+    })
+
+    expect(screen.queryByText('İzin isteği')).toBeNull()
+    expect(screen.getByText('Onaylandı — npm test çalıştı')).toBeTruthy()
+  })
+
+  it("onChatPermissionResolved (deny) sonrası 'Reddedildi' kalıcı satırı görünür", async () => {
+    stubFetch()
+    const chatRef = await renderHarness()
+    await act(async () => {
+      chatRef.current!.handlers.onChatPermissionRequest({
+        request_id: 'r-collapse-2',
+        turn_id: 't1',
+        tool_name: 'Bash',
+        input_preview: 'rm -rf /',
+        ts: new Date().toISOString(),
+      })
+    })
+
+    await act(async () => {
+      chatRef.current!.handlers.onChatPermissionResolved({
+        request_id: 'r-collapse-2',
+        turn_id: 't1',
+        outcome: 'deny',
+        ts: new Date().toISOString(),
+      })
+    })
+
+    expect(screen.queryByText('İzin isteği')).toBeNull()
+    expect(screen.getByText('Reddedildi')).toBeTruthy()
+  })
+})
+
 describe('ChatScreen — AskUserQuestion (madde 4)', () => {
   const questionPreview = JSON.stringify({
     questions: [

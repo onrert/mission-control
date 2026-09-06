@@ -110,6 +110,16 @@ export interface PendingPermission {
   question?: { questions: AskUserQuestionItem[] }
 }
 
+/** QA F-012 Ö8 düzeltmesi — `docs/03-ux.md §7` madde (h)2/(h)3 birebir: karar verildikten sonra
+ *  kart tek satıra kolabe olur (`Onaylandı — <komut> çalıştı` veya `Reddedildi`), TAMAMEN
+ *  silinmez. Eskiden `onChatPermissionResolved` kartı listeden siliyordu, geriye hiçbir iz
+ *  kalmıyordu. */
+export interface ResolvedPermission {
+  request_id: string
+  outcome: 'allow' | 'deny' | 'unknown'
+  input_preview: string
+}
+
 const HISTORY_URL = '/api/chat/history'
 const STATUS_URL = '/api/chat/status'
 const MESSAGE_URL = '/api/chat/message'
@@ -235,6 +245,7 @@ export interface UseChatSessionResult {
   messages: ChatLogEntry[]
   toolRows: ToolRow[]
   pendingPermissions: PendingPermission[]
+  resolvedPermissions: ResolvedPermission[]
   status: ChatStatus | null
   lastError: ChatErrorEvent | null
   hasMore: boolean
@@ -284,6 +295,7 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
   const [lastError, setLastError] = useState<ChatErrorEvent | null>(null)
   const [toolRows, setToolRows] = useState<ToolRow[]>([])
   const [pendingPermissions, setPendingPermissions] = useState<PendingPermission[]>([])
+  const [resolvedPermissions, setResolvedPermissions] = useState<ResolvedPermission[]>([])
   const [warningDismissed, setWarningDismissed] = useState(false)
   const [historyError, setHistoryError] = useState(false)
   const streamingBufferRef = useRef<Map<string, string>>(new Map())
@@ -405,8 +417,14 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
     })
   }, [])
 
+  // QA F-012 Ö8 düzeltmesi — `onChatPermissionResolved` yalnızca `payload.outcome`'u taşır,
+  // hangi araç/komut olduğunu DEĞİL. Kart silinmeden önceki `tool_name`/`input_preview`'ı burada
+  // saklarız ki kolabe satırı (`Onaylandı — <komut> çalıştı`) doğru metni gösterebilsin.
+  const permissionDataRef = useRef<Map<string, { input_preview: string }>>(new Map())
+
   const onChatPermissionRequest = useCallback((payload: ChatPermissionRequestEvent) => {
     const question = parseAskUserQuestion(payload.tool_name, payload.input_preview)
+    permissionDataRef.current.set(payload.request_id, { input_preview: payload.input_preview })
     setPendingPermissions((prev) => {
       if (prev.some((p) => p.request_id === payload.request_id)) return prev
       return [...prev, { ...payload, question }]
@@ -415,6 +433,21 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
 
   const onChatPermissionResolved = useCallback((payload: ChatPermissionResolvedEvent) => {
     setPendingPermissions((prev) => prev.filter((p) => p.request_id !== payload.request_id))
+    const data = permissionDataRef.current.get(payload.request_id)
+    if (data) {
+      setResolvedPermissions((prev) =>
+        prev.some((r) => r.request_id === payload.request_id)
+          ? prev
+          : [
+              ...prev,
+              {
+                request_id: payload.request_id,
+                outcome: payload.outcome,
+                input_preview: data.input_preview,
+              },
+            ]
+      )
+    }
   }, [])
 
   const onChatStatus = useCallback((payload: ChatStatus) => {
@@ -515,6 +548,7 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
     messages,
     toolRows,
     pendingPermissions,
+    resolvedPermissions,
     status,
     lastError,
     hasMore,

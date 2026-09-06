@@ -127,4 +127,60 @@ test.describe('electron masaüstü kabuğu — uçtan uca duman testi (F-014)', 
       fs.rmSync(userDataDir, { recursive: true, force: true })
     }
   })
+
+  // QA F-014 (2026-09-06, KALDI) B1 düzeltmesi — `dialog.showErrorBox` bu makinede hiçbir
+  // pencere üretmiyordu (izole sondayla ölçüldü, ekran görüntüsü F-014-05/06). Bu test tam
+  // olarak o boşluğu kapatıyor: port ÖNCEDEN tutulu iken gerçek `.exe` yerine gerçek
+  // `electron.exe` + `electron/main.cjs` başlatılıyor ve GERÇEK bir pencere oluştuğu
+  // `electronApp.windows().length > 0` ile doğrulanıyor — "çağrı yapıldı" değil, "kullanıcı
+  // görüyor" ölçülüyor (sözleşme §8'in kendi eleştirdiği boşluk).
+  test('port önceden tutuluysa gerçek bir hata penceresi açılır (dialog.showErrorBox DEĞİL) ve uygulama kendiliğinden kapanır', async () => {
+    const port = await findFreePort()
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-electron-e2e-portconflict-'))
+    const portHolder = net.createServer()
+    portHolder.listen(port, '127.0.0.1')
+    await once(portHolder, 'listening')
+
+    let electronApp: Awaited<ReturnType<typeof electron.launch>> | undefined
+    try {
+      electronApp = await electron.launch({
+        args: [mainPath],
+        env: {
+          ...process.env,
+          MC_PORT: String(port),
+          MC_ELECTRON_USER_DATA_DIR: userDataDir,
+          MC_SKIP_AUTOSTART_DEFAULT: '1',
+          MC_CHAT_ENABLED: '0',
+        },
+      })
+
+      const window = await electronApp.firstWindow()
+      await window.waitForLoadState('domcontentloaded')
+      expect(electronApp.windows().length).toBeGreaterThan(0)
+      await expect(window).toHaveTitle(/Mission Control başlatılamadı/)
+      const bodyText = await window.locator('body').innerText()
+      expect(bodyText).toContain(String(port))
+      expect(bodyText).toContain('MC_PORT')
+
+      // Yabancı sunucuya sessizce bağlanma yapısal olarak imkânsız (N4 dersi) — port hâlâ
+      // BENİM tuttuğum sunucuda, uygulamanın kendi sunucusu hiç başlamadı.
+      const stillHeldByProbe = await new Promise<boolean>((resolve) => {
+        const tester = net.createServer()
+        tester.once('error', () => resolve(true)) // hâlâ dolu (bizim probe tutuyor) — beklenen
+        tester.once('listening', () => tester.close(() => resolve(false)))
+        tester.listen(port, '127.0.0.1')
+      })
+      expect(stillHeldByProbe).toBe(true)
+
+      // Pencere kullanıcı kapatana kadar açık kalır (B1 dersi — hemen quit mesajı okunmadan
+      // kapatırdı); testte kapatmayı biz simüle ediyoruz.
+      const closePromise = electronApp.waitForEvent('close')
+      await window.close()
+      await closePromise
+    } finally {
+      await electronApp?.close().catch(() => {})
+      portHolder.close()
+      fs.rmSync(userDataDir, { recursive: true, force: true })
+    }
+  })
 })

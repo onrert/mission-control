@@ -2,6 +2,7 @@ node_modules/
 dist/
 build/
 release/
+electron/project-dir.generated.cjs
 .next/
 coverage/
 data/

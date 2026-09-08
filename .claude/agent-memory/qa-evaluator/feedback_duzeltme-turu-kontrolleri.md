@@ -262,3 +262,23 @@ zaten tarihli bir kopyası var mı diye bak (`diff -q`) — ikinci kez yanlış 
     yapmadan önce `git log -L <satır>,<satır>:<dosya>` ile satırın YAŞINI ölç ve o turun
     commit'lerinin dosyaya dokunup dokunmadığını `git show --stat -- <dosya>` ile doğrula.
     Önceden varsa: kayda geç, bir sonraki işe taşı, kararı yumuşatma ama kapsamı da genişletme.
+41. **Playwright'ın `locator.focus()`'u odağı ZORLA verir — "klavyeyle odaklanabilir" iddiasını
+    ölçmez.** F-013 tur 2: K6 düzeltmesi içerik kabına `tabIndex={0}` ekledi ve E2E testi
+    `scrollBox.focus()` + `PageDown` ile "klavye ile odaklanabilir VE kaydırılabilir" iddia
+    ediyordu. `tabIndex={0}`'ı tamamen kaldıran mutasyon **hem 943 birim testini hem E2E'yi
+    YEŞİL** bıraktı: `locator.focus()` CDP `DOM.focus` kullanır, doğal odaklanabilirliği
+    atlar (`getAttribute('tabindex')` null iken `document.activeElement` yine o div oldu).
+    Kural: odak/erişilebilirlik assert'lerinde `focus()` çağırma — `page.keyboard.press('Tab')`
+    ile GERÇEK odak akışını yürüt ve `document.activeElement === hedef` assert'i koy. Aynı tuzak
+    `click()` için de geçerli (otomatik kaydırır, bkz. dar genişlik dersi).
+42. **Salt-okunur manifest çitinde `mtime`-only mutasyonu dene.** Ortak `snapshotDir` yardımcısı
+    (relPath+size+sha256) bilinçli olarak `mtimeMs` taşımaz; bu yüzden **boş** `appendFileSync`
+    (içerik ve boyut değişmez, yalnızca mtime dokunur) manifest testinden GEÇER. F-013'te ikinci
+    katman (`no-write-gate-bypass` statik taraması) yakaladı — ama çit tek katmansa bu sessiz bir
+    yazma yoludur ve `mtime` sıralamaya/izleyiciye giriyorsa davranışı da değiştirir.
+43. **Savunma derinliği iddiasını KATMAN BAŞINA bir mutasyonla sına, sonra çapraz doğrula.**
+    F-013'te iki katman vardı (yol guard'ı + `id` deseni). M1 (guard) kırmızı verdi ve mutasyonlu
+    kodda GERÇEK sızıntı ölçüldü; M2 (desen) kırmızı verdi ama mutasyonlu kodda sızıntı YOKTU —
+    yani her katmanın kendi testi var ama koruduğu senaryolar farklı. "İki mutasyon da kırmızı"
+    demek yetmez; her mutasyonun altında **hangi saldırının açıldığını** ayrıca probla ölç,
+    yoksa iki testin de aynı şeyi ölçtüğünü fark edemezsin.

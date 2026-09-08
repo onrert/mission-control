@@ -6,7 +6,7 @@ status: draft
 date: 2026-09-09
 ---
 
-# F-008 Sözleşmesi — Kapılar paneli (tur 2 — düzeltilmiş)
+# F-008 Sözleşmesi — Kapılar paneli (tur 3 — dar kapsamlı düzeltme)
 
 Kod yazılmadan önceki "ne yapılacağı + nasıl doğrulanacağı" sözleşmesi (`CLAUDE.md` §"Sözleşme").
 Bu turda da `src/`, `tests/`, `package.json` altında **hiçbir dosya değiştirilmedi**; yalnızca bu
@@ -17,6 +17,18 @@ CEO'nun bu bulgular üzerine verdiği kararların (N1-N7) gövdeye yayılmasıd�
 (L4'ün cevabı, statik çit kapsamı, `x-mc-write`, hata sınırı deseni, `@source` çiti, AC1-AC9
 haritasının temeli) **yeniden açılmadı**; yalnızca QA'nın işaret ettiği 21 bulgu ve bunların ürettiği
 regresyonlar düzeltildi.
+
+**Tur 3 — dar kapsamlı ek düzeltme (`docs/qa/F-008-contract-review-2.md`, KALDI: 2 bloklayıcı + 1
+önemli, tur 2'nin 21 bulgusunun 20'si zaten kapanmıştı, bunlar yeniden açılmadı):**
+- **Y1 (B5 kalıntısı, bloklayıcı):** dördüncü sekme (Kapılar) mevcut sabit sekme-sayacı çitlerini
+  kıran dört iddia daha vardı, biri (`tests/web/App.chat-tab.test.tsx`) sözleşmede hiç geçmiyordu.
+  §10.2'ye dördü de görev kalemi olarak eklendi, yeni değerleri yazıldı (aşağıda).
+- **Y2 (M6 ters, bloklayıcı):** §11 M6'nın mutasyon iddiası yönü §6'nın yarı-başarı sırasıyla
+  çelişiyordu (doğru kodda kırmızı, mutantta yeşil verirdi). M6 §6 ile tutarlı hâle getirildi.
+- **Y3 (Ö4 kalıntısı, önemli):** `includeMtime` yeteneğini ölçen mutasyon yoktu (F-013'ün aynı
+  sınıf boşluğu). §11'e M11 eklendi.
+- M9 (broadcast mutasyonu) hangi test dosyasının kırılacağı netleştirildi; M10 mutasyon listesinde
+  kalıyor ama "kod mutasyonu değil, SDK regresyon ölçümü" olduğu daha açık yazıldı.
 
 **Neden sözleşme turu zorunlu:** bu feature panele "kullanıcı adına kapı onaylama" yetkisi
 veriyor (G0 kararı: "panelden verilen kapı onayı kullanıcının onayı sayılır") — güvenlik sınırını
@@ -563,11 +575,12 @@ devre-dışı/aktifleşme assert'i eklenir (§11 test planı).
 | `src/web/lib/useEventStream.ts` | `onGates?: (signal:{project_id:string}) => void` + `es.addEventListener('gates', ...)`, `onFeatures` ile **birebir**. | ADR-004 madde 1 — tek bağlantı, çok kanal. |
 | `src/web/index.css` | `@source "../features/gates/web";` eklenir. | F-003/F-005/F-007 emsali (Tailwind v4 tarama kapsamı); `tests/build-css.test.ts`'in dizin-numaralandırma çiti (F-012 dersi) bunu otomatik yakalar, ek satır gerekmez. |
 | `tests/build-css.test.ts` | Yeni blok: gates/web'e özgü ≥3 sınıf. | Aynı sınıf regresyonunu önleyen zorunlu çit. |
-| `tests/helpers/manifest.ts` | `snapshotDir(dir, { includeMtime?: boolean })` — ikinci, **opsiyonel** parametre; verilirse her `ManifestEntry`'ye `mtimeMs?: number` eklenir. Varsayılan davranış (parametre verilmezse) **değişmez** — mevcut çağıranlar (F-005/F-006 manifest testleri) etkilenmez. | Ö4: bu paylaşılan yardımcı bilinçli olarak `mtimeMs` taşımıyordu (`tests/helpers/manifest.ts:6-9` yorumu, ✓ VERIFIED); F-008'in `mtime`-only bir dokunuşu (içerik/`sha256` aynı kalırken yalnızca `mtime` değişmesi) yakalaması gerekiyor (PRD AC4 zaten `mtime`'ı zorunlu kılıyor). Additive/opsiyonel parametre — mevcut davranış bozulmaz. |
+| `tests/helpers/manifest.ts` | `snapshotDir(dir, { includeMtime?: boolean })` — ikinci, **opsiyonel** parametre; verilirse her `ManifestEntry`'ye `mtimeMs?: number` eklenir. Varsayılan davranış (parametre verilmezse) **değişmez** — mevcut çağıranlar (F-005/F-006 manifest testleri) etkilenmez. | Ö4: bu paylaşılan yardımcı bilinçli olarak `mtimeMs` taşımıyordu (`tests/helpers/manifest.ts:6-9` yorumu, ✓ VERIFIED); F-008'in `mtime`-only bir dokunuşu (içerik/`sha256` aynı kalırken yalnızca `mtime` değişmesi) yakalaması gerekiyor (PRD AC4 zaten `mtime`'ı zorunlu kılıyor). Additive/opsiyonel parametre — mevcut davranış bozulmaz. **[tur 3 ek — Y3]** Bu yeteneği ölçen mutasyon §11 M11'de eklendi; eklenmeden önce `includeMtime` parametresinin kendisi hiçbir testte doğrulanmıyordu (F-013'ün aynı sınıf boşluğu, bkz. M11 gerekçesi). |
 | `playwright.config.ts` | `testMatch` listesine `'gates.spec.ts'` eklenir. `webServer.command` zaten `npm run build && npm start` (üretim build'i, ✓ VERIFIED — bu config diğer üç config'den farklı olarak zaten prod build kullanıyor); gates E2E'sinin hiçbir probu `import.meta.env.MODE !== 'production'` koşuluna bağlanmaz. | N3/B4: dört config'in **hiçbiri** `gates.spec.ts`'i içermiyordu (✓ VERIFIED, tur 1 QA ölçümü); `tests/e2e-config-guard.test.ts:32,37,59` bu eksiklikte `verify`'yi kırardı. |
-| `tests/web/App.interaction.test.tsx` | Satır 266: `toHaveLength(3)` → `toHaveLength(4)`. Satır 251: `End` tuşu testinin adı ve beklentisi "son sekme" olarak **Kapılar**'ı hedefleyecek şekilde güncellenir (metin + hedef panel değişir, yalnızca sayı değil). | N3/B5: dördüncü sekme mevcut sabit sayıları kırıyor (✓ VERIFIED ölçüm, tur 1 QA). |
-| `tests/e2e/shell.spec.ts` | Satır 46: `clickableCount` beklentisi `3` → `4`. Satır 60: `tabRoleCount` beklentisi `2` → `3`. | N3/B5, aynı kaynak. |
-| `tests/web/App.test.tsx` | Satır 48: `headerHtml.match(/role="tab"/g)` uzunluk beklentisi güncellenir (render koşuluna göre yeni sayı — kod turunda gerçek render çıktısıyla doğrulanır, önceden **tahmin edilmez**, ✓ ancak değişeceği kesin). | N3/B5, aynı kaynak. |
+| `tests/web/App.interaction.test.tsx` | **(a)** Satır 266: `toHaveLength(3)` → `toHaveLength(4)` (chat açık senaryo). **(b)** Satır 251-272 (`End` tuşu, chat açık): sekme sırası artık `[Zaman Çizelgesi, Kanban, Sohbet, Kapılar]` (Kapılar Sohbet'ten **sonra** eklenir, `docs/03-ux.md:735`) — `End` artık Sohbet'i değil **Kapılar**'ı seçer; `chatTab` yerine `gatesTab = screen.getByRole('tab', {name:'Kapılar'})`, satır 270-271'in hedefi buna güncellenir, test adı "son sekme artık Kapılar" olarak değişir. **(c) [tur 3 ek — Y1 madde 2]** Satır 237-239 (ayrı `describe`, chat **kapalı** senaryo, `stubGlobals()`): bugün `End` → `kanbanTab` bekliyor; Kapılar koşulsuz eklendiği için tablar `[Zaman Çizelgesi, Kanban, Kapılar]` olur, son sekme **Kapılar**'dır — yeni `gatesTab = screen.getByRole('tab', {name:'Kapılar'})` eklenir, satır 238-239'un beklentisi `kanbanTab` → `gatesTab` olur (`ArrowRight`/`ArrowLeft`/`Home` iddiaları — satır 227-235, 241-243 — **değişmez**, yalnızca `End`). | (a)/(b) N3/B5, ✓ VERIFIED ölçüm tur 1 QA. (c) `F-008-contract-review-2.md` Y1 madde 2, ✓ VERIFIED `tests/web/App.interaction.test.tsx:237-239` — tur 2 sözleşmesi yalnızca chat-açık `End` testini kapsamıştı, chat-kapalı `End` testi (ayrı `describe`) atlanmıştı. |
+| `tests/web/App.chat-tab.test.tsx` **[tur 3 ek — Y1 madde 1]** | Satır 78: chat kapalı senaryo `toHaveLength(2)` → `toHaveLength(3)` (test adı/amacı "Sohbet hiç yok" değişmiyor, yalnızca sayı). Satır 92: chat açık senaryo `toHaveLength(3)` → `toHaveLength(4)`. Satır 97 (`tabs[2]).toBe(chatTab)`, sıra iddiası) **değişmez** — Kapılar Sohbet'ten sonra eklendiği için Sohbet hâlâ 3. sırada. | `F-008-contract-review-2.md` Y1 madde 1, ✓ VERIFIED — bu dosya tur 2 sözleşmesinin §10.1/§10.2 listelerinin hiçbirinde geçmiyordu (`grep -n "chat-tab" docs/qa/F-008-contract.md` sıfır sonuç veriyordu); B5'in tam kapsadığı, gözden kaçmış bir dosya. |
+| `tests/e2e/shell.spec.ts` | **(a)** Satır 46: `clickableCount` beklentisi `3` → `4`. Satır 60: `tabRoleCount` beklentisi `2` → `3`. **(b) [tur 3 ek — Y1 madde 4, doktrin kararı]** Satır 127-130: `expect(bodyText).not.toContain('Kapılar')` **silinir**, yerine `expect(bodyText).toContain('Kapılar')` yazılır; `Thread`/`Token` `not.toContain` iddiaları **korunur** (ikisi hâlâ eklenmedi). Kapalı-küme koruması zaten (a)'daki `tabRoleCount`/`clickableCount` tam-sayı iddialarından geliyor — beşinci bir sekme eklenirse o sayılar kırılır; bu satırın rolü yalnızca doktrini E2E katmanında da güncel tutmak. | (a) N3/B5, ✓ VERIFIED ölçüm tur 1 QA. (b) `F-008-contract-review-2.md` Y1 madde 4, ✓ VERIFIED `tests/e2e/shell.spec.ts:127-130` — `App.test.tsx`'teki aynı doktrin çitinin E2E kopyası, tur 2 sözleşmesinde anılmamıştı. |
+| `tests/web/App.test.tsx` | **(a)** Satır 48: `headerHtml.match(/role="tab"/g)` beklentisi `toHaveLength(2)` → `toHaveLength(3)` — değer artık **belirlenebilir** (tahmin değil, ✓ VERIFIED): `renderToStaticMarkup` efekt çalıştırmaz → `chat.status` hep `null` → `chatUiEnabled=false` (`src/web/App.tsx:34`) → `buildTabs(false)` = `[timeline, kanban]` + koşulsuz eklenen `gates` = **3** (`src/web/App.tsx:15-22`). **(b) [tur 3 ek — Y1 madde 3, doktrin kararı]** Satır 22-26 (`it('Faz 2 ekranları hiç görünmez (Kapılar, Thread, Token)')`) yeniden yazılır: `expect(html).not.toContain('Kapılar')` **silinir**; `Thread`/`Token` `not.toContain` iddiaları **korunur**. Yerine, iddiayı düz tersine çevirmek yerine (bu, ileride kazara eklenecek 5. bir sekmeyi yakalamaz) test **kapalı kümeyi** doğrular: `expect(html).toContain('Zaman Çizelgesi')`, `toContain('Kanban')`, `toContain('Kapılar')` **ve** aynı testte satır 48'in `toHaveLength(3)` iddiası tekrar çağrılır/referans verilir — üç bilinen etiketin varlığı + tam sekme sayısının 3 olması birlikte "bu üçü, başkası yok" garantisini verir (dördüncü bilinmeyen bir sekme eklenirse sayı 4'e çıkar, KIRMIZI). Test adı: `'Faz 1 kabuğu üç sekme: Zaman Çizelgesi, Kanban, Kapılar; Thread/Token hâlâ Faz 2, hiç görünmez'`. | (a)/(b) `F-008-contract-review-2.md` Y1 madde 3 + tablo, ✓ VERIFIED `tests/web/App.test.tsx:22-26,48` ve `src/web/App.tsx:15-22,34`. Doktrin gerekçesi: Kapılar bu feature ile Faz 2'den Faz 1 kabuğuna geçiyor (G0 kararı) — bu mekanik bir sayı güncellemesi değil, testin öncülünün kendisi değişiyor. |
 
 **Dokunulmayacağını doğruladığım dosyalar (olumsuz iddia, ✓ VERIFIED):** `src/server/write-gate.ts`
 (dört mevcut fonksiyon yeterli), `src/server/watch/project-watcher.ts` (deseni kopyalanıyor,
@@ -596,9 +609,10 @@ ayrıştırması düzeltildi, dosyanın kendisine dokunulmuyor).
 | Dar genişlik (Ö8) | `gates.spec.ts` — 320px ve 375px'te kapı tablosu + sekme çubuğu; sekme çubuğu iddiası **kırpılmış görünür genişlikle** (`boundingBox` kesişimi) ölçülür, `toBeVisible()` ile **değil** (F-007 dersi — kaydırma kabında yalan söylüyor). |
 | Buton devre-dışı (Ö11) | `useGates.test.ts`/`GatesScreen.test.tsx` — `decision`/`reason` boşken buton `disabled`. |
 
-**Mutasyon listesi (10 madde, her biri bağımsız bir mekanizma, "şunu boz → şu test KIRMIZI" +
+**Mutasyon listesi (11 madde, her biri bağımsız bir mekanizma, "şunu boz → şu test KIRMIZI" +
 korumanın kaynaktan türediği not — Ö5 düzeltmesi: eski liste 7 maddeden 3'ü aynı mekanizmayı
-ölçüyordu ve 1'i yer tutucuydu, ikisi de kapatıldı):**
+ölçüyordu ve 1'i yer tutucuydu, ikisi de kapatıldı; tur 3'te M6'nın yönü düzeltildi, M9'un hedef
+dosyası netleştirildi, M11 eklendi — Y2/Y3):**
 
 **M1. İki adımlı onayın atlanması** — `handleApproveGate`'te `confirmed !== true` kontrolünü kaldır
 → `handlers.test.ts` "confirmed olmadan 400 döner, dosya yazılmaz" KIRMIZI. Kaynak: L2/AC7, API'nin
@@ -624,12 +638,21 @@ statik taramanın `src/features/gates/**`'i otomatik kapsadığının **tek** ka
 → `handlers.test.ts` + `gates-manifest.test.ts` ("boş gerekçeyle çağrı sonrası hiçbir dosya
 değişmedi") KIRMIZI.
 
-**M6. AC9 sırasının ters çevrilmesi** (yeni, Ö5'in eksik saydığı kategori) — `handleApproveGate`'te
-adım sırası `writeGateApproval` → `archiveDenial` olarak (varsayımsal) değiştirilir → `gates-
-api.test.ts`'e eklenen bir sıra testi (her iki çağrıyı `vi.fn()` ile izleyen bir entegrasyon
-senaryosu, ya da daha basiti: `writeGateApproval`'ı geçici olarak başarısız olacak şekilde fault
-inject edip `archiveDenial`'ın **hiç çağrılmadığını** — dosyanın arşive taşınmadığını — assert
-etmek) KIRMIZI verir. Kaynak: §6 "sıra" paragrafı, AC9.
+**M6. AC9 sırasının ters çevrilmesi** (yeni, Ö5'in eksik saydığı kategori; **tur 3 düzeltmesi —
+Y2: eski metnin assert yönü ters ve §6 ile çelişiyordu, aşağıdaki metin düzeltilmiş hâlidir**) —
+`handleApproveGate`'te adım sırası (doğrusu: `archiveDenial` → `writeGateApproval`, §6) yerine
+(varsayımsal) `writeGateApproval` → `archiveDenial` olarak değiştirilir. Çit: `gates-api.test.ts`'e
+eklenen fault-injection senaryosu — `writeGateApproval`'ı geçici olarak başarısız olacak şekilde
+mock'la, ardından şunu assert et: **`.deny.md` onay başarısız olsa bile zaten arşive taşınmış
+olmalı** (`docs/approvals/archive/` altında dosya var, orijinal `docs/approvals/<gate>.deny.md`
+artık yok). Doğru kodda bu assert **YEŞİL**dir — §6'nın tarif ettiği gibi `archiveDenial` her zaman
+`writeGateApproval`'dan ÖNCE ve ondan bağımsız çalışır, onay başarısız olsa da arşivleme zaten
+gerçekleşmiştir. Sırası ters çevrilen mutantta (onay önce denenir, o başarısız olduğu için
+`archiveDenial`'a hiç sıra gelmez) `.deny.md` orijinal konumunda kalır, arşive taşınmaz → assert
+**KIRMIZI**. (Eski metnin önerdiği "`archiveDenial` hiç çağrılmadı" assert'i **yanlış yöndeydi**:
+doğru kodda da `archiveDenial` çağrılıp dosya taşındığı için o assert doğru kodda kırmızı verirdi —
+bkz. §6 yarı-başarı paragrafı, "`.deny.md` artık `docs/approvals/archive/`'de".) Kaynak: §6 "sıra"
+paragrafı, AC9.
 
 **M7. AC2/AC8 içerik kaçış/kırpma** (yeni) — `buildApprovalBody`/`buildDenialBody`'ye kullanıcı
 metnini (varsayımsal) `.slice(0, N)` ile kırpan veya özel karakterleri kaçan bir "temizleme" adımı
@@ -641,10 +664,12 @@ dalından (varsayımsal) `data: <taze GateStatusItem>` alanını kaldır → `ga
 injection senaryosu "yanıt gövdesinde taze durum var" assert'i KIRMIZI. Kaynak: §6, kanban'ın
 `conflict` dalıyla aynı ilke.
 
-**M9. İzleyici/SSE broadcast'in silinmesi** (yeni) — `handleApproveGate`/`handleDenyGate`'in
-başarı yolundan (varsayımsal) `hub.broadcast('gates', …)` çağrısını kaldır → `gates-watcher.
-test.ts` veya `gates-api.test.ts`'e eklenen "yazma sonrası `gates` olayı yayınlanır" assert'i
-KIRMIZI. Kaynak: §7.
+**M9. İzleyici/SSE broadcast'in silinmesi** (yeni; **tur 3 düzeltmesi — hedef dosya netleştirildi**)
+— `handleApproveGate`/`handleDenyGate`'in başarı yolundan (varsayımsal) `hub.broadcast('gates', …)`
+çağrısını kaldır → `gates-api.test.ts`'e eklenen "yazma sonrası `gates` olayı yayınlanır" assert'i
+KIRMIZI (**`gates-watcher.test.ts` değil** — o dosya yalnızca dosya sistemi izleyicisini test eder,
+`handleApproveGate`/`handleDenyGate`'i hiç çağırmaz, bu yüzden bu mutasyonu asla yakalayamaz).
+Kaynak: §7.
 
 **M10. L5 ölçümünün regresyonu** (N2/N7 — eski #7 yer tutucusunun yerine, artık somut) —
 `gates-write-permission-live.test.ts` içindeki canlı probe, `docs/qa/F-008-write-izin-olcumu.md`'nin
@@ -658,7 +683,22 @@ test.ts` emsali, ✓ VERIFIED desen + `package.json:30` betiği), `package.json`
 `"test:gates-live": "vitest run tests/integration/gates-write-permission-live.test.ts"` eklenir.
 **Model çıktısına assert etmiyor** — yalnızca `canUseTool` callback'inin çağrılıp çağrılmadığını ve
 dosya sisteminin durumunu ölçüyor (`CLAUDE.md`'nin "canlı testte modelin ne söyleyeceğine assert
-etme" dersi).
+etme" dersi). **(Not — dürüstlük, tur 3'te aynen korunuyor:** yukarıdaki dokuz maddenin/M11'in
+aksine bu madde bir **kod mutasyonu** değil; F-008 hiçbir yeni koruma kodu eklemiyor, ölçtüğü şey
+SDK'nın kendi `canUseTool` davranışı. Listeye organizasyonel bütünlük için (L5'in otomatikleşmiş
+regresyon kanıtı olarak) dahil edildi, "mutasyon" başlığı altında sayılması kavramsal olarak gevşek
+bir kullanımdır — kod turu bunu bir mutasyon çiti gibi raporlamamalı.)
+
+**M11. `mtime`-only dokunuşun manifestte görünmez kalması** (yeni — Y3/Ö4'ün kalan yarısı, tur 3
+eklemesi) — `list-gates.ts`'in okuduğu bir `.ok` dosyasına (varsayımsal, testte `fs.utimesSync` ile
+simüle edilir) yalnızca `mtime` değiştirilir, içerik/`sha256`/boyut/yol **aynı** kalır →
+`gates-manifest.test.ts`'in `includeMtime:true` ile aldığı `before`/`after` karşılaştırması
+(`tests/helpers/manifest.ts`, Ö4 düzeltmesi) KIRMIZI verir. `includeMtime` **olmadan** (varsayılan,
+kapalı) çağrılan aynı testte bu mutasyon **hiçbir katmandan** kırmızı almaz — yol/sha256/boyut
+değişmediği için — yani `includeMtime`'ı ölçen **tek** çit budur. Bu, F-013'ün ölçtüğü aynı sınıf
+boşluğun (`docs/qa/F-013-2026-09-08-tur2.md:126` — içerik-nötr bir dokunuş manifest testinden yeşil
+geçmişti) burada tekrarlamadığının kanıtıdır. Kaynak: Ö4, PRD AC4 (`mtime` tabanlı "hangisi daha
+yeni").
 
 ---
 
@@ -681,11 +721,13 @@ durumları aynı metni kullanır — UX bu ayrımı yapmıyor, F-008 icat etmiyo
    yapıyorsa aynı desen `docs/approvals` için de eklenir — bu, `service.ts`'in mevcut
    davranışına bağlı, kod turunda doğrulanmalı).
 
-**Doğrulayamadıklarım (tur 2, devam eden):**
+**Doğrulayamadıklarım (tur 3, devam eden):**
 - `npm run verify` / `npm run e2e` çıktısı — sözleşme turu, kod yok, koşturmadım.
 - Gerçek tarayıcıda dar genişlik ölçümü (Ö8) — kod olmadığı için ölçülemez, kod turunda zorunlu.
-- `tests/web/App.test.tsx:48`'in yeni `role="tab"` sayısı — gerçek render çıktısına bağlı, kod
-  turunda ölçülüp yazılacak (§10.2, tahmin edilmiyor).
 - `gates-write-permission-live.test.ts`'in gerçek dünyada tekrar çalıştırıldığında aynı sonucu
   verip vermeyeceği (SDK sürüm değişikliğine karşı kırılganlık) — tek ölçümle doğrulandı, kod
   turunda otomatikleşince zaman içinde kendi kendini teyit edecek.
+
+**Tur 3'te belirlenen (artık tahmin değil):** `tests/web/App.test.tsx:48`'in yeni `role="tab"`
+sayısı **3**'tür — `src/web/App.tsx:15-22,34` okunarak türetildi (§10.2), kod turunda yeniden
+ölçmeye gerek yok.

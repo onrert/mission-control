@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import crypto from 'node:crypto'
-import { parseFeatureCard } from '../../../../src/features/kanban/server/parse-feature'
+import {
+  parseFeatureCard,
+  extractFeatureBody,
+  splitFrontmatter,
+} from '../../../../src/features/kanban/server/parse-feature'
 import { setFeatureStatus } from '../../../../src/server/write-gate'
 import { createTempDataDir, removeTempDataDir } from '../../../helpers/temp-data-dir'
 import fs from 'node:fs'
@@ -109,5 +113,36 @@ describe('parseFeatureCard — content_hash çapraz-modül tutarlılığı (§3 
     } finally {
       removeTempDataDir(root)
     }
+  })
+})
+
+describe('extractFeatureBody — F-013 sözleşme §2 (frontmatter sonrası gövde)', () => {
+  it('frontmatter sonrası tüm markdown döner, açılış boş satırı atılır', () => {
+    const buf = Buffer.from('---\nstatus: todo\n---\n\n## Başlık\nParagraf.\n')
+    expect(extractFeatureBody(buf)).toBe('## Başlık\nParagraf.\n')
+  })
+
+  it('CRLF ile de doğru ayrılır', () => {
+    const buf = Buffer.from('---\r\nstatus: todo\r\n---\r\nGövde satırı.\r\n')
+    expect(extractFeatureBody(buf)).toBe('Gövde satırı.\r\n')
+  })
+
+  it('frontmatter bulunamazsa TÜM ham metin döner (panel boş kalmaz)', () => {
+    const buf = Buffer.from('# başlık\nsıradan içerik\n')
+    expect(extractFeatureBody(buf)).toBe('# başlık\nsıradan içerik\n')
+  })
+
+  it('frontmatter kapanışı yoksa TÜM ham metin döner', () => {
+    const buf = Buffer.from('---\nstatus: todo\nbody devam ediyor\n')
+    expect(extractFeatureBody(buf)).toBe('---\nstatus: todo\nbody devam ediyor\n')
+  })
+
+  it('splitFrontmatter — açılış/kapanış eksikliği ayrı ayrı ayırt edilir', () => {
+    expect(splitFrontmatter('# yok').ok).toBe(false)
+    expect(splitFrontmatter('---\nx: 1\nsınırsız').ok).toBe(false)
+    const ok = splitFrontmatter('---\nx: 1\n---\ngövde')
+    // `block` YAML ayrıştırıcıya (`parseYaml`) verilmeden önce baştaki `\n`'i KORUR (mevcut
+    // `parseFeatureCard` davranışıyla birebir aynı — YAML boş satırı yok sayar, sorun değil).
+    expect(ok).toEqual({ ok: true, block: '\nx: 1', body: 'gövde' })
   })
 })

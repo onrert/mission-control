@@ -338,6 +338,153 @@ describe('PATCH /api/features/:project_id/:file — not_found', () => {
   })
 })
 
+describe('GET /api/features/detail — F-013 sözleşme §2 mutlu yol', () => {
+  it('gövde + sözleşme + QA raporları döner', async () => {
+    fs.mkdirSync(path.join(projectDir, 'docs', 'qa'), { recursive: true })
+    fs.writeFileSync(path.join(projectDir, 'docs', 'qa', 'F-001-contract.md'), 'sözleşme metni')
+    fs.writeFileSync(path.join(projectDir, 'docs', 'qa', 'F-001-2026-09-01.md'), 'qa turu 1')
+
+    const res = await request(
+      handle.baseUrl,
+      'GET',
+      `/api/features/detail?project_id=${projectId}&file=F-001.md`
+    )
+    expect(res.status).toBe(200)
+    const body = res.json as {
+      success: boolean
+      data: {
+        content_hash: string
+        body: { exists: boolean; content?: string }
+        contract: { exists: boolean; content?: string }
+        qa_reports: Array<{ file: string; exists: boolean; content?: string }>
+      }
+    }
+    expect(body.success).toBe(true)
+    expect(body.data.body.exists).toBe(true)
+    expect(body.data.body.content).toBe('body\n')
+    expect(body.data.contract).toEqual({
+      exists: true,
+      content: 'sözleşme metni',
+      truncated: false,
+    })
+    expect(body.data.qa_reports).toEqual([
+      { file: 'F-001-2026-09-01.md', exists: true, content: 'qa turu 1', truncated: false },
+    ])
+    expect(body.data.content_hash).toBe(
+      sha256(fs.readFileSync(path.join(projectDir, 'docs', 'features', 'F-001.md')))
+    )
+  })
+
+  it('sözleşme/QA raporu yoksa "yok" durumu döner, panel bozulmaz', async () => {
+    const res = await request(
+      handle.baseUrl,
+      'GET',
+      `/api/features/detail?project_id=${projectId}&file=F-001.md`
+    )
+    expect(res.status).toBe(200)
+    const body = res.json as {
+      success: boolean
+      data: { contract: { exists: boolean }; qa_reports: unknown[] }
+    }
+    expect(body.data.contract).toEqual({ exists: false })
+    expect(body.data.qa_reports).toEqual([])
+  })
+
+  it('x-mc-write GEREKTİRMEZ (salt okunur GET)', async () => {
+    const res = await request(
+      handle.baseUrl,
+      'GET',
+      `/api/features/detail?project_id=${projectId}&file=F-001.md`
+    )
+    expect(res.status).toBe(200)
+  })
+
+  it('project_id/file eksikse 400 invalid_body', async () => {
+    const res = await request(handle.baseUrl, 'GET', `/api/features/detail?project_id=${projectId}`)
+    expect(res.status).toBe(400)
+    expect((res.json as { error: { code: string } }).error.code).toBe('invalid_body')
+  })
+
+  it('geçersiz dosya adı (yol parçası içeriyor) → 400 invalid_body', async () => {
+    const res = await request(
+      handle.baseUrl,
+      'GET',
+      `/api/features/detail?project_id=${projectId}&file=${encodeURIComponent('../F-001.md')}`
+    )
+    expect(res.status).toBe(400)
+    expect((res.json as { error: { code: string } }).error.code).toBe('invalid_body')
+  })
+
+  it('bilinmeyen project_id → 404 not_found', async () => {
+    const res = await request(
+      handle.baseUrl,
+      'GET',
+      `/api/features/detail?project_id=hic-yok&file=F-001.md`
+    )
+    expect(res.status).toBe(404)
+    expect((res.json as { error: { code: string } }).error.code).toBe('not_found')
+  })
+
+  it('gövde dosyası yoksa 404 not_found', async () => {
+    const res = await request(
+      handle.baseUrl,
+      'GET',
+      `/api/features/detail?project_id=${projectId}&file=F-999.md`
+    )
+    expect(res.status).toBe(404)
+    expect((res.json as { error: { code: string } }).error.code).toBe('not_found')
+  })
+})
+
+describe('GET /api/features/detail — MUTASYON (a) hedefi: docs/qa symlink ile kök dışına kaçış', () => {
+  it('docs/qa gerçek kökün DIŞINA symlink\'lenmişse sözleşme SIZMAZ ("yok" döner)', async () => {
+    const outsideDir = path.join(projectDir, '..', `mc-outside-${crypto.randomUUID()}`)
+    fs.mkdirSync(outsideDir, { recursive: true })
+    fs.writeFileSync(path.join(outsideDir, 'F-001-contract.md'), 'DIŞARIDAN SIZDIRILAN İÇERİK')
+    const qaPath = path.join(projectDir, 'docs', 'qa')
+    try {
+      fs.symlinkSync(outsideDir, qaPath, 'junction')
+      const res = await request(
+        handle.baseUrl,
+        'GET',
+        `/api/features/detail?project_id=${projectId}&file=F-001.md`
+      )
+      expect(res.status).toBe(200)
+      const body = res.json as { data: { contract: { exists: boolean; content?: string } } }
+      // symlink reddedildiği için tamamen "yok" döner — dışarıdaki metin hiçbir şekilde SIZMAZ.
+      expect(body.data.contract).toEqual({ exists: false })
+    } finally {
+      fs.rmSync(qaPath, { force: true })
+      fs.rmSync(outsideDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('GET /api/features/detail — MUTASYON (e) hedefi: dağıtıcının genel hata sınırı', () => {
+  it('handler senkron fırlatırsa dağıtıcı 500 döner, panel çökmez, süreç yaşar', async () => {
+    const listSpy = vi.spyOn(handle.server.projectsService, 'list').mockImplementation(() => {
+      throw new Error('ÇOK GİZLİ İÇ HATA, İSTEMCİYE SIZMAMALI')
+    })
+    try {
+      const res = await request(
+        handle.baseUrl,
+        'GET',
+        `/api/features/detail?project_id=${projectId}&file=F-001.md`
+      )
+      expect(res.status).toBe(500)
+      const body = res.json as { success: boolean; error: { code: string; message: string } }
+      expect(body.success).toBe(false)
+      expect(body.error.code).toBe('internal_error')
+      expect(body.error.message).not.toContain('ÇOK GİZLİ')
+    } finally {
+      listSpy.mockRestore()
+    }
+    // Süreç ayakta, yanıt vermeye devam ediyor.
+    const followUp = await request(handle.baseUrl, 'GET', '/api/health')
+    expect(followUp.status).toBe(200)
+  })
+})
+
 describe('x-mc-write eksikliği (ADR-013 regresyon çiti — F-007 uçları da kapsanıyor)', () => {
   it('x-mc-write başlığı olmadan PATCH → 403 forbidden_origin', async () => {
     const res = await request(handle.baseUrl, 'PATCH', `/api/features/${projectId}/F-001.md`, {

@@ -16,7 +16,11 @@ import {
   handleAddProject,
   handleRemoveProject,
 } from '../features/projects/server/handlers'
-import { handleListFeatures, handlePatchFeatureStatus } from '../features/kanban/server/handlers'
+import {
+  handleListFeatures,
+  handlePatchFeatureStatus,
+  handleFeatureDetail,
+} from '../features/kanban/server/handlers'
 import { createChatSession } from '../features/chat/server/session'
 import {
   handleChatStatus,
@@ -395,6 +399,13 @@ export function createServer(
       }
       if (pathname === '/api/features' && req.method === 'GET') {
         handleListFeatures(req, res, projectsService)
+        return
+      }
+      // F-013 sözleşme §2 — `/api/features/detail` PATCH prefix eşleşmesinden (`/api/features/`)
+      // ÖNCE kontrol edilir; ikisi de farklı pathname/method kombinasyonları olduğu için çakışma
+      // yok, ama okunabilirlik için burada, listeleme route'unun hemen altında tutuluyor.
+      if (pathname === '/api/features/detail' && req.method === 'GET') {
+        handleFeatureDetail(req, res, projectsService)
         return
       }
       if (pathname?.startsWith('/api/features/') && req.method === 'PATCH') {

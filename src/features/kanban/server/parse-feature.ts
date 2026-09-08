@@ -31,6 +31,37 @@ function asStringArray(value: unknown): string[] {
   return value.filter((v): v is string => typeof v === 'string')
 }
 
+export type FrontmatterSplitResult =
+  { ok: true; block: string; body: string } | { ok: false; reason: 'no-opening' | 'no-closing' }
+
+/**
+ * Baştaki `---`…`---`/`...` bloğunu (frontmatter) gövdeden ayırır — YAML doğrulaması yapmaz,
+ * yalnızca metin sınırlarını bulur. `parseFeatureCard` `block`'u, F-013'ün `extractFeatureBody`'si
+ * `body`'yi kullanır (ortak sınır bulucu, iki kez yazılmaz).
+ */
+export function splitFrontmatter(text: string): FrontmatterSplitResult {
+  const withoutBom = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
+  if (!withoutBom.startsWith('---')) return { ok: false, reason: 'no-opening' }
+  const afterOpening = withoutBom.slice(3)
+  const closingMatch = /\r?\n(?:---|\.\.\.)(?:\r?\n|$)/.exec(afterOpening)
+  if (!closingMatch) return { ok: false, reason: 'no-closing' }
+  const block = afterOpening.slice(0, closingMatch.index)
+  const body = afterOpening.slice(closingMatch.index + closingMatch[0].length)
+  return { ok: true, block, body }
+}
+
+/**
+ * F-013 sözleşme §2 — frontmatter'dan SONRAKİ tüm markdown metnini döner. Frontmatter
+ * bulunamazsa/kapanmazsa (dosya bozuk/beklenmedik biçimde) TÜM ham metin döner — panel boş
+ * kalmasın diye (Karpathy §2: ayrı bir "gövde ayrıştırılamadı" hata durumu icat edilmiyor,
+ * `parseFeatureCard`'ın kendi `parse_error`'ı zaten bu durumu kartın kendisinde işaretliyor).
+ */
+export function extractFeatureBody(buffer: Buffer): string {
+  const text = buffer.toString('utf8')
+  const split = splitFrontmatter(text)
+  return split.ok ? split.body.replace(/^\r?\n/, '') : text
+}
+
 /**
  * F-007 sözleşme §3 madde 1/2 — saf, `fs`'e dokunmaz. `buffer` çağıran tarafından okunur
  * (`list-features.ts`). `content_hash` write-gate'in `setFeatureStatus`'unun kullandığı TAM
@@ -65,20 +96,19 @@ export function parseFeatureCard(
 
   try {
     const text = buffer.toString('utf8')
-    const withoutBom = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
-    if (!withoutBom.startsWith('---')) {
-      return errorCard('Frontmatter bulunamadı.')
-    }
     // İlk `---`den sonraki ikinci `---`/`...` satırına kadar olan blok. Okuma yolunda
     // write-gate'in yazma tarafındaki satır-koruyucu `split(/(\r\n|\n)/)` yaklaşımına gerek
-    // yok (sözleşme §3 madde 1) — burada yalnızca sınırları bulmak yeterli.
-    const afterOpening = withoutBom.slice(3)
-    const closingMatch = /\r?\n(?:---|\.\.\.)(?:\r?\n|$)/.exec(afterOpening)
-    if (!closingMatch) {
-      return errorCard('Frontmatter kapanışı bulunamadı.')
+    // yok (sözleşme §3 madde 1) — burada yalnızca sınırları bulmak yeterli (F-013: sınır bulma
+    // `splitFrontmatter`'a taşındı, `extractFeatureBody`'nin de kullandığı ortak yardımcı).
+    const split = splitFrontmatter(text)
+    if (!split.ok) {
+      return errorCard(
+        split.reason === 'no-opening'
+          ? 'Frontmatter bulunamadı.'
+          : 'Frontmatter kapanışı bulunamadı.'
+      )
     }
-    const block = afterOpening.slice(0, closingMatch.index)
-    const parsed = parseYaml(block) as Record<string, unknown> | null
+    const parsed = parseYaml(split.block) as Record<string, unknown> | null
     if (parsed === null || typeof parsed !== 'object') {
       return errorCard('Frontmatter geçerli bir YAML nesnesi değil.')
     }

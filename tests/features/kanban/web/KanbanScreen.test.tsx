@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { KanbanScreen } from '../../../../src/features/kanban/web/KanbanScreen'
-import type { FeatureCard, ProjectListItem } from '../../../../src/shared/types'
+import type { FeatureCard, FeatureDetail, ProjectListItem } from '../../../../src/shared/types'
 
 afterEach(() => {
   cleanup()
@@ -40,19 +40,39 @@ function card(overrides: Partial<FeatureCard> = {}): FeatureCard {
   }
 }
 
+function defaultDetail(): FeatureDetail {
+  return {
+    content_hash: 'hash-1',
+    body: { exists: true, content: 'gövde metni', truncated: false },
+    contract: { exists: false },
+    qa_reports: [],
+  }
+}
+
 /** `useProjects`/`useFeatures` App seviyesinde `fetchImpl` almıyor, çıplak `fetch`/`writeFetch`
- *  çağırıyor — tek bir global `fetch` router'ı her iki uca da (URL'ye göre) yanıt verir. */
+ *  çağırıyor — tek bir global `fetch` router'ı her iki uca da (URL'ye göre) yanıt verir.
+ *  F-013 — `/api/features/detail` `/api/features` alt dizgesini de İÇERDİĞİ için `includes`
+ *  kontrolü DAHA ÖZEL (detail) rotayı ÖNCE test etmek zorunda. */
 function stubRouter(opts: {
   projects?: ProjectListItem[]
   cards?: FeatureCard[]
   unreadableProjects?: Array<{ project_id: string; label: string }>
+  detail?: FeatureDetail
 }): void {
   const projects = opts.projects ?? [project()]
   const cards = opts.cards ?? [card()]
+  const detail = opts.detail ?? defaultDetail()
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
+      if (url.includes('/api/features/detail')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true, data: detail }),
+        } as unknown as Response
+      }
       if (url.includes('/api/projects')) {
         return {
           ok: true,
@@ -193,6 +213,245 @@ describe('KanbanScreen — AC7 (karta tıkla → salt okunur detay modalı)', ()
     const modal = screen.getByTestId('feature-detail-modal')
     expect(modal.textContent).toContain('F-042')
     expect(modal.textContent).toContain('3')
+  })
+})
+
+describe('KanbanScreen — F-013 (gövde/sözleşme/QA raporları içerik)', () => {
+  it('gövde, sözleşme ve QA raporu içerikleri modalda görünür', async () => {
+    stubRouter({
+      cards: [card()],
+      detail: {
+        content_hash: 'hash-1',
+        body: { exists: true, content: 'Gövde içeriği burada.', truncated: false },
+        contract: { exists: true, content: 'Sözleşme içeriği burada.', truncated: false },
+        qa_reports: [
+          {
+            file: 'F-001-2026-09-08.md',
+            exists: true,
+            content: 'QA raporu içeriği.',
+            truncated: false,
+          },
+        ],
+      },
+    })
+    const user = userEvent.setup()
+    render(
+      <KanbanScreen
+        liveProjectsUpdate={null}
+        featuresSignal={null}
+        connectionStatus="connected"
+        onNavigateSettings={noop}
+      />
+    )
+    await waitFor(() => expect(screen.getByTestId('kanban-card-F-001.md')).toBeTruthy())
+    await user.click(screen.getByTestId('kanban-card-F-001.md'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('feature-detail-body').textContent).toContain(
+        'Gövde içeriği burada.'
+      )
+    )
+    expect(screen.getByTestId('feature-detail-contract').textContent).toContain(
+      'Sözleşme içeriği burada.'
+    )
+    expect(screen.getByTestId('feature-detail-qa-reports').textContent).toContain(
+      'F-001-2026-09-08.md'
+    )
+    expect(screen.getByTestId('feature-detail-qa-reports').textContent).toContain(
+      'QA raporu içeriği.'
+    )
+  })
+
+  it('sözleşme/QA raporu yoksa "yok" metni görünür, panel bozulmaz (AC2)', async () => {
+    stubRouter({ cards: [card()] }) // defaultDetail(): contract exists:false, qa_reports:[]
+    const user = userEvent.setup()
+    render(
+      <KanbanScreen
+        liveProjectsUpdate={null}
+        featuresSignal={null}
+        connectionStatus="connected"
+        onNavigateSettings={noop}
+      />
+    )
+    await waitFor(() => expect(screen.getByTestId('kanban-card-F-001.md')).toBeTruthy())
+    await user.click(screen.getByTestId('kanban-card-F-001.md'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('feature-detail-contract').textContent).toBe('Sözleşme bulunamadı.')
+    )
+    expect(screen.getByTestId('feature-detail-qa-reports').textContent).toBe(
+      'QA raporu bulunamadı.'
+    )
+    // Panel çökmedi — geri kalan ekran hâlâ etkileşimli.
+    expect(screen.getByTestId('kanban-screen')).toBeTruthy()
+  })
+
+  it('mutasyon (b) emsali: truncated:true olduğunda görünür kırpma uyarısı basılır', async () => {
+    stubRouter({
+      cards: [card()],
+      detail: {
+        content_hash: 'hash-1',
+        body: { exists: true, content: 'kısaltılmış içerik', truncated: true },
+        contract: { exists: false },
+        qa_reports: [],
+      },
+    })
+    const user = userEvent.setup()
+    render(
+      <KanbanScreen
+        liveProjectsUpdate={null}
+        featuresSignal={null}
+        connectionStatus="connected"
+        onNavigateSettings={noop}
+      />
+    )
+    await waitFor(() => expect(screen.getByTestId('kanban-card-F-001.md')).toBeTruthy())
+    await user.click(screen.getByTestId('kanban-card-F-001.md'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('feature-detail-body').textContent).toContain(
+        'İçerik çok büyük olduğu için kısaltıldı.'
+      )
+    )
+  })
+
+  it('sunucu hata döndürünce okunabilir hata gösterilir, panel çökmez (AC7)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/features/detail')) {
+          return {
+            ok: true,
+            status: 404,
+            json: async () => ({
+              success: false,
+              error: { code: 'not_found', message: 'Özellik dosyası bulunamadı.' },
+            }),
+          } as unknown as Response
+        }
+        if (url.includes('/api/projects')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ success: true, data: [project()] }),
+          } as unknown as Response
+        }
+        if (url.includes('/api/features')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ success: true, data: [card()] }),
+          } as unknown as Response
+        }
+        throw new Error(`beklenmeyen fetch: ${url}`)
+      }) as unknown as typeof fetch
+    )
+    const user = userEvent.setup()
+    render(
+      <KanbanScreen
+        liveProjectsUpdate={null}
+        featuresSignal={null}
+        connectionStatus="connected"
+        onNavigateSettings={noop}
+      />
+    )
+    await waitFor(() => expect(screen.getByTestId('kanban-card-F-001.md')).toBeTruthy())
+    await user.click(screen.getByTestId('kanban-card-F-001.md'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('feature-detail-error').textContent).toContain(
+        'Özellik dosyası bulunamadı.'
+      )
+    )
+    // Panel çökmedi — sütunlar hâlâ görünür/etkileşimli.
+    expect(screen.getByTestId('kanban-screen')).toBeTruthy()
+    expect(screen.getByTestId('kanban-column-dev')).toBeTruthy()
+  })
+})
+
+describe('KanbanScreen — F-013 sözleşme §6 (bayatlık: content_hash değişince panel otomatik yenilenir)', () => {
+  it('mutasyon (d) emsali: detailCard senkron effect kaldırılsaydı bu test KIRMIZI verirdi', async () => {
+    let detailCallCount = 0
+    let featuresCallCount = 0
+    const initialCard = card({ content_hash: 'hash-1' })
+    const updatedCard = card({ content_hash: 'hash-2' })
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/features/detail')) {
+          detailCallCount += 1
+          const data: FeatureDetail =
+            detailCallCount === 1
+              ? {
+                  content_hash: 'hash-1',
+                  body: { exists: true, content: 'v1', truncated: false },
+                  contract: { exists: false },
+                  qa_reports: [],
+                }
+              : {
+                  content_hash: 'hash-2',
+                  body: { exists: true, content: 'v2', truncated: false },
+                  contract: { exists: false },
+                  qa_reports: [],
+                }
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ success: true, data }),
+          } as unknown as Response
+        }
+        if (url.includes('/api/projects')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ success: true, data: [project()] }),
+          } as unknown as Response
+        }
+        if (url.includes('/api/features')) {
+          featuresCallCount += 1
+          const data = featuresCallCount === 1 ? [initialCard] : [updatedCard]
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ success: true, data }),
+          } as unknown as Response
+        }
+        throw new Error(`beklenmeyen fetch: ${url}`)
+      }) as unknown as typeof fetch
+    )
+
+    const user = userEvent.setup()
+    const { rerender } = render(
+      <KanbanScreen
+        liveProjectsUpdate={null}
+        featuresSignal={null}
+        connectionStatus="connected"
+        onNavigateSettings={noop}
+      />
+    )
+    await waitFor(() => expect(screen.getByTestId('kanban-card-F-001.md')).toBeTruthy())
+    await user.click(screen.getByTestId('kanban-card-F-001.md'))
+    await waitFor(() =>
+      expect(screen.getByTestId('feature-detail-body').textContent).toContain('v1')
+    )
+
+    // Dosya dışarıdan değişti sinyali (chokidar echo emsali) — yeni bir `featuresSignal`
+    // referansı `useFeatures`'ın refetch effect'ini tetikler.
+    rerender(
+      <KanbanScreen
+        liveProjectsUpdate={null}
+        featuresSignal={{ project_id: 'p1' }}
+        connectionStatus="connected"
+        onNavigateSettings={noop}
+      />
+    )
+
+    await waitFor(() =>
+      expect(screen.getByTestId('feature-detail-body').textContent).toContain('v2')
+    )
   })
 })
 

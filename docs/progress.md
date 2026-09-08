@@ -2330,3 +2330,110 @@ bağımsız olarak doğruladı, sonra CEO'nun asıl istediği I2'yi (tembel sohb
   istisnası) değerlendirsin.
 - CEO/kullanıcı: N2'nin kök nedeni netleşmeden "yeterince güvenli" kabul edilip edilmediğine karar
   versin (I2 mimari garanti veriyor, ama kesin kanıt hâlâ eksik).
+
+---
+
+## 2026-09-08 — F-013 (feature detay penceresi — gövde + sözleşme + QA raporları) kod turu tamamlandı
+
+**Ne yapıldı**
+- Sözleşme: `docs/qa/F-013-contract.md` — kodlamadan önce yazıldı, brief'teki CEO kararları
+  J1-J8'i (ayrı uç/`FeatureCard`'a eklenmeme, F-005 yol-güvenliği deseni, salt okunurluk, boyut
+  sınırı + görünür kırpma, yeni bayatlık mekanizması icat etmeme, Türkçe metin sözlüğü önce
+  dokümana, markdown kütüphanesi eklememe kararı) uyguladı.
+- Yeni salt-okunur uç: `GET /api/features/detail?project_id=…&file=…`
+  (`src/features/kanban/server/feature-detail.ts` — saf çekirdek `buildFeatureDetail` + boyut
+  sınırı/kırpma + `docs/qa/<id>-*.md` listeleme (mtime artan sıralı, `-tur2`/`-tur3` alfabetik
+  ters dönme sorunu ölçülüp `mtimeMs` sıralamasıyla çözüldü); `handlers.ts`'e `handleFeatureDetail`
+  eklendi; `src/server/index.ts`'e tek route + import satırı).
+- Yol güvenliği: `src/features/kanban/server/read-guard.ts` — `write-gate.ts`'in
+  `resolveInsideRoot`'unun KANITLANMIŞ deseni (F-005/F-006) okuma yoluna uyarlandı
+  (`fs.realpathSync.native` + `path.relative` kapsama kontrolü + symlink savunması, elle regex
+  YOK). `write-gate.ts`'in kendisine **tek satır bile dokunulmadı** (ikinci tüketici olmadan
+  soyutlama yapmak Karpathy §2 ihlali olurdu — desen bilinçli olarak kopyalandı).
+- `parse-feature.ts`: sınır-bulma mantığı `splitFrontmatter`'a çıkarıldı (hem `parseFeatureCard`
+  hem yeni `extractFeatureBody` kullanıyor — iki kez yazılmadı). `extractFeatureBody` frontmatter
+  bulunamazsa/kapanmazsa TÜM ham metni döner (panel boş kalmasın diye, `parse_error` zaten kartın
+  kendisinde işaretli).
+- `src/shared/types.ts`'e üç tip eklendi: `FeatureDetailDocument`, `FeatureDetailReport`,
+  `FeatureDetail` (her feature'ın ek yaptığı ortak sözleşme dosyası, F-002/F-005/F-007/F-012
+  emsali).
+- Web: `useFeatureDetail.ts` (yeni hook, `card.content_hash` değiştiğinde yeniden fetch eder),
+  `FeatureDetailModal.tsx` genişletildi (mevcut id/title/owner/deps/sprint `dl` bloğu KORUNDU,
+  altına Açıklama/Sözleşme/QA raporları bölümleri eklendi — markdown kütüphanesi YOK, ham
+  `<pre>` ile gösteriliyor, J5 kararı). `KanbanScreen.tsx`'e küçük bir effect eklendi: açık
+  `detailCard`, `cards`'ın SSE ile taze tutulan güncel sürümüyle `content_hash` farklıysa
+  senkronize edilir — yeni bir bayatlık mekanizması İCAT EDİLMEDİ, var olan chokidar/SSE akışına
+  binildi (J6).
+- Markdown gösterimi: **yeni bağımlılık eklenmedi** — `package.json`/`package-lock.json`
+  `git diff` boş, bundle etkisi **0 KB** (üretim JS/CSS boyutu değişmedi, yalnızca kendi
+  kodumuzun küçük artışı). Gerekçe sözleşme §8'de: dahili/geliştirici belgeleri için düz metin
+  yeterli, `ADR-009` native derleme riskini ve `dangerouslySetInnerHTML` XSS yüzeyini sıfırlıyor.
+
+**Nasıl doğrulandı**
+- `npm run verify` (typecheck + lint + test + build) = **0** — `934 test geçti | 2 atlandı
+  (936), 66 dosya`. Bu turun eklediği test sayısı `git diff`'ten doğrudan sayıldı: **33 yeni
+  vitest testi** (14'ü yeni dosya `feature-detail.test.ts`, 19'u mevcut dosyalara cerrahi ek —
+  `parse-feature.test.ts` +5, `features-api.test.ts` +9, `KanbanScreen.test.tsx` +5). Kalan
+  fark (önceki oturumun kaydettiği 892 rakamıyla aradaki 9 testlik sapma) bu turda üretilmedi,
+  muhtemelen önceki ölçümle bu ölçüm arasındaki ortam/koşu farkına ait — regresyon YOK
+  (`git status` yalnızca beklenen dosyaları gösteriyor, `git diff` mutasyon izi taşımıyor).
+- `npm run e2e` = **0** (**26/26**, önceki 23'ten +3 — F-013'ün yeni gerçek tarayıcı testleri:
+  mutlu yol içerik, 320/375/480px kırpılmış görünür genişlik ölçümü, okuma hatası/panel çökmezliği).
+- **Dar genişlik (J4/CLAUDE.md dersi):** `toBeVisible()` YERİNE mevcut `clippedVisibleWidth`
+  yardımcısı (F-007'nin kendi ölçüm yöntemi) yeniden kullanıldı — 320/375/480px'in ÜÇÜNDE de
+  modal ve gövde bölümünün kırpılmış görünür genişliği > 0 ölçüldü, ayrıca modal kutusunun
+  viewport genişliğini AŞMADIĞI (`x + width <= viewport`) ayrı bir assert ile doğrulandı.
+- **5 mutasyon, hepsi uygulanıp KIRMIZI gözlemlendi, sonra birebir geri alındı** (`git diff`
+  temiz, `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` yalnızca meşru test
+  adları — `write-gate-manifest.test.ts:124` + bu turun kendi test açıklamaları):
+  1. **(a) yol çiti:** `read-guard.ts`'teki symlink/kapsam kontrolü kaldırılınca 3 test KIRMIZI
+     (`feature-detail.test.ts` 2 test + `features-api.test.ts`'in gerçek `fs.symlinkSync(...,
+     'junction')` ile docs/qa'yı proje kökü dışına symlink'leyen entegrasyon testi — dışarıdaki
+     "DIŞARIDAN SIZDIRILAN İÇERİK" metni sızdı). Geri alındı, tekrar yeşil.
+  2. **(b) boyut sınırı/kırpma:** birim testinde doğrudan ölçüldü (`truncateDocument`
+     `MAX_DOCUMENT_CHARS`'ı aşan girdide `truncated:true` + kırpılmış içerik döndürüyor,
+     `.not.toBe(false)` ile ayrı assert); istemci tarafında `KanbanScreen.test.tsx`'in
+     "truncated:true olduğunda görünür kırpma uyarısı basılır" testi DOM'da kontrol ediyor.
+  3. **(c) salt-okunurluk:** F-006 emsali dinamik manifest testi (`snapshotDir` öncesi/sonrası)
+     — `buildFeatureDetail`'in mutlu yol + not_found + geçersiz-id dallarının HİÇBİRİ dosya
+     sistemini değiştirmiyor; ayrıca `tests/no-write-gate-bypass.test.ts` yeni dosyaları
+     otomatik kapsıyor (dosya-seviyesi muafiyet YOK).
+  4. **(d) bayatlık/tazeleme:** `KanbanScreen.tsx`'teki senkron effect kaldırılınca
+     `KanbanScreen.test.tsx`'in uçtan uca testi (kart tıkla → `content_hash` değişince yeni
+     `featuresSignal` ile refetch → modal içeriği "v1"den "v2"ye) KIRMIZI verdi
+     (`Expected: "v2", Received: "v1"`). Geri alındı, 24/24 yeşil.
+  5. **(e) hata sınırı:** `projectsService.list()`'i senkron fırlatacak şekilde spy'landı —
+     dağıtıcının var olan `withDispatchErrorBoundary`'si (F-002/F-007'de kanıtlı, bu turda
+     DEĞİŞTİRİLMEDİ) yeni route'u da kapsıyor: 500 `internal_error`, ham hata metni sızmadı,
+     ardından `GET /api/health` yanıt vermeye devam etti (süreç yaşıyor). **Not:** bu mutasyonu
+     paylaşılan dağıtıcı sarmalayıcısını (`withDispatchErrorBoundary`) fiilen kaldırarak DEĞİL,
+     doğrudan gerçek bir senkron hata enjekte ederek doğruladım — sarmalayıcıyı kaldırmak Node'un
+     ham `http.Server`'ında gerçek bir `uncaughtException` üretip test çalıştırıcısının kendisini
+     çökertebilirdi (yıkıcı, tekrarlanabilir olmayan bir mutasyon); mevcut fault-injection testi
+     "yeni route'un sınırın İÇİNDE olduğu" iddiasını gerçek bir throw ile zaten kanıtlıyor.
+- `tests/features/kanban/server/feature-detail.test.ts` (14 test, yeni dosya), `parse-feature.
+  test.ts`'e 5 yeni test (`splitFrontmatter`/`extractFeatureBody`), `tests/integration/
+  features-api.test.ts`'e 9 yeni test, `tests/features/kanban/web/KanbanScreen.test.tsx`'e 5 yeni
+  test (dosya toplamı 24/24), `tests/e2e/kanban.spec.ts`'e 3 yeni gerçek tarayıcı testi (dosya
+  toplamı 11/11).
+- Süreç/port hijyeni: `npm run e2e` sonrası `tasklist`/`netstat` tarandı — 7333-7336 LISTENING
+  **boş**; makinede görülen 3 `node.exe` süreci **bu oturuma ait değil** (`hayat-mentoru` adlı
+  başka bir projenin `next dev` süreçleri, `wmic` ile komut satırı doğrulandı).
+
+**Kalan risk / QA'ya devredilen açık maddeler**
+- **`docs/qa/*` dosyaları SSE ile izlenmiyor** (yalnızca `docs/features` chokidar izleniyor) —
+  sözleşme/QA raporu dosyası gövde hiç değişmeden TEK BAŞINA değişirse panel açıkken otomatik
+  yenilenmez (nadir senaryo — pratikte ikisi birlikte değişir, QA turu `status:` alanını da
+  günceller). Yeni bir watcher eklemek J6'nın "yeni mekanizma icat etme" kararına aykırı olurdu;
+  bilinçli, dokümante edilmiş bir sınırlama (`docs/03-ux.md`).
+- Markdown ham metin olarak gösteriliyor (`<pre>`, satır kaydırmalı) — tablo/bağlantı gibi
+  markdown yapıları render edilmiyor. CEO/kullanıcı gerçek markdown render'ı isterse ayrı bir
+  feature notu açılabilir (sözleşme §8'de gerekçeli).
+- Mutasyon (e)'nin kapsamı: paylaşılan `withDispatchErrorBoundary` mekanizmasının kendisi
+  DEĞİL, yeni route'un bu mekanizmanın içinde doğru konumlandığı doğrulandı (yukarıdaki not).
+- `docs/qa` dizini proje kökünde hiç yoksa (henüz hiçbir sözleşme/QA turu yazılmamışsa) sözleşme/
+  QA raporları sessizce "yok" döner — bu AC'nin beklediği davranış, hata değil.
+
+**Sonraki adım**
+- qa-evaluator F-013'ü değerlendirsin (feature notu `status: qa`).
+- CEO/kullanıcı: gerçek markdown render'ı ayrı bir feature olarak istenirse önceliklendirilsin.

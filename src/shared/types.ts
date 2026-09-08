@@ -135,3 +135,34 @@ export interface FeatureCard {
   /** Frontmatter ayrıştırılamadıysa hata mesajı; başarılıysa `undefined`. */
   parse_error?: string
 }
+
+/**
+ * F-013 sözleşme §2 — kart tıklanınca açılan pencerenin gövde/sözleşme/QA rapor içerikleri.
+ * `GET /api/features/detail`'in tel tipi. Her belge bağımsız `exists`/`truncated`/`error`
+ * taşır — biri okunamasa/olmasa bile diğerleri etkilenmez.
+ */
+export interface FeatureDetailDocument {
+  exists: boolean
+  content?: string
+  /** Boyut sınırı (200.000 karakter) aşılıp kırpıldıysa `true` — sessiz kırpma YASAK, istemci
+   *  bunu görünür şekilde bildirir. */
+  truncated?: boolean
+  /** Dosya var ama okunamadıysa (izin, silinmiş yarış durumu vb.) sabit Türkçe metin. */
+  error?: string
+}
+
+export interface FeatureDetailReport extends FeatureDetailDocument {
+  file: string
+}
+
+/** `docs/qa/<id>-*.md` sözleşmesi ve gövde birlikte. `id`, gövde dosyasının frontmatter'ından
+ *  SUNUCU tarafında türetilir (istemciden alınmaz). */
+export interface FeatureDetail {
+  /** `docs/features/<file>.md`'nin TAM byte hash'i — `FeatureCard.content_hash` ile AYNI
+   *  algoritma; istemci bunu kendi elindeki karta karşı ölçüp bayatlığı/tazelemeyi yönetir
+   *  (F-013 sözleşme §6 — yeni bir mekanizma icat edilmedi). */
+  content_hash: string
+  body: FeatureDetailDocument
+  contract: FeatureDetailDocument
+  qa_reports: FeatureDetailReport[]
+}

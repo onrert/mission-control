@@ -442,3 +442,100 @@ test.describe('D42 — echo ölçümü: kendi yazımız chokidar üzerinden geri
     expect(getCount).toBe(1)
   })
 })
+
+test.describe('F-013 — feature detay penceresinde gövde/sözleşme/QA raporları (gerçek tarayıcı)', () => {
+  test('gövde + sözleşme + QA raporu içerikleri panelde görünür, "yok" durumları okunabilir', async ({
+    page,
+  }) => {
+    const dir = makeFixtureProject()
+    fixtureDirs.push(dir)
+    writeFeatureFile(dir, 'F-201.md', { id: 'F-201', title: 'Detay testi', status: 'todo' })
+    fs.mkdirSync(path.join(dir, 'docs', 'qa'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'docs', 'qa', 'F-201-contract.md'), 'Sözleşme içeriği burada.')
+
+    await openKanban(page)
+    const id = await addProject(page, dir, `f013-${Date.now()}`)
+    projectIds.push({ page, id })
+
+    const card = page.locator('[data-testid="kanban-card-F-201.md"]')
+    await expect(card).toBeVisible({ timeout: 5000 })
+    await card.click()
+
+    await expect(page.locator('[data-testid="feature-detail-modal"]')).toBeVisible()
+    await expect(page.locator('[data-testid="feature-detail-body"]')).toContainText('body')
+    await expect(page.locator('[data-testid="feature-detail-contract"]')).toContainText(
+      'Sözleşme içeriği burada.'
+    )
+    // Bu proje için QA raporu hiç yazılmadı — "yok" metni okunabilir olmalı.
+    await expect(page.locator('[data-testid="feature-detail-qa-reports"]')).toHaveText(
+      'QA raporu bulunamadı.'
+    )
+
+    await page.keyboard.press('Escape')
+    await expect(page.locator('[data-testid="feature-detail-modal"]')).toHaveCount(0)
+  })
+
+  test('320/375/480px — modal içeriğinin KIRPILMIŞ GÖRÜNÜR genişliği > 0 (toBeVisible() yetersiz)', async ({
+    page,
+  }) => {
+    const dir = makeFixtureProject()
+    fixtureDirs.push(dir)
+    writeFeatureFile(dir, 'F-202.md', { id: 'F-202', title: 'Dar genişlik testi', status: 'todo' })
+
+    for (const width of [320, 375, 480]) {
+      await page.setViewportSize({ width, height: 700 })
+      await openKanban(page)
+      const id = await addProject(page, dir, `f013-narrow-${width}-${Date.now()}`)
+      projectIds.push({ page, id })
+
+      const card = page.locator('[data-testid="kanban-card-F-202.md"]')
+      await expect(card).toBeVisible({ timeout: 5000 })
+      await card.click()
+
+      const modal = page.locator('[data-testid="feature-detail-modal"]')
+      await expect(modal).toBeVisible()
+      await expect(page.locator('[data-testid="feature-detail-body"]')).toBeVisible()
+
+      expect(
+        await clippedVisibleWidth(page, '[data-testid="feature-detail-modal"]')
+      ).toBeGreaterThan(0)
+      expect(
+        await clippedVisibleWidth(page, '[data-testid="feature-detail-body"]')
+      ).toBeGreaterThan(0)
+
+      const modalBox = await modal.boundingBox()
+      expect(modalBox).not.toBeNull()
+      // Modal viewport genişliğini AŞMAZ (yatay taşma yok).
+      expect(modalBox!.x).toBeGreaterThanOrEqual(0)
+      expect(modalBox!.x + modalBox!.width).toBeLessThanOrEqual(width + 1)
+
+      await page.keyboard.press('Escape')
+      await removeProject(page, id)
+      projectIds.pop()
+    }
+  })
+
+  test('okuma hatası panelde okunabilir şekilde görünür, panel çökmez (AC7)', async ({ page }) => {
+    const dir = makeFixtureProject()
+    fixtureDirs.push(dir)
+    writeFeatureFile(dir, 'F-203.md', { id: 'F-203', title: 'Silinen dosya', status: 'todo' })
+
+    await openKanban(page)
+    const id = await addProject(page, dir, `f013-missing-${Date.now()}`)
+    projectIds.push({ page, id })
+
+    const card = page.locator('[data-testid="kanban-card-F-203.md"]')
+    await expect(card).toBeVisible({ timeout: 5000 })
+
+    // Yarış durumu emsali: kart listelendi, tıklamadan HEMEN önce dosya silindi.
+    fs.rmSync(path.join(dir, 'docs', 'features', 'F-203.md'))
+    await card.click()
+
+    await expect(page.locator('[data-testid="feature-detail-error"]')).toBeVisible({
+      timeout: 5000,
+    })
+    // Panel çökmedi — geri kalan Kanban ekranı hâlâ etkileşimli.
+    await expect(page.locator('[data-testid="kanban-screen"]')).toBeVisible()
+    await page.keyboard.press('Escape')
+  })
+})

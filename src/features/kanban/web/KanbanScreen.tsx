@@ -103,6 +103,21 @@ export function KanbanScreen({
     return () => clearInterval(id)
   }, [])
 
+  // F-013 sözleşme §6 — açık detay modalının kartını `cards`'ın güncel sürümüyle senkron
+  // tutar (yeni bir bayatlık mekanizması İCAT ETMİYOR, zaten var olan SSE-beslemeli `cards`
+  // state'ine biniyor). Yalnızca içerik GERÇEKTEN değiştiyse (`content_hash` farklı) referans
+  // değişir — `useFeatureDetail`'in effect bağımlılığı bunu görüp uçu yeniden çağırır, panel
+  // otomatik tazelenir (AC'nin "tazelenir VEYA bayat olduğu belli olur" seçeneklerinden ilki).
+  useEffect(() => {
+    setDetailCard((current) => {
+      if (!current) return current
+      const key = cardKey(current)
+      const fresh = cards.find((c) => cardKey(c) === key)
+      if (fresh && fresh.content_hash !== current.content_hash) return fresh
+      return current
+    })
+  }, [cards])
+
   useEffect(() => {
     if (!toast || toast.tone !== 'success') return
     const id = setTimeout(() => setToast(null), 3000)

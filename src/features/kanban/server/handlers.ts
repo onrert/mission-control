@@ -4,7 +4,13 @@ import path from 'node:path'
 import { setFeatureStatus } from '../../../server/write-gate'
 import { listFeaturesDetailed } from './list-features'
 import { parseFeatureCard } from './parse-feature'
-import type { ApiResponse, FeatureCard, ProjectListItem } from '../../../shared/types'
+import { buildFeatureDetail, isValidFeatureFileName } from './feature-detail'
+import type {
+  ApiResponse,
+  FeatureCard,
+  FeatureDetail,
+  ProjectListItem,
+} from '../../../shared/types'
 import type { ProjectsService } from '../../projects/server/service'
 
 const MAX_BODY_BYTES = 65536
@@ -217,4 +223,54 @@ export function handlePatchFeatureStatus(
       }
     })()
   })
+}
+
+/**
+ * `GET /api/features/detail?project_id=…&file=…` (F-013 sözleşme §2/§4). Salt okunur — hiçbir
+ * `fs` yazma çağrısı yok (`tests/no-write-gate-bypass.test.ts` bunu statik olarak da doğrular,
+ * `tests/features/kanban/server/feature-detail-manifest.test.ts` dinamik olarak). `id` istemciden
+ * ALINMAZ — `buildFeatureDetail` gövde dosyasının frontmatter'ından sunucu tarafında türetir.
+ */
+export function handleFeatureDetail(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  projectsService: ProjectsService
+): void {
+  const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+  const projectId = url.searchParams.get('project_id')
+  const file = url.searchParams.get('file')
+
+  if (projectId === null || projectId === '' || file === null || file === '') {
+    sendInvalidBody(res, 'project_id ve file zorunludur.')
+    return
+  }
+  if (!isValidFeatureFileName(file)) {
+    sendInvalidBody(res, 'Dosya biçimi tanınamadı.')
+    return
+  }
+
+  const project = projectsService.list().items.find((p) => p.id === projectId)
+  if (!project) {
+    sendJson(res, 404, {
+      success: false,
+      error: { code: 'not_found', message: 'Proje bulunamadı.' },
+    })
+    return
+  }
+
+  const result = buildFeatureDetail(project.path, file)
+  if (result.status === 'not_found') {
+    sendJson(res, 404, { success: false, error: { code: 'not_found', message: result.message } })
+    return
+  }
+  if (result.status === 'invalid_path') {
+    sendJson(res, 400, {
+      success: false,
+      error: { code: 'invalid_path', message: result.message },
+    })
+    return
+  }
+
+  const body: ApiResponse<FeatureDetail> = { success: true, data: result.detail }
+  sendJson(res, 200, body)
 }

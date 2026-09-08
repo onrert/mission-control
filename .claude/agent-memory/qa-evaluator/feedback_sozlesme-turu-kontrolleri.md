@@ -93,3 +93,25 @@ bölümleri yeniden açma. Bulguları `## ADR uyum kontrolü`, `## Ölçmeyen te
    olayları hiçbir `try/catch`'e düşmez ve `src/server/index.ts`'te yalnızca `unhandledRejection`
    ağı var, `uncaughtException` **yok**. Ayrıca Windows'ta (ADR-009) ebeveyn ölünce çocuk
    otomatik ölmez — "alt süreç ebeveynle birlikte ölür" cümlesi ⊢ ÇIKARIM'dır, ✓ DOĞRULANDI değil.
+
+12. **Güvenlik sınırı sözleşmelerinde tehdit modelini ARACA değil HEDEFE göre kur.** Sözleşme
+   "hosted agent bu ucu çağırabilir mi" diye sorduğunda, asıl soru "hedefe ulaşmanın en kısa yolu
+   nedir". F-008'de sözleşme yalnızca HTTP+`Bash` yolunu inceledi; asıl yol agent'ın kendi `Write`
+   aracıyla dosyayı doğrudan yazmasıydı. Kontrol listesi: (a) agent frontmatter `tools:` alanında
+   `Write`/`Edit` var mı, (b) `PreToolUse` hook'unun **muafiyet/`free` listesi** hedef dizini
+   kapsıyor mu (`gate-check.cjs`'in `free` listesinde `^docs/` vardı — kapı dosyaları korumasız),
+   (c) `settingSources:['project']` proje `permissions.allow` listesini yüklüyor mu ve hedef yol
+   orada allow'lu mu, (d) `managedSettings.permissions.ask` hangi araçları kapsıyor (yalnızca
+   `Bash` ise diğer araçlar kart çıkarmaz). Dördü birlikte okunmadan "otomatik onay yok" iddiası
+   kurulamaz.
+13. **ADR'nin güvenlik cümlesi de bir ÖNCÜLdür — hook koduna bakarak doğrula.** ADR-005 eki ve
+   ADR-014 eki "yıkıcı komut, uzak depoya gönderme ve **kapı onayı** korumaları hosted oturumda da
+   ayakta" diyordu; gerçekte o hook "G2 yoksa KODA yazamazsın" demek, onay dosyasını hiç korumuyor.
+   Sözleşme öncülü devraldı. Bir ADR bir korumanın adını anıyorsa hook/kod dosyasını aç ve
+   korumanın **neyi** kapsadığını oku; gerekiyorsa ADR düzeltmesini sözleşmenin ödev listesine yaz.
+14. **Yeni bir dizini "izlenen + listelenen" hâline getirmeden önce o dizinde başka kim yazıyor
+   diye bak.** F-008'de `docs/approvals/` panelde listelenecekti; içinde `README.md`, tek
+   kullanımlık `DANGER.ok`/`PUSH.ok` token'ları, `archive/` dizini ve — en sinsisi — yazma
+   kapısının kendi atomik `.<ad>.<pid>-<hex>.tmp` dosyası vardı (tmp hedefle **aynı** dizinde
+   açılıyor). "Tanınmayan dosyalar" listesi kalıcı çöp gösterir, filtresiz izleyici her yazmada
+   fazladan yayın yapar.

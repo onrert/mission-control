@@ -1,6 +1,6 @@
 # QA Evaluator Memory
 
-- [Sözleşme turu kontrolleri](feedback_sozlesme-turu-kontrolleri.md) — ADR ödevleri · kanıt yolu · regresyon · E2E gerçekten koşuyor mu · belgenin öncülleri repoyla uyuşuyor mu · yeni sekme/yazma yolunun kırdığı çitler.
+- [Sözleşme turu kontrolleri](feedback_sozlesme-turu-kontrolleri.md) — ADR ödevleri/öncülleri · kanıt yolu · E2E testMatch · yeni sekme/yazma yolunun kırdığı çitler · tehdit modelini araca değil HEDEFE göre kur (Write yolu) · izlenen dizinde başka kim yazıyor.
 - [Kod turu kontrolleri](feedback_kod-turu-kontrolleri.md) — fault injection · çit mutasyonu · derleme CSS `@source` denetimi · hassas verinin aktığı DALA mutasyon · dedup anahtarı çakışması · E2E feature'ı kapatıyor mu · dar viewport kırpma · manifest anlık görüntü sırası · ikinci yol-kurma noktası · klavyeyle kaydırılamayan içerik
 - [Düzeltme turu kontrolleri](feedback_duzeltme-turu-kontrolleri.md) — brief öncülünü doğrula · eski yeşil mutasyonu tekrarla · düzeltmeyi birebir geri saran ikinci mutasyon · model-bağımlı canlı testte kırmızı yer değiştirir (blok diffiyle ayır) · konsol hatasını git-log ile tarihlendir · locator.focus() odağı zorlar · mtime-only yazma · katman başına mutasyon.
 - [Statik çit denetimi](feedback_statik-cit-denetimi.md) — AC kanıt cümlesini doğrula · muafiyete mutasyon at · aile bazında sızdır · kalan kaçağı ADR kabul sınırı + ikinci savunma hattıyla kalibre et.

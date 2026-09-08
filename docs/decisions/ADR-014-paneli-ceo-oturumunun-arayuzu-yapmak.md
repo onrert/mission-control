@@ -172,3 +172,33 @@ Yani bir komutun kullanıcıya ulaşmadan çalışması için **ikisinin birden*
 Bu yüzden "izin kartı çıktı mı" testi, hook'un zaten reddettiği bir komutla yazılamaz; iki
 mekanizma **ayrı ayrı** test edilmek zorundadır. F-012'de canlı testin beş denemede kararsız
 kalmasının sebebi buydu — assert yanlış katmanı ölçüyordu.
+
+### Ek — `Write` de izin kartına uğruyor (ölçüldü, 2026-09-09)
+
+F-008'in sözleşme denetimi, barındırılan CEO oturumunun kapı onayı dosyasını **izin kartı
+çıkmadan** yazabileceği bir zincir buldu ve bunu bloklayıcı olarak işaretledi. Zincir mantıklıydı:
+`ceo.md` araçlarında `Write` var · `gate-check.cjs`'in `free` listesi `docs/` altını serbest
+bırakıyor · `.claude/settings.json` `permissions.allow` içinde `Write(docs/**)` var ·
+`settingSources:['project']` o listeyi yüklüyor · `permissions.ask` yalnızca `['Bash']`.
+
+**Ölçüldü ve zincir gerçekte kopuyor: `Write` HER ZAMAN `canUseTool`'a uğruyor.**
+✓ DOĞRULANDI — iki yönlü canlı probe, gerçek SDK `query()`, sandbox çalışma dizini
+(`docs/qa/F-008-write-izin-olcumu.md`):
+- `allowManagedPermissionRulesOnly: true` (mevcut yapılandırma) → kart tetiklendi, reddedildi,
+  sandbox `docs/` **boş kaldı**.
+- `allowManagedPermissionRulesOnly: false` (kontrol) → **birebir aynı**; kart yine tetiklendi.
+
+**Bayrağın gerçek kapsamı:** `Write` vektöründe hiçbir gözlemlenebilir fark yaratmıyor. Bu,
+F-012'nin `Bash` ölçümüyle **çelişmiyor**: orada bayrak, `Bash`'e özgü dahili "salt-okunur komut"
+kısa devresini kapatıyordu. `Write`'ın böyle bir kısa devresi yok — zaten her koşulda karta düşüyor.
+
+**Neden kayda geçiyor:** aynı zincir gelecekte yeniden türetilip "delik" sanılabilir. Statik
+okumayla çıkarılan izin zinciri, SDK'nın çalışma zamanı davranışını **yanlış tahmin etti** —
+bu, bu deponun kuralının tersten kanıtı: mekanizmayı okumak yetmez, **ölçmek** gerekir.
+`session.ts:495-497`'deki yorum yanlış değil ama **eksik**: yalnızca `Read`/`Grep`/`Glob`/
+`WebSearch` hakkında konuşuyor, `Write` hakkında hiçbir iddiada bulunmuyor. Bu ölçüm o boşluğu
+doldurur.
+
+**Sınır — abartılmasın:** bu, kabuk erişimi olan yerel bir agent'a karşı savunmanın **mutlak**
+olduğu anlamına gelmez. Anlamı şudur: kapı onayı dosyasını yazan her yol, kullanıcının gördüğü
+**izin kartından** geçer. Asıl koruma odur.

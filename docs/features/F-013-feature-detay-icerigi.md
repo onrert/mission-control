@@ -1,7 +1,7 @@
 ---
 id: F-013
 title: Feature penceresinde içerik — gövde, sözleşme ve QA raporları
-status: qa
+status: fix
 owner: developer
 deps: [F-007, F-012]
 sprint: 2

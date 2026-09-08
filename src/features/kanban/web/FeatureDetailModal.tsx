@@ -12,7 +12,11 @@ export interface FeatureDetailModalProps {
 const TRUNCATED_NOTICE = 'İçerik çok büyük olduğu için kısaltıldı.'
 
 /** F-013 sözleşme §7 — bir belgeyi (gövde/sözleşme/QA raporu) yok/hata/içerik durumlarına göre
- *  gösterir. Markdown render'ı YOK (sözleşme §8, CEO/J5 kararı) — ham metin `<pre>` ile. */
+ *  gösterir. Markdown render'ı YOK (sözleşme §8, CEO/J5 kararı) — ham metin `<pre>` ile.
+ *  QA düzeltme turu K5 (Ö3) — `<pre>` artık KENDİ kaydırma kutusu DEĞİL (`max-h-64
+ *  overflow-y-auto` kaldırıldı): tek kaydırma bağlamı modalın dış kabıdır (bkz.
+ *  `FeatureDetailModal`'daki yorum) — 254px'lik kutularda 27.922px gizli içerik + 11 iç içe
+ *  kaydırma kabı ölçülmüştü. */
 function DocumentBlock({
   doc,
   emptyText,
@@ -39,7 +43,7 @@ function DocumentBlock({
   return (
     <div data-testid={testId}>
       {doc.truncated && <p className="mb-1 text-xs text-amber-400">⚠ {TRUNCATED_NOTICE}</p>}
-      <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-zinc-800 bg-zinc-950 p-2 font-mono text-xs text-zinc-300">
+      <pre className="whitespace-pre-wrap break-words rounded-md border border-zinc-800 bg-zinc-950 p-2 font-mono text-xs text-zinc-300">
         {doc.content}
       </pre>
     </div>
@@ -58,7 +62,9 @@ function DocumentBlock({
 export function FeatureDetailModal({ card, onClose, fetchImpl }: FeatureDetailModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
-  const { loadState, detail, errorMessage } = useFeatureDetail(card, { fetchImpl })
+  const { loadState, detail, errorMessage, lastFetchedAt, refresh } = useFeatureDetail(card, {
+    fetchImpl,
+  })
 
   useEffect(() => {
     closeButtonRef.current?.focus()
@@ -74,8 +80,12 @@ export function FeatureDetailModal({ card, onClose, fetchImpl }: FeatureDetailMo
       if (event.key !== 'Tab') return
       const container = dialogRef.current
       if (!container) return
+      // QA düzeltme turu K6 (Ö2) — `<summary>` DOM'da örtük olarak odaklanabilir (`tabindex`
+      // ÖZNİTELİĞİ olmadan) ve K5'in eklediği `<details>` bölümlerinin AÇMA/KAPAMA kontrolü
+      // budur. Seçiciye eklenmezse bu tuzak, JS'in "ilk/son odaklanabilir öğe" hesabını yanlış
+      // yapar (`summary`'leri atlar) ve `Tab` bunlara HİÇ ULAŞAMADAN geri sarar.
       const focusable = container.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        'button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])'
       )
       if (focusable.length === 0) return
       const first = focusable[0]
@@ -139,7 +149,32 @@ export function FeatureDetailModal({ card, onClose, fetchImpl }: FeatureDetailMo
           </div>
         </dl>
 
-        <div className="mt-3 flex-1 space-y-4 overflow-y-auto border-t border-zinc-800 pt-3">
+        {loadState === 'ready' && detail && (
+          <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-800 pt-2 text-xs text-zinc-500">
+            <span data-testid="feature-detail-last-fetched">
+              {lastFetchedAt !== null &&
+                `Son yenileme: ${new Date(lastFetchedAt).toLocaleTimeString('tr-TR')}`}
+            </span>
+            <button
+              type="button"
+              onClick={refresh}
+              data-testid="feature-detail-refresh"
+              className="min-h-8 rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-300"
+            >
+              Yenile
+            </button>
+          </div>
+        )}
+
+        {/* QA düzeltme turu K5 (Ö3) — TEK kaydırma bağlamı burasıdır (`tabIndex={0}` K6/Ö2:
+            klavye odağı alabilsin ki `PageDown`/`ArrowDown` bu kutuyu kaydırsın — eskiden 12
+            ayrı kaydırma bölgesinin hiçbiri odaklanamıyordu). Alttaki `<pre>`lerin kendi
+            `overflow-y-auto`'su kaldırıldı (`DocumentBlock` yorumu) — iç içe kaydırma yok. */}
+        <div
+          className="mt-3 flex-1 space-y-3 overflow-y-auto border-t border-zinc-800 pt-3"
+          tabIndex={0}
+          aria-label="Feature detay içeriği"
+        >
           {loadState === 'loading' && (
             <p data-testid="feature-detail-loading" className="text-xs text-zinc-500">
               Yükleniyor…
@@ -152,22 +187,28 @@ export function FeatureDetailModal({ card, onClose, fetchImpl }: FeatureDetailMo
           )}
           {loadState === 'ready' && detail && (
             <>
-              <section>
-                <h3 className="mb-1 text-xs font-semibold text-zinc-400">Açıklama</h3>
+              {/* K5 — bölümler katlanabilir: yalnızca gövde varsayılan AÇIK, geri kalanı KAPALI
+                  (CEO kararı K5 madde 1). */}
+              <details open>
+                <summary className="mb-1 cursor-pointer text-xs font-semibold text-zinc-400">
+                  Açıklama
+                </summary>
                 <DocumentBlock
                   doc={detail.body}
                   emptyText="İçerik bulunamadı."
                   testId="feature-detail-body"
                 />
-              </section>
-              <section>
-                <h3 className="mb-1 text-xs font-semibold text-zinc-400">Sözleşme</h3>
+              </details>
+              <details>
+                <summary className="mb-1 cursor-pointer text-xs font-semibold text-zinc-400">
+                  Sözleşme
+                </summary>
                 <DocumentBlock
                   doc={detail.contract}
                   emptyText="Sözleşme bulunamadı."
                   testId="feature-detail-contract"
                 />
-              </section>
+              </details>
               <section>
                 <h3 className="mb-1 text-xs font-semibold text-zinc-400">QA raporları</h3>
                 {detail.qa_reports.length === 0 ? (
@@ -175,16 +216,21 @@ export function FeatureDetailModal({ card, onClose, fetchImpl }: FeatureDetailMo
                     QA raporu bulunamadı.
                   </p>
                 ) : (
-                  <div data-testid="feature-detail-qa-reports" className="space-y-3">
+                  <div data-testid="feature-detail-qa-reports" className="space-y-2">
                     {detail.qa_reports.map((report: FeatureDetailReport) => (
-                      <div key={report.file}>
-                        <p className="mb-1 font-mono text-xs text-zinc-500">{report.file}</p>
-                        <DocumentBlock
-                          doc={report}
-                          emptyText="QA raporu bulunamadı."
-                          testId={`feature-detail-qa-report-${report.file}`}
-                        />
-                      </div>
+                      // K5 madde 1 — her QA raporu KENDİ katlanabilir bölümü, varsayılan KAPALI.
+                      <details key={report.file} className="rounded-md border border-zinc-800">
+                        <summary className="cursor-pointer px-2 py-1 font-mono text-xs text-zinc-500">
+                          {report.file}
+                        </summary>
+                        <div className="p-2">
+                          <DocumentBlock
+                            doc={report}
+                            emptyText="QA raporu bulunamadı."
+                            testId={`feature-detail-qa-report-${report.file}`}
+                          />
+                        </div>
+                      </details>
                     ))}
                   </div>
                 )}

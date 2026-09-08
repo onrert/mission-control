@@ -455,6 +455,102 @@ describe('KanbanScreen — F-013 sözleşme §6 (bayatlık: content_hash değiş
   })
 })
 
+describe('KanbanScreen — QA düzeltme turu K4 (BLOKLAYICI B1): docs/qa bayatlığı için "Yenile" + son yenileme zamanı', () => {
+  it('"Yenile" butonu YENİ bir /api/features/detail çağrısı tetikler ve güncel sözleşme içeriğini gösterir (content_hash DEĞİŞMESE bile)', async () => {
+    // QA'nın B1 repro'su: `docs/qa/*` `content_hash`'e girmiyor, yani gövde hiç değişmeden
+    // sözleşme dosyası TEK BAŞINA değişebilir — otomatik yenileme mekanizması (content_hash
+    // effect'i) bunu YAKALAYAMAZ. Bu test o senaryoyu birebir kurar: iki çağrı arasında
+    // `content_hash` SABİT kalıyor, yalnızca sözleşme metni değişiyor; kullanıcı elle
+    // "Yenile"ye basınca güncel içerik gelmeli.
+    let detailCallCount = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/features/detail')) {
+          detailCallCount += 1
+          const data: FeatureDetail = {
+            content_hash: 'hash-1',
+            body: { exists: true, content: 'gövde değişmedi', truncated: false },
+            contract:
+              detailCallCount === 1
+                ? { exists: true, content: 'ESKİ SÖZLEŞME', truncated: false }
+                : { exists: true, content: 'YENİ SÖZLEŞME (dışarıdan değişti)', truncated: false },
+            qa_reports: [],
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ success: true, data }),
+          } as unknown as Response
+        }
+        if (url.includes('/api/projects')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ success: true, data: [project()] }),
+          } as unknown as Response
+        }
+        if (url.includes('/api/features')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ success: true, data: [card({ content_hash: 'hash-1' })] }),
+          } as unknown as Response
+        }
+        throw new Error(`beklenmeyen fetch: ${url}`)
+      }) as unknown as typeof fetch
+    )
+
+    const user = userEvent.setup()
+    render(
+      <KanbanScreen
+        liveProjectsUpdate={null}
+        featuresSignal={null}
+        connectionStatus="connected"
+        onNavigateSettings={noop}
+      />
+    )
+    await waitFor(() => expect(screen.getByTestId('kanban-card-F-001.md')).toBeTruthy())
+    await user.click(screen.getByTestId('kanban-card-F-001.md'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('feature-detail-contract').textContent).toContain('ESKİ SÖZLEŞME')
+    )
+    expect(detailCallCount).toBe(1)
+
+    await user.click(screen.getByTestId('feature-detail-refresh'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('feature-detail-contract').textContent).toContain(
+        'YENİ SÖZLEŞME (dışarıdan değişti)'
+      )
+    )
+    expect(detailCallCount).toBe(2)
+  })
+
+  it('"Son yenileme" zaman damgası ilk başarılı çekmeden sonra görünür (bayatlık kullanıcıya açık)', async () => {
+    stubRouter({ cards: [card()] })
+    const user = userEvent.setup()
+    render(
+      <KanbanScreen
+        liveProjectsUpdate={null}
+        featuresSignal={null}
+        connectionStatus="connected"
+        onNavigateSettings={noop}
+      />
+    )
+    await waitFor(() => expect(screen.getByTestId('kanban-card-F-001.md')).toBeTruthy())
+    await user.click(screen.getByTestId('kanban-card-F-001.md'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('feature-detail-last-fetched').textContent).toMatch(
+        /^Son yenileme: /
+      )
+    )
+  })
+})
+
 describe('KanbanScreen — D1-D6 durum tasarımı (QA tur 1 bulgu 12)', () => {
   it('D1: proje var ama hiç kart yok → boş durum + "Ayarlar\'a git" aksiyonu', async () => {
     stubRouter({ projects: [project()], cards: [] })

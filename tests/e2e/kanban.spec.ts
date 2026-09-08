@@ -538,4 +538,103 @@ test.describe('F-013 — feature detay penceresinde gövde/sözleşme/QA raporla
     await expect(page.locator('[data-testid="kanban-screen"]')).toBeVisible()
     await page.keyboard.press('Escape')
   })
+
+  test('QA düzeltme turu K4 (BLOKLAYICI B1) — panel açıkken docs/qa dışarıdan değişirse "Yenile" güncel içeriği getirir', async ({
+    page,
+  }) => {
+    const dir = makeFixtureProject()
+    fixtureDirs.push(dir)
+    writeFeatureFile(dir, 'F-204.md', { id: 'F-204', title: 'Bayatlık testi', status: 'todo' })
+    fs.mkdirSync(path.join(dir, 'docs', 'qa'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'docs', 'qa', 'F-204-contract.md'), 'ESKİ-SÖZLEŞME-METNİ')
+
+    await openKanban(page)
+    const id = await addProject(page, dir, `f013-stale-${Date.now()}`)
+    projectIds.push({ page, id })
+
+    const card = page.locator('[data-testid="kanban-card-F-204.md"]')
+    await expect(card).toBeVisible({ timeout: 5000 })
+    await card.click()
+
+    await expect(page.locator('[data-testid="feature-detail-contract"]')).toContainText(
+      'ESKİ-SÖZLEŞME-METNİ'
+    )
+
+    // QA'nın B1 repro'su birebir: panel AÇIKKEN, gövdeye dokunmadan `docs/qa` diskte değişir
+    // (`content_hash` bunu görmez, otomatik yenileme senaryonun DIŞINDA — bu testin konusu).
+    fs.writeFileSync(
+      path.join(dir, 'docs', 'qa', 'F-204-contract.md'),
+      'YENİ-SÖZLEŞME-METNİ (dışarıdan değişti)'
+    )
+
+    // Elle "Yenile" ÖNCESİ hâlâ eski içerik (sessiz otomatik yenileme yok — bilinen sınırlama).
+    await page.waitForTimeout(500)
+    await expect(page.locator('[data-testid="feature-detail-contract"]')).toContainText(
+      'ESKİ-SÖZLEŞME-METNİ'
+    )
+
+    await page.locator('[data-testid="feature-detail-refresh"]').click()
+
+    await expect(page.locator('[data-testid="feature-detail-contract"]')).toContainText(
+      'YENİ-SÖZLEŞME-METNİ (dışarıdan değişti)',
+      { timeout: 5000 }
+    )
+
+    await page.keyboard.press('Escape')
+  })
+
+  test('QA düzeltme turu K5/K6 (Ö2/Ö3) — tek kaydırma bağlamı, klavye ile kaydırılabilir, gövde varsayılan açık/sözleşme kapalı', async ({
+    page,
+  }) => {
+    const dir = makeFixtureProject()
+    fixtureDirs.push(dir)
+    const longBody = Array.from({ length: 400 }, (_, i) => `Satır ${i + 1}: dolgu metni.`).join(
+      '\n'
+    )
+    fs.writeFileSync(
+      path.join(dir, 'docs', 'features', 'F-205.md'),
+      `---\nid: F-205\ntitle: Uzun içerik testi\nstatus: todo\nowner: developer\ndeps: []\nsprint: 1\n---\n${longBody}\n`
+    )
+    fs.mkdirSync(path.join(dir, 'docs', 'qa'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'docs', 'qa', 'F-205-contract.md'), 'sözleşme içeriği')
+
+    await openKanban(page)
+    const id = await addProject(page, dir, `f013-scroll-${Date.now()}`)
+    projectIds.push({ page, id })
+
+    const card = page.locator('[data-testid="kanban-card-F-205.md"]')
+    await expect(card).toBeVisible({ timeout: 5000 })
+    await card.click()
+
+    const body = page.locator('[data-testid="feature-detail-body"]')
+    await expect(body).toBeVisible()
+    // Gövde varsayılan AÇIK.
+    await expect(body).toContainText('Satır 1:')
+
+    // Sözleşme varsayılan KAPALI — metin DOM'da var (textContent) ama görünür DEĞİL.
+    const contract = page.locator('[data-testid="feature-detail-contract"]')
+    await expect(contract).toContainText('sözleşme içeriği')
+    await expect(contract).not.toBeVisible()
+
+    // K5 — TEK kaydırma bağlamı: `<pre>`lerin artık KENDİ `overflow-y-auto` kutusu yok, tek
+    // kaydırılabilir ata modalın içerik kabıdır.
+    const nestedScrollBoxCount = await page.evaluate(() => {
+      const modal = document.querySelector('[data-testid="feature-detail-modal"]')
+      if (!modal) return -1
+      const pres = Array.from(modal.querySelectorAll('pre'))
+      return pres.filter((pre) => window.getComputedStyle(pre).overflowY !== 'visible').length
+    })
+    expect(nestedScrollBoxCount).toBe(0)
+
+    // K6 — kaydırılabilir kap klavye ile odaklanabilir VE gerçekten kaydırılabilir.
+    const scrollBox = page.locator('[aria-label="Feature detay içeriği"]')
+    await scrollBox.focus()
+    const before = await scrollBox.evaluate((el) => el.scrollTop)
+    await page.keyboard.press('PageDown')
+    await page.waitForTimeout(100)
+    const after = await scrollBox.evaluate((el) => el.scrollTop)
+    expect(after).toBeGreaterThan(before)
+
+    await page.keyboard.press('Escape')
+  })
 })

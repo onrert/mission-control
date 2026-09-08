@@ -1,7 +1,7 @@
 ---
 id: F-013
 title: Feature penceresinde içerik — gövde, sözleşme ve QA raporları
-status: fix
+status: qa
 owner: developer
 deps: [F-007, F-012]
 sprint: 2
@@ -60,3 +60,13 @@ CEO kararları J1-J8 (brief'te bağlayıcı olarak verildi) uygulandı: ayrı sa
 uyarısı, `content_hash` tabanlı otomatik yenileme (yeni mekanizma yok), markdown kütüphanesi
 EKLENMEDİ (ham `<pre>`, bundle etkisi 0 — `package-lock.json` değişmedi). Ayrıntı:
 `docs/qa/F-013-contract.md`, doğrulama detayları `docs/progress.md`.
+
+## Düzeltme turu notu (developer, 2026-09-08) — QA kod turu KALDI → K1-K6 kapatıldı
+`docs/qa/F-013-2026-09-08.md` (KALDI, 2 bloklayıcı + 4 önemli) CEO kararları K1-K6 ile
+kapatıldı: B2/AC4 (id üzerinden kök kaçışı — ikinci savunma katmanı `resolveInsideRootForRead`),
+Ö4/AC4 (okuma kapsamı `docs/features/**`/`docs/qa/**` ile sınırlandı), Ö1/AC3 (manifest testi
+artık TÜM çağrılardan önce anlık görüntü alıp TAM eşitlik karşılaştırıyor), B1/AC6 ("Yenile"
+düğmesi + "Son yenileme: <saat>" — sessiz bayatlık yok), Ö2 (klavye ile kaydırılabilir tek
+bağlam), Ö3 (bölümler katlanabilir, gövde açık/geri kalanı kapalı). Ayrıntı `docs/qa/F-013-
+contract.md` gövdesine yayılmadı (kapsam sözleşme değil düzeltme turu) — kanıt ve mutasyon
+tablosu `docs/progress.md`'de.

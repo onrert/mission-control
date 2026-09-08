@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import {
   buildFeatureDetail,
   isValidFeatureFileName,
@@ -156,6 +157,122 @@ describe('buildFeatureDetail — mutlu yol + yok/hata durumları', () => {
   })
 })
 
+describe('buildFeatureDetail — QA düzeltme turu K1/B2 (id üzerinden kök kaçışı, gerçek saldırı)', () => {
+  let root: string
+  let outsideDir: string
+
+  afterEach(() => {
+    if (root) removeTempDataDir(root)
+    if (outsideDir) removeTempDataDir(outsideDir)
+  })
+
+  it('QA\'nın ölçtüğü gerçek saldırı: id="../../../<dış-klasör>/qa/EVIL" kök dışındaki içeriği SIZDIRMAZ', () => {
+    root = createTempDataDir()
+    // `root` altındaki `docs/qa/<id>-contract.md` inşasından `../../../<marker>/qa/EVIL-
+    // contract.md` yoluyla ÜÇ seviye yukarı çıkıp `root`'un YANINDAKİ (kardeş) bir dizine
+    // inecek şekilde `id` kuruluyor — gerçek dosya da TAM O konuma yazılıyor (QA'nın kendi
+    // repro'sundaki gibi rastgele bir dış temp dizini DEĞİL, saldırının matematiksel olarak
+    // gerçekten ulaştığı konum). `crypto.randomUUID()` paralel testlerle çakışmayı önler
+    // (`tests/integration/features-api.test.ts`'teki "MUTASYON (a)" testiyle aynı desen).
+    const marker = `mc-outside-${crypto.randomUUID()}`
+    outsideDir = path.join(path.dirname(root), marker)
+    writeFile(
+      root,
+      'docs/features/F-902-evil.md',
+      `---\nid: "../../../${marker}/qa/EVIL"\nstatus: todo\n---\ngövde\n`
+    )
+    // `docs/qa` gerçek projelerde neredeyse her zaman var — bu dizin YOKSA `qaDirResolved`
+    // zaten `not-found` döner ve testin ölçmek istediği kaçış hiç denenmez (yanlış nedenle
+    // yeşil kalır). Var olduğunu garanti ederek gerçekçi koşulu ölçüyoruz.
+    writeFile(root, 'docs/qa/.keep', '')
+    writeFile(outsideDir, 'qa/EVIL-contract.md', 'KOK-DISI-SIZAN-GIZLI-ICERIK')
+
+    const result = buildFeatureDetail(root, 'F-902-evil.md')
+    expect(result.status).toBe('ok')
+    if (result.status !== 'ok') throw new Error('beklenmedik durum')
+    // Ne sözleşme ne de QA raporları kök dışına çıkar — SAFE_ID_PATTERN `/` içeren id'yi
+    // baştan reddeder (birinci katman).
+    expect(result.detail.contract).toEqual({ exists: false })
+    expect(result.detail.qa_reports).toEqual([])
+  })
+
+  it('id kendi featureının docs/qa DIŞINDAKİ bir dosyaya sızmasını dener (id="F-001/../F-002"): SAFE_ID_PATTERN reddeder', () => {
+    root = createTempDataDir()
+    writeFile(
+      root,
+      'docs/features/F-905-evil.md',
+      '---\nid: "F-001/../F-002"\nstatus: todo\n---\ngövde\n'
+    )
+    // Hedef: docs/qa/F-001/../F-002-contract.md === docs/qa/F-002-contract.md — YOLUN KENDİSİ
+    // kök İÇİNDE ve docs/qa ALTINDA kalıyor (K2'nin "docs/qa dışına çıkma" kontrolü bunu
+    // YAKALAYAMAZ), yalnızca SAFE_ID_PATTERN'in `/` reddi bunu engeller.
+    writeFile(root, 'docs/qa/F-002-contract.md', 'BASKA-FEATURE-IN-SOZLESMESI-SIZMAMALI')
+
+    const result = buildFeatureDetail(root, 'F-905-evil.md')
+    expect(result.status).toBe('ok')
+    if (result.status !== 'ok') throw new Error('beklenmedik durum')
+    expect(result.detail.contract).toEqual({ exists: false })
+  })
+})
+
+describe('resolveInsideRootForRead — QA düzeltme turu K2/Ö4 (kök altında AMA docs/features|docs/qa dışında)', () => {
+  let root: string
+
+  afterEach(() => {
+    if (root) removeTempDataDir(root)
+  })
+
+  it("QA'nın ölçtüğü gerçek çağrı: root'un doğrudan altındaki bir dosya (docs/features|docs/qa DIŞI) reddedilir", () => {
+    root = createTempDataDir()
+    writeFile(root, 'package.json', '{"name":"gizli-degil-ama-kapsam-disi"}')
+    writeFile(root, 'CLAUDE.md', '# kapsam dışı')
+
+    expect(resolveInsideRootForRead(root, ['package.json'])).toEqual({
+      ok: false,
+      reason: 'not-allowed',
+    })
+    expect(resolveInsideRootForRead(root, ['CLAUDE.md'])).toEqual({
+      ok: false,
+      reason: 'not-allowed',
+    })
+  })
+
+  it('docs/ altında ama docs/features veya docs/qa DIŞINDA bir dosya reddedilir', () => {
+    root = createTempDataDir()
+    writeFile(root, 'docs/other/secret.md', 'kapsam dışı belge')
+
+    expect(resolveInsideRootForRead(root, ['docs', 'other', 'secret.md'])).toEqual({
+      ok: false,
+      reason: 'not-allowed',
+    })
+  })
+
+  it('docs/features ve docs/qa altındaki dosyalar İZİN VERİLEN kalır (regresyon yok)', () => {
+    root = createTempDataDir()
+    writeFile(root, 'docs/features/F-010.md', 'gövde')
+    writeFile(root, 'docs/qa/F-010-contract.md', 'sözleşme')
+
+    const bodyResult = resolveInsideRootForRead(root, ['docs', 'features', 'F-010.md'])
+    expect(bodyResult.ok).toBe(true)
+    const contractResult = resolveInsideRootForRead(root, ['docs', 'qa', 'F-010-contract.md'])
+    expect(contractResult.ok).toBe(true)
+    const qaDirResult = resolveInsideRootForRead(root, ['docs', 'qa'])
+    expect(qaDirResult.ok).toBe(true)
+  })
+
+  it("MUTASYON emsali: buildFeatureDetail'in `file` parametresi ile kök İÇİNDE ama docs/features DIŞINDA bir dosyaya kaçış denemesi reddedilir (invalid_path)", () => {
+    root = createTempDataDir()
+    fs.mkdirSync(path.join(root, 'docs', 'features'), { recursive: true })
+    writeFile(root, 'CLAUDE.md', 'GIZLI-OLMAYAN-AMA-KAPSAM-DISI-ICERIK')
+
+    // Ö4'ün gerçek PoC'si: `../../CLAUDE.md` kök İÇİNDE kalıyor (`docs/features/../../CLAUDE.md`
+    // === `CLAUDE.md`), eski guard yalnızca "kök altında mı" kontrolü yaptığı için bunu KABUL
+    // ediyordu. K2 sonrası `docs/features` dışına çıktığı için reddedilir.
+    const result = buildFeatureDetail(root, '../../CLAUDE.md')
+    expect(result.status).toBe('invalid_path')
+  })
+})
+
 describe('resolveInsideRootForRead — MUTASYON (a) hedefi: symlink/kapsam savunması', () => {
   let root: string
 
@@ -218,22 +335,46 @@ describe('feature-detail manifest testi (F-013 sözleşme §5, J3) — gerçek f
       writeFile(root, 'docs/features/F-001.md', '---\nid: F-001\nstatus: todo\n---\ngövde\n')
       writeFile(root, 'docs/qa/F-001-contract.md', 'sözleşme')
       writeFile(root, 'docs/qa/F-001-2026-09-01.md', 'qa turu 1')
+      // Test kurulumunun KENDİ yazması (ölçülen fonksiyonun değil) — anlık görüntüden ÖNCE
+      // yapılır. QA bulgusu Ö1: eski test bu fixture'ı ilk iki `buildFeatureDetail` çağrısından
+      // SONRA ekliyordu, yani o iki çağrının ürettiği herhangi bir yazma hiçbir zaman
+      // karşılaştırmaya girmiyordu.
+      writeFile(root, 'docs/features/F-invalid-id.md', '---\nid: "../x"\nstatus: todo\n---\n')
 
+      // Anlık görüntü TÜM `buildFeatureDetail` çağrılarından ÖNCE alınır (QA bulgusu Ö1, madde 1).
       const before = snapshotDir(root)
 
-      buildFeatureDetail(root, 'F-001.md')
+      buildFeatureDetail(root, 'F-001.md') // mutlu yol
       buildFeatureDetail(root, 'F-099.md') // not_found dalı
-      writeFile(root, 'docs/features/F-invalid-id.md', '---\nid: "../x"\nstatus: todo\n---\n')
-      const beforeInvalid = snapshotDir(root)
       buildFeatureDetail(root, 'F-invalid-id.md') // geçersiz id dalı
 
       const after = snapshotDir(root)
-      // İkinci fixture eklemesi HARİÇ (test kurulumunun kendi yazması, ölçülen fonksiyonun değil)
-      // geri kalan hiçbir dosya değişmedi.
-      expect(after).toEqual(beforeInvalid)
-      expect(
-        before.every((e) => after.some((a) => a.relPath === e.relPath && a.sha256 === e.sha256))
-      ).toBe(true)
+      // TAM eşitlik (QA bulgusu Ö1, madde 2) — `before`'un alt kümesi değil, `after` ile
+      // BİREBİR aynı olmalı. Bu, yalnızca var olan dosyaların DEĞİŞMEDİĞİNİ değil, YENİ bir
+      // dosya oluşmadığını/silinmediğini de yakalar (M3a: mutlu yola sabit içerikli bir
+      // `fs.writeFileSync` eklenseydi bu satır KIRMIZI verirdi).
+      expect(after).toEqual(before)
+    } finally {
+      removeTempDataDir(root)
+    }
+  })
+
+  it('MUTASYON (M3a) emsali: buildFeatureDetail mutlu yoluna gerçek bir fs.writeFileSync eklenseydi bu test KIRMIZI verirdi', () => {
+    const root = createTempDataDir()
+    try {
+      writeFile(root, 'docs/features/F-001.md', '---\nid: F-001\nstatus: todo\n---\ngövde\n')
+      const before = snapshotDir(root)
+
+      // Üretim kodu DEĞİŞTİRİLMEDEN — QA'nın M3a mutasyonunu (mutlu yola sabit içerikli bir
+      // `fs.writeFileSync(docs/qa/.mc-read.log)` eklenmesi) birebir simüle eder: gerçek
+      // `buildFeatureDetail` çağrısıyla AYNI anda, tarayıcının göremeyeceği YENİ bir dosya
+      // yazılıyormuş gibi davranır. Eski test bunu (yeni dosya oluşturma) YAKALAMIYORDU —
+      // düzeltilmiş `before`/`after` TAM EŞİTLİK karşılaştırması yakalar.
+      buildFeatureDetail(root, 'F-001.md')
+      writeFile(root, 'docs/qa/.mc-read.log', 'okundu: F-001.md')
+
+      const after = snapshotDir(root)
+      expect(after).not.toEqual(before)
     } finally {
       removeTempDataDir(root)
     }

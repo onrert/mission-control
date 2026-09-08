@@ -32,15 +32,22 @@ export function truncateDocument(text: string): FeatureDetailDocument {
   return { exists: true, content: text, truncated: false }
 }
 
-/** `dirPath` (çağıran tarafından `resolveInsideRootForRead` ile ÖNCEDEN doğrulanmış) altında
- *  tek bir dosya adı. Dosya yoksa `exists:false` (hata değil — AC'nin "yok" durumu). */
-function readOptionalDocument(dirPath: string, fileName: string): FeatureDetailDocument {
-  const target = path.join(dirPath, fileName)
-  if (!fs.existsSync(target)) return { exists: false }
-  if (fs.lstatSync(target).isSymbolicLink()) return { exists: false }
+/**
+ * `root` altında `relativeParts`'ın gösterdiği TEK bir dosya — QA düzeltme turu (K1, BLOKLAYICI
+ * B2) ÖNCESİ bu fonksiyon çağıranın (`buildFeatureDetail`'in `SAFE_ID_PATTERN` deseni) elle
+ * kurduğu bir yolu (`path.join`) hiçbir kapsam kontrolü yapmadan okuyordu — `id` frontmatter'dan
+ * geldiği için desen tek başına kaldırılabilir/atlatılabilir bir savunmaydı (QA gerçek bir kök
+ * dışı sızıntı ölçtü). Artık HER okuma, gövde okumasıyla AYNI `resolveInsideRootForRead`
+ * guard'ından geçer (iki ayrı yol yok — desen artık yalnızca hızlı bir ön-filtre, güvenlik
+ * sınırının kendisi değil). Guard reddederse `exists:false` döner (N2 emsali — bilgi sızdırmaz,
+ * "yok" ile "erişim reddedildi" ayrımı kullanıcıya gösterilmez).
+ */
+function readOptionalDocument(root: string, relativeParts: string[]): FeatureDetailDocument {
+  const resolved = resolveInsideRootForRead(root, relativeParts)
+  if (!resolved.ok) return { exists: false }
   let buffer: Buffer
   try {
-    buffer = fs.readFileSync(target)
+    buffer = fs.readFileSync(resolved.targetPath)
   } catch {
     return { exists: true, error: 'Dosya okunamadı.' }
   }
@@ -53,7 +60,7 @@ function readOptionalDocument(dirPath: string, fileName: string): FeatureDetailD
  * sırayla listelenir (alfabetik sıra `-tur2.md` < `.md` gibi ters dönebiliyordu, ölçüldü —
  * `-` (0x2D) < `.` (0x2E) olduğu için "F-…-tur2.md" alfabetik olarak "F-….md"den ÖNCE gelirdi).
  */
-function listQaReports(qaDirPath: string, id: string): FeatureDetailReport[] {
+function listQaReports(root: string, qaDirPath: string, id: string): FeatureDetailReport[] {
   let entries: string[]
   try {
     entries = fs.readdirSync(qaDirPath)
@@ -75,7 +82,10 @@ function listQaReports(qaDirPath: string, id: string): FeatureDetailReport[] {
     })
     .sort((a, b) => a.mtimeMs - b.mtimeMs)
 
-  return candidates.map(({ name }) => ({ file: name, ...readOptionalDocument(qaDirPath, name) }))
+  return candidates.map(({ name }) => ({
+    file: name,
+    ...readOptionalDocument(root, ['docs', 'qa', name]),
+  }))
 }
 
 export type FeatureDetailResult =
@@ -111,11 +121,20 @@ export function buildFeatureDetail(projectPath: string, file: string): FeatureDe
   let contractDoc: FeatureDetailDocument = { exists: false }
   let qaReports: FeatureDetailReport[] = []
 
+  // K1 — İKİ bağımsız savunma katmanı, ikisi de gerekli:
+  // 1. `SAFE_ID_PATTERN`: `id` içinde `/`/`\` varsa (dolayısıyla birden çok yol PARÇASI
+  //    kurulabiliyorsa) baştan reddeder — bu, `docs/qa` İÇİNDE kalan ama BAŞKA bir feature'ın
+  //    dosyasına (`id: "F-001/../F-002"` gibi) sızabilecek senaryoyu engeller; alttaki guard
+  //    yalnızca "kök içinde mi + `docs/qa` altında mı" bakar, hangi DOSYAYA baktığını sınırlamaz.
+  // 2. `readOptionalDocument`/`listQaReports`'un içindeki `resolveInsideRootForRead`: bu satır
+  //    tek başına kaldırılsa (mutasyon) bile kök dışına VEYA `docs/qa` alt ağacı dışına çıkan
+  //    hiçbir yolu okumaz.
+  // `feature-detail.test.ts` bu iki mutasyonu AYRI AYRI çitler.
   if (SAFE_ID_PATTERN.test(card.id)) {
     const qaDirResolved = resolveInsideRootForRead(projectPath, ['docs', 'qa'])
     if (qaDirResolved.ok) {
-      contractDoc = readOptionalDocument(qaDirResolved.targetPath, `${card.id}-contract.md`)
-      qaReports = listQaReports(qaDirResolved.targetPath, card.id)
+      contractDoc = readOptionalDocument(projectPath, ['docs', 'qa', `${card.id}-contract.md`])
+      qaReports = listQaReports(projectPath, qaDirResolved.targetPath, card.id)
     }
   }
 

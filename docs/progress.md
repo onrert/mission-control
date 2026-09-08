@@ -2437,3 +2437,110 @@ bağımsız olarak doğruladı, sonra CEO'nun asıl istediği I2'yi (tembel sohb
 **Sonraki adım**
 - qa-evaluator F-013'ü değerlendirsin (feature notu `status: qa`).
 - CEO/kullanıcı: gerçek markdown render'ı ayrı bir feature olarak istenirse önceliklendirilsin.
+
+---
+
+## 2026-09-08 — F-013 düzeltme turu (QA kod turu KALDI → K1-K6 kapatıldı)
+
+`docs/qa/F-013-2026-09-08.md` **KALDI** verdi: 2 bloklayıcı (B1 AC6 sessiz bayatlık, B2 AC4
+mutasyon çiti eksik) + 4 önemli (Ö1 sahte manifest kanıtı, Ö2 klavyeyle okunamıyor, Ö3 254px
+kutularda 27.922px gizli içerik, Ö4 guard "kök altında"yı kısıtlıyor "docs/features altında"yı
+değil). CEO K1-K6 kararlarını verdi, bu turda hepsi kapatıldı.
+
+**Ne yapıldı**
+
+*Güvenlik (K1/B2, K2/Ö4, K3/Ö1) — `src/features/kanban/server/{read-guard,feature-detail}.ts`*
+- **K1 (BLOKLAYICI B2):** `readOptionalDocument` artık `path.join` ile elle yol kurup
+  `SAFE_ID_PATTERN`in tek başına savunmasına güvenmiyor — hem sözleşme (`${id}-contract.md`) hem
+  QA raporu okumaları AYNI `resolveInsideRootForRead` guard'ından geçiyor (gövde okumasıyla
+  birebir aynı yol). `SAFE_ID_PATTERN` ikinci, tamamlayıcı bir katman olarak kaldı (guard yalnızca
+  "kök + docs/qa içinde mi" bakıyor, `id: "F-001/../F-002"` gibi AYNI docs/qa İÇİNDE kalan ama
+  BAŞKA feature'a sızan bir yolu guard tek başına yakalayamaz — pattern'in `/` reddi bunu kapatır).
+- **K2 (ÖNEMLİ Ö4):** `resolveInsideRootForRead`e üçüncü bir kontrol eklendi: çözülen yol kök
+  İÇİNDE olsa bile `docs/features/**` veya `docs/qa/**` dışındaysa `not-allowed` ile reddedilir.
+  Öncesinde `buildFeatureDetail(root, '../../package.json')` gibi bir çağrı (kök içi, izlenen
+  alt ağaç dışı) kabul ediliyordu.
+- **K3 (ÖNEMLİ Ö1):** `feature-detail-manifest` testi artık anlık görüntüyü **TÜM**
+  `buildFeatureDetail` çağrılarından ÖNCE alıyor (eskiden mutlu yoldan SONRA alınıyordu) ve
+  `expect(after).toEqual(before)` TAM eşitlikle karşılaştırıyor (eskiden yalnızca "önceden var
+  olan dosyalar değişmedi mi" bakıyordu, yeni dosya oluşumunu YAKALAMIYORDU).
+
+*UX (K4/B1, K5/Ö3, K6/Ö2) — `src/features/kanban/web/{useFeatureDetail,FeatureDetailModal}.tsx`*
+- **K4 (BLOKLAYICI B1):** `docs/qa/*` `content_hash`'e girmediği için otomatik yenilenmiyor —
+  yeni bir dosya izleyici İCAT ETMEDEN (Karpathy §2), hook'a `refresh()` + `lastFetchedAt`
+  eklendi; modalda her zaman görünen **"Son yenileme: <saat>"** metni + **"Yenile"** düğmesi.
+  Kullanıcı artık bayat olabileceğini görüyor ve elle tazeleyebiliyor.
+- **K5 (ÖNEMLİ Ö3):** Açıklama/Sözleşme/her QA raporu ayrı `<details>`/`<summary>` bölümü oldu —
+  yalnızca Açıklama varsayılan AÇIK. Belgelerin kendi `max-h-64 overflow-y-auto` kutusu kaldırıldı
+  — TEK kaydırma bağlamı modalın içerik kabı. Ham `<pre>` gösterimi (J5) korunuyor.
+- **K6 (ÖNEMLİ Ö2):** İçerik kabına `tabIndex={0}` eklendi (klavye ile odaklanıp `PageDown`/
+  `ArrowDown` ile kaydırılabiliyor) ve focus-trap'in odaklanabilir öğe seçicisine `summary`
+  eklendi (`<details>` başlıkları örtük olarak odaklanabilir ama seçiciye eklenmezse `Tab`
+  bunlara hiç ulaşmadan geri sarıyordu — bu turda bulunan ayrı bir hata, düzeltildi).
+
+**Nasıl doğrulandı**
+
+- `npm run verify` = **0** (typecheck + lint + **943 test / 66 dosya**, önceki 934'ten +9: yeni
+  güvenlik regresyon testleri `feature-detail.test.ts` içinde + K4 için `KanbanScreen.test.tsx`
+  içinde 2 yeni test). `npm run e2e` = **0** (**28/28**, önceki 26'dan +2 — K4 B1 repro'su +
+  K5/K6 yapısal ölçüm).
+- **M7 (SAFE_ID_PATTERN kaldırılması) artık KIRMIZI:** `SAFE_ID_PATTERN.test(card.id)` →
+  `card.id !== ''` mutasyonu uygulanınca yeni `id="F-001/../F-002"` testi KIRMIZI verdi
+  (`docs/qa/F-002-contract.md` içeriği sızdı: `expected {exists:true,content:"BASKA-FEATURE..."}
+  to deeply equal {exists:false}`). Geri alındı, tekrar yeşil.
+- **Guard bypass + pattern bypass birlikte (QA'nın orijinal repro'su) artık KIRMIZI:**
+  `readOptionalDocument`'ı guard'sız çıplak `path.join`e döndürüp AYNI ANDA `SAFE_ID_PATTERN`i
+  de kaldırınca, `id="../../../<marker>/qa/EVIL"` testi KIRMIZI verdi — gerçek dış dosyanın
+  içeriği (`KOK-DISI-SIZAN-GIZLI-ICERIK`) sızdı. Guard TEK BAŞINA (pattern kaldırılmadan)
+  kaldırılırsa bu belirli senaryo YEŞİL kalıyor çünkü `SAFE_ID_PATTERN`'in karakter kümesi
+  (`[A-Za-z0-9._-]`) zaten `/` içeren hiçbir yol parçası kurulmasına izin vermiyor — bu matematiksel
+  olarak beklenen bir sonuç (guard'ın tek başına ekstra kattığı değer, K2'nin `docs/features`
+  dışına çıkan `file` parametresi senaryosunda ölçülüyor, aşağıya bakınız), YENİ bir bulgu değil.
+- **M3a (mutlu yola sabit içerikli `fs.writeFileSync`) artık KIRMIZI:** aynı simülasyon
+  (`docs/qa/.mc-read.log` yazan bir satır) eklenince düzeltilmiş manifest testi KIRMIZI verdi
+  (`expected [...] to deeply equal [...]`, yeni dosya `after`'da fark yarattı). Eski test bunu
+  görmüyordu (yalnızca `-t "manifest"` ile koşulduğunda 2 passed kalıyordu — QA'nın ölçtüğü tam
+  o boşluk).
+- **K2/Ö4 mutasyon kanıtı:** `buildFeatureDetail(root, '../../CLAUDE.md')` (kök içi, `docs/
+  features` dışı) artık `invalid_path` döndürüyor — öncesinde `ok` dönüp içeriği okuyordu.
+  `resolveInsideRootForRead(root, ['package.json'])` ve `(['CLAUDE.md'])` doğrudan `not-allowed`
+  ile reddediliyor; `docs/features/**`/`docs/qa/**` regresyon testleri hâlâ `ok:true`.
+- **K4 mutasyon kanıtı:** `refresh()`'in gövdesi no-op'a çevrilince yeni jsdom testi
+  ("content_hash SABİT kalırken 'Yenile' yeni istek tetikler") KIRMIZI verdi (`detailCallCount`
+  1'de kaldı, ikinci sözleşme metni hiç gelmedi). Geri alındı, tekrar yeşil.
+- **Okunabilirlik/erişilebilirlik — önce/sonra:** QA'nın F-012 kartında ölçtüğü ÖNCE: 12 kaydırma
+  bölgesi (1 dış kap + 11 `<pre>`), sözleşme kutusunda **27.922px** gizli kaydırma mesafesi,
+  `PageDown`/`ArrowDown` sonrası `scrollTop` **0**'da kalıyordu (hiçbir bölge odaklanamıyordu).
+  SONRA (yeni e2e testi `tests/e2e/kanban.spec.ts` "K5/K6"): iç içe kaydırma kutusu sayısı
+  (`overflowY !== 'visible'` olan `<pre>` sayısı) **0**; tek içerik kabı `tabIndex={0}` ile
+  odaklanabiliyor ve gerçek `PageDown` sonrası `scrollTop` **artıyor** (`after > before`, gerçek
+  Chromium'da ölçüldü, 400 satırlık bir gövde fixture'ıyla). Gövde bölümü varsayılan AÇIK/görünür,
+  Sözleşme bölümü varsayılan KAPALI (`toContainText` DOM'da buluyor, `toBeVisible()` `false`
+  dönüyor — kapalı olduğu doğru ölçüldü).
+- Süreç/port hijyeni: `npm run e2e` sonrası `tasklist`/`netstat` tarandı — 7333-7356 arası
+  LISTENING **yok** (yalnızca kapanmış `TIME_WAIT` kayıtları). Makinede görülen 3 `node.exe`
+  süreci (PID 37640/27556/34488) **`hayat-mentoru` projesine ait**, bu oturumdan önce de
+  vardı — dokunulmadı (CLAUDE.md kuralı).
+- `git status` çalışma ağacı temiz commit'lendi (2 commit: güvenlik `7b8d8ce`, UX `f518a29`).
+  Her mutasyon Edit ile birebir geri alındı, `git diff` mutasyon izi taşımıyor.
+
+**Kalan risk / bilinçli kapsam dışı bırakılanlar**
+
+- **N1/N2/N3 (QA'nın CEO'ya bıraktığı notlar) bu turda ELE ALINMADI** — CEO brief'i yalnızca
+  K1-K6'yı istedi, Ö3/J5 dışındaki NOT seviyesi bulgular (hata metni sözlük uyumu, symlink
+  reddi teşhis mesajı, belge başına 200k sınırının toplamda sınırsız olması) kapsam dışı
+  bırakıldı (Karpathy §3 — brief'in istemediği genişletme yapılmadı).
+- **N4/N5 (F-007'den miras, F-013 dışı) hâlâ açık** — bu turun dosya sahipliği dışında.
+- `docs/qa/*` hâlâ SSE ile izlenmiyor (bilinçli, J6/K4 kararı) — "Yenile" ELLE tetiklenen bir
+  kaçış yolu, otomatik değil. Kullanıcı düğmeye basmazsa panel yine de eski içeriği gösterebilir;
+  fark şu ki artık "Son yenileme" saati bunu GİZLEMİYOR.
+- Guard'ın "tek başına" (pattern sağlamken) ek değeri yalnızca `file`/gövde yolu gibi
+  `SAFE_ID_PATTERN`e tabi OLMAYAN girdilerde ölçülebilir (K2 testleri bunu kapsıyor); `id`
+  alanı için pattern hâlâ birincil savunma, guard ikincil/yapısal güvence — bu bilinçli bir
+  savunma-derinliği tasarımı, totoloji değil (yukarıdaki "nasıl doğrulandı" bölümünde ayrı ayrı
+  ölçüldü).
+- Gerçek markdown render'ı hâlâ kapsam dışı (J5, önceki turdan miras).
+
+**Sonraki adım**
+- qa-evaluator düzeltme turunu değerlendirsin (feature notu `status: qa`, dar kapsamda: yalnızca
+  K1-K6 + mutasyon kanıtı; QA'nın GEÇTİ verdiği AC1/AC2/AC5/AC7/AC8/AC9 yeniden açılmasın).

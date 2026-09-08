@@ -1,307 +1,293 @@
-KARAR: KALDI
+KARAR: GEÇTİ
 ESKALE: false
 
-# F-013 — QA raporu (kod turu, 1. tur)
+# F-013 — QA raporu (düzeltme turu, 2. tur — DAR KAPSAM)
 
 - **Tarih:** 2026-09-08
 - **Değerlendiren:** qa-evaluator
-- **Commit:** `4a8852b feat(F-013): show feature body, contract, and QA reports in detail modal`
-- **Kaynaklar:** `docs/features/F-013-feature-detay-icerigi.md` (9 AC), `docs/qa/F-013-contract.md`,
-  `docs/03-ux.md` §Kanban/F-013 metin sözlüğü, `ADR-005`, `docs/progress.md` F-013 bölümü,
-  `CLAUDE.md` "Öğrenilen kurallar" (tamamı).
-- **Yöntem:** üretim derlemesi + `npm start` (port 7355, `MC_CHAT_ENABLED=0`), gerçek tarayıcıda
-  (Playwright) gerçek repo verisiyle tıklama; 8 mutasyon (5'i sözleşmedeki zorunlular, 3'ü kendi
-  seçimim); canlı fault-injection ile ayrı bir sunucu süreci (port 7356); doğrudan
-  `buildFeatureDetail` çağıran 3 bağımsız sızıntı probu; `npm run verify` + `npm run e2e`.
-- **Ekran görüntüleri:** `docs/qa/screens/F-013-*.png`
+- **Commit:** `d55ee89 docs(F-013): record QA fix round K1-K6 in progress.md`
+  (düzeltmeler: `7b8d8ce` güvenlik, `f518a29` UX)
+- **Kapsam:** yalnızca 1. turun (`docs/qa/F-013-2026-09-08.md`, KALDI) açık bulguları —
+  B1, B2 ve Ö1-Ö4. 1. turda GEÇTİ verilen AC'ler (AC1/AC2/AC5/AC7/AC8/AC9) yeniden ölçülmedi;
+  yalnızca düzeltmenin dokunduğu focus-trap yüzeyi regresyon için sınandı.
+- **Yöntem:** temiz `npm run build && npm start` (port 7357, `MC_CHAT_ENABLED=0`, izole
+  `MC_DATA_DIR` + gerçek `docs/` kopyasından üretilmiş fixture proje); gerçek tarayıcıda
+  (Playwright) tıklama ve klavye; 6 bağımsız mutasyon; doğrudan `buildFeatureDetail` /
+  `resolveInsideRootForRead` çağıran bağımsız sızıntı probu (11 saldırı vektörü);
+  `npm run verify` + `npm run e2e`.
+- **Ekran görüntüleri:** `docs/qa/screens/F-013-t2-01-modal-1280.png`,
+  `docs/qa/screens/F-013-t2-02-yenile-sonrasi.png`, `docs/qa/screens/F-013-t2-03-320px.png`
 
 ---
 
 ## 1. Karar özeti
 
-**KALDI.** İki bloklayıcı:
+**GEÇTİ.** 1. turun iki bloklayıcısı da (B1, B2) ve dört önemli bulgusunun dördü de (Ö1-Ö4)
+kapandı; brief'in istediği dört mutasyonun (guard, desen, manifest, bayatlık) **dördü de
+KIRMIZI**. Yeni bloklayıcı yok.
 
-- **B1 — AC6 ihlali:** `docs/qa/*` (sözleşme + QA raporları) diskte değişince panel **sessizce
-  eski içeriği** göstermeye devam ediyor; bayat olduğu **hiçbir yerde belli olmuyor** ve elle
-  tazeleme yolu yok. AC6 kelimesi kelimesine "sessizce eski içerik gösterilmez" diyor ve feature
-  notunda `[x]` işaretli. Ölçüldü: sözleşme dosyası yeniden yazıldı + yeni bir QA raporu
-  oluşturuldu → 9 sn sonra panel hâlâ eski sözleşmeyi ve "QA raporu bulunamadı." metnini
-  gösteriyordu.
-- **B2 — AC4'ün mutasyon çiti eksik:** Kök kaçışını engelleyen ikinci yol-kurma noktası
-  (`SAFE_ID_PATTERN`, `feature-detail.ts:22`) **hiçbir test tarafından korunmuyor**; çiti kaldıran
-  mutasyon 109/109 **YEŞİL** kaldı ve kök dışındaki bir dosyanın içeriğini panele **gerçekten
-  sızdırdım**. AC4: "Mutasyonla çitlenecek: çiti kaldıran mutasyon KIRMIZI vermeli."
+En kritik sonuç: 1. turda **gerçekten sızdırdığım** kök dışı okuma artık iki bağımsız katman
+tarafından kapatılıyor ve **her iki katmanın da kendi mutasyonu var** — katmanlardan birini
+kaldırmak testleri kırmızıya düşürüyor, diğerini kaldırmak da. 1. turda `SAFE_ID_PATTERN`
+mutasyonu 109/109 yeşil bırakıyordu; artık kırmızı.
 
-Ürün kodu bu iki noktada da **doğru davranıyor** (gerçek kodda sızıntı yok); eksik olan (B2'de)
-çit ve (B1'de) AC'nin gerektirdiği davranışın kendisi.
-
-Ayrıca dört ÖNEMLİ bulgu var; en ağırı, AC3'ün kanıt olarak gösterdiği **manifest testinin iddia
-ettiği şeyi ölçmemesi** (mutlu yoldan gelen gerçek bir yazma testten geçti).
+Bir tane NOT seviyesi çit zayıflığı buldum (N6, aşağıda): K6'nın E2E assert'i `locator.focus()`
+kullandığı için "kap klavye ile odaklanabilir" iddiasını **ölçmüyor**. Kullanıcıya görünen
+davranış gerçek tarayıcıda doğrulandı (Tab kaba ulaşıyor, `PageDown` kaydırıyor), bu yüzden
+bloklayıcı değil — ama rapora yazılıyor.
 
 ---
 
-## 2. Kabul kriterleri — tek tek
+## 2. 1. tur bulgularının kapanış tablosu
 
-| # | Kriter | Sonuç | Kanıt |
+| 1. tur | Düzeltme | Sonuç | Kanıt (özet) |
 |---|---|---|---|
-| AC1 | Pencere feature gövdesini okunabilir gösterir | **GEÇTİ** | F-012 kartı: `feature-detail-body` 18.809 karakter, `## Açıklama` ile başlıyor. `screens/F-013-01` |
-| AC2 | Sözleşme + QA raporları görünür; dosya yoksa "yok" durumu okunabilir | **GEÇTİ** | F-012: sözleşme 78.403 karakter + **9 QA raporu** kronolojik sırayla (`review-1..3`, `kod-turu-A/B`, `2026-09-06`, `-tur2/3/4`). F-008/F-011: "Sözleşme bulunamadı." / "QA raporu bulunamadı." `screens/F-013-02` |
-| AC3 | Salt okunur; ADR-005 korunur; **dosya sistemi manifest testiyle kanıtlanır** | **KALDI (Ö1)** | Salt okunurluk davranışı doğru (canlı okuma sırasında disk değişmedi), fakat **kanıt mekanizması sahte**: `buildFeatureDetail`'in mutlu yoluna eklediğim gerçek `fs.writeFileSync` manifest testinden **GEÇTİ** (yalnızca statik tarayıcı yakaladı). Bkz. §4 M3a |
-| AC4 | Yol çiti: her okuma proje kökü altında; `..`/symlink/UNC/harf duyarsızlığı; **mutasyonla çitlenecek** | **KALDI (B2)** | `read-guard.ts` çiti sağlam ve mutasyonu KIRMIZI (M1, 3 test). Ama **ikinci** yol-kurma noktası (`readOptionalDocument`, guard'dan geçmiyor) yalnızca `SAFE_ID_PATTERN` ile korunuyor ve o çitin **sıfır testi var**: M7 → 109/109 yeşil + gerçek sızıntı |
-| AC5 | Boyut sınırı; kırpılırsa kullanıcıya söylenir (sessiz kırpma yasak) | **GEÇTİ** | 260.044 karakterlik gövde + 250.040 karakterlik sözleşme → `truncated:true`, panelde `⚠ İçerik çok büyük olduğu için kısaltıldı.` `screens/F-013-04`. Yığın stresi (7 belge, 1.42 MB): 264 ms, panel etkileşimli |
-| AC6 | Dosya değişince tazelenir **veya** bayat olduğu belli olur; sessizce eski içerik yok | **KALDI (B1)** | Gövde: marker eklendikten sonra **anında** tazelendi (ölçüldü). `docs/qa/*`: 9 sn sonra hâlâ eski içerik, hiçbir bayatlık işareti yok |
-| AC7 | Okuma hatası okunabilir; panel çökmez, sunucu ayakta | **GEÇTİ** | (a) QA raporu yerine dizin → `Dosya okunamadı.` (`role="alert"`), panel ayakta (`screens/F-013-05`). (b) Canlı fault-injection: `HTTP 500`, ham hata metni sızmadı, `/api/health` ayakta, sonraki istek 200 (`screens/F-013-06`) |
-| AC8 | 320-480px'te okunabilir | **GEÇTİ** | Kendi ölçümüm (kırpılmış görünür genişlik, `toBeVisible()` DEĞİL): 320px → modal 288px (16..304, taşma yok), gövde `pre` 239px; 375px → 343/294px; 480px → 448/399px. `document.scrollWidth` üç genişlikte de viewport'a eşit |
-| AC9 | Mevcut pencere davranışı korunur: focus-trap, `Esc` | **GEÇTİ** | Açılışta odak "Kapat"ta; `Tab` modalda kalıyor (`inModal:true`); `Esc` kapatıyor. F-013 `KanbanCard.tsx`'e dokunmadı |
-
-**Özet: 6 GEÇTİ / 3 KALDI (AC3, AC4, AC6).**
+| **B2 / AC4** — `SAFE_ID_PATTERN` tek savunma, sıfır testi | K1 | **KAPANDI** | `readOptionalDocument` artık gövdeyle **aynı** `resolveInsideRootForRead`'ten geçiyor; 11 saldırı vektörünün 11'i reddedildi; iki katmanın **ayrı ayrı** mutasyonu KIRMIZI (M1, M2) |
+| **Ö4 / AC4** — guard "kök altında"yı kısıtlıyor, "docs/features altında"yı değil | K2 | **KAPANDI** | `buildFeatureDetail(repo,'../../package.json')` 1. turda `ok` (2296 karakter okundu) → şimdi `invalid_path`; `../../CLAUDE.md` 1. turda `ok` (13438 karakter) → `invalid_path` |
+| **Ö1 / AC3** — manifest testi iddia ettiğini ölçmüyor | K3 | **KAPANDI** | M3a (mutlu yola gerçek `fs.writeFileSync`) 1. turda `-t "manifest"` ile **2 passed** → şimdi **2 failed**; silme mutasyonu da KIRMIZI |
+| **B1 / AC6** — `docs/qa/*` sessiz bayatlık | K4 | **KAPANDI** | "Son yenileme: `<saat>`" her zaman görünür + "Yenile" düğmesi; canlı ölçüm: disk değişti → panel 2 dk boyunca eski içerik gösterdi **ama saat 20:48:31'de sabit kaldı (o an 20:50:43)**, "Yenile" ile içerik + yeni rapor + saat tazelendi |
+| **Ö3** — 254px'lik kutularda 27.922px gizli içerik | K5 | **KAPANDI** | İç içe kaydırma kabı **11 → 0**; belgeler `<details>` bölümlerine alındı, gövde açık/gerisi kapalı |
+| **Ö2** — içerik klavyeyle okunamıyor | K6 | **KAPANDI** | Kaydırma bölgesi **12 → 1**; `Tab` ile kaba ulaşılıyor, `PageDown` `scrollTop` 0 → **399**, `ArrowDown` → 439, `End` → 6513, `Home` → 0 (1. turda hepsi 0'da sabitti) |
 
 ---
 
-## 3. Developer iddialarının doğrulanması
+## 3. K1/K2 — güvenlik (en kritik)
 
-| İddia | Sonuç |
-|---|---|
-| `GET /api/features/detail` yeni salt-okunur uç, `write-gate.ts`'e dokunulmadı | **DOĞRU** — `git diff HEAD~1 --stat` içinde `write-gate.ts` yok |
-| Gövde `FeatureCard`'a eklenmedi (J1) | **DOĞRU** — `/api/features` yanıtında gövde alanı yok |
-| 200.000 karakter sınırı + görünür kırpma (J4) | **DOĞRU** — hem sunucuda hem panelde ölçüldü |
-| Bayatlık için yeni mekanizma yok; `content_hash` + SSE (J6) | **KISMEN** — gövde için çalışıyor, `docs/qa/*` için çalışmıyor (B1) |
-| Ham `<pre>`, yeni bağımlılık yok, bundle etkisi 0 KB (J5) | **DOĞRU** — `package.json`/`package-lock.json` diff'te yok; derlenmiş JS 298,11 kB / CSS 21,17 kB |
-| `verify` = 0, 934 test / 66 dosya | **DOĞRU** — `EXIT=0`, `934 passed | 2 skipped (936)`, `66 passed` |
-| `e2e` = 0, 26/26 (+3 yeni) | **DOĞRU** — `26 passed (31.9s)`; üç F-013 testi gerçek (kırpılmış görünür genişlik + modal viewport'u aşmıyor assert'i dahil) |
-| Tailwind `@source` kapsamı (CLAUDE.md dördüncü tekrar dersi) | **DOĞRU** — F-013'ün getirdiği 12 sınıf (`max-h-64`, `text-amber-400`, `whitespace-pre-wrap`, `break-words`, `bg-zinc-950`, `space-y-4`, `overflow-y-auto`, `font-semibold`, `text-zinc-400`, `space-y-3`, `pt-3`, `flex-1`) → 12/12 `dist/web/assets/index-*.css` içinde |
-| Mutasyon (e)'de sarmalayıcıyı silmek yerine fault-injection tercihi | **GEREKÇE KABUL** — ama yetersiz; ben ikisini de yaptım (§4 M5a/M5b), sarmalayıcıyı silmek test çalıştırıcısını çökertmedi, 2 test KIRMIZI verdi |
-| `content_hash` `FeatureCard` ile aynı | **DOĞRU** — `ee97ebcc…` iki uçta birebir aynı |
+### 3.1 Gerçek saldırılar — hepsi reddedildi
+
+Bağımsız prob (üretim kodunu doğrudan çağırır, testlerden bağımsız), fixture: kök dışında
+`outside/qa/EVIL-contract.md`, kök içinde `package.json` / `.env` / `.claude/settings.json`.
+
+```
+A) 1. turun BİREBİR saldırısı — frontmatter `id: ../../../outside/qa/EVIL`
+   F-902-evil.md  => contract.exists=false   qa_reports=0        (1. turda: exists=true, içerik SIZDI)
+B) `id: ../../package` (kök içinde, docs/qa dışı)
+   F-903-dotdot.md => contract.exists=false  qa_reports=0
+C) mutlu yol kontrolü
+   F-001.md       => contract.exists=true  content="SOZLESME-ICERIGI"
+D) `file` parametresiyle docs/features dışına çıkma
+   ../../package.json          => invalid_path
+   ../../.env                  => invalid_path
+   ../../.claude/settings.json => invalid_path
+E) guard doğrudan
+   [package.json]           => ok=false reason=not-allowed
+   [.env]                   => ok=false reason=not-allowed
+   [.claude/settings.json]  => ok=false reason=not-allowed
+   [docs]                   => ok=false reason=not-allowed
+   [docs/qa]                => ok=true
+   [docs/features/F-001.md] => ok=true
+F) GERÇEK repo kökü üzerinde (1. turun Ö4 repro'su)
+   buildFeatureDetail(repo,'../../package.json') => invalid_path   (1. tur: ok, 2296 karakter)
+   buildFeatureDetail(repo,'../../CLAUDE.md')    => invalid_path   (1. tur: ok, 13438 karakter)
+```
+
+### 3.2 İki katman, iki ayrı mutasyon — ikisi de KIRMIZI
+
+**M1 — guard'ın üçüncü kontrolü kaldırıldı** (`read-guard.ts:78`, `if (!matchesAllowedPrefix…)`
+bloğu `void matchesAllowedPrefix(...)` ile etkisizleştirildi):
+
+- `Tests 3 failed | 115 passed` → **KIRMIZI**
+  - "QA'nın ölçtüğü gerçek çağrı: root'un doğrudan altındaki bir dosya (docs/features|docs/qa DIŞI) reddedilir"
+  - "docs/ altında ama docs/features veya docs/qa DIŞINDA bir dosya reddedilir"
+  - "MUTASYON emsali: `file` parametresi ile kök İÇİNDE ama docs/features DIŞINDA bir dosyaya kaçış reddedilir"
+- Çit **yük taşıyor**, totoloji değil: mutasyonlu kodda prob gerçekten sızdırdı —
+  `../../package.json => ok BODY="{\"gizli\":\"PACKAGE-JSON-SIZINTI\"}"`, `.env => ok`,
+  `.claude/settings.json => ok`, gerçek repoda `CLAUDE.md` **14.532 karakter okundu**.
+
+**M2 — `SAFE_ID_PATTERN` kaldırıldı** (`feature-detail.ts:133`, `SAFE_ID_PATTERN.test(card.id)`
+→ `card.id !== ''`):
+
+- `Tests 1 failed | 117 passed` → **KIRMIZI**
+  (`id="F-001/../F-002"`: başka feature'ın sözleşmesi `docs/qa` İÇİNDE kaldığı için guard'ın
+  göremediği, yalnızca desenin kapattığı senaryo). **1. turda bu mutasyon 109/109 YEŞİLDİ.**
+- M2 altında A/B/D/E vektörlerinin hepsi hâlâ **reddedildi** — yani desen kalksa bile kök dışı
+  sızıntı yok. Savunma derinliği iki yönlü doğrulandı.
+
+Developer'ın progress.md'deki "guard TEK BAŞINA kaldırılırsa `id` senaryosu yeşil kalır, bu
+matematiksel olarak beklenen" açıklaması **doğru** — ölçtüm; guard'ın tek başına kattığı değer
+`file` parametresi yolunda (M1'in kırdığı 3 test) ve orada çitli.
 
 ---
 
-## 4. Mutasyon tablosu (8 bağımsız mutasyon)
+## 4. K3 — manifest testi artık gerçek mi?
+
+`tests/features/kanban/server/feature-detail.test.ts:331-399` + `tests/helpers/manifest.ts`.
+Anlık görüntü artık **tüm** `buildFeatureDetail` çağrılarından önce alınıyor ve
+`expect(after).toEqual(before)` **tam eşitlik** ile karşılaştırılıyor (kod okundu, doğrulandı).
+
+Üç mutasyon, `npx vitest run … -t "manifest"` ile izole koşuldu:
+
+| Mutasyon | 1. tur | 2. tur |
+|---|---|---|
+| **M3a** mutlu yola sabit içerikli `fs.writeFileSync(docs/qa/.mc-read.log)` (**yeni dosya**) | **YEŞİL (2 passed)** | **KIRMIZI (2 failed)** — `expected [ …(3) ] to deeply equal [ …(1) ]` |
+| **M3c** `readOptionalDocument` okuduğu dosyayı `fs.rmSync` ile **siler** | ölçülmedi | **KIRMIZI (1 failed)** |
+| **M3d** var olan dosyaya **boş** `appendFileSync` (yalnızca `mtime` dokunur, içerik/boyut aynı) | ölçülmedi | **YEŞİL** manifest testinde — ama `no-write-gate-bypass` statik taraması **KIRMIZI** verdi |
+
+M3d, testin iddia ettiği kapsamın gerçek sınırını gösteriyor: `snapshotDir` bilinçli olarak
+`mtimeMs` taşımıyor (`tests/helpers/manifest.ts:6-9` bunu yazıyor), dolayısıyla içerik-nötr bir
+dokunuşu göremez. Bu bir **yanlış iddia değil** (testin adı "hiçbir dosyayı değiştirmez",
+yorumu yeni dosya/silme kapsamını doğru anlatıyor) ve ikinci katman (statik tarama) o boşluğu
+kapatıyor. AC3'ün "savunma derinliği, totoloji değil" iddiası artık **iki gerçek katman** ile
+karşılanıyor — 1. turda fiilen tek katmandı.
+
+---
+
+## 5. K5/K6 — okunabilirlik, gerçek tarayıcıda ölçüldü
+
+F-012 kartı (11 belge, gerçek repo içeriğinin kopyası), 1280×900:
+
+| Ölçü | 1. tur | 2. tur |
+|---|---|---|
+| Kaydırma bölgesi sayısı (modal içi) | **12** (1 dış kap + 11 `<pre>`) | **1** |
+| İç içe kaydırma kabı | 11 | **0** (bölümler açıldıktan sonra da **0**) |
+| `<pre>` `overflow-y` | `auto` (`max-h-64` → `clientHeight` 254px) | `visible`, yükseklik serbest (sözleşme `<pre>` açıkken 27.712px, tek akışta) |
+| `PageDown` sonrası `scrollTop` | **0** (sabit) | **399** |
+| `ArrowDown` sonrası | 0 | 439 |
+| `End` / `Home` | — | 6513 / 0 |
+| Katlanabilir bölüm | yok | **11** (`Açıklama` **açık**, `Sözleşme` + 9 QA raporu **kapalı**) |
+| Odaklanabilir öğe sayısı (focus-trap seçicisi) | **1** ("Kapat") | **14** (Kapat, Yenile, içerik kabı, 11 `summary`) |
+
+**Klavye ile bölüm açma (brief'in istediği):** `Tab` → `Tab` → içerik kabı (`tabindex=0`,
+`activeElement` doğrulandı) → `Tab` → `summary "Açıklama"`; **`Enter`** bölümü kapattı
+(`open=false`, kabın `scrollHeight` 7068 → 394), **`Space`** yeniden açtı (`open=true`,
+`scrollHeight` 7068). Yani hem `Enter` hem `Space` çalışıyor.
+
+**Focus-trap regresyonu yok** (düzeltme seçiciye `summary` ekledi — bu yüzden yeniden ölçtüm):
+15 `Tab` sonrası odak modalın içinde ve "Kapat"a sarıyor (`inModal: true`); `Esc` pencereyi
+kapatıyor (`modalCount: 0`).
+
+**Mutasyon M5** — `<pre>`'ye `max-h-64 overflow-y-auto` geri konuldu (düzeltmeyi birebir geri
+saran mutasyon): jsdom paketi yeşil kaldı ama **E2E KIRMIZI** —
+`expect(nestedScrollBoxCount).toBe(0)` → `Received: 2`. K5 çitli.
+
+---
+
+## 6. K4 — bayatlık, canlı ölçüm
+
+1. **20:48:31** — F-012 penceresi açıldı, panelde `Son yenileme: 20:48:31`, 9 QA raporu.
+2. **20:50:26** — pencere açıkken, **gövdeye dokunmadan** diskten üç yazma:
+   `F-012-contract.md` üzerine yazıldı, `F-012-contract-review-1.md` üzerine yazıldı,
+   **yeni** `F-012-2026-09-08-probe.md` oluşturuldu.
+3. **20:50:43** (8 sn bekleme sonrası) — panel hâlâ eski içerik (beklenen: `docs/qa` SSE ile
+   izlenmiyor, J6/K4 bilinçli kararı) **ama** `Son yenileme: 20:48:31` yazıyor ve o an saat
+   20:50:43 → kullanıcı içeriğin 2 dakikalık olduğunu **görüyor**. 1. turdaki "hiçbir bayatlık
+   göstergesi yok, elle tazeleme yolu yok" durumu ortadan kalktı.
+4. **20:50:55** — "Yenile" tıklandı: sözleşme `YENI-SOZLESME-TUR2-MARKER`,
+   review-1 `QA-TUR2-BAYATLIK-MARKER-XYZ`, rapor sayısı **9 → 10** (yeni `-probe.md` listede),
+   `Son yenileme: 20:50:55` (tıklama anıyla uyumlu). **Sessiz bayatlık kalmadı.**
+
+**Mutasyon M4** — `onClick={refresh}` → `onClick={() => {}}` (düzeltmeyi birebir geri sarar):
+`Tests 1 failed | 132 passed` → **KIRMIZI** ("Yenile butonu YENİ bir `/api/features/detail`
+çağrısı tetikler ve güncel sözleşme içeriğini gösterir (content_hash DEĞİŞMESE bile)").
+
+AC6'nın "veya bayat olduğu belli olur" dalıyla karşılandığı `docs/03-ux.md:133-142`'de açıkça
+yazılı — AC sessizce `[x]` bırakılmadı, belge güncellendi.
+
+---
+
+## 7. Mutasyon tablosu (6 bağımsız mutasyon)
 
 | # | Hedef | Mutasyon | Sonuç | Kanıt |
 |---|---|---|---|---|
-| M1 | Yol çiti (zorunlu) | `read-guard.ts`: ata-symlink + hedef-symlink + `outside-root` kapsam kontrolü kaldırıldı | **KIRMIZI** (3 test) | `feature-detail.test.ts` 2 + `features-api.test.ts` 1. Ayrıca junction'lı fixture'da **gerçek sızıntı** ölçüldü: `contract.exists` false→true, `qa_reports` 0→1, kök dışı metin panele geldi |
-| M2a | Kırpma uyarısı — sunucu (zorunlu) | `truncateDocument` her zaman `truncated:false` | **KIRMIZI** (2 test) | `feature-detail.test.ts` |
-| M2b | Kırpma uyarısı — istemci (zorunlu) | `FeatureDetailModal`'daki `doc.truncated && <p>…</p>` silindi | **KIRMIZI** (1 test) | `KanbanScreen.test.tsx` "kısaltıldı" beklentisi |
-| M3a | Salt okunurluk (zorunlu) | `buildFeatureDetail` mutlu yoluna **sabit içerikli** `fs.writeFileSync(docs/qa/.mc-read.log)` | **KISMEN KIRMIZI — manifest testi YEŞİL** | `no-write-gate-bypass` + 2 birim testi kırmızı; **`-t "manifest"` ile yalnızca manifest testleri koşturulduğunda 2 passed** → AC3'ün gösterdiği kanıt mekanizması bu yazmayı görmüyor (Ö1) |
-| M3b | Salt okunurluk (gizli biçim) | `fs.openSync(...,'a')` + `fs.writeSync(fd, 'okundu: '+file)` | **KIRMIZI** | Statik tarayıcı + manifest testi (bu sefer içerik her çağrıda değiştiği için) |
-| M4 | Bayatlık/tazeleme (zorunlu) | `KanbanScreen`'in `detailCard` senkron effect'i etkisizleştirildi | **KIRMIZI** (1 test) | `KanbanScreen.test.tsx` F-013 §6 testi |
-| M5a | Hata sınırı — canlı (zorunlu) | `handleFeatureDetail` başına gerçek senkron `throw` (`MC_QA_FAULT=1`), üretim sunucusu ayrı portta | **KIRMIZI/DOĞRULANDI** | `HTTP=500`, gövde `internal_error` + genel Türkçe metin, `QA-FAULT-GIZLI-DETAY` **sızmadı**, `/api/health` 200, sonraki `/api/features` 200. Panelde `role="alert"` hata, Kanban ekranı ayakta |
-| M5b | Hata sınırının kendisi | `withDispatchErrorBoundary(...)` sarmalayıcısı dağıtıcıdan kaldırıldı | **KIRMIZI** (2 test) | Tam paket: `2 failed | 932 passed` — developer'ın "yıkıcı olur" endişesi ölçümle yanlışlandı |
-| M6 | Dosya adı deseni (benim seçimim) | Handler'daki `isValidFeatureFileName` kontrolü kaldırıldı | **KIRMIZI** (1 test) | `features-api.test.ts` "geçersiz dosya adı → 400" |
-| M7 | **`id` sanitizasyonu (benim seçimim)** | `SAFE_ID_PATTERN.test(card.id)` → `card.id !== ''` | **YEŞİL — 109/109** | Hiçbir test korumuyor. Ardından **gerçek istismar**: frontmatter'ı `id: ../../../outside/qa/EVIL` olan bir feature dosyası → `contract.content` = kök **dışındaki** dosyanın içeriği. Gerçek kodda `exists:false` (doğru) |
+| M1 | Guard üçüncü kontrol (K2) | `read-guard.ts:78` izinli önek kontrolü etkisizleştirildi | **KIRMIZI (3 test)** | + prob: `.env`/`package.json`/`settings.json` gerçekten sızdı, repoda `CLAUDE.md` 14.532 karakter |
+| M2 | `SAFE_ID_PATTERN` (K1) | `feature-detail.ts:133` → `card.id !== ''` | **KIRMIZI (1 test)** | 1. turda **YEŞİL (109/109)** idi |
+| M3a | Manifest (K3) | Mutlu yola sabit içerikli `fs.writeFileSync` (yeni dosya) | **KIRMIZI (2 test)** | 1. turda `-t "manifest"` ile **2 passed** idi |
+| M3c | Manifest kapsamı — silme | `readOptionalDocument` okuduğu dosyayı siler | **KIRMIZI (1 test)** | testin iddia ettiği kapsam gerçek |
+| M4 | Bayatlık (K4) | `onClick={refresh}` → no-op | **KIRMIZI (1 test)** | `KanbanScreen.test.tsx` K4 testi |
+| M5 | Okunabilirlik (K5) | `<pre>`'ye `max-h-64 overflow-y-auto` geri kondu | **KIRMIZI (E2E)** | `nestedScrollBoxCount` beklenen 0, gelen 2 |
+
+Ek kontrol (mutasyon değil, çit denetimi): **M6 — `tabIndex={0}` kaldırıldı** → `verify` paketi
+**YEŞİL**, K5/K6 E2E testi de **YEŞİL** kaldı. Bkz. N6.
 
 `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca meşru test adları
-(`write-gate-manifest.test.ts:124` + F-013'ün kendi test açıklamaları). `git status` temiz,
-`git diff` boş (yalnızca bu raporun ve ekran görüntülerinin eklenmesi).
+(11 satır; `write-gate-manifest.test.ts:124` dahil, dokunulmadı). Tüm mutasyonlar
+`git checkout --` ile birebir geri alındı; `dist/` mutasyonsuz kaynaktan **yeniden derlendi**
+(`tabIndex:0` bundle'da var, `max-h-64` yok); `git status` temiz.
 
 ---
 
-## 5. Bulgular
+## 8. Dar genişlik regresyonu (`<details>` yapısı bir şey bozdu mu?)
 
-### B1 (BLOKLAYICI) — `docs/qa/*` değişikliklerinde sessiz bayatlık (AC6 ihlali)
+Kırpılmış görünür genişlikle ölçüldü (`toBeVisible()` **kullanılmadı**), F-012 penceresi açık:
 
-**Tekrar üretme**
-1. `npm run build && npm start` (port 7355), panelde Kanban → bir karta tıkla (ör. `F-011`).
-2. Pencere açıkken, **gövdeye dokunmadan** diskten şunu yap:
-   `printf 'YENI-SOZLESME\n' > docs/qa/F-011-contract.md` ve
-   `printf 'YENI-RAPOR\n' > docs/qa/F-011-2026-09-08-qa.md`
-3. 9 saniye bekle, pencereyi oku.
+| Genişlik | modal | `summary` | `<pre>` | "Yenile" | "Son yenileme" | belge `scrollWidth` | sağ kenarı aşan öğe | iç kaydırma kabı |
+|---|---|---|---|---|---|---|---|---|
+| 320 | 288 | 239 | 239 | 61 | 158 | 320 | **0** | **0** |
+| 375 | 343 | 294 | 294 | 61 | 158 | 375 | **0** | **0** |
+| 480 | 448 | 399 | 399 | 61 | 158 | 480 | **0** | **0** |
+| 639 | 607 | 558 | 558 | 61 | 158 | 639 | **0** | **0** |
+| 640 | 608 | 559 | 559 | 61 | 158 | 640 | **0** | **0** |
 
-**Beklenen (AC6):** içerik tazelenir **veya** bayat olduğu belli olur.
-**Gerçek:** "Sözleşme" bölümü hâlâ **eski** metni gösteriyor (`QA-SOZLESME-BAYATLIK-TESTI`,
-yenisi `QA-SOZLESME-IKINCI-SURUM-…`), "QA raporları" bölümü diskte bir rapor dururken
-**"QA raporu bulunamadı."** diyor. Hiçbir bayatlık göstergesi, hiçbir "Yenile" düğmesi yok.
-Karşılaştırma: aynı senaryoda **gövde** dosyasına marker eklenince panel **anında** tazelendi.
+Hiçbir genişlikte yatay belge kaydırması yok, hiçbir öğe kırpılmıyor. 320px'te "Son yenileme"
+metni 33..191, "Yenile" düğmesi 226..287 — çakışma yok. (Kırılma noktasının iki yanı 639/640 ile
+ayrıca sınandı.) `screens/F-013-t2-03-320px.png`
 
-**Muhtemel dosya:satır**
-- `src/features/kanban/web/useFeatureDetail.ts:58` — effect bağımlılığı yalnızca
-  `card.content_hash` (gövde baytları); `docs/qa/*` hash'e girmiyor.
-- `src/server/watch/project-watcher.ts:22` — `chokidar.watch(featuresDir)`; `docs/qa` izlenmiyor
-  (`src/features/projects/server/service.ts:95`).
+---
 
-**Neden bloklayıcı sayıyorum:** (a) AC6 "sessizce eski içerik gösterilmez" diyor ve feature
-notunda `[x]` işaretli — AC değiştirilmeden karşılanmamış sayılır; (b) bu tam olarak
-kullanıcının istediği senaryo: bir QA turu koşarken raporun panelde belirmesini izlemek —
-panel bunun yerine "QA raporu bulunamadı." diyerek **yanlış bilgi** veriyor; (c) sözleşmedeki
-"genellikle ikisi birlikte değişir" gerekçesi *commit* düzeyinde doğru (`48f2243`, `417ea4f`
-hem raporu hem feature notunu içeriyor) ama **dosya yazımı düzeyinde değil** — rapor önce, notun
-`status:` satırı dakikalar sonra yazılıyor; (d) kapsam içi ucuz bir çözüm var: modalda bir
-"Yenile" düğmesi (`src/features/kanban/web/**`, feature'ın kendi dosya sahipliği) veya
-görünür bir "bu belgeler pencere açıldığı andan beri yenilenmedi" notu.
+## 9. Test paketleri
 
-### B2 (BLOKLAYICI) — `SAFE_ID_PATTERN` kök-kaçışını engelleyen tek savunma ve sıfır testi var (AC4 ihlali)
-
-**Tekrar üretme**
-1. `src/features/kanban/server/feature-detail.ts:118` — `if (SAFE_ID_PATTERN.test(card.id)) {`
-   satırını `if (card.id !== '') {` yap.
-2. `npx vitest run tests/features/kanban tests/integration/features-api.test.ts`
-3. Ayrıca frontmatter'ı `id: ../../../outside/qa/EVIL` olan bir feature dosyasıyla
-   `buildFeatureDetail(root, 'F-902-evil.md')` çağır.
-
-**Beklenen (AC4):** çiti kaldıran mutasyon **KIRMIZI** vermeli.
-**Gerçek:** `Tests 109 passed (109)` — **YEŞİL**. Ve mutasyonla birlikte gerçek sızıntı:
-`contract = {"exists":true,"content":"KOK-DISI-SIZAN-GIZLI-ICERIK\n",…}` — proje kökünün
-**dışındaki** bir dosyanın içeriği panele akıyor. (Mutasyon geri alındığında `exists:false`.)
-
-**Kök neden:** `readOptionalDocument` (`feature-detail.ts:38-49`) yolu
-`path.join(dirPath, fileName)` ile **guard'dan geçirmeden** kuruyor. `fileName` ya
-`readdirSync` çıktısı (güvenli) ya da `` `${card.id}-contract.md` `` — ve `card.id`
-**frontmatter'dan**, yani dosya içeriğinden geliyor. Sözleşme §3 tüm okumaların
-`resolveInsideRootForRead`'ten geçtiğini ima ediyor; bu yol geçmiyor.
-
-**Muhtemel dosya:satır:** `src/features/kanban/server/feature-detail.ts:22` (desen),
-`:38` (`readOptionalDocument`), `:118` (tek kullanım yeri).
-
-**İstenen düzeltme:** `SAFE_ID_PATTERN` için doğrudan bir regresyon testi **ve**
-`readOptionalDocument`'ın hedefini `resolveInsideRootForRead` ile doğrulaması (ikinci savunma
-hattı). Mutasyon KIRMIZI verene kadar kapanmış sayılmaz.
-
-### Ö1 (ÖNEMLİ) — AC3'ün kanıt gösterdiği manifest testi iddia ettiğini ölçmüyor
-
-`tests/features/kanban/server/feature-detail.test.ts:214-239`. İki yapısal kusur:
-1. `beforeInvalid` anlık görüntüsü **mutlu yol çağrısından SONRA** alınıyor (satır 227) —
-   `buildFeatureDetail(root,'F-001.md')`'nin ürettiği herhangi bir yazma karşılaştırmaya
-   hiç girmiyor.
-2. `before` karşılaştırması `before.every(e => after'da aynı relPath+sha256 var)` biçiminde —
-   yani yalnızca **var olan dosyaların değişmediğini** ölçüyor; **yeni dosya eklenmesini**
-   (ve silinmeyi) göremiyor.
-
-Ölçüm: mutlu yola sabit içerikli bir `fs.writeFileSync` eklendiğinde `-t "manifest"` koşusu
-**2 passed** verdi. Yazmayı yakalayan tek şey `no-write-gate-bypass` statik taraması oldu —
-yani AC3'ün "savunma-derinliği, totoloji değil" iddiası fiilen tek katman.
-Düzeltme: `expect(after).toEqual(before)` (tam eşitlik) ve anlık görüntüyü **tüm** çağrılardan
-önce almak.
-
-### Ö2 (ÖNEMLİ) — İçerik klavyeyle okunamıyor
-
-Ölçüm (1280px, F-012 penceresi açık): pencerede **12 kaydırma bölgesi** var (1 dış kap +
-11 `<pre>`); hiçbirinde `tabindex` yok; focus-trap'in odaklanabilir öğe listesi
-(`FeatureDetailModal.tsx:71-73`) yalnızca `button/[href]/input/select/textarea/[tabindex]`
-arıyor → listede **tek öğe: "Kapat"**. `PageDown` ve `ArrowDown` sonrası dış kabın
-`scrollTop` değeri **0** (kaydırılabilir mesafe 2690px), tüm `<pre>`lerin `scrollTop`'u 0.
-Yani klavyeyle çalışan bir kullanıcı her belgenin yalnızca ilk ~254 pikselini görebiliyor.
-Feature'ın tek amacı okumak olduğu için bu, işlevin kendisini yarıya indiriyor (WCAG 2.1.1).
-
-### Ö3 (ÖNEMLİ) — Okunabilirlik: ham markdown × 254 piksellik kutular
-
-J5 kararı (markdown kütüphanesi yok) **tek başına savunulabilir**: proje mono/terminal
-estetiğinde, `dangerouslySetInnerHTML` yüzeyi açılmıyor, `ADR-009` riski sıfır, bundle etkisi 0.
-Sorun render değil, **kutu geometrisi**: her belge `max-h-64` (ölçülen `clientHeight` = 254px)
-bir kutuya kilitleniyor. Gerçek veriyle ölçüm — F-012 penceresi:
-
-| Belge | Gizli kaydırma mesafesi |
+| Komut | Sonuç |
 |---|---|
-| Sözleşme | 27.922 px |
-| QA tur 1 | 12.274 px |
-| Gövde | 6.578 px |
-| Diğer 8 belge | 4.034 – 12.994 px |
+| `npm run verify` | **EXIT=0** — `943 passed | 2 skipped (945)`, `66 passed` dosya, build 298,93 kB JS / 20,95 kB CSS. Tek koşuda yeşil, tekrar gerekmedi (worker fork kararsızlığı görülmedi) |
+| `npm run e2e` | **EXIT=0** — `28 passed (34.0s)` |
 
-254 piksellik bir pencereden 27.922 piksel okumak ≈ 110 ekran. Üstelik dış kap da kaydığı için
-iç içe iki kaydırma katmanı var. Kullanıcının isteği ("içeride ne yapıldığı görünsün")
-teknik olarak karşılanıyor ama pratikte okuma pahalı. Ucuz iyileştirmeler: yüksekliği
-`max-h-64` yerine esnek yapmak, belgeleri katlanabilir (`<details>`) bölümlere almak, veya
-QA raporlarını varsayılan kapalı açmak. **Bu bulgu tek başına bloklayıcı değildir** — J5
-kararının kendisini sorgulamıyorum, geometriyi bildiriyorum; kararı CEO verir.
-
-### Ö4 (ÖNEMLİ) — Okuma guard'ı "kök altında"yı kısıtlıyor, "docs/features altında"yı değil
-
-Sözleşme §3'ün `OPERATION_PATTERNS`'i atlama gerekçesi ("okuma tarafında işlem/hedef eşleşmesi
-kavramı yazma kadar kritik değil") ölçümle yanlışlandı:
-
-```
-buildFeatureDetail('C:/dev/apps/mission-control', '../../package.json')  => ok   (2296 karakter okundu)
-buildFeatureDetail('C:/dev/apps/mission-control', '../../CLAUDE.md')     => ok  (13438 karakter okundu)
-```
-
-Yani çekirdek fonksiyonun sözleşmesi "kök içinde herhangi bir dosya". Kök dışına çıkmıyor
-(AC4'ün lafzı korunuyor) ama hangi dosyanın okunacağını sınırlayan **tek** şey HTTP
-handler'ındaki `isValidFeatureFileName` (`handlers.ts:247`). O katmanın testi var (M6 KIRMIZI),
-dolayısıyla bugün istismar edilebilir değil; ama ikinci bir çağıran eklendiğinde izlenen
-projedeki herhangi bir dosya (`.env`, `.git/config`, `data/projects.json`) okunabilir hâle gelir.
-Kısıt guard'ın kendisine taşınmalı (ör. `relativeParts`'ın `['docs','features',<ad>]` kalıbına
-uyduğunu guard içinde doğrulamak).
-
-### NOT'lar
-
-- **N1** — Sunucu 500 döndüğünde panelde UX sözlüğündeki `İçerik yüklenemedi. Tekrar deneyin.`
-  değil, sunucunun kendi metni (`Beklenmeyen bir sunucu hatası oluştu. Tekrar deneyin.`)
-  görünüyor (`useFeatureDetail.ts:44` — `body.error?.message ?? fallback`). İkisi de Türkçe ve
-  okunabilir; "birebir uyum" şartına göre sapma.
-- **N2** — Yol çiti bir belgeyi reddettiğinde (symlink/junction) kullanıcı bunu
-  "Sözleşme bulunamadı." olarak görüyor. Güvenlik açısından doğru (bilgi sızdırmıyor), teşhis
-  açısından yanıltıcı. Ölçüldü: junction'lı `docs/qa` → `contract.exists:false`.
-- **N3** — 200.000 karakter sınırı **belge başına**; toplam yanıt sınırsız. Gerçek F-012 kartı
-  **317.573 bayt** (11 belge) döndürüyor. Stres: 7 belge × 200k = **1.419.096 bayt**, sunucu
-  0,02 sn, panel yüklemesi 264 ms, kaydırma akıcı → AC5'in "kilitlemez" şartı bugünkü ölçekte
-  karşılanıyor; sınırın toplam üzerinde olmaması yine de kayda değer.
-- **N4** — `Esc` sonrası odak tetikleyen karta değil `BODY`'ye dönüyor. `FeatureDetailModal`'ın
-  kendi yorumu bunu `KanbanCard`'ın sorumluluğu sayıyor ama orada da yok. **F-007'den miras,
-  F-013 regresyonu değil** (`git diff HEAD~1` `KanbanCard.tsx`'e dokunmuyor).
-- **N5** — 320px'te pencere başlığı ile "Kapat" düğmesi arasında boşluk yok (kutular
-  çakışmıyor: h2 sağ kenarı 255px, düğme sol kenarı 255px). **F-007'den miras**, F-013 başlık
-  satırını değiştirmedi. `screens/F-013-03-320px.png`
+Developer'ın "943 test / 66 dosya" ve "28/28" iddiaları **doğrulandı**.
+Tailwind `@source` kapsamı: K4/K5'in getirdiği 10 sınıf (`cursor-pointer`, `font-semibold`,
+`space-y-3`, `min-h-8`, `justify-between`, `whitespace-pre-wrap`, `break-words`,
+`text-amber-400`, `pt-2`, `gap-2`) → **10/10** `dist/web/assets/index-WlzTwQSg.css` içinde.
 
 ---
 
-## 6. Puanlar
+## 10. NOT'lar (bloklayıcı değil)
 
-| Boyut | Puan | Gerekçe |
-|---|---|---|
-| İşlevsellik | **7** | Mutlu yol, eksik dosya, okuma hatası, kırpma, hata sınırı, dar genişlik — hepsi gerçek tarayıcıda çalışıyor. Eksi: `docs/qa/*` bayatlığı (B1) işlevsel bir yalan üretiyor |
-| Özellik bütünlüğü | **5** | 9 AC'nin 3'ü karşılanmıyor: AC6 (sessiz bayatlık), AC4 (mutasyon çiti eksik, ikinci yol-kurma noktası guard dışı), AC3 (kanıt mekanizması iddia ettiğini ölçmüyor). Üçü de feature notunda `[x]` işaretli |
-| Görsel / UX | **6** | Estetik tutarlı, üç dar genişlikte taşma yok, kırpma uyarısı belirgin, `role="alert"` doğru. Eksi: 254px kutularda 28.000px içerik (Ö3), klavyeyle içerik okunamıyor (Ö2) |
-| Kod kalitesi | **7** | Temiz, iyi yorumlanmış, küçük dosyalar, `write-gate.ts`'e dokunulmamış, dosya sahipliği ihlali yok, `verify` 0 / 934 test / `e2e` 26/26 hepsi doğrulandı, `@source` dersi uygulanmış. Eksi: üç çit boşluğu (B2, Ö1, Ö4) ve M5b'nin gösterdiği gibi bir mutasyon gereksiz yere atlanmış |
-
-Dört boyuttan ikisi < 7 → **KALDI**.
-
----
-
-## 7. Düzeltme turu için istenenler
-
-1. **B1** — `docs/qa/*` için tazeleme **veya** görünür bayatlık göstergesi. En ucuz kapsam-içi
-   çözüm: pencerede bir "Yenile" düğmesi (`useFeatureDetail`'e manuel tetik) + E2E'de
-   "gövde değişmeden sözleşme değişince kullanıcı güncel içeriğe ulaşabiliyor" testi.
-   Alternatif (kapsam dışına taşar): watcher'ı `docs/qa`'ya genişletmek. AC6'yı daraltmak
-   isteniyorsa AC metni ve `docs/03-ux.md` birlikte güncellensin — sessizce `[x]` bırakılmasın.
-2. **B2** — `SAFE_ID_PATTERN` için regresyon testi (kötü `id` frontmatter'ı → kök dışı okuma
-   YOK) **ve** `readOptionalDocument`'ın hedefini `resolveInsideRootForRead`'ten geçirmesi.
-   Mutasyon (`SAFE_ID_PATTERN` kaldır) KIRMIZI vermeli.
-3. **Ö1** — Manifest testi: anlık görüntü **tüm** çağrılardan önce alınsın,
-   `expect(after).toEqual(before)` tam eşitlikle karşılaştırılsın. Kanıt: M3a mutasyonu
-   (`-t "manifest"` ile) KIRMIZI vermeli.
-4. **Ö2** — Kaydırılabilir belge kutuları klavyeyle erişilebilir olsun (`tabindex={0}` +
-   focus-trap seçicisine dahil edilmesi) ya da dış kap odaklanabilir yapılsın.
-5. **Ö4** — Yol kısıtı (`docs/features/<ad>.md`) guard'ın içine taşınsın; handler'daki desen
-   ikinci katman olarak kalsın.
-6. **Ö3 / N1 / N2 / N3** — CEO kararına bırakılıyor (Ö3 ürün kararı; N1 metin sözlüğü uyumu).
-   **N4/N5 F-013'e ait değil** — ayrı bir not olarak kaydedilebilir.
+- **N6 (YENİ, çit zayıflığı)** — `tests/e2e/kanban.spec.ts:630-636`'daki K6 assert'i
+  `scrollBox.focus()` ile başlıyor. Playwright'ın `locator.focus()`'u CDP üzerinden odağı
+  **zorla** verir: ölçtüm, `tabIndex={0}` tamamen kaldırılmış bir bundle'da bile
+  `document.activeElement` o `div` oluyor ve test **yeşil kalıyor** (M6). Yani "kap klavye ile
+  odaklanabilir" iddiası ölçülmüyor. Kullanıcıya görünen davranışın bozulmadığını ayrıca
+  ölçtüm — mutasyonlu bundle'da bile gerçek `Tab` akışı `summary`'lere ulaşıp kabı kaydırıyor
+  (K5'in getirdiği `<details>` başlıkları doğal olarak odaklanabilir), bu yüzden bloklayıcı
+  değil. Düzeltme ucuz: `focus()` yerine `page.keyboard.press('Tab')` ile gerçek odak akışını
+  yürüt ve `document.activeElement === scrollBox` assert'i ekle. **Bir sonraki dokunuşta
+  kapatılsın.**
+- **N1/N2/N3 (1. turdan devir)** — CEO bilinçli olarak kapsam dışı bıraktı, değişmedi.
+- **N4/N5 (F-007'den miras)** — F-013'e ait değil; 320px'te `h2` sağ kenarı 255px ile "Kapat"
+  sol kenarı 255px hâlâ bitişik (bu turda da ölçüldü, F-013 başlık satırına dokunmadı).
+- `docs/qa/*` hâlâ SSE ile izlenmiyor: kullanıcı "Yenile"ye basmazsa panel eski içeriği
+  göstermeye devam eder. AC6 bunu "bayat olduğu belli olur" dalıyla karşılıyor ve
+  `docs/03-ux.md` bunu açıkça yazıyor — kabul edilebilir, ama otomatik tazeleme istenirse
+  ayrı bir feature olmalı.
 
 ---
 
-## 8. Süreç hijyeni
+## 11. Puanlar
 
-- **Yetim süreç:** tur sonunda kendi başlattığım **1** sunucu (port 7355) kaldı ve kapatıldı;
-  fault-injection sunucusu (port 7356, PID 33364 + çocuk 50448) `taskkill /T /F` ile
-  sonlandırıldı, `netstat` doğrulandı. Makinede duran diğer `node.exe` süreçleri
-  `C:\dev\apps\hayat-mentoru` projesine ait — **dokunulmadı**. Sayım: kapatma öncesi **8** `node.exe`, sonrası **5**
-  (3 × hayat-mentoru: PID 37640 `npm run dev`, 27556 `next dev`, 34488 `start-server.js`;
-  2 × Playwright MCP aracı: PID 20168, 9064). Mission Control'e ait **0** süreç kaldı;
-  7333/7355/7356 portlarında LISTENING **0**.
-- **Repo durumu:** tüm mutasyonlar birebir geri alındı; `git status` yalnızca bu raporu ve
-  `docs/qa/screens/F-013-*.png` dosyalarını gösteriyor. Test amacıyla oluşturulan
-  `F-998`/`F-999` fixture'ları ve geçici `docs/qa/F-011-*` dosyaları scratchpad'e taşındı,
-  `docs/features` ve `docs/qa` orijinal hâlinde.
-- **Ürün kodu düzenlenmedi.**
+| Boyut | 1. tur | 2. tur | Gerekçe |
+|---|---|---|---|
+| İşlevsellik | 7 | **8** | Bayatlık artık yalan söylemiyor: saat + "Yenile" ile kullanıcı her zaman güncel içeriğe ulaşabiliyor (canlı ölçüldü). Otomatik tazeleme yokluğu bilinçli ve belgeli |
+| Özellik bütünlüğü | 5 | **8** | 9 AC'nin 9'u karşılanıyor; AC3/AC4/AC6'nın istediği çitler artık gerçekten ölçüyor. Eksi: N6 (bir E2E assert'i vakum) |
+| Görsel / UX | 6 | **8** | 12 → 1 kaydırma bölgesi, 0 iç içe kutu, klavyeyle tam kontrol (`Tab`/`Enter`/`Space`/`PageDown`/`Home`/`End`), beş genişlikte kırpma ve taşma yok |
+| Kod kalitesi | 7 | **8** | Altı mutasyonun beşi KIRMIZI, ikisi (M1/M2) savunma katmanlarını **ayrı ayrı** çitliyor; yorumlar kodla uyumlu; `write-gate.ts`'e dokunulmamış; dosya sahipliği ihlali yok; `verify` 943/66 + `e2e` 28/28 doğrulandı. Eksi: N6 |
 
-## 9. Doğrulayamadıklarım
+Dört boyut da ≥ 7 → **GEÇTİ**.
 
-- **Dosya symlink'i** (dizin junction'ı değil) ile saldırı: Windows'ta yönetici/geliştirici
-  modu gerektiriyor, `fs.symlinkSync(..., 'file')` **EPERM** verdi. Dizin junction'ı ile
-  ölçtüm (M1) — bu yol kapalı. `readOptionalDocument`'ın dosya-seviyesi `lstat` kontrolü
-  ampirik olarak sınanamadı.
-- **UNC yolu** (`\\sunucu\pay`) ile kök dışı okuma: bu makinede erişilebilir bir ağ payı yok.
-  `isValidFeatureFileName` UNC'yi zaten dosya adı düzeyinde reddediyor (`basename(file)===file`).
-- **Hardlink** ile kök dışı içerik okuma: `lstat` hardlink'i symlink saymaz; senaryo
-  kurulmadı. ADR-005 kapsamında yazılı bir kabul yok — bir sonraki turda bakılabilir.
-- **Gerçek izin hatası** (`EACCES`): Windows'ta güvenilir biçimde üretilemedi; yerine
-  `EISDIR` (dosya yerine dizin) ile hata dalı sınandı.
+---
+
+## 12. Süreç hijyeni
+
+- **Yetim süreç: 0.** Bu turda başlattığım tek sunucu (port 7357, PID ağacı
+  52228 → 33548 → 37080 → 49208) `taskkill /T /F` ile sonlandırıldı; `netstat` 7350-7359
+  aralığında LISTENING **yok**. Kalan 5 `node.exe`: **3'ü `C:\dev\apps\hayat-mentoru`**
+  (PID 37640 `npm run dev`, 27556 `next dev`, 34488 `start-server.js`) — **dokunulmadı**;
+  2'si Playwright MCP aracı (PID 32828, 29464). Mission Control'e ait süreç **0**.
+- **Repo durumu:** tüm mutasyonlar `git checkout --` ile geri alındı, `dist/` temiz kaynaktan
+  yeniden derlendi, `git status` temiz. Fixture proje ve izole `MC_DATA_DIR` scratchpad'de
+  kaldı — depoya hiçbir test dosyası yazılmadı (`docs/features` ve `docs/qa` orijinal hâlinde).
+- **Ürün kodu düzenlenmedi.** Yazdıklarım: bu rapor, `docs/qa/latest.md`, üç ekran görüntüsü,
+  feature notunun `status` satırı.
+
+## 13. Doğrulayamadıklarım
+
+- **Dosya symlink'i / UNC / hardlink** — 1. turdaki kısıtlar aynen geçerli (Windows'ta
+  `fs.symlinkSync(...,'file')` EPERM, erişilebilir ağ payı yok). Dizin junction'ı yolu 1. turda
+  kapalı ölçülmüştü ve bu turda guard'a eklenen üçüncü kontrol o yolu **daha da** daraltıyor.

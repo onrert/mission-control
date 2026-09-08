@@ -242,3 +242,20 @@ edilmiş bir sapma vardır.
 
 **Durum:** F-012'yi bekletmiyor (QA zaten "bloklayıcı değil" kararı vermişti); yalnızca bir
 sonraki feature'ın planlamasına bilgi taşıyor.
+
+## 2026-09-08 — F-013 devreden açık madde (NOT, bloklayıcı değil)
+
+**N6 — klavye odağı çiti gerçekte ölçmüyor.** `tests/e2e/kanban.spec.ts`'teki K6 assert'i
+`scrollBox.focus()` kullanıyor; Playwright odağı CDP ile **zorla** verdiği için "klavyeyle
+odaklanabilir" iddiası doğrulanmıyor. QA ölçtü: `tabIndex={0}` silinse bile test **yeşil kalıyor**
+(mutasyon M6).
+
+**Neden bloklayıcı değil:** ürün davranışı bozulmuyor — `<summary>` öğeleri doğal olarak
+odaklanabilir, kullanıcı içeriğe klavyeyle ulaşabiliyor (QA 14 odaklanabilir öğe ölçtü,
+`PageDown` 399px kaydırdı).
+
+**Neden yine de kapatılmalı:** bu, deponun tekrar eden hata sınıfı — çit duruyor, yeşil görünüyor,
+hiçbir şey ölçmüyor. Bir regresyon fark edilmeden geçebilir.
+
+**Kapatma yolu:** `page.keyboard.press('Tab')` + `document.activeElement` assert'i.
+**Eşik:** Kanban ekranına dokunan bir sonraki feature.

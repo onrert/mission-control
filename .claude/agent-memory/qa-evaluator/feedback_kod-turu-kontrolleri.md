@@ -130,3 +130,34 @@ mutasyon planlanmamış kod yollarını, (b) çok katmanlı savunmaların ikinci
    bloklayıcının oradan geçmesi. Ayrıca `package.json` script'lerinin gösterdiği dosyaların
    var olduğunu `ls` ile doğrula: `test:chat-live` hiç yazılmamış bir dosyayı çağırıyordu ve
    sözleşmenin "iki yönlü kanıt" şartı böylece sessizce düşmüştü.
+
+---
+
+## F-013 turunda eklenen üç teknik
+
+16. **Manifest/`snapshotDir` testlerinde anlık görüntülerin SIRASINI ve karşılaştırma
+   biçimini denetle.** F-013'ün AC3 kanıtı olan manifest testi iki yerden delikti:
+   (a) "önce" anlık görüntüsü ölçülen fonksiyonun mutlu-yol çağrısından **sonra** alınıyordu,
+   (b) karşılaştırma `before.every(e => after'da aynı relPath+sha256 var)` biçimindeydi —
+   yalnızca **var olan** dosyaların değişmediğini ölçer, **yeni dosya eklenmesini** görmez.
+   Sonuç: mutlu yola koyduğum **sabit içerikli** `fs.writeFileSync` manifest testinden geçti
+   (`-t "manifest"` → 2 passed). Teknik: mutasyonu iki biçimde koştur — (i) sabit içerikli,
+   mutlu yolda; (ii) çağrı başına değişen içerikli. Yalnızca (ii) kırmızı veriyorsa test
+   sıralaması bozuktur. `expect(after).toEqual(before)` tam eşitliği iste.
+17. **Guard'ın "hangi kök" kısıtı ile "hangi dosya" kısıtını ayır; string-interpolasyonla
+   dosya adı üreten İKİNCİ yol-kurma noktalarını ara.** F-013'te tüm okumaların guard'dan
+   geçtiği sanılıyordu; `readOptionalDocument` yolu `path.join(dir, `${card.id}-contract.md`)`
+   ile guard'sız kuruyordu ve `card.id` **frontmatter'dan** (dosya içeriğinden) geliyordu.
+   Tek savunma bir regex'ti (`SAFE_ID_PATTERN`) ve **sıfır testi vardı**: kaldırınca 109/109
+   yeşil, ardından `id: ../../../outside/qa/EVIL` frontmatter'ıyla kök dışı içeriği gerçekten
+   sızdırdım. Ayrıca guard'ın kendisi yalnızca "kök altında"yı kısıtlıyordu:
+   `buildFeatureDetail(root,'../../package.json')` → **ok**. Yöntem: `path.join(`/`${`
+   geçen her satırı grep'le, girdinin nereden geldiğini geriye izle, her biri için ayrı
+   mutasyon koştur.
+18. **Okuma amaçlı bir yüzeyde focus-trap'in seçicisiyle kaydırma kaplarını karşılaştır.**
+   F-013 penceresinde 12 kaydırma bölgesi vardı (1 dış kap + 11 `<pre>`), hiçbirinde
+   `tabindex` yoktu ve trap'in seçicisi (`button, [href], input, select, textarea, [tabindex]`)
+   yalnızca "Kapat"ı buluyordu → `PageDown`/`ArrowDown` sonrası dış kabın `scrollTop` **0**
+   (kaydırılabilir mesafe 2690px). Klavye kullanıcısı her belgenin ilk ~254 pikselini görebiliyor.
+   Ölçüm 30 saniye: `[...m.querySelectorAll('*')].filter(e=>e.scrollHeight>e.clientHeight)` ile
+   kaydırma bölgelerini say, `tabindex`lerine bak, tuşa bas, `scrollTop`'u tekrar oku.

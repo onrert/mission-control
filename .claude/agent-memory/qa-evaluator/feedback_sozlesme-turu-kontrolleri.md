@@ -115,3 +115,23 @@ bölümleri yeniden açma. Bulguları `## ADR uyum kontrolü`, `## Ölçmeyen te
    kapısının kendi atomik `.<ad>.<pid>-<hex>.tmp` dosyası vardı (tmp hedefle **aynı** dizinde
    açılıyor). "Tanınmayan dosyalar" listesi kalıcı çöp gösterir, filtresiz izleyici her yazmada
    fazladan yayın yapar.
+15. **İkinci turda "önceki QA turunda ✓ VERIFIED ölçüldü" ibaresine güvenme — kırık çitleri KENDİN
+   yeniden numaralandır.** Sözleşme tur 1'in bulgu listesini devralıp "ölçüldü" diye işaretleyebilir;
+   ama tur 1'in listesi eksik olabilir (F-008: benim tur 1 listem 3 çit saymıştı, gerçekte 7 vardı —
+   `App.chat-tab.test.tsx` hiç görülmemişti). Yöntem: yeni ekranın **görünen etiketini** ve sayaç
+   desenlerini birlikte grep'le: `getAllByRole('tab')`, `toBe(N)`/`toHaveLength(N)`, ve etiketin
+   kendisi (`not.toContain('Kapılar')` gibi **doktrin** çitleri — bunlar sayı güncellemesi değil,
+   "bu çiti silmeli miyim" kararı gerektirir ve sözleşmede karara bağlanmalıdır).
+16. **Sıra ("önce A sonra B") mutasyonlarında assert'in YÖNÜNÜ kontrol et.** Yarı-başarı semantiği
+   olan akışlarda sezgisel assert ters çıkar: F-008'de M6 "onay başarısızsa arşivin hiç
+   çağrılmadığını assert et" diyordu; doğru sırada (arşiv → onay) arşiv **zaten yapılmıştır**, yani
+   test doğru kodda kırmızı, mutantta yeşil verirdi. Her sıra mutasyonu için iki satırlık tablo
+   kur: "doğru kodda disk durumu ne / mutantta ne" — assert doğru kodun durumunu yazmalı.
+17. **DÜZELTME — madde 12'nin F-008 örneğinin sonucu:** kontrol listesi (a-d) geçerli kalıyor, ama
+   o vakada varılan sonuç **canlı ölçümle çürütüldü**. `docs/qa/F-008-write-izin-olcumu.md`
+   (2026-09-09, iki yönlü probe): SDK, proje `permissions.allow` listesinde `Write(docs/**)` tam
+   eşleşse ve `allowManagedPermissionRulesOnly` açık ya da kapalı olsa da `Write`'ı **her koşulda**
+   `canUseTool` kartına düşürüyor. Ders: statik izin zinciri (tools → hook muafiyeti → allow →
+   settingSources → ask listesi) **mantıklı bir hipotez** üretir, **kanıt üretmez** — bulguyu
+   "⊢ ÇIKARIM" diye işaretle ve kapanışı canlı ölçüme bağla. Bloklayıcı yine de doğruydu, ama
+   gerekçesi "açık bir delik var" değil, "sözleşme ölçülmemiş bir korumaya dayanıyor" olmalıydı.

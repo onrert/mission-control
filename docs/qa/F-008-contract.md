@@ -6,34 +6,31 @@ status: draft
 date: 2026-09-09
 ---
 
-# F-008 Sözleşmesi — Kapılar paneli
+# F-008 Sözleşmesi — Kapılar paneli (tur 2 — düzeltilmiş)
 
 Kod yazılmadan önceki "ne yapılacağı + nasıl doğrulanacağı" sözleşmesi (`CLAUDE.md` §"Sözleşme").
-Bu turda `src/`, `tests/`, `package.json` altında **hiçbir dosya değiştirilmedi**; yalnızca bu
-belge yazıldı. `git status --porcelain` bunu doğrular.
+Bu turda da `src/`, `tests/`, `package.json` altında **hiçbir dosya değiştirilmedi**; yalnızca bu
+belge düzeltildi. `git status --porcelain` bunu doğrular.
+
+**Bu tur, `docs/qa/F-008-contract-review-1.md`'nin (KALDI, 6 bloklayıcı + 11 önemli + 4 not) ve
+CEO'nun bu bulgular üzerine verdiği kararların (N1-N7) gövdeye yayılmasıdır.** Onaylanmış bölümler
+(L4'ün cevabı, statik çit kapsamı, `x-mc-write`, hata sınırı deseni, `@source` çiti, AC1-AC9
+haritasının temeli) **yeniden açılmadı**; yalnızca QA'nın işaret ettiği 21 bulgu ve bunların ürettiği
+regresyonlar düzeltildi.
 
 **Neden sözleşme turu zorunlu:** bu feature panele "kullanıcı adına kapı onaylama" yetkisi
 veriyor (G0 kararı: "panelden verilen kapı onayı kullanıcının onayı sayılır") — güvenlik sınırını
 değiştiren bir feature, `CLAUDE.md` kuralı gereği sözleşme turu atlanamaz.
 
-Okunan kaynaklar: `docs/features/F-008-kapilar-paneli.md`, `docs/PROCESS.md` (tamamı), `docs/03-ux.md`
-ekran 4 + akışlar (d)(e) + §7 (Sohbet — izin isteği kartı, `canUseTool` bağlamı), ADR-001 (G0.ok
-içeriği + karar 7), ADR-005 (tam metin + F-012 eki "iki güven seviyesi"), ADR-013 (tam metin),
-ADR-014 (bkz. aşağıda ✓ VERIFIED liste), `docs/approvals/{G0,G1,G2,G3,G4-1}.ok` (gerçek format
-örnekleri), `CLAUDE.md` "Öğrenilen kurallar" (tamamı).
-
-Mevcut kod **okunarak** doğrulandı (✓ VERIFIED): `src/server/write-gate.ts` (tam dosya),
-`src/server/index.ts` (dağıtıcı, route sırası, `withDispatchErrorBoundary`, Host/Origin/`x-mc-write`
-kontrolü), `src/shared/types.ts` (`ApiResponse`, `ErrorCode`, `WRITE_HEADER_*`), `src/features/
-projects/server/{service,handlers}.ts`, `src/features/kanban/server/handlers.ts` (async IIFE +
-yarı-başarı deseni — bu sözleşmenin handler tasarımı bunu birebir taklit eder), `src/server/watch/
-project-watcher.ts` (tam dosya), `src/web/App.tsx` (tab inşası, `useEventStream` kullanımı),
-`src/web/lib/useEventStream.ts` (`onFeatures` deseni), `src/features/chat/server/session.ts` (tam
-dosya — `canUseTool`, `managedSettings.permissions.ask:['Bash']`), `.claude/settings.json` (`ceo`
-agent `permissions.allow/deny`, hook kayıtları), `.claude/agents/ceo.md` (`tools:` alanı),
-`.claude/hooks/{gate-check,block-dangerous}.cjs` (tam dosya), `tests/no-write-gate-bypass.test.ts`
-(tarama kökü `src/` özyinelemeli — yeni `src/features/gates/**` otomatik kapsanır), `tests/server/
-write-gate-manifest.test.ts` (manifest test deseni).
+Okunan/yeniden doğrulanan kaynaklar (tur 2): `docs/qa/F-008-contract-review-1.md` (tam metin),
+`docs/qa/F-008-write-izin-olcumu.md` (tam metin, canlı ölçüm), `docs/decisions/ADR-014-*.md` (Ek
+bölümü, 2026-09-09), `docs/decisions/ADR-001-*.md` (karar 7), `docs/decisions/ADR-005-*.md`
+(madde 9), `docs/decisions/ADR-004-*.md` (madde 5), `docs/01-prd.md` (AC4/AC6/AC9, satır 73/75/78),
+`docs/03-ux.md` (ekran 4, satır 188-209, 454-467, 507-518, 730-736, 800-805), `docs/PROCESS.md`
+§2 (tam tablo), `src/features/projects/server/service.ts` (tam dosya — izleyici yaşam döngüsü),
+`src/web/lib/useEventStream.ts:82-94` (`onFeatures` sapma deseni), `tests/helpers/manifest.ts`
+(tam dosya), `tests/integration/chat-hooks-live.test.ts` (canlı test deseni + `package.json:30`
+`test:chat-live` betiği). Tur 1'de okunan geri kalan kaynaklar (§ dip not) geçerliliğini korur.
 
 ---
 
@@ -42,11 +39,18 @@ write-gate-manifest.test.ts` (manifest test deseni).
 **İçinde:**
 1. `GET /api/gates?project_id=…` — seçili projenin kapı durum listesi.
 2. `POST /api/gates/:project_id/:gate/approve` — iki adımlı onay, ikinci adımda diske yazar.
-3. `POST /api/gates/:project_id/:gate/deny` — zorunlu gerekçeli red.
+3. `POST /api/gates/:project_id/:gate/deny` — zorunlu gerekçeli red; **onaylı bir kapı için
+   reddedilir** (bkz. §4 "Aksiyon durum makinesi", B6 düzeltmesi).
 4. Kapılar ekranı: proje seçici (tek, zorunlu dropdown), kapı tablosu, onay modalı, satır içi red
-   formu, çelişkili durum rozeti, canlı güncelleme (mevcut SSE hub'ına yeni `gates` kanalı).
+   formu, çelişkili durum satırı (`[Detay]` — salt okunur genişleyen alt satır), aksiyon durum
+   makinesi (dört durum → dört farklı buton kümesi), yerel toast bileşeni, canlı güncelleme
+   (mevcut SSE hub'ına yeni `gates` kanalı).
 5. `archiveDenial`'ın (F-006, mevcut) ilk kez bir HTTP akışına bağlanması — G4-1.ok'ta CEO'ya
-   devredilmiş taahhüt (bkz. §3 "L4").
+   devredilmiş taahhüt (bkz. §5 "L4").
+6. **L5'in (barındırılan CEO oturumu self-approval riski) canlı ölçümle kapatılmış olduğunun
+   otomatik bir regresyon testine dönüştürülmesi** (bkz. §8, §11 mutasyon M10). Mekanizma zaten
+   var (SDK'nın kendi `canUseTool` davranışı); bu sözleşme yeni bir hook/kod **eklemiyor**, yalnızca
+   ölçümü tekrarlanabilir hale getiriyor.
 
 **Kapsam DIŞI (bilinçli):**
 - Kapı **oluşturma**/silme — yalnızca G0-G6/ASSETS ve bunların bilinen soneki (`G4-1` gibi)
@@ -55,24 +59,41 @@ write-gate-manifest.test.ts` (manifest test deseni).
 - `docs/PROCESS.md`'nin kendisini düzenleme.
 - `write-gate.ts`'e yeni bir niyet fonksiyonu eklemek — dört mevcut fonksiyon (`writeGateApproval`,
   `writeGateDenial`, `archiveDenial`, dolaylı olarak `setFeatureStatus`) yeterli, ✓ VERIFIED.
-- **L5'in yapısal kapatılması** — mekanizma bu sözleşmede **önerilir**, doğrulanır, ama
-  uygulanması `src/features/gates/**` dosya sahipliğinin dışında kalıyor (bkz. §6, ayrı karar
-  gerektirir).
+- **`.claude/hooks/**` değişikliği YOK.** CEO kararı N2: M1'in önerdiği ek hook kuralı **iptal
+  edildi** — canlı ölçüm (§8) korumanın zaten var olduğunu gösterdiği için gereksiz karmaşıklık
+  (Karpathy §2) sayıldı. `.claude/hooks/**` bu feature'ın dosya sahipliğine hiçbir biçimde girmiyor.
+- Çelişkili (`conflict`) durumun panelden **çözülmesi** — UX'te bu duruma yalnızca `[Detay]`
+  (salt okunur) atanmış; çözüm (dosyalardan birini elle silmek/taşımak) panelin dışında kalır. Bu,
+  F-008'in eklediği bir kısıt değil, `docs/03-ux.md:207`'nin zaten çizdiği sınır (bkz. §4).
 
 ---
 
-## 2. CEO kararlarının (L1-L8) gövdeye yayılması — harita
+## 2. CEO kararlarının gövdeye yayılması — harita
+
+### Tur 1 kararları (L1-L8)
 
 | Karar | Nerede uygulanıyor |
 |---|---|
 | L1 (sabit liste değil) | §3 "Durum türetme" |
-| L2 (iki adım, iptal hiçbir şey yazmaz) | §4 uçlar + §7 test planı mutasyon 1 |
-| L3 (yeni yazma yolu yok) | §2.1/§2.2 dosya listesi + §7 mutasyon 6 |
+| L2 (iki adım, iptal hiçbir şey yazmaz) | §4 uçlar + §11 mutasyon M1 |
+| L3 (yeni yazma yolu yok) | §10.1/§10.2 dosya listesi + §11 mutasyon M4 |
 | L4 (`archiveDenial` senkron mu) | §5 (cevap: **evet, tamamen senkron**) |
-| L5 (barındırılan oturum) | §6 (ayrı, öne çıkarılmış bölüm) |
-| L6 (çelişki otomatik çözülmez) | §3 + §7 mutasyon 4 |
-| L7 (red gerekçesi zorunlu) | §4 + §7 mutasyon 5 |
-| L8 (Türkçe metin önce UX'e) | §8 "Türkçe metinler" |
+| L5 (barındırılan oturum self-approval) | §8 (canlı ölçümle kapatıldı) |
+| L6 (çelişki otomatik çözülmez) | §3 + §11 mutasyon M4 |
+| L7 (red gerekçesi zorunlu) | §4 + §11 mutasyon M5 |
+| L8 (Türkçe metin önce UX'e) | §9 "Türkçe metinler" |
+
+### Tur 2 kararları (N1-N7, `docs/qa/F-008-contract-review-1.md`'ye yanıt)
+
+| Karar | Nerede uygulanıyor |
+|---|---|
+| N1 (B1 kapandı — `Write` her koşulda karta düşüyor, ölçüldü) | §8 tamamen yeniden yazıldı |
+| N2 (M1 hook iptal) | §1 "Kapsam DIŞI", §8 son paragraf, §11 mutasyon M10 |
+| N3 (B4+B5 — E2E katmanı + sekme sayacı çitleri) | §10.2 (config + 3 test dosyası), §11 test planı |
+| N4 (B6 — aksiyon durum makinesi UX'e uydurulur) | §4 "Aksiyon durum makinesi" |
+| N5 (B2+B3 — önceki kararlar gövdeye yayılmamıştı) | bu belgenin tamamı (M1 kaldırıldı, M2 §9'da somutlaştı) |
+| N6 (ASSETS regex, `docs/approvals/` sınıflandırması, `mtime`) | §3, §10.2 (`tests/helpers/manifest.ts`) |
+| N7 (mutasyon listesi totolojisiz + L5 ölçümü otomatikleşsin) | §11 |
 
 ---
 
@@ -81,29 +102,56 @@ write-gate-manifest.test.ts` (manifest test deseni).
 **Kaynak ikili:** hem `docs/approvals/` dizin içeriği hem `docs/PROCESS.md` §2'nin kapı tablosu.
 
 **"Her zaman gösterilen" temel katalog** (`BASE_CATALOG`) — 7 giriş: `G0, G1, G2, G3, ASSETS, G5,
-G6`. `G4` **bilerek dışarıda bırakıldı**: PROCESS.md §2'nin kendisi (`docs/PROCESS.md:30`) G4'ü
-`approvals/G4-<n>.ok` biçiminde, yalnızca sonek ile tanımlıyor — bare `G4` diye bir dosya adı
-sözleşmesi projede hiç yok (G4-1.ok tek örnek). Bu yüzden G4 satırı yalnızca **dosya varsa**
-görünür (aşağıya bkz.), sabit bir "G4 bekliyor" satırı **uydurulmaz** — henüz numaralanmamış bir
-kilometre taşı için sahte bir "Bekliyor" göstermek yanıltıcı olurdu.
+G6`. `G4` **bilerek dışarıda bırakıldı**: PROCESS.md §2'nin kendisi (`docs/PROCESS.md` §2, `G4
+Kilometre taşı` satırı) G4'ü `approvals/G4-<n>.ok` biçiminde, yalnızca sonek ile tanımlıyor — bare
+`G4` diye bir dosya adı sözleşmesi projede hiç yok (`G4-1.ok` tek örnek, ✓ VERIFIED
+`docs/approvals/G4-1.ok`). Bu yüzden G4 satırı yalnızca **dosya varsa** görünür, sabit bir
+"G4 bekliyor" satırı **uydurulmaz**.
 
-Etiketler `<proje kökü>/docs/PROCESS.md`'nin **kendi** `## 2. Kapılar` tablosundan türetilir
-(hedef projenin dosyası — Mission Control'ünki değil): tablo satırının ilk hücresi (`G0 Fikir`,
-`G4 Kilometre taşı` gibi) `^(\S+)\s+(.+)$` ile `id`/`label`'a bölünür, `id` `BASE_CATALOG`
-kümesiyle eşleşmeyenler atlanır. PROCESS.md okunamaz/tablo bulunamazsa: `process_doc_readable:
-false` döner, `BASE_CATALOG` küçük bir **gömülü yedek etiket tablosuyla** (7 satır, PROCESS.md'nin
-şu anki metniyle birebir) gösterilir — panel asla çökmez, yalnızca etiketler proje-özel
-olmayabilir.
+**Sıralama** (Ö1 düzeltmesi) — `docs/03-ux.md:192`'ye göre **sabit**: `G0, G1, G2, G3, ASSETS,
+G4-N (varsa, sayısal artan sırayla), G5, G6` (✓ VERIFIED, mockup birebir bu sırayı çiziyor,
+`docs/03-ux.md:198-208`). Birden çok kilometre taşı varsa (`G4-1`, `G4-2`, `G4-10`) **sayısal**
+sıralama kullanılır (dizge sıralaması değil — `G4-10` `G4-2`'den sonra gelir); bu, G4 sonek
+numarasını `parseInt` ile karşılaştıran bir `sort` ile sağlanır. `BASE_CATALOG`'un ASSETS ile G5
+arasındaki boşluğa G4 grubu **dinamik olarak** eklenir.
+
+**Etiket türetme** (Ö1 düzeltmesi — gerçek `PROCESS.md`'ye göre) — `docs/PROCESS.md` §2 bir
+markdown tablosudur; satırlar önce `|` ile hücrelere bölünür (mevcut markdown-tablo ayrıştırma
+yaklaşımıyla aynı — hücre sınırları `|`, ilk/son boş hücreler atılır). İlk hücre (`G0 Fikir`,
+`G4 Kilometre taşı`, ama **`ASSETS`** — tek kelime, boşluk yok, ✓ VERIFIED `docs/PROCESS.md` §2
+ASSETS satırının ilk hücresi tam olarak `ASSETS`) üzerinde `^(\S+)(?:\s+(.+))?$` çalıştırılır: ilk
+grup `id`, ikinci grup (varsa) `label`. Grup 2 yoksa (ASSETS gibi tek-kelimelik hücreler) `label =
+id`. Eski `^(\S+)\s+(.+)$` deseni (tur 1'in hatası) ASSETS'i **atlıyordu** çünkü zorunlu boşluk +
+grup istiyordu; yeni desen geriye dönük uyumlu (diğer yedi satırda davranış değişmiyor) ve ASSETS'i
+de kapsıyor. `id`, `BASE_CATALOG ∪ {"G4"}` kümesiyle eşleşmeyen satırlar (ör. "1. Persona
+Assignment" tablosu — farklı bir bölüm) atlanır.
+
+PROCESS.md okunamaz/tablo bulunamazsa: `process_doc_readable: false` döner, `BASE_CATALOG` küçük
+bir **gömülü yedek etiket tablosuyla** (7 satır — `G0 Fikir, G1 PRD, G2 Mimari, G3 UX, ASSETS
+Higgsfield kredi bütçesi, G5 Güvenlik/kalite, G6 Yayın`, `docs/PROCESS.md` §2'nin **G4 hariç**
+diğer yedi satırıyla birebir) gösterilir — panel asla çökmez, yalnızca etiketler proje-özel
+olmayabilir. (Tur 1'in "7 satır, PROCESS.md'nin tamamıyla birebir" iddiası yanlıştı — gerçek tablo
+8 satır, G4 kasıtlı olarak dışarıda; bu düzeltildi.)
 
 **Dosya taraması** (`docs/approvals/`, yalnızca üst düzey — `archive/` alt dizini **okunmaz**, o
 yalnızca yazma tarafında hedef, listede görünmez):
 - `^(G[0-6](-\d{1,3})?|ASSETS)\.ok$` veya `…\.deny\.md$` ile eşleşen her dosya bir "kapı" olarak
-  ele alınır (id = eşleşen grup). `BASE_CATALOG`'da yoksa (ör. `G4-1`, `G4-2`, bare `G4`, ya da
-  ileride `G5-1` gibi beklenmedik ama **desene uyan** bir sonek) yine de kendi satırı olarak
-  gösterilir — label yoksa id'nin kendisi kullanılır (ör. "G4-1").
-- Bu desene **hiç uymayan** bir dosya (`README.md`, yanlış yazılmış `g2.ok`, `.gitkeep` vb.)
-  sessizce atlanmaz: `unrecognized: string[]` listesine ham dosya adıyla eklenir, ekranda ayrı bir
-  "Tanınmayan dosyalar" notu olarak gösterilir (L1 "sessiz kalma yok").
+  ele alınır (id = eşleşen grup). `BASE_CATALOG ∪ {"G4"}`'te yoksa (ör. `G4-1`, `G4-2`) yine de
+  kendi satırı olarak gösterilir — label yoksa id'nin kendisi kullanılır.
+- Bu desene **hiç uymayan** bir dosya/dizin sessizce atlanmaz, ama **açık bir hariç tutma kümesi**
+  (Ö2 düzeltmesi) tanınmayan listesine düşmeden önce filtrelenir. Gerçek `docs/approvals/` içeriği
+  ölçüldü (✓ VERIFIED, QA raporu + `docs/approvals/README.md` + `.claude/hooks/block-dangerous.cjs:
+  43-46`): `README.md` (belge, kapı değil), `archive/` (dizin, yazma hedefi), `DANGER.ok`/`PUSH.ok`
+  (`block-dangerous.cjs`'in tek kullanımlık, kendi tükettiği onay dosyaları — kapı onayı **değil**),
+  `.gitkeep`, `.`ile başlayan/`.tmp` ile biten her şey (write-gate.ts'in **kendi** atomik yazma
+  geçici dosyası, `write-gate.ts:144-148` ile aynı dizinde açılıyor, ✓ VERIFIED). Bu altı sınıf
+  `unrecognized` listesine **hiç girmez** (kod: sabit bir `EXCLUDED` regex/liste, dizin girdileri
+  `isDirectory()` ile ayrıca elenir). Geri kalan, desene uymayan her şey (`g2.ok` yanlış yazım gibi)
+  `unrecognized: string[]`'e ham dosya adıyla eklenir ve ekranda "Tanınmayan dosyalar" notu olarak
+  gösterilir (L1 "sessiz kalma yok" — ama artık panelin **kendi** geçici/altyapı dosyalarını kendi
+  kendine "tanınmayan" diye raporlamıyor).
+- İzleyicide (`gates-watcher.ts`, §7) **aynı** hariç tutma kümesi uygulanır — aksi hâlde her onay
+  kendi `.tmp` dosyası yüzünden 2-3 kez SSE yayını yapar (Ö2).
 
 **Tek bir kapı için durum:**
 | `.ok` var mı | `.deny.md` var mı | `status` |
@@ -113,13 +161,23 @@ yalnızca yazma tarafında hedef, listede görünmez):
 | hayır | evet | `denied` |
 | evet | evet | `conflict` |
 
-`conflict` durumunda `newer_side: 'ok' \| 'deny'` — **karşılaştırma `fs.statSync(...).mtime`
+`conflict` durumunda `newer_side: 'ok' | 'deny'` — **karşılaştırma `fs.statSync(...).mtimeMs`
 ile** yapılır (dosya İÇERİĞİNDEKİ "Tarih:" satırı **parse edilmez** — hem CEO'nun hem panelin
-yazdığı içerik serbest metin/markdown, düzenli ayrıştırma güvenilir değil; mtime zaten dosya
-sisteminin kendi, ücretsiz, tartışmasız kaynağı). Aynı sebeple tablodaki "Tarih" sütunu da
-`mtime`'dan `YYYY-MM-DD`'ye biçimlenir. Hiçbir dosya **otomatik silinmez/taşınmaz** — `list-gates`
-salt okunur, `fs` yazma/silme çağrısı içermez (bu iddia `tests/no-write-gate-bypass.test.ts`'in
-statik taramasıyla **ve** ayrı bir dinamik "salt-okunur" testiyle çitlenir, §7).
+yazdığı içerik serbest metin/markdown, düzenli ayrıştırma güvenilir değil; `mtime` zaten dosya
+sisteminin kendi, ücretsiz, tartışmasız kaynağı — PRD AC4 zaten "değiştirilme zamanı" diyor, ✓
+VERIFIED `docs/01-prd.md:73`). Aynı sebeple tablodaki "Tarih" sütunu da `mtime`'dan `YYYY-MM-DD`'ye
+biçimlenir. **Kenar durum (N2, tur 1'in notu, korunuyor):** `git clone`/`checkout` sonrası `mtime`
+içerikteki tarihten farklı olabilir; UX metnine bir cümlelik açıklama eklenmesi §9'a taşındı.
+
+**Satır bazlı hata izolasyonu** (B3 sorun 3 düzeltmesi) — tek bir dosyanın `fs.statSync`'i
+başarısız olursa (ör. izin hatası, yarış durumunda dosya silinmiş) yalnızca o kapının satırı gri
+"Durum belirlenemedi" gösterir (metin `docs/03-ux.md:516` ile **birebir**, ✓ VERIFIED); ekranın
+geri kalanı (diğer kapılar, proje seçici) normal çalışmaya devam eder. `list-gates.ts` bu satırı
+`status: undefined`/ayrı bir `error: true` alanıyla işaretler, tüm listeyi patlatmaz.
+
+Hiçbir dosya **otomatik silinmez/taşınmaz** — `list-gates` salt okunur, `fs` yazma/silme çağrısı
+içermez (bu iddia `tests/no-write-gate-bypass.test.ts`'in statik taramasıyla **ve** ayrı bir
+dinamik manifest-diff testiyle çitlenir, §11 mutasyon M4).
 
 ---
 
@@ -132,6 +190,7 @@ export interface GateStatusItem {
   id: string            // "G2", "ASSETS", "G4-1"
   label: string
   status: GateStatus
+  error?: boolean        // stat başarısız oldu, "Durum belirlenemedi" (§3)
   ok_date?: string       // "YYYY-MM-DD", mtime kaynaklı
   deny_date?: string
   newer_side?: 'ok' | 'deny'   // yalnızca status === 'conflict'
@@ -143,7 +202,8 @@ export interface GatesListResponse {
 }
 ```
 Yeni bir `ErrorCode` **gerekmiyor** — mevcut `invalid_body`, `not_found`, `write_denied`,
-`write_failed` yeterli (✓ VERIFIED, `src/shared/types.ts:37-52`).
+`write_failed`, `conflict` yeterli (✓ VERIFIED, `src/shared/types.ts:37-52` — `conflict` zaten
+kanban'ın 409 dalında kullanılan mevcut bir kod, B6 düzeltmesi için yeni kod eklemiyoruz).
 
 ### `GET /api/gates?project_id=<id>`
 - `project_id` yoksa/boşsa → 400 `invalid_body` (Kanban'ın aksine Kapılar **her zaman tek
@@ -151,6 +211,43 @@ Yeni bir `ErrorCode` **gerekmiyor** — mevcut `invalid_body`, `not_found`, `wri
 - Proje kayıtlı değilse → 404 `not_found`.
 - Aksi halde 200, `ApiResponse<GatesListResponse>`.
 - `x-mc-write` **gerekmiyor** (GET, dağıtıcı zaten yalnızca non-GET'i zorluyor).
+
+### Aksiyon durum makinesi (B6 düzeltmesi — `docs/03-ux.md:196-206`'dan birebir)
+
+`GateRow.tsx` dört durumun her birinde **farklı** butonlar çizer; sunucu da aynı kuralı çitler
+(salt istemci tarafı kontrolü yeterli değil, aksi hâlde `curl` ile UI atlanabilir):
+
+| `status` | Görünen aksiyon | Sunucu izin veriyor mu |
+|---|---|---|
+| `pending` | `[Onayla]` `[Reddet]` | approve ve deny ikisi de |
+| `approved` | **`(kilitli)`, hiçbir buton yok** | `deny` çağrılırsa → **409 `conflict`, dosya yazılmaz** (yeni kural, aşağıda); `approve` (yeniden onay) UI'dan erişilemez ama API düzeyinde engellenmiyor (bkz. gerekçe) |
+| `denied` | `[Onayla]` (yalnızca) | approve (AC9 arşiv→onay akışı) |
+| `conflict` | `[Detay]` (salt okunur, genişleyen alt satır) | approve/deny UI'dan erişilemez; API düzeyinde de **hiçbir yeni davranış eklenmiyor** — bu durumdan çıkışın tek yolu manuel dosya müdahalesi, UX kapsamı bunu tanımlamıyor (§1 "Kapsam DIŞI") |
+
+**Neden `deny` onaylı bir kapıda 409 döner:** `docs/03-ux.md:200-202`'nin mockup'ı onaylı satırda
+`Reddet` butonunu **hiç göstermiyor** (yalnızca `(kilitli)`), `ADR-001` karar 7 ve PRD AC9
+("çelişkili durum kendiliğinden oluşmaz") bunu destekliyor — panelin kendi eylemiyle bir `conflict`
+üretmesi istenmiyor. `handleDenyGate` bu yüzden yazmadan önce **taze** bir `.ok` kontrolü yapar;
+varsa `success:false, error:{code:'conflict', message:'Bu kapı zaten onaylı, reddedilemez.'},
+data:<taze GateStatusItem>` döner (kanban'ın `conflict` dalıyla aynı desen).
+
+**Neden `approve` (yeniden onay) API düzeyinde engellenmiyor:** `ADR-005` madde 9 (✓ VERIFIED,
+tam metin) — "Panel **hiçbir zaman** bir onay dosyasını kendiliğinden silmez veya üzerine
+yazmaz — **mevcut bir `.ok` üzerine yeniden onay yazmak açık bir kullanıcı eylemidir** ve yine
+doğrulama adımından geçer." Bu, `deny`'nin aksine, ADR tarafından **açıkça meşru** sayılmış bir
+eylem. UI onaylı satırda `Onayla` butonunu göstermediği için bu yol **bugün** panelden hiç
+tetiklenemez (kilitli satırda tıklanacak bir şey yok) — çelişki değil, kullanılmayan bir kapasite:
+mekanizma (write-gate.ts'in `renameSync`'i zaten üzerine yazabiliyor) ADR'nin izin verdiği gibi
+durur, ama F-008 bunu UI'dan **açmıyor**. İleride bir "yeniden onayla" özelliği istenirse bu, ayrı
+bir karar/feature olur.
+
+**`[Detay]` görünümü (B6 sorun 2 düzeltmesi, önceden hiç tanımlı değildi):** ayrı bir modal
+**değil** — satıra tıklanınca satırın altında genişleyen, salt okunur bir alt satır: proje adı,
+kapı adı, `.ok` tarihi, `.deny.md` tarihi, hangisinin daha yeni olduğu vurgulu (`newer_side`), ve
+sabit not: *"Bu durum panelden düzeltilemez; dosyaları `docs/approvals/` altında elle inceleyin."*
+(metin §9'da). Ekstra bir bileşen/route gerekmiyor — `GateRow.tsx` kendi state'inde
+`expanded: boolean` tutar (Karpathy §2 — ayrı modal bileşeni bu kadar küçük bir içerik için
+gereksiz soyutlama olurdu).
 
 ### `POST /api/gates/:project_id/:gate/approve`
 Gövde: `{ confirmed: true, decision: string }`.
@@ -167,10 +264,11 @@ Gövde: `{ confirmed: true, decision: string }`.
   1. Disk üzerinde **taze** `.deny.md` var mı kontrol edilir (istemcinin önbelleklediği duruma
      güvenilmez).
   2. Varsa `archiveDenial(project.path, gate)` çağrılır (senkron, §5). Başarısızsa (`ok:false`) →
-     500 `write_failed`, **`writeGateApproval` hiç çağrılmaz** (yarı-başarıyı önlemek için).
+     500 `write_failed`, **`writeGateApproval` hiç çağrılmaz** (yarı-başarıyı önlemek için, AC9
+     sırası — bu sıra §11 mutasyon M6 ile çitlenir).
   3. `writeGateApproval(project.path, gate, buildApprovalBody(...))` çağrılır (asenkron).
   4. Başarılı → taze `GateStatusItem` yeniden hesaplanır (dosyaları tekrar `stat`leyerek), 200.
-  5. Başarısız (adım 2 zaten arşivlemişse) → **yarı-başarı** (bkz. §5), 500 `write_failed`,
+  5. Başarısız (adım 2 zaten arşivlemişse) → **yarı-başarı** (bkz. §6), 500 `write_failed`,
      gövdede `data: <taze GateStatusItem>` de döner (kanban'ın `conflict` dalıyla aynı desen) ki
      istemci gerçek durumu (muhtemelen `pending`) hemen görsün.
   6. Beklenmeyen `throw` → dış `catch`, 500 `write_failed`, ham hata istemciye sızmaz.
@@ -178,32 +276,28 @@ Gövde: `{ confirmed: true, decision: string }`.
 ### `POST /api/gates/:project_id/:gate/deny`
 Gövde: `{ reason: string }`. Ayrı bir doğrulama adımı **yok** (UX akış e, madde 1-4).
 - `reason` boş/yalnızca boşluk veya >4000 karakter → 400 `invalid_body`, dosya yazılmaz.
-- Zaten bir `.ok` varsa **engellenmez** — ADR-005 madde 9 ("panel bir onay dosyasını kendiliğinden
-  silmez/üzerine yazmaz") ve AC4 (çelişkili durum) birlikte okunduğunda, red işlemi `.ok`'a hiç
-  dokunmadan `.deny.md` yazar; sonuç bilerek bir `conflict` durumudur, bug değildir — bu, panelin
-  zaten göstermesi gereken bir senaryo (§3 tablosu).
-- `writeGateDenial(project.path, gate, buildDenialBody(...))` — başarı/başarısızlık kodları
-  approve ile aynı desende.
+- **Taze bir `.ok` varsa** → 409 `conflict`, dosya yazılmaz (yukarıdaki "Aksiyon durum makinesi").
+  Bu, tur 1'in "engellenmez, bilerek conflict üretir" kararının **tersidir** — B6 düzeltmesi,
+  UX+ADR-001+PRD AC9 üçlüsü kazandı (N4).
+- Aksi halde `writeGateDenial(project.path, gate, buildDenialBody(...))` — başarı/başarısızlık
+  kodları approve ile aynı desende.
 
 ---
 
 ## 5. `.ok`/`.deny.md` içerik formatı (madde 3) — ve L4'ün cevabı
 
+*(Bu bölüm tur 1'de onaylandı, değişmedi.)*
+
 **L4 — `archiveDenial` senkron bekleme içeriyor mu?** **Hayır, hiç içermiyor.** ✓ VERIFIED
 (`src/server/write-gate.ts:342-372`): imza `export function archiveDenial(...): WriteResult`
 — `Promise` **değil**. Gövde yalnızca `fs.existsSync`, `fs.mkdirSync`, `fs.renameSync` çağırıyor;
-`atomicWrite`/`delay()`/`Atomics.wait` **hiçbiri kullanılmıyor** (bunlar yalnızca `atomicWrite`'ın
-kendisinde, `writeGateApproval`/`writeGateDenial`/`setFeatureStatus`'un dolaylı olarak kullandığı
-yol). F-007 sözleşmesinin kendi notu da bunu doğruluyor (§1: "archiveDenial'ın async'e çevrilmesi
-— kendi retry döngüsü yok, kanban onu hiç çağırmıyor"). Sonuç: bu fonksiyonu bir HTTP handler'a
-bağlamak **bloklayıcı değil** — senkron `fs` çağrıları zaten kanban'ın `rereadCard`'ında da
-(§4, madde "Başarılı" adım 4) aynı async IIFE içinde kullanılan, precedent'i olan bir desen.
-G4-1.ok'un devrettiği taahhüt burada **kapanır**.
+`atomicWrite`/`delay()`/`Atomics.wait` **hiçbiri kullanılmıyor**. Sonuç: bu fonksiyonu bir HTTP
+handler'a bağlamak **bloklayıcı değil** — senkron `fs` çağrıları zaten kanban'ın `rereadCard`'ında
+da aynı async IIFE içinde kullanılan, precedent'i olan bir desen. G4-1.ok'un devrettiği taahhüt
+burada **kapanır**.
 
 **`.ok` biçimi** — `docs/PROCESS.md` §2 ("tarih + onaylanan özet + kullanıcının kararı") ile
-birebir, mevcut `.ok` örnekleriyle aynı düz-metin üslup (bkz. `docs/approvals/G2.ok`). Panel
-projenin PRD/mimari içeriğini bilmediği için "onaylanan özet" **mekanik** üretilir — bu dürüst bir
-tasarım kararıdır, CEO'nun kendi yazdığı zengin özetlerle karıştırılmamalı:
+birebir, mevcut `.ok` örnekleriyle aynı düz-metin üslup (bkz. `docs/approvals/G2.ok`):
 
 ```
 G2 — Mimari kapısı ONAYLANDI
@@ -236,33 +330,41 @@ uzantısını zaten bekliyor, markdown üslubu seçildi):
 ```
 
 Saf fonksiyon: `buildDenialBody(gateId, label, projectLabel, isoDate, reason): string` (aynı
-dosya). İkisi de **YAML round-trip içermez** — `setFeatureStatus`'un aksine tüm dosya gövdesi
-yazıldığı için `safeYamlValue` tarzı bir kaçış sorunu **yok** (bu dosyalar frontmatter değil, kimse
-onları makine olarak geri ayrıştırmıyor — §3'ün "durum" kararı zaten mtime'a dayanıyor, içerik
-metnine değil).
+dosya). İkisi de **YAML round-trip içermez** — bu dosyalar frontmatter değil, kimse onları makine
+olarak geri ayrıştırmıyor (§3'ün "durum" kararı `mtime`'a dayanıyor, içerik metnine değil).
 
 ---
 
 ## 6. Arşivleme akışı + hata semantiği (madde 4-5)
 
 **Sıra (L2/AC9):** deny varsa önce `archiveDenial`, SONRA `writeGateApproval`. Asla ters sıra
-(onay yazılıp sonra arşivleme başarısız olursa iki dosya kalıcı olarak çelişir, kullanıcı
-"onayladım" sanır ama panel hâlâ `conflict` gösterebilir — kafa karıştırıcı). Bu yüzden sıra
-**arşiv → onay**, adım 2 başarısızsa adım 3 hiç denenmez (§4).
+(onay yazılıp sonra arşivleme başarısız olursa iki dosya kalıcı olarak çelişir). Bu yüzden sıra
+**arşiv → onay**, adım 2 başarısızsa adım 3 hiç denenmez (§4). Bu sıranın ters çevrilmesi **ayrı
+bir mutasyonla** çitlenir (§11 mutasyon M6) — tur 1'de bu sıra yalnızca anlatılıyordu, ölçülmüyordu.
 
 **Yarı-başarı (F-007'nin dersi — dürüstçe raporlanır, sessizce "başarılı" denmez):** arşivleme
 başarılı, `writeGateApproval` başarısız olursa disk durumu şudur: `.deny.md` artık
-`docs/approvals/archive/`'de, `.ok` **yok**. Yani kapı şu an **`pending`** — ne onaylı ne reddedilmiş,
-kullanıcının önceki reddi "kaybolmuş" gibi görünür (aslında arşivde duruyor, silinmedi). Yanıt
-`success:false, error:{code:'write_failed', message:'Red kaydı arşivlendi ama onay yazılamadı;
-kapı şu an "Bekliyor" durumunda. Tekrar deneyin.'}, data:<taze GateStatusItem, status:'pending'>`
-döner. İstemci bu `data`'yı **gerçek** kabul edip UI'ı buna göre çizer (rollback/optimistic
-tahmin **yapmaz** — kanban'ın `conflict` dalıyla aynı ilke).
+`docs/approvals/archive/`'de, `.ok` **yok**. Kapı şu an **`pending`**. Yanıt gövdesi (Ö9
+düzeltmesi — **gerçek arşiv yolu** metne gömülür, `archiveDenial`'ın döndürdüğü
+`{ok:true, path: archiveResolved.targetPath}` değeri kullanılır, ✓ VERIFIED
+`write-gate.ts:371`):
+
+```
+success:false
+error: { code:'write_failed', message:'Red kaydı docs/approvals/archive/G2-2026-09-09-14-32.deny.md
+  altına taşındı ama onay yazılamadı; kapı şu an "Bekliyor" durumunda. Tekrar deneyin.' }
+data: <taze GateStatusItem, status:'pending'>
+```
+
+**Yeniden deneme güvenli/idempotenttir:** ikinci denemede adım 1'in taze kontrolü artık
+`.deny.md` bulamaz (arşivlendi), adım 2 (`archiveDenial`) hedef yoksa `{ok:true, path:''}`
+no-op döner (✓ VERIFIED `write-gate.ts:351-353`) — bu, kullanıcının "Tekrar deneyin" butonuna
+güvenle basabileceği anlamına gelir, ikinci arşivleme denemesi hataya düşmez.
 
 **Genel hata semantiği (AC5):**
 - Yazma hatasında buton durumu geri alınır: onay modalı **kapanmaz**, hata satır içi gösterilir,
-  "Onayı Yaz" tekrar tıklanabilir hale döner (kullanıcının yazdığı karar metni **kaybolmaz** —
-  yeniden yazdırmak kötü UX olurdu). Red formunda aynı: gerekçe metni korunur, buton tekrar aktif.
+  "Onayı Yaz" tekrar tıklanabilir hale döner (kullanıcının yazdığı karar metni **kaybolmaz**).
+  Red formunda aynı: gerekçe metni korunur, buton tekrar aktif.
 - Asenkron handler'ın **kendisi** kendi `try/catch`'ini taşır (dış `withDispatchErrorBoundary`
   yalnızca senkron dağıtım hatalarını yakalar, `src/server/index.ts:161-188` — F-007'nin
   `handlePatchFeatureStatus`'unun aynı gerekçeyle sardığı IIFE deseni burada da birebir
@@ -274,10 +376,18 @@ tahmin **yapmaz** — kanban'ın `conflict` dalıyla aynı ilke).
 
 ## 7. Canlı güncelleme (madde 6)
 
-Mevcut SSE hub'ı (`createSseHub`, tek bağlantı — ADR-004 madde 1) **yeniden kullanılır**, yeni bir
-mekanizma icat edilmez:
+Mevcut SSE hub'ı (`createSseHub`, tek bağlantı — ADR-004 madde 1) **yeniden kullanılır**:
 - Panelin **kendi** yazması (approve/deny sonrası) → handler başarı yolunda
-  `hub.broadcast('gates', { project_id })` çağırır (tıpkı `features`/`projects` kanalları gibi).
+  `hub.broadcast('gates', { project_id })` çağırır. **Payload yalnızca `{project_id}` taşır** —
+  bu, ADR-004 madde 5'in metniyle ("her mesaj kartların tam listesini taşır") birebir uyuşmuyor,
+  ama F-008'in **icat ettiği** bir sapma değil: `features` kanalı bugün zaten aynı şeyi yapıyor
+  (✓ VERIFIED `src/features/projects/server/service.ts:99` — `hub.broadcast('features',
+  {project_id: record.id})`) ve bu, `useEventStream.ts:88-93`'te **zaten dokümante edilmiş**
+  bilinçli bir sapma ("mimari §6.1'den bilinçli sapma… kartların kendisi `GET` ile ayrıca
+  çekilir"). `gates` kanalı `onFeatures` ile **birebir aynı** deseni tekrarlıyor — yeni bir sapma
+  değil, mevcut bir emsalin tekrarı. ADR-004 madde 5'in metninin kendisi güncellenmemiş kalıyor
+  (F-007'den beri var olan, F-008'e ait olmayan bir borç); bu, F-008'in "bitti" tanımının parçası
+  değil.
 - **Dışarıdan** değişiklik (CEO'nun kendi Bash/Write'ı, elle düzenleme) → `docs/approvals/`
   bugün **hiç izlenmiyor** (✓ VERIFIED, `src/features/projects/server/service.ts:93-103` yalnızca
   `docs/features`'ı izliyor). Bunun için `src/features/gates/server/gates-watcher.ts` adında
@@ -285,197 +395,297 @@ mekanizma icat edilmez:
   dokunulmuyor (dosya sahipliği sınırı) ama aynı `chokidar` kurulumunu (depth:0, ignoreInitial,
   `awaitWriteFinish`, 150ms debounce — `createDebouncer` zaten paylaşılan bir yardımcı,
   `src/server/watch/debounce.ts`, o da değişmiyor, yalnızca import edilir) tekrarlar. **Fark:**
-  `project-watcher.ts` yalnızca `.md` uzantılı değişiklikleri debounce'a sokuyor (kanban için
-  doğru, ama `docs/approvals/*.ok` `.md` **değil** — bu filtre gates için yanlış olurdu); gates
-  izleyicisi bu yüzden **filtresiz** — `docs/approvals/` içindeki (yalnızca üst düzey, `depth:0`)
-  HERHANGİ bir değişiklik tetikler, çünkü tanınmayan dosyalar bile listeye (`unrecognized`)
-  girmeli. ~20 satırlık bilinçli bir kopya; iki dosyayı ortak bir parametreli yardımcıya
-  soyutlamak (tek kullanıcı + tek farkı bir filtre olan iki çağıran) Karpathy §2 ihlali olurdu ve
-  `project-watcher.ts`'e dokunmak dosya sahipliğini aşardı — bu genelleme kararı o dosyanın
-  sahibine bırakılıyor.
+  `project-watcher.ts` yalnızca `.md` uzantılı değişiklikleri debounce'a sokuyor; gates izleyicisi
+  bu yüzden **filtresiz** ama §3'teki hariç tutma kümesini (Ö2) uygular — `docs/approvals/`
+  içindeki (yalnızca üst düzey, `depth:0`) tanınan bir değişiklik veya tanınmayan-ama-hariç-
+  tutulmayan bir dosya değişikliği tetikler; kendi `.tmp` dosyaları ve `README.md`/`archive/`
+  değişiklikleri tetiklemez.
+
+**İzleyici yaşam döngüsü (Ö3 düzeltmesi — önceden tanımsızdı):** `startWatchingIfPossible`
+deseninin `docs/approvals` için bir eşleniği `service.ts`'e eklenir (✓ VERIFIED, gerçek desen
+`src/features/projects/server/service.ts:93-108`, `startWatchingIfPossible`/açılış döngüsü/
+`watchers: Map`). `service.ts` §10.2'ye (mekanik değişiklik listesi) eklenir — dosya sahipliği
+ihlali değil, F-005/F-007'nin de aynı dosyaya dokunma emsali (§10.2 girişi):
+- Yeni bir `gatesWatchers: Map<string, GatesWatcher>` (mevcut `watchers` map'inden **ayrı** —
+  farklı bir kaynak dizinini izliyor, karıştırmamak için ayrı isim).
+- `startWatchingGatesIfPossible(record)`: `docs/approvals` dizini yoksa hiç başlatmaz (yeni proje
+  senaryosu — dizin sonradan oluşursa şu an için yeniden taranmaz, bu F-008'in bilinen bir sınırı,
+  §12 açık soru değil çünkü kullanıcı etkisi düşük: proje eklenip `docs/approvals` sonradan
+  oluşturulması nadir bir sıra).
+- Proje silinince (`removeProject`) `gatesWatchers.get(id)?.stop()` çağrılır, tıpkı mevcut
+  `watchers` için yapıldığı gibi.
+- `getActiveWatcherCount()` her iki map'in toplamını döner (`/api/health`'in `watchers` alanı,
+  ✓ VERIFIED `src/server/index.ts:373`) — sağlık uç noktası tek bir toplam sayı bekliyor, ayrım
+  gerekmiyor.
+
 - `src/web/lib/useEventStream.ts`'e `onGates?: (signal: {project_id:string}) => void` eklenir
   (`onFeatures` ile **birebir aynı desen**, ✓ VERIFIED `useEventStream.ts:94`).
 
 ---
 
-## 8. L5 — Barındırılan CEO oturumu kendi kapılarını onaylayabilir mi? (en kritik soru)
+## 8. L5 — Barındırılan CEO oturumu kendi kapılarını onaylayabilir mi? (tamamen yeniden yazıldı)
 
-**Kısa cevap: teorik olarak EVET, HTTP yolu açık; ama pratikte HER Bash çağrısı kullanıcının
-tek tek onayladığı bir izin kartına düşüyor — otomatik/sessiz self-approval YOK. Yapısal olarak
-tam kapatma bu sözleşmenin/dosya sahipliğinin dışında; mekanizma önerilir, [T] işaretlenir.**
+**Tur 1'in hatası (B1):** bu soruyu yalnızca "hosted oturum bir Bash komutuyla `/api/gates`'e HTTP
+isteği atabilir mi" sorusuna indirgemişti ve "otomatik/sessiz self-approval YOK" cümlesini bu dar
+kapsamda ✓ VERIFIED işaretlemişti. QA, daha kısa bir yolun (`ceo.md`'nin `Write` aracıyla
+`docs/approvals/G5.ok`'u **doğrudan** yazmak) teorik olarak izin kartını atlayabileceğini gösteren
+statik bir zincir buldu (`ceo.md:7` `Write` var → `gate-check.cjs`'in `free` listesi `docs/`'u
+muaf tutuyor → `.claude/settings.json`'ın `Write(docs/**)` allow kuralı → `settingSources:
+['project']` bunu yüklüyor → `permissions.ask` yalnızca `['Bash']`).
 
-**Yol neden açık — ✓ VERIFIED:**
-1. `ceo.md` `tools:` alanında `WebFetch`/genel bir `fetch` aracı **yok** — ağa çıkabilecek tek araç
-   `Bash` (`.claude/agents/ceo.md:7`). Yani hosted oturumun panele istek atmasının tek yolu bir
-   kabuk komutu (curl/node) çalıştırmak.
-2. `x-mc-write` başlığının değeri **sır değil** — `src/shared/types.ts:96`'da düz metin sabit
-   (`'1'`), hosted oturum kendi `Read` aracıyla bunu okuyabilir.
-3. `isAllowedOrigin` (`src/server/index.ts:133-144`) `Origin` başlığı **yoksa** `true` döner —
-   `curl` varsayılan olarak `Origin` göndermez, geçer. `isAllowedHost` `127.0.0.1:<port>` için zaten
-   `true`.
-4. `.claude/hooks/block-dangerous.cjs` (✓ VERIFIED, tam dosya okundu) yalnızca `git push`,
-   yayın komutları (`vercel`, `npm publish` vb.) ve klasik yıkıcı komutları (`rm -rf`, `git reset
-   --hard` vb.) regex'le yakalıyor — bir `curl http://127.0.0.1:7333/api/gates/...` deseni
-   **hiçbirine uymaz**, engellenmez. `gate-check.cjs` yalnızca `Edit|Write`'ı, yalnızca G2 onayı
-   yokken kod dizinine yazmayı engelliyor — bu API çağrısıyla ilgisiz.
-5. İki adımlı onay (L2) yalnızca **UI sözleşmesi**; API'nin kendisi `confirmed:true` ile TEK bir
-   istekte tatmin olur (§4) — bir Bash komutu bu alanı zaten `true` göndererek "iki adımı" tek
-   seferde atlatabilir.
+**N1 — bu zincir canlı ölçümle çürütüldü.** `docs/qa/F-008-write-izin-olcumu.md` (tam metin, bu
+turda okundu): gerçek `@anthropic-ai/claude-agent-sdk` `query()` çağrısı, sandbox çalışma dizini,
+proje `.claude/settings.json` ile birebir aynı `Write(docs/**)` allow kuralı, iki yapılandırma
+(`allowManagedPermissionRulesOnly: true` VE `false`). **İkisinde de** `canUseTool` callback'i
+`Write` çağrısında tetiklendi, kart çıktı, reddedildiğinde dosya oluşmadı (`WRITE_CARD_FIRED:
+true`, sandbox `docs/` klasörü boş kaldı — ✓ DOĞRULANDI, canlı ölçüm, statik çıkarım değil). Yani
+tur 1'in statik zinciri **mantıken tutarlıydı ama SDK'nın gerçek çalışma zamanı davranışı onu
+geçersiz kılıyor**: proje allow kuralı `Write(docs/**)`'a tam uysa da, mutasyon aracı olan `Write`
+her koşulda karta düşüyor.
 
-**Yol neden tam olarak sessiz/otomatik değil — ✓ VERIFIED:**
-`src/features/chat/server/session.ts:498-501` — `buildOptions` her oturumda
-`managedSettings: { allowManagedPermissionRulesOnly: true, permissions: { ask: ['Bash'] } }`
-ayarlıyor. Koddaki yorum (satır 484-497), F-012 QA turunda **canlı ölçülmüş** bir bulguya
-dayanıyor: bu ayar, `.claude/settings.json`'ın kendi ince taneli `Bash(node *)` gibi izin
-kalıplarından **bağımsız olarak**, hosted oturumda **HER** `Bash` çağrısını `canUseTool`'a
-düşürüyor — yani kullanıcı, sohbet ekranında beliren "🔒 İzin isteği" kartına (docs/03-ux.md §7
-madde 3) tıklamadan hiçbir Bash komutu çalışmıyor. Otomatik onay/"hepsine izin ver" kısayolu SDK
-tarafında da yok (ADR-014 K3, ✓ VERIFIED — bu iddia F-012 kapsamında zaten canlı doğrulanmış,
-tekrar test edilmiyor).
+Bu ölçüm, `.claude/agents/ceo.md:7`'de `Write`/`Edit` araçlarının varlığını (Bash'in ağa çıkabilen
+tek araç olmadığını) **doğruluyor**, ama bunun bir güvenlik açığı olmadığını da **aynı ölçümle**
+kapatıyor — SDK, allow listesinden bağımsız olarak `Write`'ı zaten karta düşürüyor. `ADR-014`'e bu
+turda eklenmiş "Ek — `Write` de izin kartına uğruyor" bölümü (✓ VERIFIED, tarih 2026-09-09) bu
+sonucu ve tur 1'in zincirinin nerede koptuğunu zaten kayda geçirmiş durumda; bu sözleşme sadece
+o kaydı referans alıyor, tekrar ölçmüyor.
 
-**Gerçek artık risk (kalan boşluk):** izin kartı yalnızca `buildInputPreview` (session.ts:137-142)
-ile üretilen, **500 karaktere kırpılmış, tek satıra indirgenmiş** bir komut önizlemesi gösteriyor
-— "bu bir kapı onayı" demiyor, sadece ham komut metni. Kullanıcı, göze çarpmayan/uzun bir komutun
-içine gömülü bir `curl … /api/gates/G2/approve …` çağrısını fark etmeden onaylayabilir. Yani koruma
-"otomatik onay yok" seviyesinde var, ama Kapılar ekranının **kendi özel** iki-adım modalının
-(dosya yolu + özet + kullanıcının kendi karar metni) sağladığı **okunabilirlik** seviyesinde değil.
+**Sonuç — iki bilinen yol, ikisi de karta düşüyor:**
+1. `Write`/`Edit` ile doğrudan `docs/approvals/G5.ok` yazımı → **her koşulda** `canUseTool`'a
+   düşer, kullanıcı reddedebilir (yukarıdaki ölçüm).
+2. `Bash` + `curl`/HTTP ile `/api/gates/.../approve` çağrısı → `session.ts:498-501`'in
+   `managedSettings.permissions.ask:['Bash']` ayarı zaten her `Bash` çağrısını karta düşürüyor
+   (F-012'de canlı ölçülmüş, ✓ VERIFIED, `ADR-014` K3 — bu turda yeniden ölçülmedi, önceden
+   doğrulanmış bir bulgu).
 
-**Önerilen mekanizma (mühendislik olarak makul, ama kod turunun İLK işi olarak, ayrı onayla —
-[T] TAHMİN, bu sözleşmede uygulanmıyor):** `.claude/hooks/block-dangerous.cjs`'e (ya da yeni bir
-hook dosyasına) `docs/approvals` yolunu VEYA `/api/gates` yolunu hedefleyen bir Bash komutunu
-**koşulsuz** engelleyen bir kural eklemek — mevcut "regex eşleşirse `docs/approvals/DANGER.ok`
-olmadan engelle" desenin bir varyantı, ama burada **hiçbir override yok** (hosted oturumun bu API'yi
-çağırmasının hiçbir meşru senaryosu yok — kapı onayı yalnızca insan etkileşiminden gelmeli, CEO
-kararı). Bu, permission-kartının okunabilirlik zayıflığına güvenmek yerine, riski **hook katmanında**
-(izin isteği görüntülenmeden ÖNCE) kapatır — ADR-005'in F-012 ekinin "sınır artık *kim izin
-veriyor*" ilkesiyle tutarlı, tıpkı hook'ların zaten diğer üç korumayı (yıkıcı komut, push, kapı
-kilidi) aynı katmanda tuttuğu gibi.
+**Dürüst sınır (N1'in istediği cümle):** bu, kabuk erişimli yerel bir agent'a karşı savunmanın
+**mutlak** olduğu anlamına gelmez — kullanıcı kartı okumadan/dikkatsizce onaylarsa (özellikle
+`buildInputPreview`'in 500 karaktere kırpılmış, tek satıra indirgenmiş önizlemesinde gömülü bir
+komutu fark etmezse, `session.ts:137-142`) yazma yine de gerçekleşir. **Anlamı, kapı dosyasını
+yazan HER yolun kullanıcının gördüğü izin kartından geçtiğidir** — otomatik/sessiz bir bypass
+mevcut yapılandırmada yok. Asıl koruma katmanı budur; `.claude/hooks/**` katmanı (gate-check.cjs,
+block-dangerous.cjs) bu soruyla ilgisizdir (kapı onayı dosyalarını değil, kod dizinini ve
+yıkıcı/yayın komutlarını korur — bu terminoloji karışıklığı tur 1'in B1 bulgusunun kaynağıydı ve
+artık `ADR-014` ekinde düzeltilmiş durumda).
 
-**Neden bu sözleşmede uygulanmıyor:** `.claude/hooks/**` `src/features/gates/**` dosya
-sahipliğinin **dışında** ve tüm agent oturumlarını (yalnızca gates'i değil) etkileyen paylaşılan
-bir altyapı — feature notunun dosya sahipliği maddesi bunu kapsamıyor. Bu, CEO/architect'in ayrı
-bir karar olarak (muhtemelen ADR-005/ADR-014'e küçük bir ek olarak) onaylaması gereken bir iş;
-F-008'in kod turu bunu **paralel bir görev** olarak (gates dizini dışında, ayrı commit'te) yapabilir
-ama bu sözleşme onu F-008'in "bitti" tanımının **parçası** saymıyor — aksi halde dosya sahipliği
-ihlali olur. **Açık soru §10'a taşındı.**
+**N2 — ek hook önerisi (M1) iptal edildi.** Tur 1 `.claude/hooks/block-dangerous.cjs`'e `/api/gates`
+yolunu hedefleyen koşulsuz bir Bash-engelleme kuralı önermişti. Ölçüm korumanın zaten (izin kartı
+katmanında) var olduğunu gösterdiği için bu ek katman **gereksiz karmaşıklık** (Karpathy §2) —
+özellikle bu depoda koşulsuz metin eşleşmesinin daha önce iki kez masum komutları/dosya yazımlarını
+engellediği göz önüne alınırsa (`CLAUDE.md` "Öğrenilen kurallar"). **Bu sözleşme hiçbir hook
+dosyasına dokunmuyor** (§1 "Kapsam DIŞI").
+
+**Kod turunun işi (yer tutucu değil, §11 mutasyon M10):** bu ölçümü tekrarlanabilir bir regresyon
+testine çevirmek — `tests/integration/chat-hooks-live.test.ts`'in `describe.skipIf` desenini
+(kota harcamayan varsayılan `verify` dışı, yalnızca `MC_GATES_LIVE_TESTS=1` ile koşan) taklit eden
+yeni bir dosya, `tests/integration/gates-write-permission-live.test.ts`.
 
 ---
 
-## 9. Dokunacağım dosyalar
+## 9. Türkçe metinler (L8/M2 — kod turundan ÖNCE `docs/03-ux.md`'ye eklenecek, birebir)
 
-### 9.1 Yeni (`src/features/gates/**`, `tests/features/gates/**`, `tests/e2e/gates.spec.ts`, `tests/integration/gates-api.test.ts`)
+CEO kararı M2 (aynen geçerli): kullanıcıya görünen tüm yeni Türkçe metinler kod turundan **önce**
+`docs/03-ux.md`'ye eklenir; kod ile belge birebir aynı olur. Aşağıdaki metinlerin **çoğu zaten**
+`docs/03-ux.md`'de var (kaynak olarak alınır, yeniden icat edilmez); yalnızca yıldızlı olanlar
+**yeni** ve kod turundan önce eklenmesi gerekiyor.
+
+| Metin | Kaynak |
+|---|---|
+| "Önce bir proje seçin." (boş durum) | ✓ zaten var, `docs/03-ux.md:516` |
+| "Kapı durumları okunamadı. [Tekrar dene]" (hata) | ✓ zaten var, `docs/03-ux.md:516` |
+| "Durum belirlenemedi" (tek satır hatası, gri) | ✓ zaten var, `docs/03-ux.md:516` |
+| `docs/approvals/G2.ok yazıldı` (onay toast) | ✓ zaten var, `docs/03-ux.md:459` |
+| `docs/approvals/G2.deny.md yazıldı` (red toast) | ✓ zaten var, `docs/03-ux.md:466` |
+| "(kilitli)" (onaylı satır aksiyon sütunu) | ✓ zaten var, `docs/03-ux.md:202` mockup |
+| **"Tanınmayan dosyalar: {liste}"** | ★ yeni — Ö2 |
+| **"PROCESS.md okunamadı, varsayılan adlar gösteriliyor."** | ★ yeni — Ö1 |
+| **"Red kaydı {arşiv yolu} altına taşındı ama onay yazılamadı; kapı şu an \"Bekliyor\" durumunda. Tekrar deneyin."** (yarı-başarı) | ★ yeni — Ö9, §6 |
+| **"Bu kapı zaten onaylı, reddedilemez."** (409 conflict, deny) | ★ yeni — B6/N4, §4 |
+| **"Bu durum panelden düzeltilemez; dosyaları `docs/approvals/` altında elle inceleyin."** ([Detay] alt satırı) | ★ yeni — B6 sorun 2, §4 |
+| **"Tarih, dosyanın son değiştirilme zamanıdır; klonlama/checkout sonrası içerikteki tarihten farklı olabilir."** (kenar durum notu, tooltip/açıklama) | ★ yeni — N2 (tur 1'in notu) |
+| Genel yazma hatası (approve/deny 500) | ✓ zaten var desende — mevcut ekranların "Liste kaydedilemedi, tekrar deneyin." üslubuyla tutarlı, Kapılar'a özel metin: **"Kaydedilemedi, tekrar deneyin."** ★ yeni ama mevcut üslubun doğrudan tekrarı |
+
+Kod turu başlamadan önce bu ★ işaretli altı metin `docs/03-ux.md`'nin "Durum tasarımı"/"Türkçe
+metin sözlüğü" bölümlerine eklenmelidir (bu sözleşmenin dosya sahipliği dışı — CEO/architect ya da
+kod turunu üstlenen developer bu adımı **ilk iş** olarak yapar, sonra koda geçer).
+
+**Toast bileşeni kararı:** bugün toast yalnızca `src/features/kanban/web/KanbanScreen.tsx`
+içinde **yerel** olarak var (paylaşılan bir bileşen değil, ✓ VERIFIED `KanbanScreen.tsx:92,
+382-397`). Kanban dosyalarına dokunmak dosya sahipliği sınırını aşar; bu yüzden gates kendi **küçük,
+yerel** toast state'ini taşır (`GatesScreen.tsx` içinde `useState<string|null>` + 3 saniyelik
+otomatik kapanma — ayrı bir `Toast.tsx` bileşeni bile gerekmez, tek kullanıcı için Karpathy §2).
+Paylaşılan bir toast sistemine geçiş **ayrı bir refactor kararı**, F-008'in kapsamında değil.
+
+**Buton devre-dışı kuralları (Ö11):** "Onayı Yaz →" `decision` boşken/yalnızca boşlukken devre
+dışı (`docs/03-ux.md:458`); "Reddet - Kaydet" `reason` boşken/yalnızca boşlukken devre dışı
+(`docs/03-ux.md:465`). `useGates.test.ts`/`GatesScreen.test.tsx` planına bu iki buton için
+devre-dışı/aktifleşme assert'i eklenir (§11 test planı).
+
+---
+
+## 10. Dokunacağım dosyalar
+
+### 10.1 Yeni (`src/features/gates/**`, `tests/features/gates/**`, `tests/e2e/gates.spec.ts`, `tests/integration/gates-*.test.ts`)
 
 | Dosya | Amaç |
 |---|---|
 | `src/features/gates/shared/format-approval.ts` | `buildApprovalBody`, `buildDenialBody` — saf, `fs` yok, hem web hem server import eder (§5). |
 | `src/features/gates/shared/gate-id.ts` | `isValidGateId` (ön-doğrulama, otorite değil, §4), `parseGateFileName`. |
 | `src/features/gates/server/list-gates.ts` | `docs/PROCESS.md` + `docs/approvals/` okur, `GatesListResponse` üretir. Salt okunur (§3). |
-| `src/features/gates/server/handlers.ts` | `handleListGates`, `handleApproveGate`, `handleDenyGate` (§4). |
+| `src/features/gates/server/handlers.ts` | `handleListGates`, `handleApproveGate`, `handleDenyGate` (§4, aksiyon durum makinesi dahil). |
 | `src/features/gates/server/gates-watcher.ts` | `docs/approvals/`'a özel chokidar sarmalayıcı (§7). |
-| `src/features/gates/web/GatesScreen.tsx` | Ekran kompozisyonu, proje seçici, tablo. |
+| `src/features/gates/web/GatesScreen.tsx` | Ekran kompozisyonu, proje seçici, tablo, yerel toast state (§9). |
 | `src/features/gates/web/ProjectSelect.tsx` | Tek-seçim proje dropdown'u (FilterChips'ten farklı, tek tüketici — ayrı bileşen). |
-| `src/features/gates/web/GateRow.tsx` | Tek satır — rozet, tarih, aksiyon butonları. |
+| `src/features/gates/web/GateRow.tsx` | Tek satır — rozet, tarih, aksiyon durum makinesi (§4), `[Detay]` genişleyen alt satır. |
 | `src/features/gates/web/ApproveModal.tsx` | İki adımlı onay modalı (§4/§5). |
 | `src/features/gates/web/DenyInlineForm.tsx` | Satır içi zorunlu gerekçe formu. |
 | `src/features/gates/web/useGates.ts` | Veri katmanı: yükleme, `onGates` SSE yenilemesi, `approve`/`deny` çağrıları + rollback. |
 | `src/features/gates/web/icons.tsx` | 4 durum ikonu (mevcut `events/web/icons.tsx` deseni). |
-| `tests/features/gates/server/list-gates.test.ts` | Birim — fixture `docs/approvals/`, 4 durum + conflict + unrecognized + PROCESS.md okunamama. |
+| `tests/features/gates/server/list-gates.test.ts` | Birim — fixture `docs/approvals/`, 4 durum + conflict + unrecognized (hariç tutma kümesi dahil) + PROCESS.md okunamama + ASSETS etiketi + G4-N sayısal sıralama + tek satır stat hatası. |
 | `tests/features/gates/server/format-approval.test.ts` | Birim — golden string karşılaştırması (§5 şablonları). |
-| `tests/features/gates/server/handlers.test.ts` | Birim — gövde doğrulama, `confirmed`/`reason` zorunluluğu, hata kod eşlemesi. |
-| `tests/features/gates/server/gates-watcher.test.ts` | Birim — gerçek geçici dizin + chokidar, `.ok`/`.deny.md`/tanınmayan dosya değişiminde tetikleme. |
-| `tests/features/gates/server/gates-manifest.test.ts` | Manifest — gerçek `approve`/`deny` akışı, izin verilenler dışında hiçbir dosya değişmiyor, arşiv **taşıma** (silme değil). |
-| `tests/features/gates/web/GatesScreen.test.tsx` | jsdom — 4 durum render, conflict "hangisi daha yeni", boş proje listesi durumu. |
-| `tests/features/gates/web/useGates.test.ts` | jsdom — iptal → sıfır fetch çağrısı (AC7), yazma hatası → rollback + karar metni korunur. |
-| `tests/integration/gates-api.test.ts` | Gerçek `createServer()` + HTTP — mutlu yol, `x-mc-write` eksikliği (403), `confirmed` eksik (400), boş `reason` (400), 404 proje, yarı-başarı fault injection (§7 test planı). |
-| `tests/e2e/gates.spec.ts` | Gerçek tarayıcı — onay modalı iptal (fs değişmez), onay yazma, red, çelişkili durum görüntüsü, canlı güncelleme (harici dosya yazımı → panel yenilenir). |
+| `tests/features/gates/server/handlers.test.ts` | Birim — gövde doğrulama, `confirmed`/`reason` zorunluluğu, hata kod eşlemesi, onaylı kapıda `deny` → 409. |
+| `tests/features/gates/server/gates-watcher.test.ts` | Birim — gerçek geçici dizin + chokidar, `.ok`/`.deny.md`/tanınmayan dosya değişiminde tetikleme, kendi `.tmp` dosyasında tetiklenmeme. |
+| `tests/features/gates/server/gates-manifest.test.ts` | Manifest — gerçek `approve`/`deny` akışı, `before` anlık görüntüsü **tüm çağrılardan önce** alınır, izin verilenler dışında hiçbir dosya değişmiyor, arşiv **taşıma** (silme değil), `mtimeMs` karşılaştırması dahil (§10.2, Ö4). |
+| `tests/features/gates/web/GatesScreen.test.tsx` | jsdom — 4 durum render, `[Detay]` genişleme, boş proje listesi durumu. |
+| `tests/features/gates/web/useGates.test.ts` | jsdom — iptal → sıfır fetch çağrısı (AC7), yazma hatası → rollback + karar metni korunur, buton devre-dışı durumları (Ö11). |
+| `tests/integration/gates-api.test.ts` | Gerçek `createServer()` + HTTP — mutlu yol, `x-mc-write` eksikliği (403), `confirmed` eksik (400), boş `reason` (400), 404 proje, onaylı kapıda `deny` → 409, yarı-başarı fault injection (§6), AC9 sıra doğrulaması (§11 M6), `data` alanının varlığı (§11 M8). |
+| `tests/integration/gates-write-permission-live.test.ts` | **Yeni, kota harcayan** — `describe.skipIf(!process.env.MC_GATES_LIVE_TESTS)`, `chat-hooks-live.test.ts` deseni; §8 ölçümünün otomasyonu (§11 mutasyon M10). `npm run verify`'nin **normal** parçası değil. |
+| `tests/e2e/gates.spec.ts` | Gerçek tarayıcı — onay modalı iptal (fs değişmez), onay yazma, red, çelişkili durum `[Detay]`, canlı güncelleme (harici dosya yazımı → panel yenilenir), 320px/375px dar genişlik (§11 test planı). |
 
-### 9.2 Değiştireceğim (gates dizini dışı — mekanik, F-005/F-007 emsali)
+### 10.2 Değiştireceğim (gates dizini dışı — mekanik, F-005/F-007 emsali)
 
 | Dosya | Değişiklik | Gerekçe |
 |---|---|---|
 | `src/server/index.ts` | `GET /api/gates`, `POST /api/gates/:project_id/:gate/approve`, `POST /api/gates/:project_id/:gate/deny` route'ları eklenir (mevcut `startsWith`/split deseniyle, `PATCH /api/features/:project_id/:file` emsali). Güvenlik satırı **eklenmiyor** — `x-mc-write`/Host/Origin zaten tüm non-GET `/api/*`'i kapsıyor. | Her feature kendi ucunu burada açar (F-002/F-003/F-005/F-007 emsali). |
-| `src/shared/types.ts` | `GateStatus`, `GateStatusItem`, `GatesListResponse` eklenir. | Paylaşılan tip deposu (F-005/F-007 aynı dosyaya `FeatureCard` eklemişti). |
-| `src/web/App.tsx` | `TabScreen` birleşimine `'gates'` eklenir, `buildTabs` "Sohbet"ten hemen sonra "Kapılar" ekler (docs/03-ux.md sekme sırası), üçüncü/dördüncü `tabpanel`, `useEventStream`'e `onGates: setGatesSignal`. | Her ekran ekleyen feature bu dosyaya dokunur (F-005/F-007 emsali). |
+| `src/shared/types.ts` | `GateStatus`, `GateStatusItem`, `GatesListResponse` eklenir. | Paylaşılan tip deposu. |
+| `src/features/projects/server/service.ts` | `gatesWatchers` map'i, `startWatchingGatesIfPossible`, `stopAll`/`getActiveWatcherCount` güncellemesi (§7, Ö3). | Proje kaydı yaşam döngüsüne bağlı ikinci bir izleyici türü; dosya zaten bu orkestrasyonun sahibi. |
+| `src/web/App.tsx` | `TabScreen` birleşimine `'gates'` eklenir, `buildTabs` "Sohbet"ten hemen sonra "Kapılar" ekler (docs/03-ux.md sekme sırası, ✓ VERIFIED `docs/03-ux.md:735` altı sekmeyi zaten bu sırayla listeliyor), dördüncü `tabpanel`, `useEventStream`'e `onGates: setGatesSignal`. | Her ekran ekleyen feature bu dosyaya dokunur (F-005/F-007 emsali). |
 | `src/web/lib/useEventStream.ts` | `onGates?: (signal:{project_id:string}) => void` + `es.addEventListener('gates', ...)`, `onFeatures` ile **birebir**. | ADR-004 madde 1 — tek bağlantı, çok kanal. |
-| `src/web/index.css` | `@source "../features/gates/web";` eklenir. | F-003/F-005/F-007 emsali (Tailwind v4 tarama kapsamı). |
-| `tests/build-css.test.ts` | Yeni blok: gates/web'e özgü ≥3 sınıf. | Aynı B1 sınıfı regresyonunu önleyen zorunlu çit (F-003/F-005/F-007 emsali). |
+| `src/web/index.css` | `@source "../features/gates/web";` eklenir. | F-003/F-005/F-007 emsali (Tailwind v4 tarama kapsamı); `tests/build-css.test.ts`'in dizin-numaralandırma çiti (F-012 dersi) bunu otomatik yakalar, ek satır gerekmez. |
+| `tests/build-css.test.ts` | Yeni blok: gates/web'e özgü ≥3 sınıf. | Aynı sınıf regresyonunu önleyen zorunlu çit. |
+| `tests/helpers/manifest.ts` | `snapshotDir(dir, { includeMtime?: boolean })` — ikinci, **opsiyonel** parametre; verilirse her `ManifestEntry`'ye `mtimeMs?: number` eklenir. Varsayılan davranış (parametre verilmezse) **değişmez** — mevcut çağıranlar (F-005/F-006 manifest testleri) etkilenmez. | Ö4: bu paylaşılan yardımcı bilinçli olarak `mtimeMs` taşımıyordu (`tests/helpers/manifest.ts:6-9` yorumu, ✓ VERIFIED); F-008'in `mtime`-only bir dokunuşu (içerik/`sha256` aynı kalırken yalnızca `mtime` değişmesi) yakalaması gerekiyor (PRD AC4 zaten `mtime`'ı zorunlu kılıyor). Additive/opsiyonel parametre — mevcut davranış bozulmaz. |
+| `playwright.config.ts` | `testMatch` listesine `'gates.spec.ts'` eklenir. `webServer.command` zaten `npm run build && npm start` (üretim build'i, ✓ VERIFIED — bu config diğer üç config'den farklı olarak zaten prod build kullanıyor); gates E2E'sinin hiçbir probu `import.meta.env.MODE !== 'production'` koşuluna bağlanmaz. | N3/B4: dört config'in **hiçbiri** `gates.spec.ts`'i içermiyordu (✓ VERIFIED, tur 1 QA ölçümü); `tests/e2e-config-guard.test.ts:32,37,59` bu eksiklikte `verify`'yi kırardı. |
+| `tests/web/App.interaction.test.tsx` | Satır 266: `toHaveLength(3)` → `toHaveLength(4)`. Satır 251: `End` tuşu testinin adı ve beklentisi "son sekme" olarak **Kapılar**'ı hedefleyecek şekilde güncellenir (metin + hedef panel değişir, yalnızca sayı değil). | N3/B5: dördüncü sekme mevcut sabit sayıları kırıyor (✓ VERIFIED ölçüm, tur 1 QA). |
+| `tests/e2e/shell.spec.ts` | Satır 46: `clickableCount` beklentisi `3` → `4`. Satır 60: `tabRoleCount` beklentisi `2` → `3`. | N3/B5, aynı kaynak. |
+| `tests/web/App.test.tsx` | Satır 48: `headerHtml.match(/role="tab"/g)` uzunluk beklentisi güncellenir (render koşuluna göre yeni sayı — kod turunda gerçek render çıktısıyla doğrulanır, önceden **tahmin edilmez**, ✓ ancak değişeceği kesin). | N3/B5, aynı kaynak. |
 
 **Dokunulmayacağını doğruladığım dosyalar (olumsuz iddia, ✓ VERIFIED):** `src/server/write-gate.ts`
-(dört mevcut fonksiyon yeterli — hiçbiri değişmiyor), `src/server/watch/project-watcher.ts`
-(kopyalanıyor, değiştirilmiyor — §7), `tests/no-write-gate-bypass.test.ts`/`tests/server/
-write-gate-manifest.test.ts` (özyinelemeli tarama kökü zaten `src`/testleri kapsıyor, yeni satır
-gerekmiyor), `.claude/hooks/**` (L5 mekanizması bu sözleşmenin **dışında**, §6/§10).
+(dört mevcut fonksiyon yeterli), `src/server/watch/project-watcher.ts` (deseni kopyalanıyor,
+dosyanın kendisi değiştirilmiyor — §7), `tests/no-write-gate-bypass.test.ts`/`tests/server/
+write-gate-manifest.test.ts` (özyinelemeli tarama kökü zaten `src`/testleri kapsıyor), `.claude/
+hooks/**` (§1/§8 — N2 ile bu turda da kapsam dışı kaldı), `src/features/kanban/web/
+KanbanScreen.tsx` (toast paylaşılmıyor, §9), `docs/PROCESS.md` (yalnızca **okunuyor**, satır
+ayrıştırması düzeltildi, dosyanın kendisine dokunulmuyor).
 
 ---
 
-## 10. Test planı ve mutasyon listesi (madde 7)
+## 11. Test planı ve mutasyon listesi (madde 7)
 
 | AC | Test |
 |---|---|
-| AC1 (durum türetme) | `list-gates.test.ts` (4 durum + conflict + unrecognized + PROCESS.md yok/bozuk) |
+| AC1 (durum türetme) | `list-gates.test.ts` (4 durum + conflict + unrecognized/hariç tutma + PROCESS.md yok/bozuk + ASSETS etiketi + G4-N sayısal sıralama + tek satır stat hatası) |
 | AC2 (`.ok` formatı) | `format-approval.test.ts` (golden string) |
 | AC3 (red zorunlu gerekçe) | `handlers.test.ts` + `gates-api.test.ts` (boş/whitespace reddedilir, dosya yazılmaz) |
-| AC4 (çelişkili durum) | `list-gates.test.ts` + `GatesScreen.test.tsx` (rozet + "hangisi daha yeni") |
+| AC4 (çelişkili durum) | `list-gates.test.ts` + `GatesScreen.test.tsx` (rozet + `[Detay]` + "hangisi daha yeni") |
 | AC5 (yazma hatası → geri al, çökmez) | `useGates.test.ts` (rollback, karar metni korunur) + `gates-api.test.ts` (yarı-başarı fault injection) |
-| AC6 (F-006 kapısından geçer) | statik guard (mevcut, otomatik) + kod incelemesi notu |
+| AC6 (F-006 kapısından geçer, **otomatik test** — PRD'nin kendi şartı) | statik guard (`no-write-gate-bypass.test.ts`, mevcut, otomatik) + `gates-manifest.test.ts` (Ö7 düzeltmesi: "kod incelemesi notu" **değil**, gerçek otomatik test) |
 | AC7 (iki adım, iptal yazmaz) | `useGates.test.ts` (sıfır fetch) + `gates.spec.ts` (gerçek fs değişmez) |
 | AC8 (red gerekçesi olduğu gibi geçer) | `format-approval.test.ts` + `gates.spec.ts` |
-| AC9 (arşiv sonra onay) | `gates-manifest.test.ts` (taşıma, silme değil) |
+| AC9 (arşiv sonra onay, sıra) | `gates-manifest.test.ts` (taşıma, silme değil) + `gates-api.test.ts` (sıra assert'i, mutasyon M6) |
 | Canlı güncelleme | `gates-watcher.test.ts` + `gates.spec.ts` (harici yazım → SSE → yeniden yükleme) |
+| Dar genişlik (Ö8) | `gates.spec.ts` — 320px ve 375px'te kapı tablosu + sekme çubuğu; sekme çubuğu iddiası **kırpılmış görünür genişlikle** (`boundingBox` kesişimi) ölçülür, `toBeVisible()` ile **değil** (F-007 dersi — kaydırma kabında yalan söylüyor). |
+| Buton devre-dışı (Ö11) | `useGates.test.ts`/`GatesScreen.test.tsx` — `decision`/`reason` boşken buton `disabled`. |
 
-**Mutasyon listesi (≥7, her biri "şunu boz → şu test KIRMIZI" + korumanın kaynaktan türediği not):**
+**Mutasyon listesi (10 madde, her biri bağımsız bir mekanizma, "şunu boz → şu test KIRMIZI" +
+korumanın kaynaktan türediği not — Ö5 düzeltmesi: eski liste 7 maddeden 3'ü aynı mekanizmayı
+ölçüyordu ve 1'i yer tutucuydu, ikisi de kapatıldı):**
 
-1. **İki adımlı onayın atlanması** — `handleApproveGate`'te `confirmed !== true` kontrolünü kaldır
-   → `handlers.test.ts` "confirmed olmadan 400 döner, dosya yazılmaz" KIRMIZI. Kaynak: L2/AC7,
-   API'nin kendi gövde doğrulaması (totoloji değil — gerçek `writeGateApproval` çağrısının önüne
-   geçen kod yolunu test ediyor).
-2. **`x-mc-write` muafiyeti** — dağıtıcıya (varsayımsal) `/api/gates` yolunu `x-mc-write`
-   kontrolünden hariç tutan bir satır ekle → `gates-api.test.ts` "başlıksız POST 403 döner"
-   KIRMIZI. Bu, YENİ rotaların paylaşılan ADR-013 sınırına gerçekten bağlı olduğunu (F-003'ün
-   `/api/stream` muafiyet emsali gibi sessiz delinmediğini) doğrulayan **regresyon** testi.
-3. **Arşivin silmeye dönmesi** — `handleApproveGate`'in arşivleme adımını, `archiveDenial`
-   çağırmak yerine doğrudan `.deny.md`'yi (varsayımsal) `fs.unlinkSync` ile silen bir kodla
-   değiştir → hem `tests/no-write-gate-bypass.test.ts` (statik, `unlinkSync(` yeni dosyada
-   yakalanır, ✓ VERIFIED tarama kökü) hem `gates-manifest.test.ts` ("silinen yol sayısı sıfır"
-   iddiası) KIRMIZI.
-4. **Çelişkili durumun otomatik çözülmesi** — `list-gates.ts`'e, iki dosya da varsa eskisini
-   "temizleyen" bir (varsayımsal) `fs.unlinkSync` ekle → `no-write-gate-bypass.test.ts` (statik)
-   ve `list-gates.test.ts`'in "list-gates hiçbir fs yazma/silme çağrısı yapmaz" dinamik
-   manifest-diff testi (before/after `docs/approvals/` snapshot'ı eşit) ikisi de KIRMIZI.
-5. **Red gerekçesi zorunluluğunun kalkması** — `handleDenyGate`'te boş-string kontrolünü kaldır
-   → `handlers.test.ts` + `gates-manifest.test.ts` ("boş gerekçeyle çağrı sonrası hiçbir dosya
-   değişmedi") KIRMIZI.
-6. **Manifest/no-delete çitinin bypass'ı** — `list-gates.ts`'e (varsayımsal) doğrudan
-   `fs.writeFileSync(...)` çağrısı ekle (write-gate.ts'i atlayarak) → **hiçbir test dosyası
-   değiştirilmeden** `tests/no-write-gate-bypass.test.ts` KIRMIZI (bu, mevcut altyapının yeni
-   `src/features/gates/**`'i otomatik kapsadığının kanıtı, §9.1 notu).
-7. **L5'in koruması — YER TUTUCU, kod turunda gerçek teste dönüştürülecek.** Mekanizma seçilip
-   uygulandığında (§6, muhtemelen bir hook kuralı): test iki yönlü olmalı — hook aktifken bir
-   Bash komutuyla `/api/gates/.../approve`'a POST **engellenir**; hook geçici olarak no-op
-   yapılınca **aynı komut geçer** (ADR-014 M2'nin "hook aktifken engellendi, no-op'ta geçti"
-   kanıt deseni, ✓ VERIFIED daha önce bu projede kullanılmış). Bu mutasyon **bu sözleşmede
-   yazılamaz** çünkü mekanizmanın kendisi henüz onaylanmadı (§6) — kod turunun ilk işi bu
-   kararı almak, sonra bu testi yazmaktır.
+**M1. İki adımlı onayın atlanması** — `handleApproveGate`'te `confirmed !== true` kontrolünü kaldır
+→ `handlers.test.ts` "confirmed olmadan 400 döner, dosya yazılmaz" KIRMIZI. Kaynak: L2/AC7, API'nin
+kendi gövde doğrulaması.
+
+**M2. `x-mc-write` muafiyeti** — dağıtıcıya (varsayımsal) `/api/gates` yolunu `x-mc-write`
+kontrolünden hariç tutan bir satır ekle → `gates-api.test.ts` "başlıksız POST 403 döner" KIRMIZI.
+ADR-013 sınırının yeni rotalara gerçekten bağlı olduğunu doğrulayan regresyon testi.
+
+**M3. Arşivin silmeye dönmesi** — `handleApproveGate`'in arşivleme adımını, `archiveDenial`
+çağırmak yerine doğrudan `.deny.md`'yi (varsayımsal) `fs.unlinkSync` ile silen bir kodla değiştir
+→ hem `tests/no-write-gate-bypass.test.ts` (statik, ✓ VERIFIED tarama kökü) hem
+`gates-manifest.test.ts` ("silinen yol sayısı sıfır" iddiası, `mtimeMs` dahil) ikisi de KIRMIZI.
+
+**M4. Statik tarama genelliği** (Ö5'in "4 ve 6'yı birleştir" talebi — eski iki madde tek maddeye
+indirildi) — `list-gates.ts`'e (varsayımsal) doğrudan bir `fs.writeFileSync`/`fs.unlinkSync`
+çağrısı ekle (ör. çelişkili durumu "temizlemek" için ya da write-gate.ts'i atlayarak) →
+`tests/no-write-gate-bypass.test.ts` **hiçbir yeni test dosyası eklenmeden** KIRMIZI. Bu, mevcut
+statik taramanın `src/features/gates/**`'i otomatik kapsadığının **tek** kanıtı olarak yeterli
+(tekrarlanan kanıt sayı şişirir, Ö5).
+
+**M5. Red gerekçesi zorunluluğunun kalkması** — `handleDenyGate`'te boş-string kontrolünü kaldır
+→ `handlers.test.ts` + `gates-manifest.test.ts` ("boş gerekçeyle çağrı sonrası hiçbir dosya
+değişmedi") KIRMIZI.
+
+**M6. AC9 sırasının ters çevrilmesi** (yeni, Ö5'in eksik saydığı kategori) — `handleApproveGate`'te
+adım sırası `writeGateApproval` → `archiveDenial` olarak (varsayımsal) değiştirilir → `gates-
+api.test.ts`'e eklenen bir sıra testi (her iki çağrıyı `vi.fn()` ile izleyen bir entegrasyon
+senaryosu, ya da daha basiti: `writeGateApproval`'ı geçici olarak başarısız olacak şekilde fault
+inject edip `archiveDenial`'ın **hiç çağrılmadığını** — dosyanın arşive taşınmadığını — assert
+etmek) KIRMIZI verir. Kaynak: §6 "sıra" paragrafı, AC9.
+
+**M7. AC2/AC8 içerik kaçış/kırpma** (yeni) — `buildApprovalBody`/`buildDenialBody`'ye kullanıcı
+metnini (varsayımsal) `.slice(0, N)` ile kırpan veya özel karakterleri kaçan bir "temizleme" adımı
+ekle → `format-approval.test.ts`'in golden string testi (kullanıcı metni satır sonu/özel karakter
+içeren bir fixture ile) KIRMIZI. Kaynak: AC8 "olduğu gibi geçer".
+
+**M8. Yarı-başarı `data` alanının düşürülmesi** (yeni) — `handleApproveGate`'in yarı-başarı
+dalından (varsayımsal) `data: <taze GateStatusItem>` alanını kaldır → `gates-api.test.ts`'in fault
+injection senaryosu "yanıt gövdesinde taze durum var" assert'i KIRMIZI. Kaynak: §6, kanban'ın
+`conflict` dalıyla aynı ilke.
+
+**M9. İzleyici/SSE broadcast'in silinmesi** (yeni) — `handleApproveGate`/`handleDenyGate`'in
+başarı yolundan (varsayımsal) `hub.broadcast('gates', …)` çağrısını kaldır → `gates-watcher.
+test.ts` veya `gates-api.test.ts`'e eklenen "yazma sonrası `gates` olayı yayınlanır" assert'i
+KIRMIZI. Kaynak: §7.
+
+**M10. L5 ölçümünün regresyonu** (N2/N7 — eski #7 yer tutucusunun yerine, artık somut) —
+`gates-write-permission-live.test.ts` içindeki canlı probe, `docs/qa/F-008-write-izin-olcumu.md`'nin
+sandbox desenini otomatikleştirir: gerçek SDK `query()`, proje `.claude/settings.json`'daki
+`Write(docs/**)` allow kuralı yüklü, `canUseTool` **her zaman reddet** — test, `CANUSETOOL_CALLED`
+olayının `Write` için tetiklendiğini VE sandbox'ta dosyanın oluşmadığını assert eder. Bu, "hook
+aktif/no-op" tarzı bir yer tutucu değil — mekanizma zaten var (SDK'nın kendi davranışı, hiçbir yeni
+kod eklenmiyor), test onu **otomatikleştiriyor**. `describe.skipIf(!process.env.
+MC_GATES_LIVE_TESTS)` ile sarılı, `npm run verify`'nin normal parçası değil (`chat-hooks-live.
+test.ts` emsali, ✓ VERIFIED desen + `package.json:30` betiği), `package.json`'a
+`"test:gates-live": "vitest run tests/integration/gates-write-permission-live.test.ts"` eklenir.
+**Model çıktısına assert etmiyor** — yalnızca `canUseTool` callback'inin çağrılıp çağrılmadığını ve
+dosya sisteminin durumunu ölçüyor (`CLAUDE.md`'nin "canlı testte modelin ne söyleyeceğine assert
+etme" dersi).
 
 ---
 
-## 11. Açık sorular (CEO/kullanıcı cevaplayacak)
+## 12. Açık sorular (CEO/kullanıcı cevaplayacak)
 
-1. **L5 mekanizması onayı.** §6'da önerilen hook-katmanı çözümü (ya da başka bir alternatif)
-   CEO/architect tarafından onaylanmalı — bu, `src/features/gates/**` dosya sahipliğinin dışında
-   bir karar. Onaylanmazsa F-008 kod turu bu boşluğu **bilinen, kabul edilmiş bir risk** olarak
-   G4/G5 kapısına taşımalı (ADR-005 F-012 ekindeki "iki güven seviyesi" çerçevesine yeni bir not).
-2. **Proje seçilmemiş/hiç proje yokken Kapılar ekranı ne gösterir?** Kanban'ın "proje eklenmemiş"
-   boş durumuyla aynı metni mi kullanmalı, yoksa Kapılar'a özel mi (doğrudan Ayarlar'a yönlendiren
-   bir bağlantı önerilir, ama tam metin `docs/03-ux.md`'ye eklenmeli — L8).
-3. **Türkçe metin sözlüğü eksiği (L8):** bu sözleşmede önerilen yeni metinler ("Tanınmayan
-   dosyalar", "PROCESS.md okunamadı, varsayılan adlar gösteriliyor", yarı-başarı hata metni, boş
-   proje durumu) `docs/03-ux.md`'ye kod turundan **önce** eklenmeli mi (F-007/F-013 emsali gibi
-   ayrı bir UX-onay adımı) yoksa kod turu sırasında geliştirici mi ekleyip CEO'ya rapor eder
-   (F-013'ün "QA düzeltme turu" metin sözlüğü ekleme deseni)? İkinci yol daha hızlı, ilk yol
-   PROCESS.md'nin "kaynak gerçeği docs/'tur" ilkesine daha sadık — CEO karar versin.
+Tur 1'in üç açık sorusundan ikisi bu turda **kapandı**: L5 mekanizması onayı sorusu artık gereksiz
+(N2 — ek mekanizma önerilmiyor), Türkçe metin sözlüğü sırası sorusu M2 ile cevaplandı (önce belge,
+sonra kod), proje seçilmemiş/hiç proje yokken durum sorusu `docs/03-ux.md:516`'nın mevcut tek
+metniyle ("Önce bir proje seçin.") kapandı (hem "hiç proje yok" hem "proje var, seçilmemiş"
+durumları aynı metni kullanır — UX bu ayrımı yapmıyor, F-008 icat etmiyor).
 
-**Doğrulayamadıklarım:** L5'in mekanizması için önerdiğim hook regex'inin gerçek dünyada kaç
-false-positive üreteceği (ör. geliştiricinin meşru bir `curl` ile sağlık kontrolü yapması) — bu
-ancak gerçek bir hook yazılıp `_selftest.cjs`'e eklenince ölçülebilir, bu sözleşme kapsamında
-**[T] TAHMİN** olarak bırakılıyor.
+**Geriye kalan tek açık soru:**
+1. **`docs/approvals` yeni oluşturulursa izleyicinin yeniden taranması.** §7'de not düşüldü: proje
+   eklendiğinde `docs/approvals` henüz yoksa izleyici o proje için hiç başlamıyor; dizin sonradan
+   (ör. ilk G0 onayında CEO tarafından) oluşturulursa mevcut tasarım bunu yakalamıyor — kullanıcı
+   panel yeniden başlatılana/proje yeniden eklenene kadar canlı güncelleme göremez (statik
+   `GET /api/gates` her zaman doğru sonucu verir, yalnızca **anlık** SSE bildirimi eksik kalır).
+   Etkisi düşük (nadir sıra: yeni proje + ilk kapı onayı aynı oturumda) ama CEO isterse kapsam
+   içine alınabilir (ör. proje izleyicisi zaten `docs/features` için periyodik yeniden kontrol
+   yapıyorsa aynı desen `docs/approvals` için de eklenir — bu, `service.ts`'in mevcut
+   davranışına bağlı, kod turunda doğrulanmalı).
+
+**Doğrulayamadıklarım (tur 2, devam eden):**
+- `npm run verify` / `npm run e2e` çıktısı — sözleşme turu, kod yok, koşturmadım.
+- Gerçek tarayıcıda dar genişlik ölçümü (Ö8) — kod olmadığı için ölçülemez, kod turunda zorunlu.
+- `tests/web/App.test.tsx:48`'in yeni `role="tab"` sayısı — gerçek render çıktısına bağlı, kod
+  turunda ölçülüp yazılacak (§10.2, tahmin edilmiyor).
+- `gates-write-permission-live.test.ts`'in gerçek dünyada tekrar çalıştırıldığında aynı sonucu
+  verip vermeyeceği (SDK sürüm değişikliğine karşı kırılganlık) — tek ölçümle doğrulandı, kod
+  turunda otomatikleşince zaman içinde kendi kendini teyit edecek.

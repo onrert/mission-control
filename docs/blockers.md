@@ -276,3 +276,19 @@ kanban'daki emsalini fark etti. **Dosya sahipliği dışı olduğu için dokunul
 
 **Çit:** düzeltme mutasyonla kanıtlanmalı — `list()` fırlatıldığında istemci **500 almalı** ve
 süreç **ayakta kalmalı**; korumayı kaldıran mutasyon KIRMIZI vermeli.
+
+## 2026-09-09 — KAPANDI (developer, F-008 kod turu B, CEO'nun EK YETKİSİ R5 ile)
+
+`src/features/kanban/server/handlers.ts` `handlePatchFeatureStatus` — `projectsService.list()`
+çağrısı ve proje arama, `void (async () => {try{...}})()` sarmalayıcısının **içine** taşındı
+(gates handler'larının Q6 desenindeki AYNI çözüm). Yeni regresyon testi
+`tests/integration/features-api.test.ts` "MUTASYON hedefi (R5)" — `projectsService.list()`'i
+fırlatacak şekilde mock'layıp `PATCH /api/features/...` çağırıyor, 500 `write_failed` + süreç
+ayakta kalıyor mu ölçüyor.
+
+**Mutasyon kanıtı:** düzeltme geçici olarak geri alınıp (`list()` tekrar IIFE dışına taşındı) yalnız
+bu test izole çalıştırıldı → **KIRMIZI**: `Test timed out in 5000ms` + `Uncaught Exception: ÇOK
+GİZLİ İÇ HATA, İSTEMCİYE SIZMAMALI` (tam da bloklayıcının tarif ettiği "istek asla yanıtlanmaz"
+davranışı, gerçek bir yakalanmamış istisna olarak gözlendi). Düzeltme geri konunca aynı test
+**YEŞİL** (500 `write_failed`, ham mesaj sızmıyor, ardından `/api/health` 200 dönüyor — süreç
+yaşıyor). `grep -n "MUTASYON PROBU" src/` boş, `git diff` üzerinde mutasyon izi yok.

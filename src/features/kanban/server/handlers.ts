@@ -117,15 +117,6 @@ export function handlePatchFeatureStatus(
       return
     }
 
-    const project = projectsService.list().items.find((p) => p.id === projectId)
-    if (!project) {
-      sendJson(res, 404, {
-        success: false,
-        error: { code: 'not_found', message: 'Proje bulunamadı.' },
-      })
-      return
-    }
-
     void (async () => {
       // QA düzeltme turu 1 (BLOKLAYICI B1) — bu IIFE'nin GÖVDESİ tamamı `try/catch` içine
       // alındı: `rereadCard` (senkron `fs` çağrıları) fırlatırsa `withDispatchErrorBoundary`
@@ -133,7 +124,24 @@ export function handlePatchFeatureStatus(
       // kalıyor, istemcinin `pendingKeys`'i hiç temizlenmiyordu (QA'nın fault injection'ı,
       // `docs/qa/F-007-2026-09-06.md` B1). Artık HANGİ HATA olursa olsun istemciye bir yanıt
       // gider, süreç yaşamaya devam eder.
+      //
+      // R5 (`docs/blockers.md` 2026-09-09, CLAUDE.md'de kayıtlı hata sınıfı, F-008 tur A'da
+      // bulundu, CEO'nun EK YETKİSİYLE burada düzeltiliyor) — `projectsService.list()` ÖNCEDEN
+      // bu IIFE'nin DIŞINDA çağrılıyordu: fırlarsa ne dağıtıcının senkron sınırı (zaten asenkron
+      // olay içinde olduğu için kapsamıyor) ne de bu try/catch (henüz girilmemiş) yakalıyordu —
+      // istek sonsuza dek yanıtsız kalıyor / süreç `uncaughtException` riskiyle karşılaşıyordu
+      // (gates handler'larının Q6 notuyla AYNI sınıf, `src/features/gates/server/handlers.ts`).
+      // Artık proje arama da DAHİL tüm gövde tek `try/catch` içinde.
       try {
+        const project = projectsService.list().items.find((p) => p.id === projectId)
+        if (!project) {
+          sendJson(res, 404, {
+            success: false,
+            error: { code: 'not_found', message: 'Proje bulunamadı.' },
+          })
+          return
+        }
+
         const result = await setFeatureStatus(project.path, fileName, status, expectedHash)
 
         if (result.ok) {

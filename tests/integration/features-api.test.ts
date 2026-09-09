@@ -485,6 +485,45 @@ describe('GET /api/features/detail — MUTASYON (e) hedefi: dağıtıcının gen
   })
 })
 
+describe(
+  'PATCH /api/features/:project_id/:file — MUTASYON hedefi (R5, docs/blockers.md 2026-09-09): ' +
+    "projectsService.list() IIFE'nin DIŞINDA çağrılırsa istek asla yanıtlanmaz",
+  () => {
+    it('list() fırlarsa 500 write_failed döner, süreç yaşar, ham hata sızmaz', async () => {
+      // R5 — bu düzeltmeden önce `projectsService.list()` bu handler'da `void (async () =>
+      // {try{...}})()` sarmalayıcısının DIŞINDA çağrılıyordu: `req.on('end', ...)` dağıtıcının
+      // senkron hata sınırının (`withDispatchErrorBoundary`) KAPSAMADIĞI bir asenkron olay
+      // olduğu için, `list()` burada fırlarsa istemciye HİÇBİR yanıt gitmiyordu (istek
+      // sonsuza dek asılı kalır/süreç `uncaughtException` riskiyle karşılaşır) — CLAUDE.md'de
+      // kayıtlı, sunucuyu üç kez öldüren hata sınıfı. Bu test aynı fault injection'ı
+      // `tests/integration/gates-api.test.ts`'in "AC5 — beklenmeyen hata" testiyle BİREBİR
+      // aynı desende koşturur.
+      const listSpy = vi.spyOn(handle.server.projectsService, 'list').mockImplementation(() => {
+        throw new Error('ÇOK GİZLİ İÇ HATA, İSTEMCİYE SIZMAMALI')
+      })
+      try {
+        const res = await writeRequest(
+          handle.baseUrl,
+          'PATCH',
+          `/api/features/${projectId}/F-001.md`,
+          { status: 'qa', expected_hash: 'x' }
+        )
+        expect(res.status).toBe(500)
+        const body = res.json as { success: boolean; error: { code: string; message: string } }
+        expect(body.success).toBe(false)
+        expect(body.error.code).toBe('write_failed')
+        expect(body.error.message).not.toContain('ÇOK GİZLİ')
+      } finally {
+        listSpy.mockRestore()
+      }
+      // Süreç ayakta, yanıt vermeye devam ediyor (R5'in çiti — korumayı kaldıran mutasyon bu
+      // satırlara ULAŞMADAN önce ya timeout ile ya da worker çökmesiyle KIRMIZI verir).
+      const followUp = await request(handle.baseUrl, 'GET', '/api/health')
+      expect(followUp.status).toBe(200)
+    })
+  }
+)
+
 describe('x-mc-write eksikliği (ADR-013 regresyon çiti — F-007 uçları da kapsanıyor)', () => {
   it('x-mc-write başlığı olmadan PATCH → 403 forbidden_origin', async () => {
     const res = await request(handle.baseUrl, 'PATCH', `/api/features/${projectId}/F-001.md`, {

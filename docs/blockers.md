@@ -351,3 +351,23 @@ S2'nin **iki katmanı** var (desen `i` bayrağı + kimlik normalizasyonu); yaln�
 
 **Eşik:** kapılar ekranına dokunan bir sonraki feature.
 **Çit:** kapı listesinin **tam küme** eşitliğini doğrulayan test (bunlar ve başkası değil).
+
+## 2026-09-09 — F-009 kapanışından taşınan beş borç (hiçbiri bloklayıcı değil)
+
+QA üç turda çiti iki kez yendi; üçüncüde **pratik sızıntı sıfır**a indi (kontrol sondaları —
+Türkçe düz metin, İngilizce prompt, aksanlı Latin — her seferinde reddedildi). Geçen vektörler
+yalnızca **teorik bit taşıyor**, okunabilir metin taşımıyor. Kalanlar:
+
+1. **Tokenizer charset'i dışındaki baytlar hiç denetlenmiyor.** Kiril/CJK karakterler token
+   üretmiyor → beyaz listeye hiç uğramıyor. Bu depoda içerik Türkçe/İngilizce olduğu için pratik
+   risk düşük. **Eşik:** fixture setine Latin dışı içerik girerse **hemen**.
+2. **`.gitattributes` muafiyeti ADA bağlı, YOLA değil.** Alt dizindeki aynı adlı dosya taranmıyor.
+3. **Yedi desenden dördü çitsiz** (semver, sürücü harfi, msg-id, iki nokta): tek tek gevşetildiğinde
+   54/54 yeşil kalıyor. Çıplak sayı / ISO / UUID çitli.
+4. **Sözleşme §7.1'in "4+ haneli her sayı reddedilir" cümlesi sınıf düzeyinde yanlış** —
+   ISO 15 hane, semver 9, msg-id 4 hane geçiyor. Belge düzeltilmeli.
+5. **`record()` hâlâ tüketicisiz** (`transcript_reader` sayaçları dürüstçe sıfır).
+   **Eşik:** F-010 bunu bağlamazsa **sil**.
+
+**Ortak eşik:** F-010 transkript okuyucusunu üretimde kullanmaya başladığında 1, 3 ve 5 birlikte
+ele alınmalı; 2 ve 4 belge/yapılandırma düzeltmesi, bağımsız kapatılabilir.

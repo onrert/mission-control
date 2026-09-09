@@ -165,12 +165,46 @@ export function UsageScreen({
             <div
               role="status"
               data-testid="usage-degraded-warning"
-              className="rounded-md border border-amber-800 bg-amber-950/40 p-2 text-sm text-amber-300"
+              className="flex flex-col gap-1 rounded-md border border-amber-800 bg-amber-950/40 p-2 text-sm text-amber-300"
             >
-              ⚠ Toplam {formatNumber(report.lines_ok + report.lines_bad)} satırdan{' '}
-              {formatNumber(report.lines_bad)}&apos;sı ayrıştırılamadı — veri eksik olabilir.
+              {/* F-011 QA düzeltme turu (Z4) — sessiz kısmi başarı yok: üç bağımsız uyarı, her
+                  biri yalnızca ilgili sayaç sıfırdan büyükse görünür (docs/03-ux.md ekran 6). */}
+              {report.lines_bad + report.unknown_type_lines > 0 && (
+                <p data-testid="usage-warning-unrecognized">
+                  ⚠ Toplam {formatNumber(report.lines_ok + report.lines_bad)} satırdan{' '}
+                  {formatNumber(report.lines_bad + report.unknown_type_lines)} tanesi tanınmadı —
+                  veri eksik olabilir.
+                </p>
+              )}
+              {report.unreadable_file_count > 0 && (
+                <p data-testid="usage-warning-unreadable-files">
+                  ⚠ {formatNumber(report.unreadable_file_count)} dosya okunamadı (izin/erişim
+                  hatası) — bu dosyaların token verisi toplamda YOK.
+                </p>
+              )}
+              {report.truncated_file_count > 0 && (
+                <p data-testid="usage-warning-truncated-files">
+                  ⚠ {formatNumber(report.truncated_file_count)} dosya çok büyük olduğu için kırpıldı
+                  (yalnızca son 32 MB okundu) — toplam eksik olabilir.
+                </p>
+              )}
             </div>
           )}
+
+          {/* F-011 QA düzeltme turu (Z6) — `docs/03-ux.md` ekran 6 mockup'ıyla birebir sütun
+              başlıkları (eskiden hiç yoktu, kullanıcı sayıların ne olduğunu tahmin etmek zorunda
+              kalıyordu). Grid şablonu satırlarla (`usage-row`) BİREBİR aynı olmalı. */}
+          <div
+            data-testid="usage-table-header"
+            aria-hidden="true"
+            className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 px-2 text-[11px] uppercase tracking-wide text-zinc-500"
+          >
+            <span>Proje</span>
+            <span>Gün</span>
+            <span>Giriş</span>
+            <span>Çıkış</span>
+            <span>Dağılım</span>
+          </div>
 
           <div data-testid="usage-rows" className="flex flex-col gap-2">
             {rows.map((row) => {
@@ -182,7 +216,10 @@ export function UsageScreen({
                   data-testid="usage-row"
                   className="rounded-md border border-zinc-800 bg-zinc-900/40"
                 >
-                  <summary className="grid cursor-pointer grid-cols-[1fr_1fr_auto_auto_auto] items-center gap-3 px-2 py-1.5 text-xs text-zinc-300">
+                  {/* Z6 — proje sütunu (1fr) TÜM esnek alanı alır; gün/giriş/çıkış/dağılım
+                      (auto) içeriklerine göre boyutlanır. Eskiden gün de `1fr` idi ve 320px'te
+                      proje sütunuyla alanı paylaşırken tamamen boşalıyordu (QA ölçtü). */}
+                  <summary className="grid cursor-pointer grid-cols-[1fr_auto_auto_auto_auto] items-center gap-3 px-2 py-1.5 text-xs text-zinc-300">
                     <span data-testid="usage-row-project" className="truncate font-semibold">
                       {row.project_label}
                     </span>

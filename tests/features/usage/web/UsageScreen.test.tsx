@@ -258,4 +258,74 @@ describe('UsageScreen — Y4/Y5: tablo, doğru sayılar, degraded uyarısı', ()
     await screen.findByTestId('usage-rows')
     expect(screen.queryByTestId('usage-degraded-warning')).toBeNull()
   })
+
+  it('sütun başlıkları (Proje/Gün/Giriş/Çıkış/Dağılım) tabloyla birlikte görünür (Z6)', async () => {
+    stubRouter({ usageResponse: { status: 200, body: { success: true, data: fullReport() } } })
+    render(<UsageScreen liveProjectsUpdate={null} onNavigateSettings={noop} />)
+    const header = await screen.findByTestId('usage-table-header')
+    expect(header.textContent).toBe('ProjeGünGirişÇıkışDağılım')
+  })
+
+  // ------------------------------------------------------------------------------------------
+  // F-011 QA düzeltme turu (Z4) — üç sessiz veri kaybı sınıfı, HER BİRİ bağımsız olarak yalnızca
+  // kendi sayacı sıfırdan büyükken görünür. QA ölçtü: eskiden ÜÇÜ de `degraded:false` ile
+  // sessizce geçiyordu (format değişimi, okunamayan dosya, 32 MB kırpma).
+  // ------------------------------------------------------------------------------------------
+  describe('Z4 — üç bağımsız sessiz veri kaybı uyarısı', () => {
+    it('yalnızca unknown_type_lines > 0 (format değişimi) iken "tanınmadı" satırı görünür, diğer ikisi GÖRÜNMEZ', async () => {
+      const data = fullReport()
+      data.degraded = true
+      data.lines_ok = 8
+      data.lines_bad = 0
+      data.unknown_type_lines = 8
+      data.unreadable_file_count = 0
+      data.truncated_file_count = 0
+      stubRouter({ usageResponse: { status: 200, body: { success: true, data } } })
+      render(<UsageScreen liveProjectsUpdate={null} onNavigateSettings={noop} />)
+      const warning = await screen.findByTestId('usage-degraded-warning')
+      expect(within(warning).getByTestId('usage-warning-unrecognized').textContent).toContain(
+        'tanınmadı'
+      )
+      expect(within(warning).getByTestId('usage-warning-unrecognized').textContent).toContain('8')
+      expect(screen.queryByTestId('usage-warning-unreadable-files')).toBeNull()
+      expect(screen.queryByTestId('usage-warning-truncated-files')).toBeNull()
+    })
+
+    it('yalnızca unreadable_file_count > 0 iken "okunamadı" satırı görünür, diğer ikisi GÖRÜNMEZ', async () => {
+      const data = fullReport()
+      data.degraded = true
+      data.lines_bad = 0
+      data.unknown_type_lines = 0
+      data.unreadable_file_count = 2
+      data.truncated_file_count = 0
+      stubRouter({ usageResponse: { status: 200, body: { success: true, data } } })
+      render(<UsageScreen liveProjectsUpdate={null} onNavigateSettings={noop} />)
+      const warning = await screen.findByTestId('usage-degraded-warning')
+      expect(within(warning).getByTestId('usage-warning-unreadable-files').textContent).toContain(
+        'okunamadı'
+      )
+      expect(within(warning).getByTestId('usage-warning-unreadable-files').textContent).toContain(
+        '2'
+      )
+      expect(screen.queryByTestId('usage-warning-unrecognized')).toBeNull()
+      expect(screen.queryByTestId('usage-warning-truncated-files')).toBeNull()
+    })
+
+    it('yalnızca truncated_file_count > 0 iken "kırpıldı" satırı görünür, diğer ikisi GÖRÜNMEZ', async () => {
+      const data = fullReport()
+      data.degraded = true
+      data.lines_bad = 0
+      data.unknown_type_lines = 0
+      data.unreadable_file_count = 0
+      data.truncated_file_count = 1
+      stubRouter({ usageResponse: { status: 200, body: { success: true, data } } })
+      render(<UsageScreen liveProjectsUpdate={null} onNavigateSettings={noop} />)
+      const warning = await screen.findByTestId('usage-degraded-warning')
+      expect(within(warning).getByTestId('usage-warning-truncated-files').textContent).toContain(
+        'kırpıldı'
+      )
+      expect(screen.queryByTestId('usage-warning-unrecognized')).toBeNull()
+      expect(screen.queryByTestId('usage-warning-unreadable-files')).toBeNull()
+    })
+  })
 })

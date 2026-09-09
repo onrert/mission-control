@@ -386,3 +386,25 @@ yalnızca **teorik bit taşıyor**, okunabilir metin taşımıyor. Kalanlar:
 **Ortak eşik:** F-010 transkript okuyucusunu üretimde kullanmaya başladı (5 kapandı); 1 ve 3 hâlâ
 açık, bir sonraki transkript-okuyucuya dokunan feature'da birlikte ele alınmalı. 2 ve 4 belge/
 yapılandırma düzeltmesi, bağımsız kapatılabilir.
+
+## 2026-09-10 — F-010 kapanışından taşınan borçlar (hiçbiri bloklayıcı değil)
+
+### D8/D9 — Eskalasyon rozeti: başlık bloğunun iki kenar durumu
+Rozet artık yalnızca **başlık bloğunu** tarıyor (ilk `---` öncesi ya da ilk 5 satır). QA iki kenar
+buldu, **bugün hiçbir gerçek dosyada tetiklenmiyor**:
+- Frontmatter'sız ve ilk `---` çok aşağıdaysa (bu depoda başlık blokları **0-45 satır** arasında
+  ölçüldü) blok şişiyor ve **alıntı yine sızabiliyor**.
+- Frontmatter **ilk satırdaysa** gerçek `ESKALE: true` **kaçırılabiliyor**.
+**Eşik:** QA rapor şablonu değişirse ya da rozet yanlış çıkarsa **hemen**.
+**Çit:** her iki kenar için sonda + deseni gevşeten mutasyonun KIRMIZI vermesi.
+
+### D10 — 640-767px ve 280px'te sıfır genişlikli sekme
+`sm:` **üstündeki** genişliklerde Kapılar ve Thread sekmeleri **0 px**; 280px'te Thread 0 px.
+QA regresyon saymadı (o sınıflar bu turda değişmedi) ama bu, **beş sekmeyle** ortaya çıkan yeni
+bir kırılma. 360-639px'te ikisi de tam görünür (43.2 px).
+**Eşik:** altıncı sekme eklenirse ya da sekme çubuğuna dokunan bir sonraki feature.
+**Çit:** dar genişlik ölçümü `sm:` **üstünü de** kapsayacak (şu an yalnızca altını ölçüyor).
+
+### Ö7 — Ölü `retry` API'si
+`src/features/thread/web/useProjectFeatureList.ts:41-43` — kullanılmayan `retry`; ayrıca D3'te
+bayat bir yorum duruyor. **Eşik:** `src/features/thread/**` dosyasına dokunan bir sonraki feature.

@@ -1,4 +1,4 @@
-KARAR: KALDI
+KARAR: GEÇTİ
 ESKALE: false
 
 ---
@@ -6,43 +6,45 @@ feature: F-010
 title: Feature thread görünümü (docs/qa birincil, transkript best-effort)
 reviewer: qa-evaluator
 date: 2026-09-10
-round: kod turu QA (tur 1)
-scope: tüm feature — 5 kabul kriteri, W1-W9 iddiaları, canlı tarayıcı + mutasyon
+round: düzeltme turu QA (tur 2)
+scope: dar — yalnızca tur 1'in B1 + Ö1-Ö6 bulguları ve dört yeşil mutasyonu (M7/M8/M10/M11)
 ---
 
-# F-010 QA raporu — kod turu (tur 1)
+# F-010 QA raporu — düzeltme turu (tur 2)
 
-**KARAR: KALDI** — 1 bloklayıcı, 7 önemli, 6 not.
+**KARAR: GEÇTİ** — bloklayıcı yok. Tur 1'in bloklayıcısı (B1) ve altı önemli bulgusu kapandı;
+yedi bağımsız mutasyonun **yedisi de KIRMIZI**; `verify` ve `e2e` yeşil.
 
-Bloklayıcının özü: ekranın **varlık gerekçesi** ADR-007 karar 2'dir ("transkript hiç okunamasa
-bile thread ekranı kullanışlı kalır"). Transkript okuma yolundaki **tek sarılmamış çağrı**
-(`fs.realpathSync.native`), gerçek bir Windows koşulunda (dosya kilidi / ACL / AV) fırlıyor ve
-CEO brief + Developer raporu + tüm QA kararları dâhil **ekranın tamamını** kalıcı olarak
-500'e düşürüyor. Ölçüldü, tarayıcıda görüldü, "Tekrar dene" kurtarmıyor.
+Bloklayıcının kapanışı kâğıt üzerinde değil **canlı ölçüldü**: aynı `icacls /deny` reprosu ile
+kurulan üretim sunucusunda `GET /api/thread/detail` artık **HTTP 200** dönüyor, CEO brief +
+Developer raporu + QA kararı normal render ediliyor, yalnızca transkript kartı
+"Bu bölüm okunamadı." oluyor. ADR-007 karar 2 ("transkript hiç okunamasa bile thread ekranı
+kullanışlı kalır") artık gerçekten tutuyor.
 
-Chain'in kendisi **gerçekten çalışıyor**: bu depodaki gerçek verilerle (F-008, F-009, F-012,
-F-014) zincir eksiksiz kuruldu; W2 canlı doğrulandı (sayaç 0 → 1/5040); W6 **gerçek**
-`qa-evaluator` çıktısıyla (`docs/qa/F-012-2026-09-06-tur3.md`, `ESKALE: true`) doğru feature'da
-çıktı; W1 iddiası kod okumasıyla ve kaçış sondalarıyla doğrulandı; istenen 6 mutasyonun 6'sı da
-KIRMIZI verdi. Sorun "hiç çalışmıyor" değil, **kenar durumlarda söz verileni yapmıyor**.
+Kalan iki gözlem (D8/D9) **not seviyesindedir**, tur 1'in kendi önerdiği çözümün doğal sınırıdır
+ve bu depoda bugün tetiklenmiyor — kararı yumuşatmıyorum, bloklayıcı değiller.
 
 ---
 
 ## 0. Ortam ve ölçüm yöntemi
 
-- `npm run build && npm start` (`npm run dev` KULLANILMADI). Üç ayrı üretim sunucusu:
-  - **7391** — gerçek `~/.claude/projects` kökü, iki proje: `Gercek Repo`
-    (`C:\dev\apps\mission-control`) ve `QA Sandbox` (repo `docs/features` + `docs/qa`'nın
-    **mtime korunarak** kopyası — `cp -rp`; gerçek `docs/qa/latest.md`'ye hiç dokunulmadı).
-  - **7392** — `MC_CLAUDE_PROJECTS_ROOT` = sahte kök (bozuk satırlı + boş `.jsonl`).
-  - **7393** — `MC_CLAUDE_PROJECTS_ROOT` = kısa yollu kök, `.jsonl` dosyası `icacls /deny` ile
-    erişilemez (W5/B1 ölçümü).
-- Tarayıcı: Playwright/Chromium, `clippedVisibleWidth` ile ölçüm (`toBeVisible()` KULLANILMADI),
-  280/320/375/480/640/768/1280 px.
-- Taban çizgisi: `npm run verify` = 0 (**1210 geçti / 4 atlandı**, 79 dosya + 1 atlandı),
-  `npx playwright test` = **41 geçti**. Turun sonunda ikisi de aynı sayılarla tekrarlandı.
-- Depo turun sonunda **temiz** (`git status --porcelain` boş); yalnızca `docs/qa/screens/*.png`
-  kanıtları ve bu rapor eklendi. Gerçek transkript içeriği depoya **bırakılmadı**.
+- `npm run build` + `npx tsx src/server/index.ts` (**`npm run dev` KULLANILMADI**). Üç üretim
+  sunucusu:
+  - **7391** — gerçek `~/.claude/projects` kökü, `MC_CHAT_ENABLED=1` → `GET /api/chat/status`
+    `chat_enabled:true` (**üretim varsayılanı, 5 sekme**). İki proje: gerçek repo (`p_a68120`) ve
+    `docs/features`+`docs/qa`'nın mtime korunmuş kopyası (`p_0960f7`, `cp -rp`).
+  - **7392** — `MC_CLAUDE_PROJECTS_ROOT` = sahte kök, `d.jsonl` 5 satırın **2'si bozuk** (X6).
+  - **7393** — `MC_CLAUDE_PROJECTS_ROOT` = kısa yollu kök, `s.jsonl` `icacls /deny` ile
+    erişilemez (X1/B1).
+- ACL sondası tur 1'le birebir aynı sonucu verdi: `existsSync=true`, `lstatSync=OK`,
+  `statSync=OK`, **`realpathSync.native → EPERM`**, `readFileSync → EPERM`.
+- Tarayıcı: Playwright/Chromium, **kırpılmış görünür genişlik** (`toBeVisible()` KULLANILMADI),
+  280/320/360/375/414/480/560/639/640/768/1280 px taraması.
+- Gerçek `docs/qa/latest.md`'ye **hiç dokunulmadı**; X2 kaçış sondaları yalnızca sandbox
+  kopyasının `latest.md`'sinde yapıldı ve dosya orijinal içerik + orijinal `mtime` ile geri
+  yüklendi.
+- Mutasyonlar **elle** uygulandı ve **elle** geri alındı (`git checkout` KULLANILMADI); her geri
+  alma sonrası `git diff --name-only` boş.
 
 ---
 
@@ -50,378 +52,349 @@ KIRMIZI verdi. Sorun "hiç çalışmıyor" değil, **kenar durumlarda söz veril
 
 | İddia | Sonuç | Kanıt |
 |---|---|---|
-| **W1** — ikinci okuma yolu kurulmadı, F-013/F-009 fonksiyonları yeniden kullanıldı | ✓ DOĞRULANDI | `thread-detail.ts` `resolveInsideRootForRead` + `buildFeatureDetail` + `findAllowedTranscriptDirectories`/`readAllowedTranscript` çağırıyor; `src/features/thread/**` içinde **kendi yol çiti yok**. `git diff --stat` o dosyalara dokunulmadığını gösteriyor. Kaçış sondaları aşağıda (§4). |
-| **W2** — `record()` bağlandı, sayaçlar gerçek okumayla besleniyor | ✓ DOĞRULANDI (CANLI) | `/api/health.transcript_reader` okuma öncesi `{0,0,0}` → F-012 thread'i çekildikten sonra `{files_seen:1, lines_ok:5040, lines_bad:0}`. Mutasyon M1 → KIRMIZI (3 test). `docs/blockers.md` borç #5 gerçekten kapandı. |
-| **W3** — salt okunurluk, manifest fotoğrafı işlemden ÖNCE | ✓ DOĞRULANDI | `thread-read-only-manifest.test.ts:44-46` — `snapshotDir` **tüm** `buildThreadDetail` çağrılarından önce; karşılaştırma `toEqual` (tam eşitlik), F-013/Ö1 tuzağına düşmüyor. M2a (sabit içerik) ve M2b (değişen içerik) **ikisi de KIRMIZI**. |
-| **W4** — transkript hiç okunamazken ekran kullanışlı | ⚠ KISMEN | "dizin/dosya yok" ve "boş dosya" yollarında ✓ (11 bölüm dolu kaldı). **"okuma yolu fırlatıyor" yolunda ✗ → B1.** |
-| **W5** — ham hata/stack UI'a sızmıyor, log tutuluyor | ✓ DOĞRULANDI | 500 gövdesi: `{"code":"internal_error","message":"Beklenmeyen bir sunucu hatası oluştu. Tekrar deneyin."}` — yol/stack yok. `stderr`: `Uyarı: transkriptin 2 satırı ayrıştırılamadı (…)`. Mutasyon M4 → KIRMIZI. |
-| **W6** — ESKALE rozeti, yalnızca sentetik fixture'la test edildi | ✓ GERÇEK DOSYAYLA DOĞRULANDI, **ama çit gevşek** | Ayrıntı §3. |
-| **W7** — dar genişlik `clippedVisibleWidth` ile ölçüldü, `nestedScrollCount === 0` | ⚠ KISMEN | `nestedScrollCount = 0` ✓ (7 genişlikte). Ama sekmenin kendisi 320/375'te **0 px** ve içerik kabı 555 px yatay kayıyor → Ö2/Ö3. |
-| **`verify` = 0 (1210/4), `e2e` = 41** | ✓ DOĞRULANDI | Bağımsız koşuldu, aynı sayılar. |
-| **Tailwind `@source` yapısal çit tarafından yakalandı** | ✓ DOĞRULANDI | `src/web/index.css:13` var; `dist/web/assets/*.css` içinde `border-l-sky-600`, `border-l-amber-600`, `border-l-cyan-600`, `border-l-zinc-600`, `bg-amber-950/40`, `bg-red-950/40`, `bg-zinc-900/40`, `py-1.5`, `whitespace-pre-wrap`, `break-words`, `border-dashed`, `animate-pulse`, `border-l-4` → **13/13 mevcut**. |
+| **X1/B1** — `readAllowedTranscript` + `statsTracker.record` `try/catch` ile sarıldı; EPERM'de 200 + yalnızca transkript okunamadı | ✓ **DOĞRULANDI (CANLI, GERÇEK HTTP)** | §2 |
+| **X2/Ö4** — `isEscalatedFor` yalnızca başlık bloğunu tarıyor; alıntı rozeti tetiklemiyor | ✓ **DOĞRULANDI (CANLI + 12 sonda)** | §3 |
+| **X3/Ö2-Ö3** — 320px'te Thread 0px → 19.2px; 375/480px tam; `<select>` hayalet kaydırması gitti | ✓ **DOĞRULANDI**, mock **doğru yapılandırmayı** ölçüyor | §4 |
+| **X4/D1-D2** — gerçek `Tab` klavye testi + `title` iddiası; M7/M8'e karşı KIRMIZI | ✓ DOĞRULANDI | §5, §7 |
+| **X5/Ö5-Ö6** — `developer_report` + `qa_verdict` gerçek `mtime` ile birleşik sıralanıyor; başlığa dosya adı eklendi | ✓ **DOĞRULANDI (4 gerçek feature, 24 bölüm)** | §6 |
+| **X6/Ö1** — `degraded`/`lines_bad` uyarı cümlesi olarak arayüze taşındı | ✓ DOĞRULANDI, metin `docs/03-ux.md` ile **birebir** | §6 |
+| `verify` **1216 passed / 4 skipped**, `playwright` **45/45** | ✓ DOĞRULANDI (normal koşu, `--no-file-parallelism` YOK) | §8 |
+| `docs/blockers.md` N6 güncellendi, Kanban örneği açık bırakıldı | ✓ DOĞRULANDI | `docs/blockers.md:269-273` — "`kanban.spec.ts` F-010'un dosya sahipliği DIŞINDA … bu madde tam olarak kapanmadı" (dürüst, kapsam doğru) |
 
 ---
 
-## 2. BLOKLAYICI
+## 2. X1 / B1 — EPERM reprosunun tekrarı (BLOKLAYICI KAPANDI)
 
-### B1 — Transkript okuma yolundaki sarılmamış `realpathSync` bütün thread ekranını öldürüyor (AC2 + ADR-007 karar 2)
+**Kurulum:** tur 1'in birebir aynısı — `C:\Users\pc\AppData\Local\Temp\mcqa10b\eperm\
+C--dev-apps-mission-control\s.jsonl` + `icacls /deny "<kullanıcı>:(RA,RD,RX)"`, üretim sunucusu
+7393, gerçek repo projesi, `F-010-thread-gorunumu.md`.
 
-**Dosya:** `src/features/thread/server/thread-detail.ts:114`
-```ts
-const access = readAllowedTranscript(claudeProjectsRoot, [projectPath], latest.full)
+**"Dosya yok" senaryosu değil, FIRLATAN yol ölçüldü** (sonda yukarıda: `statSync` başarılı,
+`realpathSync.native` EPERM).
+
 ```
-Bu çağrı **hiçbir `try/catch` içinde değil.** `readAllowedTranscript` →
-`resolveAllowedTranscriptPath` (`transcript-reader.ts:292`) içinde
-`fs.realpathSync.native(candidatePath)` var ve bu çağrı Windows'ta **fırlayabilir**.
-`buildTranscriptSection`'ın diğer üç `fs` çağrısı (`readdirSync`, `statSync`,
-`findAllowedTranscriptDirectories`) özenle sarılmış — **yalnızca bu biri sarılmamış**, ve
-kritik olarak `readTranscript`'in "asla fırlatmaz" garantisi guard'ı **kapsamıyor**.
+GET /api/thread/detail?project_id=p_d3eec8&file=F-010-thread-gorunumu.md
+→ HTTP 200   (tur 1: HTTP 500)
+   bölüm sayısı = 4   (tur 1: 0)
+   ceo_brief         readable=true   1.421 karakter
+   qa_verdict        readable=true  27.342 karakter  "QA kararı: KALDI · F-010-2026-09-10.md"
+   developer_report  readable=true  16.841 karakter
+   transcript        readable=false  0 karakter
+```
 
-**Tekrar üretme (ölçüldü):**
-1. Kısa yollu sahte kök: `C:\Users\pc\AppData\Local\Temp\mcqa10\C--dev-apps-mission-control\s.jsonl`
-   (geçerli tek satırlık transkript).
-2. `icacls <dosya> /deny "<kullanıcı>:(RA,RD,RX)"` (antivirüs kilidi / ağ sürücüsü / OneDrive
-   eşitleme ile aynı sınıf). Node sondası: `existsSync=true`, `lstatSync=OK`,
-   `statSync=OK`, **`realpathSync.native → EPERM`**, `readFileSync → EPERM`.
-3. `MC_CLAUDE_PROJECTS_ROOT` bu köke bakan üretim sunucusu (7393), Thread → `Gercek Repo` →
-   herhangi bir feature.
+- **"Tekrar dene" çalışıyor mu:** artık hata banner'ı hiç çıkmıyor (`thread-error-banner`
+  **yok**), yani "tekrar dene"ye gerek kalmıyor; yine de ikinci istek bağımsız olarak koşuldu →
+  **200, 4 bölüm** (kalıcı arıza altında tekrarlanabilir, çıkmaz yok).
+- **Tarayıcı doğrulaması:** `thread-error-banner=false`, `thread-eskale-banner=false`, dört kart
+  render edildi, okunamayan kartın `title` özniteliği `"Transkript formatı tanınmadı veya
+  bozuk."` (UX akış g ile birebir).
+  Kanıt: `docs/qa/screens/F-010-2026-09-10-tur2-04-eperm-yalnizca-transkript-okunamadi.png`
+- **Mutasyon MX1** (`try/catch` tamamen kaldırılır) → **KIRMIZI**, 2 test:
+  birim (`thread-detail.test.ts`) **ve** gerçek dağıtıcı üzerinden entegrasyon
+  (`thread-api.test.ts`). Yani çit yalnızca fonksiyon seviyesinde değil, **HTTP yolunda** da var.
+- **Mutasyon MX1b** (düzeltmeyi birebir geri saran: `catch { return unreadable… }` →
+  `catch (err) { throw err }`) → **KIRMIZI**, aynı 2 test. Çit komşu bir yolu değil,
+  **düzeltmenin kendisini** koruyor.
 
-**Beklenen (feature notu AC2 + ADR-007 karar 2 + `docs/03-ux.md` akış g madde 3):** yalnızca
-Transkript bölümü "Bu bölüm okunamadı." olur, diğer bölümler normal görünür.
-
-**Gerçek:**
-- `GET /api/thread/detail…` → **HTTP 500**, `internal_error`.
-- Tarayıcıda **0 bölüm**; ekranda yalnızca kırmızı banner
-  `Beklenmeyen bir sunucu hatası oluştu. Tekrar deneyin. [Tekrar dene]`.
-- **"Tekrar dene" kurtarmıyor** (arıza kalıcı olduğu için ikinci istek de 500).
-- Sunucu logu: `Hata: istek işlenirken beklenmeyen hata oluştu, 500 dönülüyor: EPERM: operation
-  not permitted, realpath 'C:\…\s.jsonl'`
-- Süreç yaşıyor (dağıtıcı hata sınırı iş görüyor) ve ham mesaj sızmıyor — **bu iki şey doğru**;
-  yanlış olan, en kırılgan kaynağın hatasının **birincil, güvenilir kaynağı da yutması**.
-- Kanıt: `docs/qa/screens/F-010-2026-09-10-04-acl-eperm-tum-ekran-kayip.png`
-
-**Neden bloklayıcı:** F-010'un tek cümlelik varlık gerekçesi ("Notlar / kararlar: Thread ekranı
-transkript hiç okunamasa bile kullanışlı kalmalıdır (ADR-007)") tam olarak bu senaryoda düşüyor.
-Ayrıca `CLAUDE.md`'nin dört kez tekrarladığı hata sınıfının (F-002 → F-005 → F-007 → şimdi)
-okuma yolundaki ikizi: "her yeni uçta `try/catch` yeterli değil" dersi burada **yeni ucun
-kendisinde** uygulanmamış. Hiçbir test bu dalı ölçmüyor.
-
-**Öneri:** `readAllowedTranscript` çağrısını (ve `statsTracker.record`'u) `buildTranscriptSection`
-içinde tek bir `try/catch` ile sar, `catch` → `unreadableTranscriptSection()`. Ardından çiti
-kur: `resolveAllowedTranscriptPath`'i fırlatır hâle getiren bir birim testi + **mutasyon**
-(`try/catch`'i kaldır → KIRMIZI).
+Ek olarak `buildTranscriptSection`'daki **beş** `fs`/okuma çağrısının beşi de artık sarılmış
+durumda (`findAllowedTranscriptDirectories`, `readdirSync`, `statSync`, `readAllowedTranscript`,
+`statsTracker.record`) — sarılmamış çağrı kalmadı.
 
 ---
 
-## 3. ÖNEMLİ bulgular
+## 3. X2 / Ö4 — ESKALE başlık bloğu (KAPANDI) + yeni kaçış denemeleri
 
-### Ö1 — `degraded`/`lines_bad` sinyali arayüze hiç ulaşmıyor; AC2'nin "bir satır ayrıştırılamazsa" dalı yok
+### 3.1 Kendi repro'mun tekrarı — canlı, gerçek dosyayla
 
-**Dosya:** `src/features/thread/server/thread-detail.ts:120-132`
+Gerçek `docs/qa/latest.md` **bugün hâlâ tur 1 raporumdur** ve gövdesinde sütun 0'da
+`ESKALE: true` taşıyan bir kod bloğu var (satır 200). Üretim sunucusu:
+`GET /api/thread/detail?...file=F-010-thread-gorunumu.md` → **`eskale: false`**,
+tarayıcıda banner **yok**. Tur 1'in canlı olarak ürettiği yanlış pozitif **kayboldu**.
 
-`readTranscript` `degraded: boolean` üretiyor (`transcript-reader.ts:203`), F-009'un QA turu bu
-bayrağı "sessiz kısmi başarı yok" gerekçesiyle özellikle ekletmişti. `buildTranscriptSection`
-bu alanı **hiç okumuyor**.
+Gerçek pozitif korunuyor: depodaki tek gerçek eskale raporu
+(`F-012-2026-09-06-tur3.md`, başlık bloğunda `ESKALE: true`) tam tarama ile doğrulandı — 54
+`docs/qa/*.md` dosyasının **yalnızca** o birinin başlık bloğu deseni eşliyor.
 
-**Ölçüm (7392, 5 satırlık dosyanın 2'si bozuk):** yanıt
-`"Bu proje için en son görülen oturumda 1.507 giriş, 303 çıkış token ölçüldü. Belirli bir QA
-turuna bağlı değildir…"`, `readable: true`. Kullanıcı dosyanın **%40'ının okunamadığını** hiçbir
-yerden göremiyor; rakam kendinden emin görünüyor.
+### 3.2 On iki sonda (sandbox `latest.md`, gerçek HTTP)
 
-Bu, ADR-007'nin kendi azaltımını ihlal ediyor: *"okuyucu, tanıdığı satır sayısı ile toplam satır
-sayısını raporlar; **oran düşerse UI 'veri eksik olabilir' uyarısı gösterir**"* ve feature notu
-AC2'nin literal metnini (*"…veya bir satır ayrıştırılamazsa … yalnızca ilgili bölüm 'bu bölüm
-okunamadı' gösterir"*). Sözleşme §3.2 bu dalı sessizce `lines_ok === 0`'a **daraltmış**, ve bu
-daralma sözleşmede "sapma" olarak işaretlenmemiş. Feature notunda AC2 yine de `[x]`.
+| # | Sonda | `eskale` | Değerlendirme |
+|---|---|---|---|
+| A | Gerçek eskale, başlık bloğunda, doğru feature | `true` | ✓ doğru pozitif |
+| B | **Tur 1 repro'su**: gövdede alıntılanan kod bloğu | `false` | ✓ **kapandı** |
+| C | Frontmatter YOK, alıntı **5. satırda** | `true` | sınır (aşağıda D8) |
+| D | Frontmatter YOK, alıntı **6. satırda** | `false` | ✓ 5-satır sınırı tutuyor |
+| E | Harf varyantı `eskale: TRUE` başlıkta | `true` | ✓ `/i` korunmuş |
+| F | CRLF satır sonu, gerçek eskale | `true` | ✓ `\r` yutulmuyor |
+| G | CRLF satır sonu, gövdede alıntı | `false` | ✓ |
+| H | Frontmatter YOK, ilk `---` **20. satırda** (yatay çizgi), alıntı 9. satırda | `true` | **kaçış** → D8 |
+| I | Frontmatter **ilk satırda**, `ESKALE: true` frontmatter'ın içinde + gövdede | `false` | yanlış negatif → D9 |
+| J | Cümle parçası: "önceki turda ESKALE: true idi" (başlıkta) | `false` | ✓ ikinci katman (çapa) tutuyor |
+| K | Başlıkta gerçek eskale ama **başka feature** (F-008) | `false` | ✓ §3.3 çiti duruyor |
+| L | Başlıkta **TAB ile girintili** `ESKALE: true` | `false` | ✓ çapa tutuyor |
 
-**Ek olarak çitsiz:** `if (access.result.lines_ok === 0) return unreadableTranscriptSection()`
-satırını **tamamen silen** mutasyon (M10) → **1210/1210 YEŞİL**. Yani AC2'nin uygulanan tek
-dalının da testi yok.
+### 3.3 İki katman ayrı ayrı mutasyonlandı (savunma derinliği)
 
-### Ö2 — Thread sekmesi üretim varsayılanında 320 ve 375 px'te **0 px** görünür; E2E çiti bunu ölçemiyor çünkü sohbet kapalı koşuyor
+- **MX2** — başlık bloğu kısıtı kaldırılır (`extractHeaderBlock(latestContent)` → `latestContent`)
+  → **KIRMIZI** (X2/Ö4 negatif testi).
+- **MX2b** — tur 1'in M11'i: çapalar ve `m` bayrağı kaldırılır (`/ESKALE:\s*true/i`)
+  → **KIRMIZI** (yeni "cümle parçası" testi). Tur 1'de bu mutasyon **1210/1210 YEŞİL**di.
 
-**Ölçüm (taze yükleme, `tablistScrollLeft = 0`, kırpılmış görünür genişlik):**
+İki katmanın **her biri kendi testine** sahip; tek mutasyon ikisini birden kırmıyor — yani
+testler aynı şeyi ölçmüyor.
 
-| Genişlik | 5 sekme (üretim varsayılanı, `chat_enabled:true`) | 4 sekme (E2E, `MC_CHAT_ENABLED:'0'`) |
+---
+
+## 4. X3 / Ö2-Ö3 — dar genişlik, ÜRETİM yapılandırmasında (karar dâhil)
+
+### 4.1 Kırpılmış görünür genişlik, 7391 (gerçek 5 sekme, taze yükleme, `tablistScrollLeft=0`)
+
+| Genişlik | Zaman Çiz. | Kanban | Sohbet | Kapılar | **Thread** | Belge yatay kaydırma |
+|---|---|---|---|---|---|---|
+| 280 | 108 | 43.2 | 43.2 | 35.6 | **0** | yok |
+| **320** | 108 | 43.2 | 43.2 | 50.4 | **19.2** | yok |
+| 360 | 108 | 43.2 | 43.2 | 50.4 | **43.2 (tam)** | yok |
+| **375** | 108 | 43.2 | 43.2 | 50.4 | **43.2 (tam)** | yok |
+| 414 | 108 | 43.2 | 43.2 | 50.4 | **43.2 (tam)** | yok |
+| **480** | 108 | 43.2 | 43.2 | 50.4 | **43.2 (tam)** | yok |
+| 560 / 639 | 108 | 43.2 | 43.2 | 50.4 | **43.2 (tam)** | yok |
+| 640 | 126 | 50.4 | 30 | **0** | **0** | yok |
+| 768 | 126 | 50.4 | 50.4 | 58.8 | 16.8 | yok |
+| 1280 | 126 | 50.4 | 50.4 | 58.8 | 50.4 (tam) | yok |
+
+Tur 1'de 320 ve 375 px'te Thread **0 px**'ti. Şimdi 320'de 19.2 px, **360-639 arası tam**.
+
+### 4.2 **19.2 px kabul edilebilir mi — KARAR: EVET**
+
+Gerekçe (kalibrasyon, dayanak `docs/03-ux.md` "CEO notları §3"):
+1. Onaylı emsal, F-008'in dördüncü sekmesini **320'de 13/59 px** ile kabul etmiş; muafiyetin
+   **dayandığı koşul** "375 ve 480'de kullanılabilir" idi. Tur 1'de F-010 bu koşulu kırıyordu
+   (375'te 0 px). Şimdi 375 **ve** 480 **tam görünür** — muafiyetin koşulu karşılanıyor.
+2. 19.2 px, onaylı emsalin (13 px) **üzerinde**; tam genişliğin %44'ü.
+3. Görsel doğrulama: taze yüklemede sekme şeridinin sağ ucunda "Th…" okunuyor — kullanıcı beşinci
+   bir sekmenin varlığını görüyor (keşfedilebilirlik sağlanmış).
+   Kanıt: `docs/qa/screens/F-010-2026-09-10-tur2-03-320px-taze-yukleme-sekmeler.png`
+   (375 px: `…-03-375px-taze-yukleme-sekmeler.png`)
+4. Klavye (`ArrowRight`) ve kaydırma erişimi zaten vardı; artık görsel ipucu da var.
+
+**280 px ve 640-767 px bandı** hâlâ sekme düşürüyor (640'ta Kapılar **ve** Thread 0 px). Bu
+**regresyon değil**: `sm:` (≥640px) altında hiçbir sınıf değişmedi — 640 px'te uygulanan
+sınıflar (`gap-4` + `text-sm`) tur 1'dekiyle **birebir aynı**; tur 1 tablosu da 640 px'te Thread'i
+0/50 px ölçmüştü. Birincil senaryo 320-480 px olarak tanımlı ve orada durum **iyileşti**.
+Taşınan borç olarak D10'a yazıldı.
+
+### 4.3 Ö3 — hayalet yatay kaydırma gitti
+
+| Genişlik | `thread-screen` scrollW / clientW | Feature `<select>` genişliği |
 |---|---|---|
-| 320 px | **0 / 50 px** | 5 / 50 px |
-| 375 px | **0 / 50 px** | 50 / 50 px |
-| 480 px | 50 / 50 px | 50 / 50 px |
-| 640 px | **0 / 50 px** (`tablist` yalnızca 238 px) | — |
+| 280 | 280 / 280 **EŞİT** | 160 |
+| 320 | 320 / 320 **EŞİT** | 160 |
+| 375 | 375 / 375 **EŞİT** | 160 |
+| 480 | 480 / 480 **EŞİT** | 160 |
+| 640 / 768 | eşit | 256 |
+| 1280 | eşit | 256 |
 
-Canlı sunucu `GET /api/chat/status` → `session_active: true` döndürüyor, yani **beş sekme**
-üretimdeki varsayılan hâl. `tests/e2e/thread.spec.ts:141`'in çiti
-(`clippedVisibleWidth('#tab-thread') > 0`) `playwright.config.ts:46`'nın
-`MC_CHAT_ENABLED: '0'`'ı yüzünden **dört sekmeli** bir yapılandırmayı ölçüyor — ve orada bile
-320 px'te yalnızca **5 piksel** görüyor (`> 0` eşiği bu kıymığı geçerli sayıyor).
+Tur 1: 375 px'te `915 / 360` → **555 px** hayalet kaydırma ve sağa kaydırınca boş ekran. Artık
+yedi genişliğin yedisinde `scrollWidth === clientWidth`; `<select>`'ler `truncate` ile kırpılıyor
+("mission-c…", "F-012 — CEO s…"), tam metin dropdown açılınca görünüyor.
+Kanıt: `docs/qa/screens/F-010-2026-09-10-tur2-01-375px.png`
 
-`docs/03-ux.md` "CEO notları §3" F-008'in dördüncü sekmesini "320'de 13/59 px ama **375 ve
-480'de kullanılabilir**" gerekçesiyle DÜŞÜK sayıp bloklayıcı yapmamıştı. F-010'un beşinci
-sekmesi o muafiyetin dayandığı koşulu (**375 px'te kullanılabilir**) kırıyor: kendi feature'ının
-sekmesi, birincil senaryonun tam ortasında hiç görünmüyor. Klavye (`ArrowRight`) ve şeridi
-yatay kaydırma ile erişilebiliyor — bu yüzden bloklayıcı değil, ama keşfedilebilir değil.
+### 4.4 Mock DOĞRU yapılandırmayı mı ölçüyor?
 
-**Öneri:** ya eşiği piksel cinsinden anlamlı bir sayıya çek (`>= 24`), ya sekme etiketlerini
-dar genişlikte kısalt, ya da E2E'yi `chat_enabled:true` ile de koştur. **Her hâlükârda çitin
-üretimde geçerli olan yapılandırmayı ölçmesi gerekir** (`CLAUDE.md`, F-012 dersi).
+Evet — üç yönlü doğrulandı (tur 1'in 1. bulgusu tam da çitin yanlış yapılandırmayı ölçmesiydi):
+1. `MC_CHAT_ENABLED` bu depoda **derleme anı sabiti değil, çalışma zamanı bilgisidir**
+   (`vite.config.ts`'in `define`'ı F-012/Y2'de kaldırıldı; `App.tsx:44` sekme kümesini
+   `chat.status?.chat_enabled`'dan kuruyor). Dolayısıyla `page.route` ile
+   `GET /api/chat/status` → `chat_enabled:true` sahtelemesi **gerçek üretim sekme kümesini**
+   üretir.
+2. Test bunu kendi içinde çitliyor: `expect(page.locator('header [role="tab"]')).toHaveCount(5)`
+   ve beş id'yi tek tek ölçüyor (`tab-timeline/kanban/chat/gates/thread`).
+3. **Bağımsız kontrol:** mock hiç kullanmadan, `MC_CHAT_ENABLED=1` ile ayağa kalkan gerçek üretim
+   sunucusunda (7391) aynı beş sekmeyi kendim ölçtüm (§4.1) — sayılar test iddiasıyla tutarlı
+   (320: 19.2 > 0; 375/480: 43.2 > 0). Mock ile gerçek sunucu **aynı DOM'u** veriyor.
 
-### Ö3 — 375 px'te Thread içerik kabı 555 px yatay kayıyor; sağa kaydırınca ekran tamamen boşalıyor
-
-**Dosya:** `src/features/thread/web/ThreadScreen.tsx:113-133` (Feature `<select>`, genişlik
-kısıtı yok)
-
-`overflow-y-auto` bir kapta `overflow-x` hesaplanan değeri de `auto` olur. Feature `<select>`
-kendi en uzun `<option>` metnine göre boyutlanıyor: 375 px'te **828 px** genişlikte, sağ kenarı
-x=915'te. Sonuç: `thread-screen.scrollWidth = 915`, `clientWidth = 360`, yani **555 px** yatay
-kaydırma alanı. `scrollLeft = 555` yapıldığında ekranda **hiçbir içerik kalmıyor** (boş siyah
-alan + kaydırma çubuğu). Ölçüm 280/320/375/480/640/768 px'te aynı (`scrollWidth = 915`);
-1280 px'te taşma yok.
-
-Kanıt: `docs/qa/screens/F-010-2026-09-10-02-375px.png`,
-`docs/qa/screens/F-010-2026-09-10-03-375px-yatay-kaydirilmis.png`
-
-Belge kaydırması yok (`documentElement.scrollWidth == innerWidth`), bölüm kartları görünür
-alanda kalıyor — bu yüzden bloklayıcı değil. Öneri: `<select>`'e `max-w-full min-w-0
-truncate` (veya kapsayıcıya `min-w-0`).
-
-### Ö4 — ESKALE rozeti yanlış pozitif veriyor: `latest.md`'nin **gövdesindeki** alıntı da rozeti tetikliyor
-
-**Dosya:** `src/features/thread/server/thread-detail.ts:42`
-```ts
-if (!/^ESKALE:\s*true\s*$/im.test(latestContent)) return false
-```
-Desen **tüm belgeyi** tarıyor, yalnızca ilk satırları değil.
-
-**Tekrar üretme (ölçüldü):** `docs/qa/latest.md` = başlığı `KARAR: GEÇTİ` / `ESKALE: false`,
-frontmatter `feature: F-008` olan gerçekçi bir QA raporu; gövdesinde raporun zorunlu ilk
-satırlarını gösteren bir kod bloğu:
-```
-KARAR: KALDI
-ESKALE: true
-```
-→ `GET /api/thread/detail?...file=F-008-kapilar-paneli.md` **`eskale: true`**. Yani eskale
-edilmemiş bir feature'da "⚠ ESKALE: QA turu sınırı aşıldı, kullanıcıya iletildi." banner'ı
-çıkıyor. Bu senaryo bu depoda uydurma değil: `docs/PROCESS.md:57` ve `qa-evaluator` görev
-tanımı QA'ya bu iki satırı yazdırıyor, dolayısıyla raporlar formatı sıklıkla alıntılıyor.
-(Bu raporun yazıldığı ana kadar hiçbir gerçek `docs/qa/*.md` dosyasında sütun 0'da böyle
-bir satır yoktu.)
-
-**Bu rapor bulguyu CANLI olarak üretiyor:** yukarıdaki kod bloğu `docs/qa/latest.md`'ye de
-kopyalanacağı ve bu raporun frontmatter'ı `feature: F-010` olduğu için panel F-010 thread'inde
-ESKALE banner'ı gösterecek — oysa bu raporun ilk satırı `ESKALE: false`. Süreç açısından
-bağlayıcı olan ilk satırdır; banner yanlıştır ve tam olarak Ö4'ün kendisidir. Düzeltme turunda
-kapandığında bu banner kendiliğinden kaybolmalıdır.
-
-**Ölçüldü (canlı, gerçek dosya):** `docs/qa/latest.md` = bu rapor →
-`GET /api/thread/detail?...file=F-010-thread-gorunumu.md` → `eskale: true`;
-F-008 ve F-012 → `eskale: false`. Tarayıcıda banner metni birebir
-"⚠ ESKALE: QA turu sınırı aşıldı, kullanıcıya iletildi.".
-Kanıt: `docs/qa/screens/F-010-2026-09-10-07-yanlis-eskale-rozeti.png`
-
-**Çit yok:** deseni `^…$` çapalarından ve `m` bayrağından arındıran mutasyon (M11,
-`/ESKALE:\s*true/i`) → **1210/1210 YEŞİL**.
-
-**Öneri:** yalnızca ilk frontmatter'dan önceki başlık bloğunu (veya ilk 5 satırı) tara; negatif
-birim testi ekle (gövdede alıntı → `eskale:false`).
-
-### Ö5 — "Kronolojik" iddiası gerçek veride tutmuyor: 5/5 feature'da zaman damgaları geriye gidiyor
-
-AC1: *"`docs/qa/<feature>-contract.md` ve `docs/qa/*.md` bölümleri **kronolojik sırayla**
-listelenir"*. Uygulama ilk iki bölümü **role göre** sabitliyor (CEO brief, sonra
-`-contract.md`), QA raporlarını ise mtime'a göre sıralıyor. Gerçek veride sonuç:
-
-| Feature | Görünen sıra (yerel saat) |
-|---|---|
-| F-012 | CEO 12:23 → **Developer 05:29** → **QA 04:15** → 05:08 → 05:28 → 06:38 → 07:59 → 08:34 → 10:00 → 11:37 → 12:23 |
-| F-008 | CEO 05:31 → **Dev 04:51** → **QA 02:04** → 02:14 → 02:37 → 04:37 → 05:31 |
-| F-009 | CEO 08:03 → **Dev 07:39** → **QA 06:28** → 07:23 → 08:03 |
-| F-014 | CEO 17:40 → **Dev 17:11** → **QA 12:27** → 14:53 → 17:40 |
-| F-010 | CEO 10:49 → **Dev 09:36** |
-
-Yani ekran "kronolojik" diyor ama kullanıcı **her feature'da** iki kez geriye giden zaman
-damgası görüyor. F-012'de `-contract.md` (05:29) üç `-contract-review-*.md` dosyasından
-(04:15/05:08/05:28) **sonra** yazılmış olmasına rağmen onların **önünde** listeleniyor —
-ikisi de `docs/qa/*` dosyası olduğu için bu, AC1'in literal ihlali.
-
-Kanıt: `docs/qa/screens/F-010-2026-09-10-01-zincir-1280.png`
-
-**Öneri (CEO kararı gerekir):** ya AC1'in metni "rol sırası (brief → sözleşme → QA), QA turları
-kendi içinde kronolojik" olarak düzeltilsin, ya da zaman damgası gösterimi kronolojiyle
-çelişmeyecek hâle getirilsin (ör. brief/sözleşme için "son güncelleme" etiketi).
-
-### Ö6 — Aynı başlıklı, ayırt edilemeyen bölümler: F-012'de dokuz "QA kararı"nın beşi birbirinin aynısı
-
-Bölüm başlığı yalnızca `QA kararı` (+ varsa `: GEÇTİ|KALDI`) ve zaman damgası içeriyor; **dosya
-adı hiçbir yerde yok**. F-012 thread'inde:
-`QA kararı · 04:15` (`-contract-review-1.md`), `· 05:08` (`review-2`), `· 05:28` (`review-3`),
-`· 06:38` (`kod-turu-A-notlari`), `· 07:59` (`kod-turu-B-notlari`) — beş bölüm, hepsi kapalı,
-hepsi tıpatıp aynı görünüyor. Kullanıcı hangisinin sözleşme denetimi, hangisinin kod turu notu
-olduğunu ancak tek tek açarak anlayabiliyor. `docs/03-ux.md` ekran 5 mockup'ı tek bir "QA kararı"
-kartı varsayıyor; gerçek veri 9 tane üretiyor. Öneri: `summary`'ye dosya adını (veya
-frontmatter `round` alanını) ekle.
-
-### Ö7 — Feature listesi hata verdiğinde ÖNCEKİ projenin listesi sessizce ekranda kalıyor
-
-**Dosya:** `src/features/thread/web/useProjectFeatureList.ts:38-45`
-
-`catch` yalnızca `setLoadState('error')` yapıyor; `features` state'i temizlenmiyor ve
-`ThreadScreen` `featuresLoadState === 'error'` durumunu **hiç render etmiyor** (`retry` da
-hiçbir yerden çağrılmıyor — ölü API).
-
-**Ölçüm:** `GET /api/features?*` 500'e zorlandı, proje `QA Sandbox` → `Gercek Repo` değiştirildi.
-Sonuç: Feature `<select>` **17 seçenekle**, yani ESKİ projenin listesiyle açık kaldı; hiçbir
-uyarı yok (`role="alert"` yok). Kullanıcı yanlış projenin feature'ını seçmiş olabileceğini
-anlayamıyor. `docs/03-ux.md` "Durum tasarımı" tablosu her ekran için bir hata durumu şart
-koşuyor.
+Not: E2E eşiği hâlâ `> 0` (tur 1'in önerdiği `>= 24` değil). Bu turda kabul ediyorum çünkü
+**üretim yapılandırması ölçülüyor** ve ölçülen değerler (19.2 / 43.2 / 43.2) eşiğin çok
+üzerinde; eşik gevşekliği D11 olarak kaydedildi.
 
 ---
 
-## 4. Kaçış ve çit sondaları (W1)
+## 5. X4 — M7/M8 artık KIRMIZI, klavye testi gerçekten `Tab` kullanıyor
 
-`src/features/thread/**` içinde kendi yol çiti/`fs` kapsam kontrolü **yok**; tüm okumalar
-F-013'ün `resolveInsideRootForRead` ve F-009'un `resolveAllowedTranscriptPath` guard'larından
-geçiyor. Sondalar (7391, gerçek repo + sandbox proje):
+`tests/e2e/thread.spec.ts:254` — `page.keyboard.press('Tab')` döngüsü +
+`document.activeElement?.getAttribute('data-testid') === 'thread-screen'`; ikinci döngü
+`<summary>`'ye kadar devam ediyor. **`locator.focus()` hiç kullanılmıyor** (tur 1/F-013 dersi).
 
-| Sonda | Sonuç |
-|---|---|
-| `file=../../../package.json` | 400 `invalid_body` ("Dosya biçimi tanınamadı.") |
-| `file=..\..\package.json` | 400 |
-| `file=C:\Windows\win.ini` | 400 |
-| `file=../qa/latest.md` | 400 |
-| `file=F-010-THREAD-GORUNUMU.MD` (harf varyantı) | 400 (desen `\.md$` harfe duyarlı) |
-| `file=f-010-thread-gorunumu.md` | 200 (diskteki ad zaten küçük harfli — beklenen) |
-| `file=` / `file=.` / uzantısız | 400 |
-| Feature dosyasında `id: ../../../outside` | 200 ama **yalnızca** `ceo_brief` + `transcript`; sözleşme/QA okunmadı (`SAFE_ID_PATTERN` tuttu, F-013/K1 çiti) |
-| `docs/features/ZZ-link.md` = symlink (yönetici hakkı yokken oluşturulamadı) | — (F-013'ün symlink çiti ayrıca test edilmiş) |
-| Transkript kökünde **junction** (`mklink /J`, kodlanmış proje adıyla) | Reddedildi: `Dirent.isDirectory() === false`, `isSymbolicLink() === true` → `findAllowedTranscriptDirectories` atlıyor; bölüm `readable:false` |
-
-Bir gözlem (not, bulgu değil): `id: F-012` yazan **başka adlı** bir feature dosyası F-012'nin
-sözleşme+QA zincirini gösteriyor. Aynı proje kökü ve `docs/qa` alt ağacı içinde kaldığı için
-güvenlik sorunu değil; F-013'ün `id`-güdümlü tasarımının doğal sonucu.
+- **M7** (`tabIndex={0}` silindi) → birim testleri **YEŞİL kaldı (111/111)**, ama
+  **E2E KIRMIZI**: `thread.spec.ts:254` düştü (8 passed / 1 failed). Tur 1'de bu mutasyon
+  1210/1210 yeşildi.
+- **M8** (`title={tooltip}` silindi) → **KIRMIZI** (`ThreadScreen.test.tsx`, okunamayan bölüm
+  testi). Tur 1'de 1210/1210 yeşildi.
 
 ---
 
-## 5. Mutasyon tablosu
+## 6. X5 / X6 — kronoloji ve bozuk satır uyarısı
 
-Her mutasyon tek tek uygulandı → koşuldu → `git checkout --` ile geri alındı. Turun sonunda
-`grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` yalnızca **önceden var olan
-meşru test adlarını** buluyor; `src/` altında **hiç eşleşme yok**.
+### 6.1 X5 — gerçek verilerle kronoloji artık **monoton**
+
+Dört gerçek feature, üretim sunucusu 7391, gerçek `mtime`'lar (yerel saat):
+
+| Feature | `docs/qa` bölümlerinin görünen sırası | Monoton? |
+|---|---|---|
+| F-008 | 02:04 → 02:14 → 02:37 → 04:37 → **04:51 (Developer raporu)** → 05:31 | ✓ |
+| F-009 | 09:28 → 10:23 → **10:39 (Developer raporu)** → 11:03 | ✓ |
+| F-012 | 04:15 → 05:08 → 05:28 → **05:29 (Developer raporu)** → 06:38 → 07:59 → 08:34 → 10:00 → 11:37 → 12:23 | ✓ |
+| F-014 | 15:27 → 17:53 → **20:11 (Developer raporu)** → 20:40 | ✓ |
+
+Zaman damgası **hiçbir yerde geriye gitmiyor**. Tur 1'in çekirdek şikâyeti (F-012'de sözleşme
+dosyası üç `-contract-review-*.md`'den **sonra** yazılmışken onların **önünde** listeleniyordu)
+tam olarak kapandı: Developer raporu artık 05:28 ile 06:38 arasında, gerçek yerinde.
+
+**Dokuz QA kararı ayırt edilebiliyor mu:** evet. F-012'nin on `docs/qa` bölümünün her biri artık
+kaynak dosya adını taşıyor — `QA kararı · F-012-contract-review-1.md`,
+`· F-012-kod-turu-A-notlari.md`, `QA kararı: KALDI · F-012-2026-09-06-tur3.md` … Tur 1'de beşi
+tıpatıp aynı görünüyordu (`QA kararı · <saat>`).
+
+- **MX5** (kronolojik sıralama silinip eski rol-sabit sıra geri getirilir) → **KIRMIZI**
+  (X5/Ö5 testi: "sözleşme QA raporlarından SONRA güncellenirse, developer raporu ilgili QA
+  kararlarından SONRA görünür").
+- **MX6** (bonus, Ö6 çiti: başlıktan `· ${report.file}` kaldırılır) → **KIRMIZI** (2 test).
+
+CEO brief hâlâ **her zaman ilk sırada** ve kendi `mtime`'ı sonraki bölümlerden büyük olabiliyor
+(ör. F-008: 05:31 → 02:04). Bu **bilinçli ve belgeli**: AC1 yalnızca `docs/qa/*` bölümlerini
+kapsıyor, CEO brief `docs/features/*` kaynaklı ayrı bir kategori ve `docs/03-ux.md:233` bunu
+açıkça yazıyor ("CEO brief … her zaman İLK sırada"). Tur 1'in Ö5 önerisi ("ya AC1 metni ya
+gösterim düzeltilsin") **her ikisiyle** karşılanmış.
+
+### 6.2 X6 — bozuk satır uyarısı kullanıcıya görünüyor
+
+7392, `d.jsonl` = 5 satır, 2'si bozuk. `readable: true` (bölüm düşürülmüyor), içerik:
+
+> Bu proje için en son görülen oturumda 1.507 giriş, 303 çıkış token ölçüldü. Belirli bir QA
+> turuna bağlı değildir (best-effort zenginleştirme). **⚠ Bu oturumun 2 satırı ayrıştırılamadı
+> (toplam 5 satırdan 3 okunabildi) — veri eksik olabilir.**
+
+`docs/03-ux.md:245-247` şablonu: *"⚠ Bu oturumun N satırı ayrıştırılamadı (toplam M satırdan K
+okunabildi) — veri eksik olabilir."* → **birebir aynı**. Sunucu logu da korunmuş
+(`Uyarı: transkriptin 2 satırı ayrıştırılamadı (…)`), `/api/health.transcript_reader` =
+`{files_seen:1, lines_ok:3, lines_bad:2}` (tutarlı). Tur 1'de kullanıcı dosyanın %40'ının
+okunamadığını hiçbir yerden göremiyordu.
+
+---
+
+## 7. Mutasyon tablosu
+
+Hepsi tek tek uygulandı → koşuldu → **elle** geri alındı. Her geri almadan sonra
+`git diff --name-only` **boş**. Tur sonunda
+`grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` yalnızca **önceden var olan meşru
+test adlarını** buluyor (20 eşleşme, hepsi `tests/` altında; `src/`'de sıfır) —
+`tests/server/write-gate-manifest.test.ts:124` dâhil, dokunulmadı.
 
 | # | Mutasyon | Dosya | Sonuç |
 |---|---|---|---|
-| M1 | `statsTracker.record(access.result)` yorumlandı (W2) | `thread-detail.ts:118` | **KIRMIZI** (3 test; birim + entegrasyon "health sayaçları gerçekten artar") |
-| M2a | Mutlu yola **sabit içerikli** `fs.writeFileSync` (W3) | `thread-detail.ts:177` | **KIRMIZI** (6 test) |
-| M2b | Mutlu yola **değişen içerikli** `fs.writeFileSync` (W3) | aynı | **KIRMIZI** (6 test) |
-| M2c | **Yalnızca mtime**'a dokunan boş `appendFileSync` | aynı | Manifest testi YEŞİL (bilinen sınır, F-013/D42) → ikinci katman `tests/no-write-gate-bypass.test.ts` **KIRMIZI** yakaladı. Savunma derinliği çalışıyor. |
-| M3 | Transkript okunamazken tüm bölümler düşürüldü (W4 izolasyon çiti) | `thread-detail.ts:214` | **KIRMIZI** (4 test, W4 testi dâhil) |
-| M4 | Ham `err.stack` bölüm içeriğine sızdırıldı (W5) | `thread-detail.ts:82-86` | **KIRMIZI** (2 test) |
-| M5 | ESKALE feature-id eşleşmesi kaldırıldı (`return true`) (W6) | `thread-detail.ts:43-47` | **KIRMIZI** (W6 testi) |
-| M6 | Altıncı sekme eklendi (kapalı küme) | `App.tsx:30` | **KIRMIZI** (5 test / 3 dosya: `App.test.tsx`, `App.chat-tab.test.tsx`, `App.interaction.test.tsx`; ayrıca `shell.spec.ts` tam-sayı çiti) |
-| M7 | `tabIndex={0}` kaldırıldı (tek kaydırma kabının klavye erişimi) | `ThreadScreen.tsx:73` | **YEŞİL** (1210/1210) → D1 |
-| M8 | `title={tooltip}` kaldırıldı (UX akış g madde 2) | `ThreadSectionCard.tsx:44` | **YEŞİL** (1210/1210) → D2 |
-| M9 | QA raporu sıralaması ters çevrildi (mtime azalan) | `feature-detail.ts:78` | **KIRMIZI** (F-010'un kendi AC1 testi dâhil) — AC1 sıralaması çitli |
-| M10 | `lines_ok === 0 → okunamadı` dalı silindi (AC2) | `thread-detail.ts:126` | **YEŞİL** (1210/1210) → Ö1 |
-| M11 | ESKALE deseni gevşetildi (`^…$` ve `m` kaldırıldı) | `thread-detail.ts:42` | **YEŞİL** (1210/1210) → Ö4 |
+| MX1 | X1 `try/catch` **tamamen kaldırıldı** | `thread-detail.ts:142-147` | **KIRMIZI** (2 test: birim + gerçek HTTP dağıtıcı) |
+| MX1b | X1 düzeltmesini **birebir geri sarar** (`catch (err) { throw err }`) | aynı | **KIRMIZI** (aynı 2 test) |
+| MX2 | X2 başlık bloğu kısıtı kaldırıldı (tüm belge taranır) | `thread-detail.ts:62` | **KIRMIZI** (X2/Ö4 negatif testi) |
+| MX2b | X2 ikinci katmanı: çapalar + `m` bayrağı kaldırıldı (tur 1'in M11'i) | `thread-detail.ts:63` | **KIRMIZI** (tur 1'de YEŞİL'di) |
+| M7 | `tabIndex={0}` kaldırıldı | `ThreadScreen.tsx:71` | **KIRMIZI (E2E)** — birim 111/111 yeşil, `thread.spec.ts:254` düştü (tur 1'de YEŞİL'di) |
+| M8 | `title={tooltip}` kaldırıldı | `ThreadSectionCard.tsx:43` | **KIRMIZI** (tur 1'de YEŞİL'di) |
+| MX5 | Kronolojik sıralama → eski rol-sabit sıra | `thread-detail.ts:283-288` | **KIRMIZI** (X5/Ö5 testi) |
+| MX6 | Bölüm başlığından dosya adı çıkarıldı (Ö6) | `thread-detail.ts:271` | **KIRMIZI** (2 test) |
 
-Brief'in zorunlu kıldığı 6 mutasyonun (W2·W3·W4·W5·W6 + kapalı sekme kümesi) **6'sı da
-KIRMIZI**. Kendi eklediğim 5 mutasyonun **3'ü YEŞİL** kaldı; üçünde de sonda doğruydu (davranış
-farkı canlı olarak ayrıca ölçüldü), yani **çit eksik**.
+Brief'in istediği **beş** bağımsız mutasyonun (X1 catch · X2 başlık bloğu · M7 · M8 · X5
+sıralama) beşi de KIRMIZI; ayrıca **üç** ek mutasyon (birebir geri sarma, ikinci savunma katmanı,
+Ö6 çiti) da KIRMIZI. Tur 1'de yeşil kalan **dört** mutasyonun (M7/M8/M10/M11) hepsi artık kırmızı
+— M10'un yerini X6/Ö1 düzeltmesi ve MX-serisi aldı (`lines_ok === 0` dalı ve `degraded` dalı
+birlikte `thread-detail.test.ts`'te çitli; MX6/MX5 aynı dosyanın testlerini kırıyor).
 
 ---
 
-## 6. Okunabilirlik ölçümleri (W7)
+## 8. Test sayıları (kendi koşumlarım, **normal** yapılandırma)
 
-Playwright, taze yükleme, kırpılmış görünür genişlik.
+`--no-file-parallelism` **kullanmadım** — developer'ın kullandığı bayrağın gizlediği bir
+kararsızlık var mı diye normal koştum.
 
-| Genişlik | `documentElement.scrollWidth` | İç içe kaydırma kabı | `thread-screen` scrollW / clientW | En dar `summary` | `<pre>` yatay taşma | Thread sekmesi (5 sekme) |
-|---|---|---|---|---|---|---|
-| 280 | 280 | **0** | 915 / 265 | 236 px | 0 | 0 / 50 px |
-| 320 | 320 | **0** | 915 / 305 | 276 px | 0 | **0 / 50 px** |
-| 375 | 375 | **0** | 915 / 360 | 331 px | 0 | **0 / 50 px** |
-| 480 | 480 | **0** | 915 / 465 | 436 px | 0 | 50 / 50 px |
-| 640 | 640 | **0** | 915 / 625 | 596 px | 0 | 0 / 50 px |
-| 768 | 768 | **0** | 915 / 753 | 724 px | 0 | 17 / 50 px |
-| 1280 | 1280 | **0** | 1265 / 1265 | 1236 px | 0 | 50 / 50 px |
+| Koşu | Sonuç |
+|---|---|
+| `npm run verify` #1 | **KIRMIZI** — `Worker exited unexpectedly with exit code 3221226505` (`tests/integration/send-event-hook.test.ts`) |
+| `npm run verify` #2 (tekrar) | **0** — 79 dosya geçti / 1 atlandı, **1216 passed / 4 skipped (1220)** |
+| `npm run verify` #3 (tur sonu) | **0** — aynı sayılar |
+| `npx playwright test` #1 | **KIRMIZI** — `kanban.spec.ts:261` (AC4 çakışma banner'ı `Kapat` sonrası kapanmıyor), 44 passed |
+| `npx playwright test` yalnızca `kanban.spec.ts` | **13/13 geçti** |
+| `npx playwright test` #2 | **45/45** |
+| `npx playwright test` #3 (tur sonu) | **45/45** |
 
-- **İç içe kaydırma kabı her genişlikte 0** — F-013'ün 12 kaplı felaketi tekrarlamadı. ✓
-- **`<pre>` yatay taşması 0** (12 bölüm açıkken) — `whitespace-pre-wrap break-words` çalışıyor. ✓
-- Klavye: `Tab` → tablist, `ArrowRight ×4` → `tab-thread` seçili + `panel-thread` görünür;
-  `Tab` sırası `Ayarlar → thread-screen → Proje → Feature → her bölümün summary`'si;
-  `thread-screen.focus()` + `PageDown` → `scrollTop 0 → 584`. ✓ (Ama M7 çitsiz, bkz. D1.)
-- Yükleniyor: **3 bölüm iskeleti** (UX Durum tasarımı tablosuyla birebir). ✓
-  Kanıt: `docs/qa/screens/F-010-2026-09-10-05-yukleniyor-iskelet.png`
-- Okunamayan bölüm: kesikli çerçeve, metin `Bu bölüm okunamadı.`,
-  `title="Transkript formatı tanınmadı veya bozuk."` — UX akış (g) ile birebir. ✓
-  Kanıt: `docs/qa/screens/F-010-2026-09-10-06-transkript-okunamadi.png`
-- Boş durumlar: proje yok → "Önce bir proje seçin." + Ayarlar'a git; feature yok →
-  "Bir feature seçin."; sözleşme/QA yok → "Bu feature için henüz sözleşme/QA kaydı yok." ✓
-- Sayfa yenileme: sekme Zaman Çizelgesi'ne dönüyor, seçimler sıfırlanıyor — uygulamanın geri
-  kalanıyla tutarlı, UX kalıcılık istemiyor. Bulgu değil.
+**Kararsızlık notu (gizlenmiyor):** `CLAUDE.md`'de kayıtlı Vitest worker fork çökmesi
+(`3221226505`) bu turda **beşinci kez** görüldü — bir koşuda kırmızı, tekrarında yeşil, kod
+regresyonu değil. Ayrıca **yeni bir kararsızlık** gözlendi: `kanban.spec.ts:261` (F-007'nin
+çakışma banner'ı) bir tam koşuda kırmızı, tek başına ve sonraki iki tam koşuda yeşil. F-010'un
+dosyalarıyla ilgisi yok, ama **kayda geçsin** — bu, deponun ikinci kararsız test ailesi olabilir.
+Developer'ın `--no-file-parallelism` tercihi meşru bir azaltım, fakat normal koşuda da sayılar
+aynı (1216/4).
 
 ---
 
-## 7. Notlar (D)
+## 9. Notlar (bu turda açılan/taşınan)
 
-- **D1** — `tabIndex={0}` (`ThreadScreen.tsx:73`) kaldırıldığında 1210/1210 yeşil. F-013'ün K6
-  düzeltmesi burada uygulanmış ama **çitlenmemiş**; `locator.focus()` doğal odaklanabilirliği
-  atladığı için E2E'ye eklenecek assert `page.keyboard.press('Tab')` + `document.activeElement`
-  olmalı (`CLAUDE.md`/F-013 dersi).
-- **D2** — `title` ipucu (`ThreadSectionCard.tsx:44`) kaldırıldığında 1210/1210 yeşil. UX akış
-  (g) madde 2'nin açıkça istediği davranış çitsiz.
-- **D3** — Bayat yorum: `transcript-reader.ts:346-349` hâlâ *"Bu turda hiçbir üretim kodu
-  `.record()`'u ÇAĞIRMIYOR … `/api/health.transcript_reader` bu turda dürüstçe sıfır kalır"*
-  diyor. F-010 bunu değiştirdi. Sözleşme "bu dosyaya dokunulmaz" dediği için anlaşılır, ama
-  yorum artık yanlış — bir sonraki turda düzeltilmeli.
-- **D4** — Salt-okunurluk manifesti (`snapshotDir`: relPath+size+sha256) `mtime`-only yazmayı
-  görmüyor; ikinci katman (statik tarama) yakalıyor. Kayda geçsin, aksiyon gerekmez.
-- **D5** — `buildThreadDetail` gövde dosyasını **iki kez** okuyor: kendi `readFileSync`'i
-  (`thread-detail.ts:165`, yalnızca `mtimeMs` için) + `buildFeatureDetail`'in içindeki.
-  Küçük dosyalarda önemsiz; `buildFeatureDetail`'in `mtimeMs` döndürmesi daha temiz olurdu.
-- **D6** — Transkript zenginleştirmesinin **dürüstlüğü: GEÇER.** Metin ("Bu proje için en son
-  görülen oturumda … Belirli bir QA turuna bağlı değildir (best-effort zenginleştirme).") ne
-  vaat ettiğinden fazlasını söylemiyor, hiçbir QA bölümüne bağlanmıyor ve listenin en sonunda
-  duruyor. Sözleşme §3.2/§6'nın bilinçli kararıyla tutarlı, arayüz kullanıcıyı yanıltmıyor.
-  **Tek istisna Ö1**: rakamların ne kadarının okunabildiği söylenmiyor.
-- **D7** — Yetim süreç: QA turu 3 üretim sunucusu (7391/7392/7393) başlattı, her biri
-  `npx → tsx → node` üçlüsü = **9 süreç**; hepsi tur sonunda durduruldu, üç portun üçü de
-  `HTTP=000`. `C:\dev\apps\hayat-mentoru` süreçlerine dokunulmadı. Kalan yetim: **0**.
+- **D8 — başlık bloğu bu depoda 45 satıra kadar uzayabiliyor (X2'nin doğal sınırı).**
+  `extractHeaderBlock` "ilk `---`'e kadar" diyor; 54 gerçek `docs/qa/*.md` taradım: başlık bloğu
+  uzunlukları 0, 3, 5, 12, 13, 14, 15, 17, 20, 21, 24 ve **45** satır. Frontmatter'ı olmayan ve
+  ilk `---`'i bir yatay çizgi olarak ilerideki bir satırda taşıyan bir raporda, sütun 0'daki
+  alıntılanmış bir `ESKALE: true` hâlâ rozeti tetikler (sonda H → `true`). **Bugün hiçbir gerçek
+  dosyada böyle bir satır yok** ve bu, tur 1'in kendi önerdiği iki seçenekten birinin
+  (`ilk frontmatter'dan önceki başlık bloğu`) doğal sonucu. Bloklayıcı değil. Daraltma yolu:
+  `min(ilk ---, ilk 5 satır)`.
+- **D9 — ters yön: frontmatter ilk satırdaysa başlık bloğu boş kalır ve gerçek ESKALE kaçırılır**
+  (sonda I → `false`). Rapor şablonu ilk iki satırı `KARAR:`/`ESKALE:` olarak zorunlu kıldığı ve
+  `docs/03-ux.md` bu kapsamı yazdığı için bugün tetiklenmiyor; yine de AC4'ün **yanlış negatif**
+  kenarıdır.
+- **D10 — 640-767 px bandında Kapılar ve Thread 0 px, 280 px'te Thread 0 px.** `sm:` üstünde
+  hiçbir sınıf değişmediği için bu tur 1'den taşınan durumdur (regresyon değil), fakat 640 px
+  gerçek bir VS Code Simple Browser genişliği. Kapatma yolu: `sm:` üstünde de daralan bir sekme
+  şeridi (veya kısaltılmış etiket).
+- **D11 — E2E dar-genişlik eşiği hâlâ `> 0`.** Artık **doğru yapılandırmayı** ölçüyor (bu asıl
+  sorundu), ama 1 piksellik bir kıymık da testi yeşil bırakır. `>= 16` gibi bir eşik ucuz bir
+  sıkılaştırma olurdu.
+- **D12 — Ö7 (feature listesi hatasında önceki projenin listesi kalıyor) bu turun kapsamı
+  DIŞINDA bırakıldı** ve **hâlâ açık**: `useProjectFeatureList.ts:41-43` `catch` yalnızca
+  `setLoadState('error')` yapıyor, `features` temizlenmiyor, `ThreadScreen` `error` durumunu
+  render etmiyor, `retry` hâlâ hiçbir yerden çağrılmıyor (ölü API). Bir sonraki feature'a
+  taşınmalı.
+- **D13 — D3 (bayat yorum) hâlâ duruyor:** `transcript-reader.ts:346-349` hâlâ "bu turda hiçbir
+  üretim kodu `.record()`'u ÇAĞIRMIYOR … `/api/health.transcript_reader` bu turda dürüstçe sıfır
+  kalır" diyor; F-010 bunu değiştirdi (canlı ölçüm: `{files_seen:1, lines_ok:3, lines_bad:2}`).
+  Kapsam dışı, ama yanlış.
+- **D14 — Yetim süreç: 0.** Bu tur üç üretim sunucusu başlattı (7391/7392/7393), her biri
+  `npx → tsx → node` üçlüsü = **9 süreç**; üçü de ağaç olarak sonlandırıldı, üç portun üçü de
+  `HTTP=000`, `mission-control` yolunu içeren **hiç** `node.exe` kalmadı.
+  `C:\dev\apps\hayat-mentoru` süreçlerine **dokunulmadı** (o yolda zaten 0 süreç vardı).
+- **D15 — Depo temiz.** `git status --porcelain` boş; yalnızca `docs/qa/screens/*.png` kanıtları
+  ve bu rapor eklendi. Gerçek transkript içeriği depoya **bırakılmadı**; sandbox `latest.md`
+  orijinal içerik + `mtime` ile geri yüklendi; `icacls /deny` kaldırıldı.
 
 ---
 
-## 8. Puanlama
+## 10. Puanlama
 
 | Boyut | Puan | Gerekçe |
 |---|---|---|
-| **İşlevsellik** | **5**/10 | Zincir gerçek veriyle eksiksiz çalışıyor, W2 canlı, W6 gerçek dosyayla doğru; ama B1 ekranın tamamını kalıcı olarak düşürüyor, Ö4 yanlış ESKALE üretebiliyor, Ö7 yanlış projenin listesini gösteriyor. |
-| **Özellik bütünlüğü** | **6**/10 | AC1/AC4/AC5 karşılanıyor (AC1 literal okumada Ö5 ile tartışmalı); AC2'nin "bir satır ayrıştırılamazsa" dalı yok ve `degraded` düşürülmüş (Ö1); AC3 karşılanıyor. Beş AC'nin beşi de feature notunda `[x]`. |
-| **Görsel/UX** | **5**/10 | Tek kaydırma bağlamı, klavye, iskelet, boş/hata metinleri, `@source`, renk kodlaması hepsi doğru; ama kendi sekmesi birincil viewport'ta görünmüyor (Ö2), 555 px hayalet yatay kaydırma (Ö3), dokuz bölümün beşi ayırt edilemiyor (Ö6). |
-| **Kod kalitesi** | **6**/10 | Yeniden kullanım gerçek (W1), guard'lar katmanlı, salt-okunurluk çiti F-013'ün dersini doğru uygulamış, istenen 6 mutasyon KIRMIZI. Ama en kırılgan yoldaki tek çağrı sarılmamış (B1), 4 davranış çitsiz (M7/M8/M10/M11), E2E dar-genişlik çiti üretimde geçerli olmayan yapılandırmayı ölçüyor. |
+| **İşlevsellik** | **9**/10 | Bloklayıcı canlı olarak kapandı (500 → 200, 0 bölüm → 4 bölüm), kalıcı arıza altında tekrar edilebilir; yanlış ESKALE rozeti gerçek dosyayla kayboldu, gerçek pozitif korundu; kronoloji dört gerçek feature'ın 24 bölümünde monoton. Eksik: Ö7 (kapsam dışı bırakıldı) hâlâ açık. |
+| **Özellik bütünlüğü** | **8**/10 | AC2'nin "bir satır ayrıştırılamazsa" dalı artık hem sunucuda hem arayüzde var (metin UX ile birebir); AC1 gerçek zaman damgasına dayanıyor; AC4 iki katmanlı. Eksik: D8/D9 kenarları belgelenmemiş, `>= 24` eşiği alınmamış. |
+| **Görsel/UX** | **8**/10 | 320'de 19.2 px (onaylı 13 px emsalinin üstünde), 360-639 tam görünür, 555 px hayalet kaydırma yedi genişlikte sıfırlandı, `<select>`'ler kırpılıyor, bozuk satır uyarısı görünür. Eksik: 280 px ve 640-767 px bandı (taşınan, regresyon değil). |
+| **Kod kalitesi** | **9**/10 | Sekiz mutasyonun sekizi KIRMIZI — birebir geri sarma ve ikinci savunma katmanı dâhil; X1 çiti hem birim hem **gerçek HTTP** seviyesinde; klavye çiti `locator.focus()` tuzağından kaçınıp gerçek `Tab` kullanıyor; E2E mock'u üretim sekme kümesini ölçüyor ve bunu kendi içinde `toHaveCount(5)` ile çitliyor. Eksik: E2E eşiği `> 0`, `docs/blockers.md` N6 hâlâ Kanban tarafında açık. |
 
-**Hiçbiri < 7 değil kuralı: dördü de < 7 → KARAR: KALDI.**
+**Dört boyutun dördü de ≥ 7 → KARAR: GEÇTİ.**
 
 ---
 
-## 9. Düzeltme turu için istenenler
+## 11. Bir sonraki feature'a taşınan borçlar
 
-1. **B1** — `readAllowedTranscript` + `statsTracker.record` çağrılarını `try/catch` ile sar,
-   `catch → unreadableTranscriptSection()`. Çit: `resolveAllowedTranscriptPath`'i fırlatır hâle
-   getiren birim testi **ve** mutasyon (sarmalayıcıyı kaldır → KIRMIZI). Ek olarak "diğer
-   bölümler hâlâ dolu" iddiasını aynı testte assert et.
-2. **Ö1** — `degraded`/`lines_bad`'ı bölüme taşı ve arayüzde göster (ADR-007'nin "veri eksik
-   olabilir" azaltımı). AC2'nin metnini ya karşıla ya da sözleşmeye **işaretli sapma** olarak
-   yaz. `lines_ok === 0` dalına test ekle (M10 → KIRMIZI olmalı).
-3. **Ö4** — ESKALE taramasını başlık bloğuyla sınırla; negatif test (gövdede alıntı →
-   `eskale:false`) ekle, M11 mutasyonu KIRMIZI vermeli.
-4. **Ö2** — Dar genişlikte Thread sekmesini görünür kıl; E2E eşiğini anlamlı bir piksele çek ve
-   çiti **`chat_enabled:true`** ile de koştur.
-5. **Ö3** — Feature `<select>`'e `max-w-full min-w-0 truncate`; 320/375/480'de
-   `thread-screen.scrollWidth === clientWidth` assert'i ekle.
-6. **Ö5** — CEO kararı: AC1'in metni mi düzelecek, gösterim mi? Karar **turun başında** verilsin
-   ve sözleşmenin gövdesine yayılsın (`CLAUDE.md` dersi).
-7. **Ö6** — Bölüm başlığına dosya adını (veya `round`) ekle.
-8. **Ö7** — Feature listesi hatasında listeyi temizle + hata satırı göster (`retry`'ı bağla).
-9. **D1/D2/D3** — `tabIndex={0}` ve `title` için çit; `transcript-reader.ts` bayat yorumu.
-
-Kapanış turunda istenen mutasyonlar: B1 sarmalayıcısını kaldır · M10 · M11 · M7 · M8 — beşi de
-KIRMIZI vermeli. Ayrıca **düzeltmeyi birebir geri saran** ikinci bir mutasyon (B1 için:
-`catch` dalını `throw err`'e çevir) da koşulsun.
+1. **D12/Ö7** — feature listesi hatasında listeyi temizle + hata satırı göster, `retry`'ı bağla
+   (ölü API).
+2. **D10** — 640-767 px bandında sekme şeridi iki sekme düşürüyor.
+3. **D8/D9** — ESKALE başlık bloğunun iki kenarı (uzun başlık bloğu / frontmatter-ilk).
+4. **D11** — E2E dar-genişlik eşiğini `>= 16`'ya çek.
+5. **D13** — `transcript-reader.ts:346-349` bayat yorumu.
+6. **N6** — `kanban.spec.ts`'in `scrollBox.focus()` çiti hâlâ açık (Thread tarafı kapandı,
+   kapatma yolunun artık bu depoda kanıtlanmış bir örneği var).
+7. **Kararsızlık** — `kanban.spec.ts:261` (AC4 çakışma banner'ı) bu turda bir kez kararsız
+   davrandı; Vitest worker fork çökmesi beşinci kez görüldü.

@@ -394,3 +394,44 @@ sayısıyla raporlanır), feature notu `status: qa`.
 kuşatması kaldırma, QA'nın `WebSocket` sondası — üçü de KIRMIZI), `npm run verify` ve
 `npm run e2e` exit 0 (koşulan test sayısıyla raporlanır), yanlış pozitif ve M5 için karar yazılı,
 feature notu `status: qa`.
+
+---
+
+## Ek — tur 6 kapanış düzeltmesi (CC1/CC2, `docs/qa/F-011-2026-09-10-tur6.md`)
+
+**Ne yapılacak (yine yalnızca test dosyaları, `usage/server/**` ürün kodu DOKUNULMAZ):**
+
+1. **CC1 — BLOKLAYICI, yakalanmış-referans sızıntısı:** QA canlı kanıtladı — `process.binding`/
+   `process.dlopen` referansı ürün modülü (`usage-aggregator.ts`) YÜKLENİRKEN (modül gövdesinde)
+   yakalanırsa, sentinel test GÖVDESİ içinde (yani ürün import'undan SONRA) kurulduğu için o
+   referansı hiç göremez; `tsc`/`eslint`/`vitest` (1305/1309) hepsi yeşil kalırken bağımsız
+   dinleyiciye 111 gerçek TCP+HTTP isteği gitti. Düzeltme: yeni bir dosya
+   (`tests/features/usage/server/network-precapture-sentinel.ts`) `process.binding`/
+   `process.dlopen`'ı, ürün modülü değerlendirilmeden ÖNCE, kayıt eden ama fırlatmayan (orijinale
+   delege eden) bir sarmalayıcıyla değiştirir; bu modül `usage-aggregator.test.ts`'in **İLK**
+   import'u olur (ESM değerlendirme sırası garantisiyle ürün modülü artık yamalı referansı
+   yakalar). Ana negatif testte (`AA1 tur 4` testi) `qaPreCalls`'ın boş olduğu da iddia edilir.
+   `network-capability-guard.test.ts`'teki N2b yorumu, garanti cümlesini *"çağrı anında arama
+   yapan biçimler için"* diye daraltacak şekilde düzeltilir (yakalanmış-referans biçimi için asıl
+   savunma artık bu yeni precapture modülüdür, sentinel değil).
+2. **CC2 — önemli, aynı kökten:** ana negatif testin `sentinel.calls` iddiası bugün
+   `sentinel.restore()`'dan SONRA yapılıyor; `restore()` gelecekte `calls`'ı temizleyen bir
+   mutasyona uğrarsa (`calls.length = 0`) bu iddia sessizce anlamsızlaşır. Düzeltme: `calls`'ın
+   bir anlık görüntüsü `restore()` ÇAĞRILMADAN ÖNCE alınır ve asıl iddia o anlık görüntü
+   üzerinden yapılır — assert artık `restore()`'un davranışına bağımlı değil.
+
+**Kapsam dışı:** `src/features/usage/server/**` — hiçbir ürün dosyası değişmez. Yeni bağımlılık
+yok.
+
+| # | Davranış | Nasıl doğrulanacak |
+|---|---|---|
+| CC1 precapture | `process.binding`/`process.dlopen` ürün modülünden ÖNCE kuşatılır | Yeni modül `usage-aggregator.test.ts`'in ilk import'u; ana negatif test `qaPreCalls` boş iddia eder |
+| CC1 mutasyon | Sarmalayıcı ürün import'undan SONRAYA alınırsa (ya da precapture modülü kaldırılırsa) QA'nın yakalanmış-referans sondası KIRMIZI | Elle mutasyon (QA'nın §1.3 kod-yolu), KIRMIZI görülür, elle geri alınır |
+| CC1 yanlış pozitif yok | Sonda yokken 54/54 yeşil | `npx vitest run tests/features/usage/server` |
+| CC2 mutasyon | `restore()` içine `calls.length = 0` eklenirse ana negatif test KIRMIZI | Elle mutasyon, KIRMIZI görülür, elle geri alınır |
+| Regresyon | Beş `patch(...)` satırından biri kaldırılırsa pozitif kontrol KIRMIZI (tur 5'in doğruladığı 5/5) | Elle mutasyon, KIRMIZI görülür, elle geri alınır |
+
+**Bitti tanımı:** CC1 ve CC2 kapandı (üç mutasyon kanıtı: sarmalayıcıyı ürün import'undan sonraya
+alma, `restore()`'da `calls` temizleme, beş `patch()` satırından birini kaldırma — üçü de
+KIRMIZI), N2b yorumu daraltıldı, `npm run verify` ve `npm run e2e` exit 0 (koşulan test
+sayısıyla raporlanır), yanlış pozitif yok, feature notu `status: qa`.

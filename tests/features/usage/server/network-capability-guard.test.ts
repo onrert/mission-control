@@ -423,10 +423,16 @@ describe('usage/server ağ/süreç yeteneği yapısal çiti (Z2, F-011 QA düzel
   // DERLENMEZ (`TS2339`); gerçekte YAZILABİLİR/derlenen tek yol bir `unknown` cast'i ara
   // değişkene atamaktır — ve bu biçim metinsel regex'in aradığı ardışık "process" + ".binding("
   // dizisini kırdığı için tarayıcı tarafından YAKALANMAZ. Bu kalıcı negatif kontrol o sınırı
-  // ÖRTBAS ETMEDEN belgeler: bu vektördeki asıl savunma artık `usage-aggregator.test.ts`teki
-  // sentinel'in `process.binding`'i doğrudan kuşatmasıdır (çalışma zamanı katmanı), bu dosyanın
-  // statik taraması DEĞİL.
-  it("N2b — process.binding('tcp_wrap') GERÇEKTEN DERLENEN cast biçiminde (process as unknown as {…}) statik tarayıcı tarafından YAKALANMAZ (bilinen, kabul edilmiş sınır — asıl savunma sentinel'in runtime kuşatması)", () => {
+  // ÖRTBAS ETMEDEN belgeler.
+  //
+  // F-011 QA tur 6 (§1.3, CC1 düzeltmesi) — bir önceki yorum "asıl savunma sentinel'in runtime
+  // kuşatmasıdır" diyordu; bu, yalnızca cast'in ÇAĞRI ANINDA (bir fonksiyon gövdesi içinde)
+  // ARAMA YAPTIĞI biçimler için doğrudur. Eğer aynı cast referansı ÜRÜN MODÜLÜ YÜKLENİRKEN
+  // (modül gövdesinde, sentinel kurulmadan ÖNCE) yakalanırsa, sentinel'in çağrı-anı kuşatması o
+  // referansı hiç GÖREMEZ (QA canlı kanıtladı: 111 gerçek TCP+HTTP isteği, tüm takım yeşil). O
+  // yakalanmış-referans biçimi için asıl savunma artık `usage-aggregator.test.ts`'in İLK
+  // import'u olan `network-precapture-sentinel.ts`'tir — bu dosyanın statik taraması DEĞİL.
+  it("N2b — process.binding('tcp_wrap') GERÇEKTEN DERLENEN cast biçiminde (process as unknown as {…}) statik tarayıcı tarafından YAKALANMAZ (bilinen, kabul edilmiş sınır — çağrı anında arama yapan biçimler için asıl savunma sentinel'in runtime kuşatması, modül-yükleme-zamanlı yakalama biçimi için `network-precapture-sentinel.ts`)", () => {
     withTempFixture(
       'const qaProc = process as unknown as { binding: (name: string) => unknown }\n' +
         "qaProc.binding('tcp_wrap')\n",

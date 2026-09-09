@@ -3902,3 +3902,72 @@ B1/AA1 kaldı. Sözleşme eki: `docs/qa/F-011-contract.md` §7.
 
 **Sonraki adım**
 - qa-evaluator F-011'in düzeltme turu 5'ini (BB1/BB2) değerlendirsin.
+
+---
+
+## 2026-09-09 — F-011 QA düzeltme turu 6 (CC1/CC2, sentinel'i atlayan modül-yükleme-zamanlı sızıntı)
+
+**Ne yapıldı**
+- Kaynak: `docs/qa/F-011-2026-09-10-tur6.md` (KALDI → CC1 BLOKLAYICI + CC2 önemli).
+- **CC1:** QA canlı kanıtladı — `process.binding`/`process.dlopen` referansı ürün modülü
+  (`usage-aggregator.ts`) YÜKLENİRKEN (modül gövdesinde) yakalanırsa, sentinel test GÖVDESİ
+  içinde (ürün import'undan SONRA) kurulduğu için o referansı hiç göremiyordu; `tsc`/`eslint`/
+  `vitest` (1305/1309) hepsi yeşilken bağımsız bir dinleyiciye 111 gerçek TCP+HTTP isteği
+  gitmişti. Düzeltme: yeni bir test-yardımcı dosyası
+  (`tests/features/usage/server/network-precapture-sentinel.ts`) `process.binding`/
+  `process.dlopen`'ı, ürün modülü değerlendirilmeden ÖNCE, kayıt eden ama fırlatmayan (orijinale
+  delege eden) bir sarmalayıcıyla değiştiriyor; bu dosya `usage-aggregator.test.ts`'in **İLK**
+  import'u yapıldı (ESM değerlendirme sırası garantisi). Ana negatif teste
+  `expect(qaPreCalls).toEqual([])` eklendi.
+- **CC2:** Ana negatif testin `sentinel.calls` iddiası `restore()`'dan SONRA yapılıyordu;
+  `restore()` gelecekte `calls`'ı temizleyen bir mutasyona uğrarsa (`calls.length = 0`) bu iddia
+  sessizce anlamsızlaşabilirdi. Düzeltme: `calls`'ın bir anlık görüntüsü (`capturedCalls`)
+  `restore()` ÇAĞRILMADAN ÖNCE alınıyor; asıl iddia o anlık görüntü üzerinden yapılıyor.
+- `network-capability-guard.test.ts`'teki N2b yorumu daraltıldı: "asıl savunma sentinel'in
+  runtime kuşatması" cümlesi artık yalnızca **çağrı anında arama yapan** biçimler için geçerli
+  olduğunu söylüyor; modül-yükleme-zamanlı yakalama biçimi için asıl savunmanın
+  `network-precapture-sentinel.ts` olduğu ayrıca belirtildi.
+- Dosya sahipliği korundu: `tests/features/usage/server/**` (2 dosya değişti + 1 yeni dosya),
+  `docs/qa/F-011-contract.md`, `docs/features/F-011-token-kullanimi.md`. Ürün koduna
+  (`src/features/usage/server/**`) kalıcı dokunuş yok.
+
+**Nasıl doğrulandı**
+- `npx tsc --noEmit` → exit 0. `npx eslint` (üç dosya) → temiz.
+- `npx vitest run tests/features/usage/server` → **54/54 yeşil**, yanlış pozitif yok.
+- **Üç mutasyon kanıtı** (hepsi elle, `bak/` kopyasından geri yazıldı, `git checkout`
+  KULLANILMADI, md5 başlangıç değeriyle birebir eşleşti — `usage-aggregator.ts`
+  `5908d3fb493999736e21e8601c29b11a`, test dosyası satır satır karşılaştırıldı):
+  1. QA'nın §1.3 yakalanmış-referans sondası (modül gövdesinde `process.binding` yakalayıp
+     çağıran geçici kod) ürün koduna eklendi → doğru sırayla (precapture ilk import) **KIRMIZI**
+     (`qaPreCalls` = 12 giriş). Aynı sonda + precapture import'u ürün import'undan SONRAYA
+     alınınca (sıra bozulunca) **54/54 YEŞİL** kaldı — düzeltmenin gerçekten sıraya bağlı
+     olduğunun kanıtı.
+  2. Çağrı-anında-arama yapan bir `process.binding` sondası ürün koduna eklendi → **KIRMIZI**
+     (`capturedCalls` = `['process.binding']`). `restore()` içine `calls.length = 0` eklenince
+     de **aynı şekilde KIRMIZI** kaldı — CC2'nin `restore()`'un davranışından bağımsız olduğunun
+     kanıtı.
+  3. Beş `patch(...)` satırından biri (`process.binding`) kaldırıldı → pozitif kontrol testi
+     **KIRMIZI** (tur 5'in doğruladığı 5/5 regresyon çitinin hâlâ canlı olduğu kanıtı).
+- `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca önceki turlardan
+  kalan meşru test adları, hiçbirine dokunulmadı; sonda kalıntısı taraması (`QA-MUTATION`) → 0
+  eşleşme (tüm geçici kod elle geri alındı).
+- `npm run verify`: exit 0 — **typecheck 0, lint 0, test: 84 dosya geçti + 1 skip (85), 1305
+  test geçti + 4 skip (1309)**, build başarılı. `npx vitest run` ikinci kez ayrıca koşuldu, aynı
+  sayı (**1305/1309**) — worker-fork kararsızlığı bu turda gözlenmedi.
+- `npm run e2e`: **55/55 geçti** (48,4s), tek koşu, flake yok.
+- Yetim süreç: bu turda `npm run dev` hiç çalıştırılmadı; `tasklist`/`netstat` ile node.exe
+  süreci ve 7333/45xxx'te dinleyici olmadığı teyit edildi (yalnızca ilgisiz bir sistem süreci —
+  `lghub_agent.exe` — 45654'te dinliyordu, bizim testlerimizle ilgisiz). `hayat-mentoru`
+  süreçlerine dokunulmadı.
+
+**Kalan risk / bir sonraki QA turuna notlar**
+- `docs/blockers.md`'deki iki eski borç (yanlış pozitif metinsel katman, M5 giriş uzantı kapsamı)
+  hâlâ açık — bu turda kapsam dışı, eşiği yazılı.
+- Sentinel + precapture katmanı artık `net`/`tls`/`http`/`https`/`dgram`/`dns`/`fetch`/
+  `WebSocket`/`process.binding`/`process.dlopen`'ı (hem çağrı-anı hem modül-yükleme-zamanı
+  biçimleriyle) kapsıyor; Node'un bu yüzeyin tamamen dışında kalan, henüz denenmemiş başka bir
+  gizli API'si teorik olarak hâlâ kapsam dışı — davranış-tabanlı katmanın doğası gereği kapanmayan
+  bir sınır (tur 5'te de not edildi).
+
+**Sonraki adım**
+- qa-evaluator F-011'in düzeltme turu 6'sını (CC1/CC2) değerlendirsin.

@@ -1,3 +1,7 @@
+// F-011 QA tur 6 (BLOKLAYICI CC1) — bu, dosyanın İLK import'u OLMAK ZORUNDA. Bkz.
+// `network-precapture-sentinel.ts`'in başındaki yorum: `process.binding`/`process.dlopen`'ı ürün
+// modülü (`computeUsageReport`) değerlendirilmeden ÖNCE kayıt eden bir sarmalayıcıyla değiştirir.
+import { qaPreCalls } from './network-precapture-sentinel'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import fs from 'node:fs'
 import http from 'node:http'
@@ -476,15 +480,25 @@ describe('computeUsageReport — Y3: ağ isteği yok', () => {
 
     const sentinel = installNetworkCapabilitySentinel()
     let report: ReturnType<typeof computeUsageReport> | undefined
+    // F-011 QA tur 6 (§2.4, ÖNEMLİ) — `sentinel.calls`'un anlık görüntüsü `restore()`
+    // ÇAĞRILMADAN ÖNCE alınır: `restore()` gelecekte `calls`'ı temizleyen bir mutasyona uğrarsa
+    // (ör. `calls.length = 0`) bu test yine gerçek bir sızıntıyı yakalar — assert artık
+    // `restore()`'un davranışına bağımlı değil.
+    let capturedCalls: string[] = []
     try {
       report = computeUsageReport(claudeRoot, [{ id: 'p1', label: 'p', path: project }])
       // `computeUsageReport` kendisi senkron — olası gizli bir ASENKRON ağ çağrısının event
       // loop'a kuyruklanmış olma ihtimaline karşı bir tık beklenir.
       await new Promise((resolve) => setImmediate(resolve))
+      capturedCalls = sentinel.calls.slice()
     } finally {
       sentinel.restore()
     }
-    expect(sentinel.calls).toEqual([])
+    expect(capturedCalls).toEqual([])
+    // F-011 QA tur 6 (BLOKLAYICI CC1, §1.3) — ürün modülü YÜKLENİRKEN (fonksiyon çağrısından
+    // ÖNCE) `process.binding`/`process.dlopen` referansını yakalayıp sentinel'i atlayan bir
+    // sızıntı biçimini yakalar; bkz. `network-precapture-sentinel.ts`.
+    expect(qaPreCalls).toEqual([])
     expect(report!.usage.input_tokens).toBe(8)
   })
 

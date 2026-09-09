@@ -41,3 +41,16 @@ Kaynak: PRD özellik 6; `docs/03-ux.md` ekran 6; ADR-007 karar 3.
   yakalanmadığını belgeleyen kalıcı negatif kontrol) eklendi. Yine yalnızca iki test dosyası
   değişti; ürün koduna dokunulmadı. Yanlış pozitif (yorumda "fetch()" yazmak) ve M5 (giriş
   uzantı listesi kapsaması) bilinçli olarak bu turda kapatılmadı — bkz. `docs/blockers.md`.
+- QA düzeltme turu 6 (`docs/qa/F-011-2026-09-10-tur6.md`, KALDI → CC1/CC2 düzeltildi,
+  `docs/qa/F-011-contract.md` "Ek — tur 6 kapanış düzeltmesi" bölümü): yeni bir test-yardımcı
+  dosyası (`tests/features/usage/server/network-precapture-sentinel.ts`) `usage-aggregator.
+  test.ts`'in İLK import'u yapıldı — `process.binding`/`process.dlopen`'ı ürün modülü
+  değerlendirilmeden ÖNCE kayıt eden (fırlatmayan) bir sarmalayıcıyla değiştirir; bu, QA'nın
+  kanıtladığı "modül-yükleme-zamanlı yakalanmış referans" sızıntısını (BLOKLAYICI CC1) kapatır.
+  Ayrıca ana negatif testte `sentinel.calls`'ın `restore()`'dan ÖNCE alınan bir anlık görüntüsü
+  (`capturedCalls`) üzerinden iddia yapılıyor (CC2) — `restore()`'un gelecekte `calls`'ı
+  temizleyen bir mutasyona uğraması artık bu iddiayı maskeleyemiyor.
+  `network-capability-guard.test.ts`'teki N2b yorumu, garantiyi *"çağrı anında arama yapan
+  biçimler için"* diye daraltacak şekilde düzeltildi. Yine yalnızca iki test dosyası değişti +
+  bir yeni test-yardımcı dosyası eklendi; ürün koduna kalıcı dokunuş yok (mutasyon kanıtı için
+  yapılan geçici değişiklikler elle geri alındı, md5 doğrulandı).

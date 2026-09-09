@@ -1,7 +1,7 @@
 ---
 id: F-011
 title: Token kullanımı ekranı (proje / gün / oturum / agent grupları)
-status: qa
+status: fix
 owner: developer
 deps: [F-009]
 sprint: 2

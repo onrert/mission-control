@@ -1,391 +1,301 @@
 KARAR: KALDI
-ESKALE: false
+ESKALE: true
 
 ---
 feature: F-011
 title: Token kullanımı ekranı (proje / gün / oturum / agent grupları)
 reviewer: qa-evaluator
 date: 2026-09-10
-round: düzeltme turu 2 (dar kapsam — yalnızca 1. tur bulguları)
+round: kapanış denetimi (tur 3 — dar kapsam, yalnızca AA1-AA4)
 verdict: KALDI
 ---
 
-# F-011 QA raporu — düzeltme turu 2
+# F-011 QA raporu — kapanış denetimi (tur 3)
 
-**Puanlar:** İşlevsellik **5/10** · Özellik bütünlüğü **5/10** · Görsel/UX **5/10** ·
-Kod kalitesi **6/10** → dördü de < 7, karar **KALDI**.
+**Puanlar:** İşlevsellik **8/10** · Özellik bütünlüğü **8/10** · Görsel/UX **8/10** ·
+Kod kalitesi **6/10** (ağ çiti kendi yazılı garantisini vermiyor) → biri < 7, karar **KALDI**.
 
-**Tek cümlelik özet:** BLOKLAYICI B1 (rakamın iki katına yakın şişmesi) **gerçekten kapandı ve
-üçüncü parti araçla birebir doğrulandı** — ama Z4'ün üç sessiz kaybından **biri hâlâ tamamen
-sessiz** (gerçek `icacls /deny` ile tokenların %94'ü kayboldu, uyarı yok), **ikincisi ise sürekli
-yanlış alarm** veriyor (gerçek veride uyarı **her zaman** açık, çünkü normal transkript
-satırlarının %33,8'i "tanınmayan" sayılıyor), ağ çiti yeni bir vektörle **kanıtlanmış canlı ağ
-isteğiyle** yenildi ve 320px'te proje sütunu hâlâ **0 piksel**.
+**Tek cümlelik özet:** AA2, AA3 ve AA4 **üçü de gerçekten kapandı** (canlı ölçümle ve çift yönlü
+mutasyonla doğrulandı); **AA1 kapanmadı** — beyaz liste çiti, gizlenmemiş, sıradan bir TypeScript
+deseniyle (`export { get } from 'node:http'`) yenildi ve ürün kodunun gerçek
+`computeUsageReport`'undan **canlı bir HTTP isteği** çıkarken **tüm test paketi (1295/1299) yeşil
+kaldı**.
 
-Ortam: Windows 11 · `npm run build && npx tsx src/server/index.ts` (`MC_PORT=4599` gerçek veri,
-`MC_PORT=4601` sandbox) · Chromium (Playwright) · `npm run dev` KULLANILMADI · `git push`
-yapılmadı · `git checkout` ile hiçbir mutasyon geri alınmadı (hepsi elle, md5 doğrulamalı).
+Ortam: Windows 11 · Node v24.15.0 · `npm run build && npx tsx src/server/index.ts`
+(`MC_PORT=4599` gerçek veri, `MC_PORT=4601` sandbox) · Chromium (Playwright MCP) ·
+`npm run dev` KULLANILMADI · `git push` yapılmadı · `git checkout` ile hiçbir mutasyon geri
+alınmadı (hepsi elle `.bak` kopyasından, md5 doğrulamalı).
 
 ---
 
-## 0. Karar tablosu (CEO'nun kabul kuralına göre)
+## 0. Karar tablosu
 
 | # | İddia | Sonuç |
 |---|---|---|
-| Z1 | Tekilleştirme, 66/66 oturum `ccusage` ile birebir | ✔ **DOĞRULANDI** (67/68 oturum birebir; tek fark aktif oturum, farkın **%100'ü** ondan) |
-| Z2 | Yapısal ağ çiti | ✘ **YENİLDİ** — 6 yeni vektörden 2'si geçti, **N1 gerçekten ağ isteği attı** (dinleyici kaydetti), 318/318 test yeşil |
-| Z3 | Dolaylı yazma kapandı | ✔ **DOĞRULANDI** (5 vektörden 4'ü KIRMIZI; 5.'si kapsam dışı yola yazıyor — not) |
-| Z4a | 32 MB kuyruk kırpması görünür | ✔ **DOĞRULANDI** (arayüzde uyarı) |
-| Z4b | Okunamayan dosya görünür | ✘ **KAPANMADI** — gerçek `icacls /deny "(RA,RD,RX)"` ile **sessiz** (175→10 token, uyarı yok) |
-| Z4c | Format değişimi görünür | ⚠ **KISMEN** — uyarı çıkıyor, ama aynı uyarı **gerçek veride de her zaman** çıkıyor (bilgi taşımıyor) |
-| Z5 | 320px taşması giderildi, eşik kalibre | ✔ **DOĞRULANDI** (320-767px taşma 0, eşik 20px, mutasyon KIRMIZI) |
-| Z6 | Sütun başlıkları | ✘ **YARIM** — başlıklar var ama 320px'te **proje sütunu hâlâ boş** (üstelik artık "PROJE" etiketi boşluğun üstünde duruyor) |
-| Z7 | README yordamı | ✔ **DOĞRULANDI** — kendim uyguladım, çalıştı, sapma beklentisi **birebir** doğru çıktı |
-| Testler | 1281 geçti / 4 skip | ✔ **DOĞRULANDI** (iki bağımsız koşuda da 1281, 84 dosya + 1 skip, e2e 54/54) |
+| AA1 | Ağ çiti beyaz listeye çevrildi; "onaylı listede olmayan HER içe aktarım REDDEDİLİR" | ✘ **YENİLDİ — PRATİK, CANLI sızıntı kanıtlandı** (X1) |
+| AA2 | Okunamayan dosya sayılıyor, arayüzde görünüyor | ✔ **DOĞRULANDI** (gerçek `icacls`, üç ACL şekli, iki yönlü mutasyon KIRMIZI) |
+| AA3 | Yanlış alarm gitti, gerçek sinyal duruyor | ✔ **DOĞRULANDI** (gerçek veride uyarı YOK, format değişiminde VAR, üç eşik mutasyonu KIRMIZI) |
+| AA4 | 320px'te proje sütunu okunur ve hizalı | ✔ **DOĞRULANDI** (280/320/375/480px'te 72px, hizasızlık 1px, iki mutasyon KIRMIZI) |
+| Testler | `verify` 1292/1296, `e2e` 55 | ✔ **DOĞRULANDI** (üçüncü koşuda birebir; ilk iki koşu ortam kararsızlığı) |
 
 ---
 
-## 1. Z1 — sayılar artık DOĞRU (bloklayıcı kapandı)
+## 1. BLOKLAYICI B1 (AA1) — beyaz liste `export … from` ile yenildi, sızıntı CANLI kanıtlandı
 
-### 1.1 Sandviç ölçümü (bağımsız okuyucu → panel → bağımsız okuyucu)
+### 1.1 2. turun 14 sondasının 14'ü artık KIRMIZI
 
-Ürün kodundan tamamen ayrı kendi okuyucumla (233 dosya, 57.791 satır) aynı saniyelerde:
+Beyaz listeye geçiş gerçek bir ilerleme: 2. turun çiti yenen iki vektörü dahil **hepsi** kapandı.
 
-| Ölçüm | Toplam (4 alan) |
+| Sonda | 2. tur | 3. tur |
+|---|---|---|
+| P1 `fetch('http://…')` … P8 yakalanmış `http.request` | 8/8 KIRMIZI | **8/8 KIRMIZI** |
+| **N1** `createRequire(import.meta.url)('node:http')` | YEŞİL ✘ | **KIRMIZI** ✔ (iki katman: `node:module` + metinsel) |
+| **N2** `process.binding('tcp_wrap')` | YEŞİL ✘ | **KIRMIZI** ✔ |
+| N3 `Function('return imp'+'ort(…)')` · N4 `globalThis['fet'+'ch']` · N5 `eval` · N6 | KIRMIZI | **KIRMIZI** |
+
+Yeni denenen 7 vektörden 3'ü de kapalı: `import(\`node:h\`+\`ttp\`)` (**KIRMIZI**),
+`globalThis.process.binding` (**KIRMIZI**), unicode kaçışlı modül adı
+(`import qaU from '\u006eode:http'` → **KIRMIZI**, beyaz listenin varsayılan-RET davranışı
+sayesinde). Beyaz listeyi gevşeten mutasyon da tutuyor (§5, M1).
+
+### 1.2 X1 — `export … from` taramanın KÖR NOKTASI (bloklayıcı)
+
+Statik tarayıcı yalnızca `import … from '<spec>'` ve `import '<spec>'` desenlerini görüyor
+(`network-capability-guard.test.ts:96-103`). **`export … from '<spec>'` hiçbir desende yok** —
+oysa bu ifade de modülü yükler ve yeteneği aktarır.
+
+**Tekrar üretme (2 adım, gizleme/obfuscation YOK):**
+
+```ts
+// 1) src/features/usage/server/qa-x1-reexport.ts   (dosyada `import` kelimesi HİÇ geçmiyor)
+export { get as qaGet } from 'node:http'
+
+// 2) src/features/usage/server/usage-aggregator.ts (tepe + computeUsageReport'un ilk satırı)
+import { qaGet } from './qa-x1-reexport'
+qaGet({ host: '127.0.0.1', port: 45907, path: '/QA-X1-CANLI-SIZINTI', agent: false }, …)
+```
+
+| Ölçüm | Sonuç |
 |---|---|
-| Bağımsız betik (önce) | 2.748.688.768 |
-| **Panel `/api/usage`** | **2.748.688.768** |
-| Bağımsız betik (sonra) | 2.748.688.768 |
+| `npx vitest run tests/features/usage` | **53/53 YEŞİL** (statik çit + çalışma zamanı katmanı, ikisi de) |
+| `npx vitest run` (tam paket) | **1295 passed \| 4 skipped (1299)**, exit 0 |
+| Yerel dinleyiciye gelen istek (`tsx`, gerçek `computeUsageReport`) | **`GET /QA-X1-CANLI-SIZINTI` → 200** |
+| Tam test paketi koşarken dinleyiciye gelen istek sayısı | **30** (paket yine yeşil) |
 
-→ **Sapma 0,0000%.** Aynı verinin tekilleştirilmemiş ham toplamı **4.968.413.874** olurdu
-(+%80,7) — yani düzeltme gerçekten devrede. 23.820 `assistant` satırı **12.911 gerçek API
-çağrısına** karşılık geliyor.
+Yani sızıntı **teorik bir bit taşıma değil**: ürün kodunun gerçek giriş noktası çalıştığında
+gerçek bir TCP bağlantısı kuruldu, HTTP isteği gitti, 200 yanıtı alındı ve bunu **hiçbir test**
+görmedi. Kanıt (`tsx` çıktısı): `rapor uretildi degraded= false` + `SONDA yanit 200`;
+dinleyici günlüğü `2026-09-09T16:34:48.508Z GET /QA-X1-CANLI-SIZINTI`.
 
-### 1.2 `ccusage` (üçüncü parti) çapraz kontrolü — oturum oturum
+**Neden bloklayıcı (ve neden "önemsiz" değil):**
+1. Çitin kendi yazılı garantisi yanlış: dosyanın tepesinde "onaylı listede olmayan HER içe
+   aktarım, 'yasaklı' olarak işaretlenmiş olsun ya da olmasın, **REDDEDİLİR**" yazıyor. Bu ifade
+   `export … from` için doğru değil. AC4 ("hiçbir ağ isteği atılmaz") için kurulan tek statik
+   yapı, kendi belgelediği güvenceyi vermiyor.
+2. Vektör **kasıt sınıfı değil, kaza sınıfı**: `export { x } from '<modül>'` bir barrel/yeniden
+   dışa aktarım dosyasının en sıradan yazımıdır; `process['bind'+'ing']` gibi bilinçli bir kaçış
+   değildir. Bir sonraki feature'da bu dosyalara bir yardımcı eklenirse çit sessizce delinir.
+3. **İkinci katman da yakalamıyor.** Çalışma zamanı katmanı (`usage-aggregator.test.ts:372`)
+   yalnızca **kendi rastgele portuna** gelen isteği görebiliyor; gerçek bir sızıntı başka bir
+   adrese gider. X1'i tam olarak bu yüzden 53/53 yeşilken canlı çalıştırabildim. "İki katman"
+   iddiası pratikte tek katmandır.
 
-`npx ccusage@latest session --json` (exit 0) çıktısı ile kendi oturum bazlı toplamlarımı
-**tek tek** karşılaştırdım:
+**Muhtemel dosya:satır:** `tests/features/usage/server/network-capability-guard.test.ts:96`
+(`STATIC_IMPORT_RE` — `export … from` kapsanmıyor), `:100` (`BARE_SIDE_EFFECT_IMPORT_RE`),
+`:118-171` (`scanModuleGraph` — yeniden dışa aktarımlar ne ihlal sayılıyor ne de grafiğe
+ekleniyor).
 
-```
-oturum sayısı: 68   BİREBİR eşit: 67   farklı: 1
-benim toplam : 2.757.109.781
-ccusage      : 2.493.082.582   (fark 264.027.199 = %10,59)
-en büyük tek fark: b13e8d3f… → 264.027.199  →  toplam farkın %100,0'ı
-```
+**Kapatmak için gereken minimum:** tarayıcı `export\s+(?:\*|\{[^}]*\})\s+from\s*'<spec>'` (ve
+`export * as X from …`) biçimlerini de aynı beyaz listeye tabi tutsun; yerel yeniden dışa
+aktarımlar grafiğe **eklensin**. Çit: X1 kalıcı negatif kontrol olarak test dosyasına girsin.
 
-`b13e8d3f…` **bu QA oturumunun kendisidir** (ölçüm sırasında büyüyen tek oturum). Yani ham
-%10,59'luk sapmanın **tamamı** tek bir aktif oturumdan geliyor; **kapanmış 67 oturumun 67'si
-üçüncü parti araçla BİREBİR eşit.** Developer'ın iddiası (66/66) bu turda 67/67 olarak
-doğrulandı. Bu, "sandviç etkisi" gerekçesinin uydurma olmadığının kanıtıdır.
+### 1.3 Yenilen ama pratikliği SINIRLI iki vektör (bloklayıcı değil, not)
 
-### 1.3 Kontrollü fixture
+Dürüst ayrım (2. turun N1'i gibi "canlı kanıtlı" değiller):
 
-Sandbox'ta aynı `message.id`+`requestId`'yi taşıyan mükerrer satır (100 token) + tekil satırlar:
-elle hesap **157/18**, panel **157/18** → mükerrer satır sayılmadı.
-
-Tekilleştirme anahtarı `` `${messageId}\0${requestId}` `` (ayraç **NUL** baytı —
-`transcript-reader.ts:224`); bu yüzden dosya `grep`'e "binary" görünüyor, `grep -a` gerekiyor.
-
----
-
-## 2. BLOKLAYICI B1 (yeni, Z4b) — gerçek Windows ACL'inde okunamayan dosya HÂLÂ sessizce düşüyor
-
-1. turun Ö2 bulgusu **aynı tekrar üretme adımlarıyla aynen tekrarlıyor**. Düzeltme yalnızca
-`readTranscript`'in `file_read_failed` yolunu kapsıyor; gerçek `icacls /deny` bu yola **hiç
-ulaşmıyor**.
-
-**Tekrar üretme (sandbox, gerçek ACL — mock yok):**
-
-```sh
-# sandbox: 1 ana oturum (150 token) + 1 subagent (10 token) = 175 token, degraded:false
-icacls sess-aaaaaaaa.jsonl /deny "pc:(RA,RD,RX)"
-curl http://127.0.0.1:4601/api/usage
-```
-
-| | toplam token | unreadable_file_count | degraded | arayüzde uyarı |
-|---|---|---|---|---|
-| önce | 175 | 0 | false | yok |
-| **sonra** | **10** | **0** | **false** | **YOK** |
-
-Arayüzde (`.playwright-mcp/qa-f011-t2-z4b-eperm-sessiz-kayip.png`): "Toplam: **10** token",
-"ana oturum" satırı agent kırılımından **tamamen silinmiş**, uyarı kutusu **hiç yok**.
-**Tokenların %94,3'ü sessizce kayboldu.**
-
-**Kök neden (kanıt, tahmin değil):**
-
-```
-fs.statSync(...)            → BAŞARILI (mtime okunuyor)
-fs.existsSync(...)          → true
-fs.realpathSync.native(...) → EPERM FIRLATIYOR
-```
-
-`usage-aggregator.ts:129-134` bu fırlatmayı `catch { return { unreadable: false } }` ile yutuyor
-(yorumu "stat yarış durumu / best-effort atlama" diyor). Fırlatan çağrı
-`resolveAllowedTranscriptPath` içindeki **sarılmamış** `fs.realpathSync.native`
-(`src/features/thread/server/transcript-reader.ts:343`) — path guard'ın kendisi.
-
-**Sayaç hiç erişilemez değil:** yalnızca `RD` reddedilirse (`icacls /deny "pc:(RD)"`)
-`realpath` başarılı olur, `readFileSync` patlar, `unreadable_file_count:1` + `degraded:true`
-doğru çalışır. Yani düzeltme **bir ACL şeklini** kapatmış, 1. turda ölçülen **asıl şekli**
-açık bırakmış. Antivirüs kilidi/ağ sürücüsü/salt-okunur paylaşım senaryolarında beklenen davranış
-`RA` reddi olan şekildir.
-
-**Muhtemel dosya:satır:** `src/features/usage/server/usage-aggregator.ts:129-135`
-(best-effort `catch`, hangi hatanın "gerçek okuma hatası" olduğunu ayırt etmiyor) +
-`src/features/thread/server/transcript-reader.ts:340-343` (guard'ın `existsSync`/`realpath`
-çağrıları sarılı değil).
-
----
-
-## 3. BLOKLAYICI B2 (yeni, Z4c'nin yan etkisi) — "veri eksik olabilir" uyarısı gerçek veride HER ZAMAN açık
-
-Z4/Ö1 düzeltmesi uyarı eşiğini "ayrıştırılabilen" orandan **"tanınan"** orana çevirdi
-(`unrecognizedLines = linesBad + unknownTypeLines`, `usage-aggregator.ts:321`). Ama "tanınan"
-kümesi yalnızca 4 tip: `user`/`assistant`/`system`/`summary`
-(`transcript-reader.ts:27`). Gerçek transkriptlerde bu kümenin dışındaki tipler **normaldir**:
-
-```
-TOPLAM 57.795 satır   assistant 41,2%  attachment 26,4%  user 24,3%
-queue-operation 1,9%  agent-setting 1,2%  last-prompt 1,1%  atis-latch 1,1%
-bridge-session 0,8%   system 0,7%  custom-title 0,6%  mode 0,6%  …
-→ "tanınmayan" 19.547 satır = %33,8   →   oran 0,662 < 0,99  →  degraded:true HER ZAMAN
-```
-
-Bu tiplerin normal olduğu deponun **kendi wiki'sinde** zaten yazılı
-(`docs/wiki/pages/desen/claude-transcript-formati.md:76-100`, "✓ DOĞRULANDI", `attachment 13445`
-… "geri kalan 9 tip atlanır ve sayılır — throw etmez").
-
-**Canlı kanıt (üretim verisi, 1280px):**
-`⚠ Toplam 57.808 satırdan 19.552 tanesi tanınmadı — veri eksik olabilir.`
-(`.playwright-mcp/qa-f011-t2-1280-uyari.png`) — oysa **hiçbir veri eksik değil**: aynı anda
-kendi bağımsız toplamım ve `ccusage` panelin rakamını **birebir** doğruluyor (§1).
-
-**Neden bloklayıcı:**
-1. Panelin tek varlık gerekçesi rakamına güvenilmesi; ekran, doğru olduğu kanıtlanmış rakamın
-   yanında kalıcı olarak "veri eksik olabilir" diyor.
-2. `README.md:146-148`'in çapraz kontrol yordamı kullanıcıyı tam olarak bu uyarıya yönlendiriyor
-   ("sapma birden fazla tamamlanmış oturuma yayılıyorsa panelin 'veri eksik olabilir' uyarısını
-   kontrol edin") — uyarı her zaman açık olduğu için yordamın son adımı **hiçbir şey ayırt
-   etmiyor**.
-3. Asıl amaç olan **format değişimi** sinyali (Z4c) böylece **ölü doğdu**: format değişip ekran
-   "Toplam: 0 token" gösterdiğinde de aynı uyarı çıkıyor, kullanıcı zaten aylardır aynı uyarıyı
-   görüyor. Bu, deponun "kapının yanlış pozitifi kapıyı öldürür" dersinin tam örneği.
-4. AC4 "tanınan satır oranı **düştüğünde**" diyor; %66,2 bir düşüş değil, **sabit taban**.
-   Eşik (0,99) eski metriğe göre kalibre edilmiş, metrik değişince yeniden kalibre edilmemiş.
-
-**Muhtemel dosya:satır:** `usage-aggregator.ts:54` (eşik), `:320-324` (oran hesabı) —
-"tanınan" tanımı `usage` taşıyabilecek satır tiplerini değil, okuyucunun 4 tipini kullanıyor.
-`docs/03-ux.md:299-303` de aynı tanımı yazdığı için **sözleşme metni de düzeltilmeli**.
-
----
-
-## 4. BLOKLAYICI B3 (Z2) — yapısal ağ çiti yeni bir vektörle yenildi, sızıntı CANLI kanıtlandı
-
-1. turun **8 sondasının 8'i de artık KIRMIZI** (aşağıdaki tablo) — bu gerçek bir ilerleme.
-Ama çit bir **metin/regex taraması** olduğu için import ifadesi kurmayan yollar görünmez.
-
-| # | Sonda | 1. tur | 2. tur |
+| Sonda | Çit | Pratik yetenek | Not |
 |---|---|---|---|
-| P1 | `fetch('http://…')` | KIRMIZI | **KIRMIZI** |
-| P2 | `globalThis.fetch(…)` | KIRMIZI | **KIRMIZI** |
-| P3 | `http.get(…)` | YEŞİL ✘ | **KIRMIZI** ✔ |
-| P4 | `net.connect(…)` | YEŞİL ✘ | **KIRMIZI** ✔ |
-| P5 | `dns.lookup(…)` | YEŞİL ✘ | **KIRMIZI** ✔ |
-| P6 | `execFileSync('curl', …)` | YEŞİL ✘ | **KIRMIZI** ✔ |
-| P7 | dinamik `import('node:https')` | YEŞİL ✘ | **KIRMIZI** ✔ |
-| P8 | yakalanmış `http.request` referansı | YEŞİL ✘ | **KIRMIZI** ✔ |
-| **N1** | **`createRequire(import.meta.url)('node:http').get(…)`** | — | **YEŞİL ✘ (çiti YENDİ)** |
-| **N2** | **`process.binding('tcp_wrap')` (hiç import yok)** | — | **YEŞİL ✘ (çiti YENDİ)** |
-| N3 | `Function('return imp'+'ort("node:https")')` | — | KIRMIZI (dolaylı: koşu unhandled rejection ile patlıyor, çit yakalamıyor) |
-| N4 | `globalThis['fet'+'ch'](…)` | — | KIRMIZI (statik çit değil, **çalışma zamanı casusu** yakaladı) |
-| N5 | `eval('fet'+'ch')(…)` | — | KIRMIZI (aynı casus) |
-| N6 | `createRequire(…)('node:child_process').execFileSync('curl')` | — | KIRMIZI |
+| Y3 `globalThis['proc'+'ess']['bind'+'ing']('tcp_wrap')` | YEŞİL ✘ | **VAR** — `{TCP, TCPConnectWrap, constants}` döndü (ham soket) | Metinsel desen bölünmüş erişimi görmüyor; ham soketle HTTP kurmak gerekir |
+| Y5 `globalThis['Fun'+'ction']('return imp'+'ort("node:http")')()` | YEŞİL ✘ (statik) | **VAR — canlı 200 alındı** (`tsx`, üretim çalışma zamanı) | Ama vitest (vite-node) altında `A dynamic import callback was not specified` ile **patlıyor** → test koşusu kırmızı olur. Yani üretimde çalışan, testte çalışmayan bir vektör |
+| Y6 `fs` üzerinden UNC/WebDAV (`\\127.0.0.1@port\DavWWWRoot\…`) | YEŞİL ✘ | **YOK (bu makinede)** — `UNKNOWN` hata, dinleyiciye istek gelmedi | İzinli `fs`'in teorik ağ yüzeyi; kanıtlanamadı, iddia edilmiyor |
+| Y7 `globalThis['req'+'uire'](…)` | YEŞİL | **YOK** — ESM'de `require` tanımsız | Çit tetiklenmedi çünkü **hiçbir şey olmadı**; "geçti" saymıyorum |
 
-**N1 yalnızca "çit görmedi" değil — GERÇEKTEN ağ isteği attı.** Yerel bir dinleyici açıp
-`computeUsageReport`'u `tsx` ile çağırdım:
+Bu satırlar kararı **tek başına** değiştirmezdi. Kararı değiştiren X1'dir: gizlenmemiş, kazayla
+yazılabilir ve **canlı kanıtlı**.
+
+---
+
+## 2. AA2 — okunamayan dosya artık sayılıyor ✔ DOĞRULANDI
+
+Sandbox (`%TEMP%\mcqa3`, yalnızca sentetik veri): 1 ana oturum (150 token) + 1 subagent
+(10 token) = 160 token.
+
+| Senaryo | toplam | `unreadable_file_count` | `degraded` | Arayüz |
+|---|---|---|---|---|
+| temiz | 160 | 0 | false | uyarı yok |
+| **`icacls /deny "(RA,RD,RX)"`** (2. turun repro'su) | 10 | **1** | **true** | **⚠ görünür** |
+| `icacls /deny "(RD)"` tek başına | 10 | **1** | **true** | ⚠ görünür |
+| ACL kaldırıldı | 160 | 0 | false | uyarı yok (yanlış pozitif yok) |
+
+Arayüz metni (canlı, `MC_PORT=4601`, ekran görüntüsü `.playwright-mcp/qa-f011-t3-aa2-uyari.png`):
+`⚠ 1 dosya okunamadı (izin/erişim hatası) — bu dosyaların token verisi toplamda YOK.`
+"Toplam: 10 token" ile birlikte gösteriliyor — sessiz kısmi başarı **yok**.
+
+Yarış durumu ayrımı korunuyor: `isPersistentAccessError` yalnızca EPERM/EACCES/EBUSY'yi sayıyor
+(`usage-aggregator.ts:128-134`); ENOENT (listelendikten sonra silinen dosya) sayılmıyor. Bunu
+**her iki yönde** mutasyonladım (§5, M2a/M2b) — ikisi de KIRMIZI. Ayrıca çit yalnızca mock
+değil: `usage-aggregator.test.ts:665` **gerçek `icacls /deny "(RA,RD,RX)"`** koşturuyor
+(`skipIf(platform!=='win32')`), yani 2. turun bulduğu ACL şekli kalıcı olarak çitlendi.
+
+---
+
+## 3. AA3 — yanlış alarm gitti, gerçek sinyal duruyor ✔ DOĞRULANDI (kalibrasyon notuyla)
+
+### 3.1 Gerçek veri: uyarı ÇIKMIYOR (2. turun B2'si kapandı)
+
+`GET /api/usage` (gerçek `~/.claude/projects`, izlenen tek proje `mission-control`):
 
 ```
-SUNUCUYA GELEN İSTEKLER: ["/QA-N1-LEAK"]
-vitest: 318 passed (318)   ← tests/features/usage + no-external-host + no-write-gate-bypass
+lines_ok 58.977 · lines_bad 0 · unknown_type_lines 19.891 → tanınan oran %66,27
+degraded: false · unreadable 0 · truncated 0
 ```
 
-Yani `src/features/usage/server/**` içine `node:module`'ün `createRequire`'ı ile bir HTTP
-istemcisi sokulabiliyor, **hiçbir test kırmızı vermiyor** ve istek gerçekten gidiyor.
-`node:module` `FORBIDDEN_MODULES` listesinde yok
-(`tests/features/usage/server/network-capability-guard.test.ts:35-44`) ve `require(`/
-`process.binding(` desenleri hiç aranmıyor. AC4 ("hiçbir ağ isteği atılmaz") için kurulan çit,
-kendi belgelediği güvenceyi vermiyor.
+Tarayıcıda (1280px) uyarı kutusu **hiç yok**, yalnızca `Toplam: 2.809.621.179 token` ve 5 satır.
+2. turda bu uyarı kalıcı olarak açıktı.
 
-**Not:** N4/N5'i **statik çit değil**, `usage-aggregator.test.ts:325-361`'deki çalışma zamanı
-casusu yakaladı — yani `fetch` ailesi için iki katman var, `require` ailesi için sıfır katman.
+### 3.2 Format değişiminde: uyarı ÇIKIYOR
 
----
+Sandbox'ta `"type":"assistant"`→`assistant_message`, `"type":"user"`→`user_message`:
+`Toplam: 0 token` **+** `⚠ Toplam 3 satırdan 3 tanesi tanınmadı — veri eksik olabilir.`
+Azaltımın kapatması gereken risk gerçekten kapalı.
 
-## 5. BLOKLAYICI B4 (Z6) — 320px'te proje sütunu hâlâ 0 piksel, üstelik artık "PROJE" etiketi boşluğun üstünde
+### 3.3 Eşik kalibrasyonu TEK veri noktasına dayanmıyor mu? — kendi taramam
 
-Sütun başlıkları eklendi ve `docs/03-ux.md:322-330` mockup'ıyla **metin olarak birebir**
-(`Proje · Gün · Giriş · Çıkış · Dağılım`; ekranda CSS `uppercase` ile `PROJE/GÜN/GİRİŞ/ÇIKIŞ/
-DAĞILIM` — Türkçe locale'de doğru büyüyor, marka bozulması yok).
+Developer'ın bildirdiği sınırlamayı bağımsız olarak ölçtüm: `~/.claude/projects` altındaki
+**16 proje dizini, 110.354 ayrıştırılabilir satır** (yalnızca sayısal özet üretildi, hiçbir
+transkript içeriği kaydedilmedi):
 
-Ama 1. turun Ö7'sinin **ikinci yarısı kapanmamış.** Kendi ölçümüm (üretim verisi, 5 satır):
+```
+GENEL: taninan %66,17   bozuk JSON %0,0000   (developer'ın %66,2 tabanı DOĞRULANDI)
+tip dağılımı: assistant 41,4 · attachment 26,0 · user 24,2 · queue-operation 1,7 · … · system 0,6
+```
 
-| Genişlik | Başlıktaki "Proje" sütunu | Satırlardaki proje hücresi |
-|---|---|---|
-| **320px** | 95 px | **0, 0, 0, 0, 0 px** (5/5 satır **tamamen boş**) |
-| 375px | 150 px | 44, 23, 23, 44, 23 px (kırpılmış) |
-| 1280px | 1055 px | ~930 px |
+**Proje bazında** (küçükten büyüğe): 14,6 · 16,7 · 16,7 · 24 · 24 · 25 · 33,1 · **59,7** · 66,3 ·
+67,8 · 68,6 · 71,5 · 72,8 %. Eşiğin (%50) altındaki yedi dizinin tamamı **24-284 satırlık** QA
+sandbox'ları / spike dizinleri; **gerçek geliştirme projelerinin hepsi %59,7 ve üzerinde**
+(en düşük: `video-factory` %59,7 — eşiğe **9,7 puan** marj).
 
-Ekran görüntüsü: `.playwright-mcp/qa-f011-t2-320-proje-sutunu-bos.png` — "PROJE" başlığının
-altındaki beş satır boş; başlık ile veri sütunları **hizalanmıyor** (başlık `1fr` alanını 95px
-gösterirken satırlarda aynı alan 0px'e çöküyor, çünkü satırdaki `auto` sütunlar — `2026-09-04`,
-`248.017` — daha geniş). Başlık eklenmesi bu hatayı **görünür kılmakla kalmadı, yanlış bir vaat
-de ekledi**: kullanıcı etiketli ama boş bir sütun görüyor.
+**Dosya bazında** (≥100 satırlık 279 dosya): p5 **%49,1** · p50 %73,3 · p95 %80,6;
+dosyaların **%6,1'i** (17/279) %50'nin altında. Yani **tek başına** bir-iki oturumluk yeni bir
+proje izlenmeye başlandığında geçici bir yanlış alarm ihtimali var (~%6).
 
-`docs/03-ux.md:17`'ye göre 320px **birincil senaryo**; bu ekranda proje filtresi olmadığı için
-satırın hangi projeye ait olduğu tek ayırt edici bilgidir.
-
-**Muhtemel dosya:satır:** `src/features/usage/web/UsageScreen.tsx:200` (başlık grid) ve `:222`
-(satır grid) — aynı `grid-cols-[1fr_auto_auto_auto_auto]`, ama içerik genişlikleri farklı
-olduğu için iki grid **birbirinden bağımsız** hizalanıyor.
+**Sonuç:** taban temsili (dört ayrı gerçek projede %59,7-%72,8), eşik ne çok gevşek ne çok sıkı:
+`assistant` (%41,4) veya `user` (%24,2) tipinin yeniden adlandırılması oranı sırasıyla %24,8 ve
+%42'ye düşürür — ikisi de eşiği tetikler, yani **asıl risk (token verisinin sessizce sıfırlanması)
+yakalanıyor**. Kalan risk küçük ve **geçici** bir yanlış alarm; kararı değiştirmiyor. **NOT
+(bloklayıcı değil):** proje sayısı arttıkça uyarı tüm izlenen projelerin TOPLAMI üzerinden
+hesaplandığı için tek bir küçük/atipik proje toplamı aşağı çekebilir; ileride oranın **proje
+başına** değerlendirilmesi daha dayanıklı olur.
 
 ---
 
-## 6. Doğrulanan düzeltmeler (developer haklıydı)
+## 4. AA4 — 320px'te proje sütunu ✔ DOĞRULANDI
 
-### Z3 — dolaylı yazma kapandı ✔
-Sonuç-tabanlı manifest testi (`usage-read-only-manifest.test.ts`) 1. turun kaçağını kapatıyor:
+Kendi kırpılmış-görünür-genişlik ölçümüm (gerçek Chromium, gerçek veri, 5 satır;
+`min(el.right,kap.right) − max(el.left,kap.left)`):
 
-| # | Yazma vektörü | Sonuç |
-|---|---|---|
-| W1 | `fs['w'+'riteFileSync'](taranan kök)` — 1. turda YEŞİL'di | **KIRMIZI** ✔ |
-| W2 | `fs.promises.writeFile` (asenkron) | **KIRMIZI** ✔ |
-| W3 | `fs.createWriteStream` | **KIRMIZI** ✔ |
-| W5 | `createRequire('node:fs').writeFileSync` | **KIRMIZI** ✔ |
-| W4 | dolaylı yazma → **`process.cwd()`** (anlık görüntü kapsamı dışı) | YEŞİL — dosya gerçekten oluştu (`qa-w4.txt`, silindi) |
+| Genişlik | Başlık "Proje" | Satırlardaki proje hücresi | Başlık/satır sol kenar farkı | Kök yatay taşma |
+|---|---|---|---|---|
+| 280px | **72 px** | **72, 72, 72, 72, 72 px** | 1 px | 0 |
+| **320px** | **72 px** | **72, 72, 72, 72, 72 px** | 1 px | 0 |
+| 375px | **72 px** | **72 px ×5** | 1 px | 0 |
+| 480px | **72 px** | **72 px ×5** | 1 px | 0 |
 
-W4 Thread emsalinin de bilinen sınırı (anlık görüntü yalnızca iki hedef dizini kapsıyor);
-**not**, bloklayıcı değil — 1. turun bulgusu (taranan köke dolaylı yazma) kapandı.
-
-### Z4a — 32 MB kuyruk kırpması ✔
-Gerçek 70 MB fixture (73.401.154 bayt, 67.609 satır, gerçek toplam 6.760.900 input token):
-panel **3.089.857** gösterdi (%54,3 kayıp) **ve** arayüzde
-`⚠ 1 dosya çok büyük olduğu için kırpıldı (yalnızca son 32 MB okundu) — toplam eksik olabilir.`
-(`.playwright-mcp/qa-f011-t2-z4a-kirpma-uyarisi.png`). Sessiz değil.
-
-### Z4c — format değişimi artık sessiz değil (ama §3'e bakınız)
-Sandbox'ta tüm `type:"assistant"` → `assistant_message`: ekranda "Toplam: 0 token" **+**
-`⚠ Toplam 4 satırdan 4 tanesi tanınmadı — veri eksik olabilir.`
-(`.playwright-mcp/qa-f011-t2-z4c-format-degisti.png`). Mekanizma çalışıyor; sorun eşiğin gerçek
-veride sürekli tetiklenmesi (B2).
-
-### Z5 — 320px taşması gerçekten gitti ✔
-Kendi kırpılmış-genişlik ölçümüm (üretim 6 sekme, gerçek Chromium):
-
-| Genişlik | Sekme şeridi taşması | En dar sekme (Token) |
-|---|---|---|
-| 280px | 18 px | **12 px** (kırpılmış; 1. turda 0 px — iyileşti, hâlâ kıymık, aralık dışı) |
-| **320px** | **0 px** | **30 px** (1. turda 21 px taşma / 12 px idi) |
-| 360 / 375 / 480 / 640 / 700 / 767px | 0 px | 30 px |
-| 1024px | 0 px | 42 px |
-
-E2E eşiği artık anlamlı: `MEANINGFUL_MIN_TAB_WIDTH = 20` **+** `scrollWidth <= clientWidth`
-(`tests/e2e/usage.spec.ts:76,97,104`) — `> 0` değil. `App.tsx`'teki yanlış yorum düzeltilmiş
-(satır 130-137 açıkça "yukarıdaki iddia YANLIŞTI, 21px taşma vardı" diyor). **Nit:** iç yorum
-hâlâ `gap-1` diyor, sınıf `gap-0.5` (satır 163) — bayat cümle, davranışı etkilemiyor.
-
-### Z7 — README yordamı KENDİM uyguladım, çalışıyor ✔
-Adım 1 (98 oturum kimliği) → adım 2 (`npx ccusage@latest session --json`, exit 0, 98 oturum) →
-adım 3 (kesişim toplamı **2.493.082.582**). Sapma %10,59, ve README'nin dürüstlük iddiası
-(**"tamamı o tek büyüyen oturumdan"**) ölçümle **birebir** doğrulandı (farkın %100,0'ı tek
-oturumdan, §1.2). Yordam uygulanabilir, kapsam farkı (`daily` proje filtresi almaz) doğru
-anlatılmış. **AC6 sağlanıyor.**
+2. turda 320px'te satırlar **0 px**'ti. Artık `minmax(4.5rem,1fr)` tabanı sayesinde sütun asla
+çökmüyor; başlık ve satırlar aynı `USAGE_GRID_COLS` şablonunu ve aynı kaydırma kabını paylaşıyor.
+1 px'lik sapma satırdaki `<details>` kenarlığından geliyor (görsel olarak hizalı).
+Kap içinde yatay kaydırma var (`scrollWidth 465 > clientWidth 296`) ve **kök belge taşmıyor**
+(320=320) — F-010'un "gizli yatay kaydırma" sınıfı tekrarlamıyor.
+Ekran görüntüsü: `.playwright-mcp/qa-f011-t3-320-proje-sutunu-72px.png` (metin `mission-…`
+kısaltılmış ama sütun okunur ve kaydırılabilir).
 
 ---
 
-## 7. Mutasyon tablosu (11 bağımsız + 14 ağ + 5 yazma sondası)
+## 5. Mutasyon tablosu (7 bağımsız mutasyon + 22 ağ sondası)
 
 | # | Mutasyon | Dosya | Sonuç |
 |---|---|---|---|
-| M1 | Z1 tekilleştirme kaldırıldı (`alreadyCounted = false`) | `transcript-reader.ts:226` | **KIRMIZI** (2) |
-| M1b | dedup anahtarı zayıflatıldı: yalnızca `requestId` | `transcript-reader.ts:224` | YEŞİL — **eşdeğer mutant**: gerçek veride 23.929 satırda `message.id` ↔ `requestId` **1:1** (0 çakışma), davranış farkı yok |
-| M2 | **transitif** dosyaya yasak import (`node:net` → `transcript-reader.ts`) | `transcript-reader.ts:26` | **KIRMIZI** (1) — grafik derinliği gerçek |
-| M3 | Z3 dolaylı yazma `fs['w'+'riteFileSync']` | `usage-aggregator.ts:244` | **KIRMIZI** (1) |
-| M4 | Z4 uyarı görünürlüğü `report.degraded &&` → `false &&` | `UsageScreen.tsx:164` | **KIRMIZI** (4) |
-| M5 | Z4 kırpma sayacı iptal | `usage-aggregator.ts:270` | **KIRMIZI** (1) |
-| M6 | **düzeltmeyi birebir geri sarma**: `unrecognizedLines = linesBad` (eski davranış) | `usage-aggregator.ts:321` | **KIRMIZI** (1) |
-| M7 | Z4/Ö2 okunamayan dosya sayacı iptal (**iki döngüde de**) | `usage-aggregator.ts:192,219` | **KIRMIZI** (1) |
-| M8 | Z6 sütun başlığı metni bozuldu (`Proje`→`ProjeXX`) | `UsageScreen.tsx:202` | **KIRMIZI** (1) |
-| M9 | Z5 dar-genişlik CSS'i geri alındı (`gap-0.5`→`gap-1`, `tracking-tighter` silindi) | `App.tsx:163,177` | **KIRMIZI** (E2E 2 test: 320px `317 > 304`, 280px `0 px`) |
-| P1-P8 | 1. turun ağ sondaları | `usage-aggregator.ts` | **8/8 KIRMIZI** ✔ |
-| N1-N6 | yeni ağ vektörleri | `usage-aggregator.ts` | 4 KIRMIZI / **2 YEŞİL ✘** (N1 canlı sızıntı kanıtlı) |
-| W1-W5 | yazma vektörleri | `usage-aggregator.ts` | 4 KIRMIZI / 1 YEŞİL (kapsam dışı yol) |
+| M1 | **AA1 beyaz liste gevşetildi** (`{'fs','path'}` → `+'http','net'`) | `network-capability-guard.test.ts:50` | **KIRMIZI** (4 test) |
+| M2a | **AA2 eski `catch`'e dönüş** (`unreadable: isPersistentAccessError(e)` → `false`) | `usage-aggregator.ts:161` | **KIRMIZI** (2: mock + GERÇEK icacls testi) |
+| M2b | AA2 aşırı sayma (`→ true`, yarış durumu da sayılır) | `usage-aggregator.ts:161` | **KIRMIZI** (1: ENOENT regresyon çiti) |
+| M3a | **AA3 eşik gevşetildi** (`0.5 → 0.01`) | `usage-aggregator.ts:76` | **KIRMIZI** (1) |
+| M3b | AA3 eski davranışa dönüş (`0.5 → 0.99`, kalıcı yanlış alarm) | `usage-aggregator.ts:76` | **KIRMIZI** (1) |
+| M3c | AA3 bozuk-JSON eşiği gevşetildi (`0.01 → 0.9`) | `usage-aggregator.ts:75` | **KIRMIZI** (1) |
+| M4a | **AA4 eski şablona dönüş** (`1fr_auto_auto_auto_auto`) | `UsageScreen.tsx:36` | **KIRMIZI** (E2E: "kırpılmış görünür genişlik 0 OLMAMALI") |
+| M4b | AA4 yalnızca `minmax` tabanı kaldırıldı (`1fr_5rem…`) | `UsageScreen.tsx:36` | **KIRMIZI** (aynı E2E) |
+| P1-P8, N1-N6 | 2. turun 14 ağ sondası | `usage-aggregator.ts` | **14/14 KIRMIZI** ✔ |
+| Y1, Y2, Y4 | yeni ağ sondaları (şablon `import()`, `globalThis.process.binding`, unicode kaçış) | `usage-aggregator.ts` | **KIRMIZI** ✔ |
+| **X1** | **`export { get } from 'node:http'` + yerel import** | yeni `qa-x1-reexport.ts` + `usage-aggregator.ts` | **YEŞİL ✘ — canlı sızıntı** |
+| Y3, Y5, Y6, Y7 | bölünmüş `process.binding` · bölünmüş `Function` · `fs`+UNC · `globalThis.require` | `usage-aggregator.ts` | YEŞİL (pratiklik §1.3'te ayrıştırıldı) |
 
 Geri alma: `git checkout` **kullanılmadı**; her mutasyon scratchpad'teki `.bak` kopyasından elle
-geri yazıldı, `md5sum -c` üç dosyada da **OK**, `git status` temiz
-(`.claude/agent-memory/developer/**` bu QA turuna ait değil, developer'ın kendi commit'siz notu).
+geri yazıldı, üç dosyanın da md5'i başlangıç değerine döndü
+(`usage-aggregator.ts 5908d3fb…`, `UsageScreen.tsx 529bbbc5…`,
+`network-capability-guard.test.ts a3dd7441…`), geçici `qa-x1-reexport.ts` silindi.
 
-`grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca **meşru test adları**
-(`gates-manifest.test.ts:222`, `feature-detail.test.ts`, `thread-read-only-manifest.test.ts:61`,
-`transcript-reader.test.ts:124/220`, `transcripts-privacy-guard.test.ts`,
-`usage-read-only-manifest.test.ts:69`, `write-gate-manifest.test.ts:124`, `features-api.test.ts`)
-— hiçbirine dokunulmadı.
+`grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → **22 eşleşmenin tamamı meşru
+test adı/yorumu**, `src/` altında **sıfır** eşleşme; `write-gate-manifest.test.ts:124` dahil
+hiçbirine dokunulmadı. `git status`: yalnızca developer'ın kendi commit'siz hafıza dosyaları
+(bu turdan önce de oradaydı).
 
 ---
 
-## 8. Koşulan test sayısı (⚠ `docs/blockers.md` uyarısı gereği)
+## 6. Koşulan test sayısı
 
 | Koşu | Sonuç |
 |---|---|
-| `npm run verify` (1. koşu) | **exit 0** · Test Files **84 passed \| 1 skipped (85)** · Tests **1281 passed \| 4 skipped (1285)** |
-| `npx vitest run` (2. bağımsız koşu) | **exit 0** · aynı: **84 \| 1** ve **1281 \| 4** |
-| `npx playwright test` | **exit 0** · **54 passed** |
+| `npm run verify` #1 | ✘ vitest **worker fork çökmesi** (`exit code 3221226505`, `events-api.test.ts`) → 83 dosya, **1288 passed \| 4 skipped** |
+| `npm run verify` #2 | ✘ `history-log.test.ts` `afterEach` **ENOTEMPTY** (geçici dizin silinemedi) + ikinci worker çökmesi (`adr-013-write-header.test.ts`) → **1286 passed** |
+| **`npx vitest run` #3** | ✔ **exit 0** · Test Files **84 passed \| 1 skipped (85)** · Tests **1292 passed \| 4 skipped (1296)** |
+| `npm run typecheck` / `lint` / `build` | ✔ exit 0 (üçü de) |
+| **`npx playwright test`** | ✔ **55 passed** (43,3 s) |
 
-Developer'ın bildirdiği sayılarla **birebir aynı**; bu turda "sessizce atlanan test" gözlenmedi
-(iki koşu da aynı sayıyı verdi). `--no-file-parallelism` **kullanılmadı**, worker-fork çökmesi
-bu turda **hiç** görülmedi.
-
----
-
-## 9. Kanıt dosyaları
-
-- `.playwright-mcp/qa-f011-t2-1280-uyari.png` — üretim, doğru rakam + **kalıcı yanlış uyarı** (B2)
-- `.playwright-mcp/qa-f011-t2-320-proje-sutunu-bos.png` — 320px, "PROJE" başlığı altında 5 boş satır (B4)
-- `.playwright-mcp/qa-f011-t2-z4a-kirpma-uyarisi.png` — 70 MB kırpma uyarısı görünür (Z4a ✔)
-- `.playwright-mcp/qa-f011-t2-z4b-eperm-sessiz-kayip.png` — gerçek `icacls /deny`, %94 kayıp, **uyarı yok** (B1)
-- `.playwright-mcp/qa-f011-t2-z4c-format-degisti.png` — format değişimi → 0 token **+ uyarı** (Z4c)
-
-Ölçüm betikleri depoya **girmedi** (scratchpad): `indep2.cjs`, `netprobe.cjs`, `leakproof.cjs`,
-`writeprobe.cjs`, `mutate2.cjs`, `mutate2b.cjs`, `make-sandbox2.cjs`.
-
-⛔ Depoya hiçbir gerçek transkript içeriği bırakılmadı. Sandbox (`%TEMP%\mcqa11b`) yalnızca
-sentetik veri içerir ve depo dışındadır (silme komutu `block-dangerous` hook'una takıldığı için
-**onay istemeden silinmedi**; içinde gerçek veri yok). 70 MB'lık fixture silindi.
-
-**Süreçler:** açtığım iki sunucu (`4599`, `4601`) kapatıldı, portlar boş. Kalan `node.exe`
-süreçleri: **2 adet Playwright MCP** (araç altyapısı) + **3 adet `C:\dev\apps\hayat-mentoru`
-(`npm run dev` → `next dev`)** — **dokunulmadı**. Bu turdan **yetim süreç: 0**.
+İddia edilen **1292/1296** ve **55** birebir doğrulandı. `--no-file-parallelism` **kullanılmadı**
+(gizleme yok). Kırmızılar F-011 koduna ait değil: biri `CLAUDE.md`'de belgeli worker-fork
+kararsızlığı (beşinci gözlem), diğeri chat özelliğinin geçici dizin temizliğinde Windows dosya
+kilidi. Yine de **iki koşudan ikisi de kırmızıydı** — üçüncü koşuda yeşil; bu gürültü oranı
+kendi başına bir borçtur (bkz. `docs/blockers.md`).
 
 ---
 
-## 10. KALDI'yı kaldırmak için gereken minimum
+## 7. Kanıt dosyaları
 
-1. **B1** — best-effort `catch`'te "gerçek erişim hatası" (EPERM/EACCES/EBUSY) ile "yarış durumu"
-   (ENOENT) ayrılsın; guard'ın `realpath`/`existsSync` fırlatması `unreadable_file_count`'a
-   sayılsın. Çit: **`(RA,RD,RX)` reddi** ile gerçek bir ACL testi (RD-only zaten geçiyor, tek
-   başına yetersiz).
-2. **B2** — "tanınan" tanımı yeniden kalibre edilsin: ya bilinen-normal tipler (`attachment`,
-   `queue-operation`, `agent-setting`, `last-prompt`, `atis-latch`, `bridge-session`,
-   `custom-title`, `mode`, `permission-mode`, `file-history-snapshot`) tanınan kümeye alınsın,
-   ya da uyarı yalnızca **`usage` taşıması beklenen** satırların kaybına bağlansın. Çit:
-   **gerçek dağılımı (%33,8 "diğer tip") taşıyan bir fixture'da `degraded:false` olmalı**, format
-   yeniden adlandırıldığında `true`. `docs/03-ux.md:299-303` de düzeltilsin.
-3. **B3** — çite `node:module`/`createRequire`/`require(`/`process.binding(` desenleri eklensin
-   (ya da beyaz liste: `src/features/usage/server/**` yalnızca `node:fs`, `node:path` import
-   edebilir — beyaz liste kara listeden daha dayanıklı). Çit: N1 ve N2 sondaları kalıcı negatif
-   kontrol olarak test dosyasına girsin.
-4. **B4** — 320px'te proje sütunu okunur kalsın (ör. dar genişlikte iki satırlı hücre ya da
-   başlık+satır için **tek** grid şablonu). Çit: 320px'te proje hücresinin kırpılmış görünür
-   genişliğinin `> 0` **ve** başlıkla hizalı olduğunu ölçen bir E2E iddiası.
-5. Nit (bloklayıcı değil): `App.tsx:157-163` içindeki bayat `gap-1` yorumu;
-   `usage-table-header` `aria-hidden="true"` olduğu için ekran okuyucuya sütun bağlamı hâlâ
-   gitmiyor.
+- `.playwright-mcp/qa-f011-t3-320-proje-sutunu-72px.png` — 320px, proje sütunu 72px, başlık hizalı (AA4 ✔)
+- `.playwright-mcp/qa-f011-t3-aa2-uyari.png` — gerçek `icacls /deny "(RA,RD,RX)"`, arayüzde izin uyarısı (AA2 ✔)
+- Ölçüm betikleri depoya **girmedi** (scratchpad): `probe3.cjs`, `probes3-list.cjs`,
+  `probe-x1.cjs`, `x1-live.cjs`, `listener.cjs`, `cap2.mts`, `aa2.mts`, `aa3-scan.cjs`.
+
+⛔ Depoya hiçbir gerçek transkript içeriği bırakılmadı; AA3 taraması yalnızca sayısal özet üretti.
+Sandbox `%TEMP%\mcqa3` **depo dışındadır** ve yalnızca sentetik veri içerir (silme komutu
+`block-dangerous` hook'una takıldığı için onay istemeden silinmedi).
+
+**Süreçler:** açtığım iki sunucu (4599, 4601) ve tüm sonda süreçleri kapatıldı; portlar boş.
+Kalan `node.exe`: 2 adet Playwright MCP (araç altyapısı) + 3 adet `C:\dev\apps\hayat-mentoru`
+(`next dev`) — **dokunulmadı**. Bu turdan **yetim süreç: 0**.
+
+**Kapsam dışı gözlem (bulgu açılmadı):** 1280px'te Token sekmesine geçerken konsolda 3 adet React
+`Encountered two children with the same key` hatası var; anahtar biçimi `m:<uuid>:text` — F-012
+sohbet ekranına ait, F-011 ile ilgisiz.
+
+---
+
+## 8. KALDI'yı kaldırmak için gereken minimum (tek madde)
+
+1. **B1/AA1** — statik tarayıcı `export … from '<spec>'` (ve `export * as X from …`) biçimlerini
+   de beyaz listeye tabi tutsun, yerel yeniden dışa aktarımları modül grafiğine **eklesin**.
+   Çit: X1 (`export { get } from 'node:http'` içeren geçici dosya) kalıcı negatif kontrol olarak
+   `network-capability-guard.test.ts`'e girsin; ayrıca çalışma zamanı katmanının **yalnızca kendi
+   portunu** görebildiği, yani ikinci bir katman sayılamayacağı yorumda dürüstçe yazılsın.
+2. (Bloklayıcı değil, borç) `process['bind'+'ing']` gibi bölünmüş erişimler metinsel taramanın
+   yapısal sınırıdır; kara-liste kalıntısı olan bu metin taramasının kapsamı belgelensin.
+3. (Bloklayıcı değil, borç) AA3 oranı ileride **proje başına** değerlendirilsin (§3.3).

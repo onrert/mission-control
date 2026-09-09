@@ -1,7 +1,7 @@
 ---
 id: F-009
 title: Spike — transkript format doğrulama + dayanıklı okuyucu + fixture'lar
-status: qa
+status: fix
 owner: developer
 deps: [F-003]
 sprint: 2

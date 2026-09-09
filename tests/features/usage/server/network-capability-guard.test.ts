@@ -56,6 +56,26 @@ import ts from 'typescript'
  * `fetch()` blanket yasağı (hedef modülden bağımsız) DEĞİŞMEDİ — QA bu ikinci katmanı hiç
  * yenemedi, kara-liste kalıntısı olduğu bilinçli olarak kabul ediliyor (kapsamı: yalnızca "bu
  * çağrı hiç yapılmasın" — belirli bir modül hedefi aramıyor).
+ *
+ * **AA1 kararı (F-011 QA düzeltme turu 4, BLOKLAYICI B1) — ÇÖZÜLEMEYEN YEREL IMPORT ARTIK
+ * İHLAL SAYILIYOR (fail-closed) + bu katman artık İKİNCİL, birincil koruma değil.** Tur 3'ün
+ * AST'ye geçişi doğruydu ama `resolveRelativeImport` yalnızca dört aday deniyordu
+ * (`<spec>.ts/.tsx`, `index.ts/.tsx`) ve çözemediğinde beyaz listenin "varsayılan RET"
+ * felsefesiyle ÇELİŞEREK dosyayı sessizce ATLIYORDU (fail-open) — X1'in kök nedeninin
+ * (tarayıcının tanımadığı bir şekil sessizce geçer) aynısı, başka bir kapıdan. QA'nın V5/V6/V7
+ * sondaları bunu gizlenmemiş, sıradan bir NodeNext/ESM alışkanlığıyla (`./x.js`/`./x.mjs`/
+ * `./x.cjs`) kanıtladı — hatta MEVCUT bir import'a yalnızca `.js` uzantısı eklemek bile yeterliydi
+ * (§"mevcut import'a .js ekle" testi). Artık: (a) `resolveRelativeImport` `.js→.ts`, `.mjs→.mts`,
+ * `.cjs→.cts` eşlemesini de dener, (b) hiçbir aday bulunamazsa dosya **İHLAL** sayılır (aşağıya
+ * bkz.), (c) giriş numaralandırması `.mts`/`.cts`'i de kapsar ve alt dizinleri özyinelemeli
+ * tarar, (d) "körlük assert'i" dosya SAYISI yerine BEKLENEN KÜMEYE bağlı.
+ *
+ * Bu turda ayrıca ÜST bir davranış katmanı eklendi (`usage-aggregator.test.ts` —
+ * `installNetworkCapabilitySentinel`): gerçek `computeUsageReport` çalışırken `net`/`tls`/`http`/
+ * `https`/`dgram`/`dns`/`fetch`'in KENDİSİ global olarak kuşatılıyor. O katman BİRİNCİL korumadır
+ * — sözdiziminden tamamen bağımsızdır, bu dosyadaki AST taraması ise İKİNCİL/erken-uyarı
+ * katmanıdır (statik analiz sayesinde bir sorunu kod yazılırken/CI'da yakalar, davranış
+ * katmanından önce).
  */
 
 const ROOT = path.join(__dirname, '..', '..', '..', '..')
@@ -133,14 +153,41 @@ function extractModuleSpecifierRefs(content: string, fileName: string): ModuleSp
   return refs
 }
 
+/**
+ * AA1 (F-011 QA düzeltme turu 4, BLOKLAYICI B1) — bir JS-tarzı uzantı içeren relative specifier'ın
+ * hangi TS kaynak dosyasına karşılık geldiğini eşler (`moduleResolution: "Bundler"`'ın kabul
+ * ettiği, NodeNext/ESM alışkanlığı olan yazım: `./x.js` → `x.ts`). QA'nın V5/V6/V7 sondaları tam
+ * bunun EKSİK olmasından geçti.
+ */
+const JS_STYLE_TO_TS_EXTENSION: Readonly<Record<string, string>> = {
+  '.js': '.ts',
+  '.mjs': '.mts',
+  '.cjs': '.cts',
+}
+
 function resolveRelativeImport(fromFile: string, spec: string): string | null {
   const base = path.resolve(path.dirname(fromFile), spec)
-  const candidates = [
-    `${base}.ts`,
-    `${base}.tsx`,
-    path.join(base, 'index.ts'),
-    path.join(base, 'index.tsx'),
-  ]
+  const specExt = path.extname(spec)
+  const candidates: string[] = []
+
+  const tsExt = JS_STYLE_TO_TS_EXTENSION[specExt]
+  if (tsExt) {
+    // `./x.js` → `x.ts`, `./x.mjs` → `x.mts`, `./x.cjs` → `x.cts` (AA1 tur 4, V5/V6/V7).
+    candidates.push(base.slice(0, base.length - specExt.length) + tsExt)
+  } else if (specExt) {
+    // Zaten bir TS-tarzı uzantı (veya bilinmeyen bir uzantı) taşıyor — olduğu gibi dene.
+    candidates.push(base)
+  } else {
+    candidates.push(
+      `${base}.ts`,
+      `${base}.tsx`,
+      `${base}.mts`,
+      `${base}.cts`,
+      path.join(base, 'index.ts'),
+      path.join(base, 'index.tsx')
+    )
+  }
+
   for (const candidate of candidates) {
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate
   }
@@ -197,7 +244,18 @@ function scanModuleGraph(entryFiles: readonly string[]): ScanResult {
       if (isTypeOnly) continue // erimiş — çalışma zamanı kapasitesi yok
       if (spec.startsWith('.')) {
         const resolved = resolveRelativeImport(file, spec)
-        if (resolved) stack.push(resolved)
+        if (resolved) {
+          stack.push(resolved)
+        } else {
+          // AA1 (F-011 QA düzeltme turu 4, BLOKLAYICI B1) — QA'nın B1 bulgusu: çözülemeyen bir
+          // yerel import eskiden burada sessizce ATLANIYORDU (fail-open), beyaz listenin
+          // "varsayılan RET" felsefesiyle çelişen tek nokta. Artık çözülemeyen HER yerel import
+          // İHLAL sayılır (fail-closed) — dosyanın içeriği görülemiyorsa güvenli varsayım onun
+          // yasak bir yetenek taşıdığıdır, taşımadığı değil.
+          violations.push(
+            `${file}: yerel import çözülemedi, güvenlik gereği İHLAL sayılıyor (${spec})`
+          )
+        }
         continue
       }
       if (!isAllowedBareModule(spec)) {
@@ -209,10 +267,28 @@ function scanModuleGraph(entryFiles: readonly string[]): ScanResult {
   return { filesScanned: Array.from(visited), violations }
 }
 
-const usageServerEntries = fs
-  .readdirSync(USAGE_SERVER_DIR)
-  .filter((f) => f.endsWith('.ts'))
-  .map((f) => path.join(USAGE_SERVER_DIR, f))
+const SOURCE_ENTRY_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts']
+
+/**
+ * AA1 (F-011 QA düzeltme turu 4) — QA §2.3'ün gereği: giriş numaralandırması yalnızca `.ts`
+ * bakıyordu (`.mts`/`.cts` giriş olarak hiç sayılmıyordu) VE alt dizinleri özyinelemeli
+ * TARAMIYORDU (bugün `usage/server` düz bir dizin olsa da yarın bir alt dizine dosya eklenirse
+ * sessizce görünmez olurdu). Bu fonksiyon dosya sistemini özyinelemeli gezer.
+ */
+function listSourceEntriesRecursively(dir: string): string[] {
+  const out: string[] = []
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      out.push(...listSourceEntriesRecursively(full))
+    } else if (SOURCE_ENTRY_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) {
+      out.push(full)
+    }
+  }
+  return out
+}
+
+const usageServerEntries = listSourceEntriesRecursively(USAGE_SERVER_DIR)
 
 function withTempFixture(content: string, run: (file: string) => void): void {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-usage-netguard-'))
@@ -232,9 +308,16 @@ describe('usage/server ağ/süreç yeteneği yapısal çiti (Z2, F-011 QA düzel
 
   it('gerçek modül grafiği (handlers.ts + usage-aggregator.ts + transitif importlar) HİÇBİR ağ/süreç yeteneği içermiyor', () => {
     const { filesScanned, violations } = scanModuleGraph(usageServerEntries)
-    // en az: handlers.ts, usage-aggregator.ts, thread'in transcript-reader.ts'i — grafik körlüğü
-    // önlenir (yalnızca giriş dosyalarını "tarayıp" transitif izlemiyor olma riski).
-    expect(filesScanned.length).toBeGreaterThan(1)
+    // AA1 (F-011 QA düzeltme turu 4) — QA §2.4'ün "körlük assert'i" bulgusu: `filesScanned.length
+    // > 1` iki yerel giriş dosyasıyla (handlers.ts, usage-aggregator.ts) geçişli takip TAMAMEN
+    // kırılsa bile daima ≥ 2 olduğu için asla tetiklenemiyordu. Artık SAYIYA değil, BEKLENEN
+    // KÜMEYE bakılıyor: `transcript-reader.ts` `usage/server` dizini DIŞINDA (thread/server) ama
+    // `usage-aggregator.ts` tarafından transitif import ediliyor — bu dosyanın taranan kümede
+    // olması, geçişli takibin gerçekten çalıştığının doğrudan kanıtıdır.
+    const scannedBaseNames = filesScanned.map((f) => path.basename(f))
+    expect(scannedBaseNames).toEqual(
+      expect.arrayContaining(['handlers.ts', 'usage-aggregator.ts', 'transcript-reader.ts'])
+    )
     expect(violations).toEqual([])
   })
 
@@ -397,6 +480,87 @@ describe('usage/server ağ/süreç yeteneği yapısal çiti (Z2, F-011 QA düzel
       const { violations } = scanModuleGraph([file])
       expect(violations.length).toBeGreaterThan(0)
     })
+  })
+
+  // ------------------------------------------------------------------------------------------
+  // AA1 (F-011 QA düzeltme turu 4, BLOKLAYICI B1) — çözülemeyen yerel import artık fail-closed;
+  // V5/V6/V7 kalıcı negatif kontrol olarak buraya girer.
+  // ------------------------------------------------------------------------------------------
+  it('çözülemeyen yerel import artık İHLAL sayılır (fail-closed, sessizce atlanmaz)', () => {
+    withTempFixture("import './does-not-exist-anywhere'\n", (file) => {
+      const { violations } = scanModuleGraph([file])
+      expect(violations.length).toBeGreaterThan(0)
+      expect(violations.some((v) => v.includes('çözülemedi'))).toBe(true)
+    })
+  })
+
+  it("V5 — alt dizindeki .ts dosyasına '.js' uzantılı relative import ile referans verilmesi hâlâ taranır", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-usage-netguard-v5-'))
+    try {
+      const subdir = path.join(dir, 'qasub')
+      fs.mkdirSync(subdir)
+      fs.writeFileSync(
+        path.join(subdir, 'leak.ts'),
+        "import http from 'node:http'\nhttp.get('http://x', () => {})\n"
+      )
+      const entry = path.join(dir, 'entry.ts')
+      fs.writeFileSync(entry, "import './qasub/leak.js'\n")
+      const { violations } = scanModuleGraph([entry])
+      expect(violations.length).toBeGreaterThan(0)
+      expect(violations.some((v) => v.includes('node:http'))).toBe(true)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("V6 — kardeş .mts dosyaya '.mjs' uzantılı import hâlâ taranır", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-usage-netguard-v6-'))
+    try {
+      fs.writeFileSync(
+        path.join(dir, 'qa-leak.mts'),
+        "import http from 'node:http'\nhttp.get('http://x', () => {})\n"
+      )
+      const entry = path.join(dir, 'entry.ts')
+      fs.writeFileSync(entry, "import './qa-leak.mjs'\n")
+      const { violations } = scanModuleGraph([entry])
+      expect(violations.length).toBeGreaterThan(0)
+      expect(violations.some((v) => v.includes('node:http'))).toBe(true)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("V7 — kardeş .cts dosyaya '.cjs' uzantılı import hâlâ taranır", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-usage-netguard-v7-'))
+    try {
+      fs.writeFileSync(
+        path.join(dir, 'qa-leak2.cts'),
+        "import http from 'node:http'\nhttp.get('http://x', () => {})\n"
+      )
+      const entry = path.join(dir, 'entry.ts')
+      fs.writeFileSync(entry, "import './qa-leak2.cjs'\n")
+      const { violations } = scanModuleGraph([entry])
+      expect(violations.length).toBeGreaterThan(0)
+      expect(violations.some((v) => v.includes('node:http'))).toBe(true)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("patlama yarıçapı regresyonu — MEVCUT bir import'a yalnızca '.js' uzantısı eklenmesi taramayı düşürmez (QA tur4 §2.3)", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-usage-netguard-blast-'))
+    try {
+      const helper = path.join(dir, 'helper.ts')
+      const entry = path.join(dir, 'entry.ts')
+      fs.writeFileSync(helper, "import http from 'node:http'\nhttp.get('http://x', () => {})\n")
+      // Kozmetik, hiçbir aracın uyarmadığı düzenleme: uzantısız importa yalnızca `.js` eklendi.
+      fs.writeFileSync(entry, "import './helper.js'\n")
+      const { violations } = scanModuleGraph([entry])
+      expect(violations.length).toBeGreaterThan(0)
+      expect(violations.some((v) => v.includes('node:http'))).toBe(true)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('AA1 — beyaz listede olmayan HERHANGİ bir modül (yasaklı diye işaretlenmemiş olsa BİLE) reddedilir', () => {

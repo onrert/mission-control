@@ -310,3 +310,51 @@ girer" mekanizması regex'ten AST'ye geçiyor.
 
 **Bitti tanımı:** X1-X4 + tüm regresyon testleri yeşil, mutasyon KIRMIZI, `npm run verify` ve
 `npm run e2e` exit 0 (koşulan test sayısıyla raporlanır), feature notu `status: qa`.
+
+## 8. Düzeltme turu 4 (`docs/qa/F-011-2026-09-10-tur4.md`, KALDI → bu turun tek maddesi, B1/AA1)
+
+CEO kararı: AA1'in çitini bir daha sözdizimi analizine (nasıl yazıldığına) dayandırmıyoruz.
+Kök neden dört kez tekrarladı (kara liste → modül adı kara listesi → regex beyaz liste → AST +
+fail-open çözücü) ve ortak nokta hep "kodu OKUMA"ydı. Bu turda **davranışı ÖLÇEN** bir üst katman
+ekleniyor; mevcut AST taraması kalıyor ama fail-closed'a çevriliyor ve artık ikincil/erken-uyarı
+sayılıyor.
+
+**Ne yapılacak (kapsam: yalnızca iki test dosyası, `usage/server/**` ürün kodu DOKUNULMAZ):**
+
+1. **Birincil katman (yeni, `usage-aggregator.test.ts`):** `installNetworkCapabilitySentinel()` —
+   `net.connect`/`net.createConnection`/`net.Socket.prototype.connect`, `tls.connect`,
+   `http.request`/`http.get`, `https.request`/`https.get`, `dgram.createSocket`, `dns.lookup`/
+   `dns.resolve`/`dns.promises.lookup`/`dns.promises.resolve`, `globalThis.fetch` — GLOBAL olarak
+   kuşatılır (hedef host/port önemsiz). Her çağrı önce `calls` dizisine kaydedilir, sonra senkron
+   olan için fırlatılır / asenkron (`fetch`, `dns.promises.*`) için reddedilmiş promise döner —
+   "unhandled rejection" ya da yutulan hata durumunda bile ihlal `calls`'ta kalıcı kalır. Bu
+   sonda kurulduktan sonra GERÇEK `computeUsageReport` gerçek fixture verisiyle (mock YOK)
+   çalıştırılır; `calls` boş kalmalı VE rapor doğru üretilmeli (fonksiyonellik kırılmadığının
+   kanıtı). Önceki "kendi rastgele portunu dinleyen sunucu" testi bu testle DEĞİŞTİRİLİR — QA
+   §2.5'in bulgusu ("iki katman pratikte tek katmandı, çünkü ikinci katman yalnızca kendi
+   portunu görüyordu") artık geçersiz çünkü yeni katman port'tan bağımsız.
+2. **İkincil katman (mevcut AST taraması, `network-capability-guard.test.ts`, fail-closed'a
+   çevrilir):** `resolveRelativeImport` artık `.js→.ts`, `.mjs→.mts`, `.cjs→.cts` eşlemesini de
+   dener; hiçbir aday bulunamazsa (eskiden sessizce atlanan durum) dosya **İHLAL** sayılır.
+   Giriş numaralandırması `.mts`/`.cts`'i kapsar ve alt dizinleri özyinelemeli tarar. "Körlük
+   assert'i" dosya SAYISI yerine BEKLENEN KÜMEYE (`transcript-reader.ts` taranan kümede OLMALI)
+   bağlanır.
+
+**Kapsam dışı (dokunulmadı):** `usage-aggregator.ts`, `handlers.ts`, `UsageScreen.tsx` — yalnızca
+iki test dosyasındaki çit mekanizması değişiyor, ürün kodu değişmiyor. Yeni bağımlılık eklenmedi
+(`typescript` zaten `devDependencies`'te; `node:net`/`node:tls`/`node:dgram`/`node:dns` yerleşik).
+
+| # | Davranış | Nasıl doğrulanacak |
+|---|---|---|
+| Birincil katman | Gerçek `computeUsageReport` çalışırken hiçbir ağ bağlantı noktası çağrılmaz | Kalıcı `it()` (`usage-aggregator.test.ts`), `sentinel.calls` boş + rapor doğru |
+| V5/V6/V7 | `.js`/`.mjs`/`.cjs` uzantılı, önceden çözülemeyen relative import artık taranır | Kalıcı `it()`'ler (`network-capability-guard.test.ts`) |
+| Fail-closed | Hiçbir adayla çözülemeyen relative import İHLAL sayılır | Kalıcı `it()` |
+| Patlama yarıçapı | Mevcut bir importa yalnızca `.js` eklenmesi taramayı düşürmez | Kalıcı `it()` (QA §2.3 regresyonu) |
+| Körlük assert'i | `transcript-reader.ts` taranan kümede OLMALI (sayı değil, küme) | Mevcut `it()` güncellendi |
+| Mutasyon (a) | Birincil katmanı devre dışı bırakan/atlayan bir sızıntı davranışı KIRMIZI verir | Elle: sentinel aktifken gerçek bir ağ çağrısı enjekte edilir (V5 tarzı, geçici), KIRMIZI görülür, elle geri alınır |
+| Mutasyon (b) | İkincil katmanın fail-closed'u geri sarılırsa (eski fail-open) V5 kalıcı testi KIRMIZI verir | Elle mutasyon, KIRMIZI görülür, elle geri alınır |
+| Mutasyon (c) | Beyaz liste gevşetilirse (`ALLOWED_BARE_MODULES`'e `'http'`) hâlâ KIRMIZI | Elle mutasyon, KIRMIZI görülür, elle geri alınır |
+
+**Bitti tanımı:** QA'nın tüm sondaları (P1-P8, N1/N5, Y1/Y2/Y4, X1-X5, V4-V9) KIRMIZI, yanlış
+pozitif yok, üç mutasyon kanıtı verildi, `npm run verify` ve `npm run e2e` exit 0 (koşulan test
+sayısıyla raporlanır), feature notu `status: qa`.

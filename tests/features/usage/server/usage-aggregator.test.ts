@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import fs from 'node:fs'
 import http from 'node:http'
 import https from 'node:https'
+import net from 'node:net'
+import tls from 'node:tls'
+import dgram from 'node:dgram'
+import dns from 'node:dns'
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -37,6 +41,78 @@ function writeWithMtime(filePath: string, content: string, mtimeIso: string): vo
   fs.writeFileSync(filePath, content)
   const t = new Date(mtimeIso)
   fs.utimesSync(filePath, t, t)
+}
+
+/**
+ * F-011 QA düzeltme turu 4 (AA1, BLOKLAYICI B1) — BİRİNCİL DAVRANIŞ KATMANI.
+ * Turun 4'ünün bulgusu: bu dosyanın önceki "kendi rastgele portunu dinleyen sunucu" yaklaşımı
+ * SADECE KENDİ portuna gelen isteği görebiliyordu; QA'nın V5/V6/V7 sondaları BAŞKA bir porta
+ * (45911) gitti ve bu ikinci katman onları kaçırdı (bkz. `docs/qa/F-011-2026-09-10-tur4.md`
+ * §2.5 — "iki katman pratikte tek katmandır"). Bu sonda artık GERÇEK bağlantı kurma
+ * noktalarının (`net`/`tls`/`http`/`https`/`dgram`/`dns` + `fetch`) KENDİSİNİ GLOBAL olarak
+ * kuşatır: hedef host/port ne olursa olsun, hangi SÖZDİZİMİYLE (`.js` uzantılı import,
+ * `export … from`, dinamik `import()`, vb.) tetiklendiği tamamen ÖNEMSİZDİR — yalnızca
+ * "gerçekten bir bağlantı girişimi oldu mu" ölçülür. Statik AST taraması (
+ * `network-capability-guard.test.ts`) hâlâ birinci savunma hattı (erken uyarı); bu katman
+ * onun kaçırdığı HER ŞEYİ (bilinen veya bilinmeyen bir sözdizimi boşluğunu) yakalayan asıl
+ * korumadır.
+ *
+ * `record()` HER ZAMAN önce kaydeder, SONRA senkron çağıran için fırlatır / asenkron (`fetch`,
+ * `dns.promises.*`) çağıran için reddedilmiş bir promise döner — böylece çağıran taraf hatayı
+ * yutsa ya da "unhandled rejection" oluşsa bile ihlal `calls` dizisinde kalıcı olarak görünür ve
+ * test bunu okuyarak KIRMIZI verir.
+ */
+function installNetworkCapabilitySentinel(): {
+  calls: string[]
+  restore: () => void
+} {
+  const calls: string[] = []
+  const restores: Array<() => void> = []
+
+  function patch(obj: Record<string, unknown>, key: string, label: string, isAsync = false): void {
+    const original = obj[key]
+    obj[key] = () => {
+      calls.push(label)
+      const err = new Error(`AĞ ÇİTİ İHLALİ (birincil katman): ${label} çağrıldı`)
+      if (isAsync) return Promise.reject(err)
+      throw err
+    }
+    restores.push(() => {
+      obj[key] = original
+    })
+  }
+
+  const netObj = net as unknown as Record<string, unknown>
+  const socketProto = net.Socket.prototype as unknown as Record<string, unknown>
+  const tlsObj = tls as unknown as Record<string, unknown>
+  const httpObj = http as unknown as Record<string, unknown>
+  const httpsObj = https as unknown as Record<string, unknown>
+  const dgramObj = dgram as unknown as Record<string, unknown>
+  const dnsObj = dns as unknown as Record<string, unknown>
+  const dnsPromisesObj = dns.promises as unknown as Record<string, unknown>
+  const globalObj = globalThis as unknown as Record<string, unknown>
+
+  patch(netObj, 'connect', 'net.connect')
+  patch(netObj, 'createConnection', 'net.createConnection')
+  patch(socketProto, 'connect', 'net.Socket.prototype.connect')
+  patch(tlsObj, 'connect', 'tls.connect')
+  patch(httpObj, 'request', 'http.request')
+  patch(httpObj, 'get', 'http.get')
+  patch(httpsObj, 'request', 'https.request')
+  patch(httpsObj, 'get', 'https.get')
+  patch(dgramObj, 'createSocket', 'dgram.createSocket')
+  patch(dnsObj, 'lookup', 'dns.lookup')
+  patch(dnsObj, 'resolve', 'dns.resolve')
+  patch(dnsPromisesObj, 'lookup', 'dns.promises.lookup', true)
+  patch(dnsPromisesObj, 'resolve', 'dns.promises.resolve', true)
+  patch(globalObj, 'fetch', 'fetch', true)
+
+  return {
+    calls,
+    restore: () => {
+      for (const r of restores) r()
+    },
+  }
 }
 
 describe('computeUsageReport — Y4 doğruluk', () => {
@@ -361,15 +437,15 @@ describe('computeUsageReport — Y3: ağ isteği yok', () => {
     expect(httpsSpy).not.toHaveBeenCalled()
   })
 
-  // F-011 QA düzeltme turu 2 (AA1, çalışma zamanı katmanı) — yukarıdaki test yalnızca `fetch`/
-  // `http.request`/`https.request`'in KENDİ referanslarını casusluyor; QA'nın N1 sondası
-  // (`createRequire`) TAM OLARAK bu casusları atlayıp GERÇEK bir yerel dinleyiciye istek attı.
-  // Bu test mock KULLANMAZ — gerçek bir `http.createServer` dinleyicisi açar, ürün kodunun
-  // GERÇEK `computeUsageReport`'unu çalıştırır ve dinleyicinin HİÇBİR istek almadığını doğrular.
-  // Statik çit (`network-capability-guard.test.ts`) bir boşluk bıraksa bile bu katman canlı bir
-  // sızıntıyı yakalar — `network-capability-guard.test.ts`'teki N1/N2 kalıcı sondalarının
-  // çalışma-zamanı eşleniği.
-  it('gerçek bir yerel TCP dinleyicisi çalışırken computeUsageReport çalıştırılır — dinleyici HİÇBİR istek almaz (AA1, mock değil, canlı kontrol)', async () => {
+  // F-011 QA düzeltme turu 4 (AA1, BLOKLAYICI B1, BİRİNCİL DAVRANIŞ KATMANI) — bu testin önceki
+  // sürümü "kendi rastgele portunu dinleyen sunucu" yaklaşımını kullanıyordu; QA bunun SADECE
+  // kendi portuna gelen isteği görebildiğini, başka bir porta giden bir sızıntıyı (V5/V6/V7)
+  // KAÇIRDIĞINI kanıtladı. Artık gerçek bağlantı kurma noktalarının (`net`/`tls`/`http`/`https`/
+  // `dgram`/`dns` + `fetch`) KENDİSİ global olarak kuşatılıyor — bkz.
+  // `installNetworkCapabilitySentinel` üstündeki yorum. Hedef host/port ve tetikleyen sözdizimi
+  // (`.js` uzantılı import, `export … from`, dinamik `import()`, …) tamamen önemsiz: yalnızca
+  // "gerçekten bir bağlantı girişimi oldu mu" ölçülüyor.
+  it('GERÇEK computeUsageReport çalışırken net/tls/http/https/dgram/dns/fetch bağlantı noktalarından HİÇBİRİ çağrılmaz (AA1 tur 4, birincil davranış katmanı, global sonda)', async () => {
     const claudeRoot = tempDir()
     const project = tempDir()
     const encoded = encodeProjectDirName(project)
@@ -385,24 +461,18 @@ describe('computeUsageReport — Y3: ağ isteği yok', () => {
       '2026-09-04T00:00:00Z'
     )
 
-    const receivedUrls: string[] = []
-    const server = http.createServer((req, res) => {
-      receivedUrls.push(req.url ?? '')
-      res.writeHead(200)
-      res.end('AA1-CANLI-SIZINTI')
-    })
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
-
+    const sentinel = installNetworkCapabilitySentinel()
+    let report: ReturnType<typeof computeUsageReport> | undefined
     try {
-      const report = computeUsageReport(claudeRoot, [{ id: 'p1', label: 'p', path: project }])
+      report = computeUsageReport(claudeRoot, [{ id: 'p1', label: 'p', path: project }])
       // `computeUsageReport` kendisi senkron — olası gizli bir ASENKRON ağ çağrısının event
       // loop'a kuyruklanmış olma ihtimaline karşı bir tık beklenir.
       await new Promise((resolve) => setImmediate(resolve))
-      expect(report.usage.input_tokens).toBe(8)
-      expect(receivedUrls).toEqual([])
     } finally {
-      await new Promise<void>((resolve) => server.close(() => resolve()))
+      sentinel.restore()
     }
+    expect(sentinel.calls).toEqual([])
+    expect(report!.usage.input_tokens).toBe(8)
   })
 })
 

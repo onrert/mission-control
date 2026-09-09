@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import ts from 'typescript'
 
 /**
  * F-011 QA düzeltme turu (Z2) — QA'nın çalışma-zamanı casus tabanlı ağ çiti
@@ -36,6 +37,25 @@ import path from 'node:path'
  * belgelenmiştir. "Toplayıcı saf olsun: veriyi dışarıdan alsın, kendi I/O yapmasın" ifadesi
  * `computeUsageReport`'un kendisini hedef alıyordu, istemcinin kendi ekranını verisini çekme
  * mekanizmasını değil.
+ *
+ * **AA1 kararı (F-011 QA düzeltme turu 3, BLOKLAYICI B1) — METİN TARAMASINDAN GERÇEK AST
+ * AYRIŞTIRMASINA geçiş.** Turun 2'de kurulan beyaz liste, hangi import/export'un modül
+ * grafiğine/beyaz listeye tabi olduğunu `STATIC_IMPORT_RE`/`BARE_SIDE_EFFECT_IMPORT_RE` regex'iyle
+ * (yalnızca `import … from '<spec>'` ve `import '<spec>'` biçimleri) belirliyordu — bu, kılık
+ * değiştirmiş bir kara liste (bu kez "hangi SÖZDİZİMİ biçimi kapsanıyor" listesi) bırakıyordu.
+ * QA'nın X1 sondası (`export { get } from 'node:http'`, gizlenmemiş, sıradan bir barrel yazımı)
+ * tam bu boşluktan geçti ve ürün kodunun gerçek `computeUsageReport`'undan CANLI bir HTTP isteği
+ * çıkardı — tüm test paketi yeşilken. Artık modül grafiği/beyaz liste kontrolü TypeScript'in kendi
+ * derleyici API'siyle (`ts.createSourceFile` + `ts.forEachChild`) kurulan gerçek AST üzerinden
+ * yapılıyor: `ImportDeclaration` VE `ExportDeclaration` (dahil `export * from`, `export * as ns
+ * from`) düğümlerinin `moduleSpecifier`'ı aynı beyaz listeye tabi. Tip-only olan (`import type
+ * …`/`export type … from`) düğümler AYNEN muaf (çalışma zamanı kapasitesi yok). Yorum içindeki
+ * sahte `import`/`export` metni AST'de hiç düğüm üretmediği için doğası gereği yanlış pozitif
+ * vermiyor — bu, regex'in veremediği bir garanti. `createRequire(`/`require(`/`process.binding(`/
+ * `eval(`/`Function(` metinsel taraması (aşağıdaki `FORBIDDEN_CALL_PATTERNS`) ile `import()`/
+ * `fetch()` blanket yasağı (hedef modülden bağımsız) DEĞİŞMEDİ — QA bu ikinci katmanı hiç
+ * yenemedi, kara-liste kalıntısı olduğu bilinçli olarak kabul ediliyor (kapsamı: yalnızca "bu
+ * çağrı hiç yapılmasın" — belirli bir modül hedefi aramıyor).
  */
 
 const ROOT = path.join(__dirname, '..', '..', '..', '..')
@@ -67,17 +87,51 @@ function normalizeModuleSpecifier(spec: string): string {
   return spec.startsWith('node:') ? spec.slice('node:'.length) : spec
 }
 
-// `import (type )?<binding> from '<spec>'` — lazy `[\s\S]*?` çok satırlı import'ları (ör.
-// `import {\n  a,\n} from 'x'`) da kapsar. `type\s+` grubu `import type X from '...'` VE
-// `import type { X } from '...'`'yi (TAM tip-only import) yakalar — bu, ÇALIŞMA ZAMANINDA
-// erimiş sayılır, kapasiteye SAYILMAZ (`handlers.ts`'in `ProjectsService`/`ApiResponse` tip
-// importları bu yüzden muaf).
-const STATIC_IMPORT_RE = /import\s+(type\s+)?[\s\S]*?\bfrom\s*['"]([^'"]+)['"]/g
-// Yan-etkili çıplak import: `import '<spec>'` (`from` yan tümcesi YOK — ör. bir modülü yalnızca
-// çalıştırmak için import etmek). `STATIC_IMPORT_RE`'nin dışında ayrı bir desen gerekir.
-const BARE_SIDE_EFFECT_IMPORT_RE = /^\s*import\s*['"]([^'"]+)['"]/gm
 const DYNAMIC_IMPORT_RE = /\bimport\s*\(/
 const FETCH_CALL_RE = /\bfetch\s*\(/
+
+interface ModuleSpecifierRef {
+  spec: string
+  isTypeOnly: boolean
+}
+
+/**
+ * AA1 (tur 3) — gerçek TypeScript AST'i gezerek dosyanın kurduğu TÜM statik modül bağlarını
+ * çıkarır: `import … from '<spec>'`, `import '<spec>'` (yan-etkili, `importClause` yok),
+ * `export { x } from '<spec>'`, `export * from '<spec>'`, `export * as ns from '<spec>'`. Bunların
+ * hepsi TEK bir `forEachChild` gezintisiyle yakalanır — regex'in ayrı ayrı desen yazması gereken
+ * biçimler burada aynı AST düğüm ailesine (`ImportDeclaration`/`ExportDeclaration`) düşüyor. Tip-only
+ * olan düğümler (`isTypeOnly`) işaretlenir ama listeden ÇIKARILMAZ; çağıran taraf (`scanModuleGraph`)
+ * bunları filtreler — mevcut "tip-only muaf" davranışıyla birebir.
+ */
+function extractModuleSpecifierRefs(content: string, fileName: string): ModuleSpecifierRef[] {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    content,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.TS
+  )
+  const refs: ModuleSpecifierRef[] = []
+
+  function visit(node: ts.Node): void {
+    if (ts.isImportDeclaration(node)) {
+      const spec = node.moduleSpecifier
+      if (spec && ts.isStringLiteralLike(spec)) {
+        refs.push({ spec: spec.text, isTypeOnly: Boolean(node.importClause?.isTypeOnly) })
+      }
+    } else if (ts.isExportDeclaration(node)) {
+      const spec = node.moduleSpecifier
+      if (spec && ts.isStringLiteralLike(spec)) {
+        refs.push({ spec: spec.text, isTypeOnly: node.isTypeOnly })
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sourceFile)
+  return refs
+}
 
 function resolveRelativeImport(fromFile: string, spec: string): string | null {
   const base = path.resolve(path.dirname(fromFile), spec)
@@ -135,26 +189,12 @@ function scanModuleGraph(entryFiles: readonly string[]): ScanResult {
       }
     }
 
-    STATIC_IMPORT_RE.lastIndex = 0
-    let match: RegExpExecArray | null
-    while ((match = STATIC_IMPORT_RE.exec(content))) {
-      const isTypeOnly = Boolean(match[1])
-      const spec = match[2]!
+    // AA1 (tur 3) — `import … from`, `import '<spec>'`, `export … from`, `export * from`,
+    // `export * as ns from` HEPSİ tek bir AST gezintisiyle çıkarılır (bkz. `extractModuleSpecifierRefs`
+    // üstündeki yorum). Regex tabanlı iki ayrı desen (`STATIC_IMPORT_RE`/`BARE_SIDE_EFFECT_IMPORT_RE`)
+    // buradan kaldırıldı çünkü `export … from` biçimi ikisinde de yoktu (X1'in kaçtığı boşluk).
+    for (const { spec, isTypeOnly } of extractModuleSpecifierRefs(content, file)) {
       if (isTypeOnly) continue // erimiş — çalışma zamanı kapasitesi yok
-      if (spec.startsWith('.')) {
-        const resolved = resolveRelativeImport(file, spec)
-        if (resolved) stack.push(resolved)
-        continue
-      }
-      if (!isAllowedBareModule(spec)) {
-        violations.push(`${file}: beyaz listede olmayan modül import ediliyor (${spec})`)
-      }
-    }
-
-    BARE_SIDE_EFFECT_IMPORT_RE.lastIndex = 0
-    let bareMatch: RegExpExecArray | null
-    while ((bareMatch = BARE_SIDE_EFFECT_IMPORT_RE.exec(content))) {
-      const spec = bareMatch[1]!
       if (spec.startsWith('.')) {
         const resolved = resolveRelativeImport(file, spec)
         if (resolved) stack.push(resolved)
@@ -292,6 +332,70 @@ describe('usage/server ağ/süreç yeteneği yapısal çiti (Z2, F-011 QA düzel
       const { violations } = scanModuleGraph([file])
       expect(violations.length).toBeGreaterThan(0)
       expect(violations.some((v) => v.includes('process.binding('))).toBe(true)
+    })
+  })
+
+  // ------------------------------------------------------------------------------------------
+  // AA1 (F-011 QA düzeltme turu 3, BLOKLAYICI B1) — X1: QA'nın gizlenmemiş, sıradan bir
+  // TypeScript deseniyle (barrel yeniden dışa aktarımı) çiti yendiği ve ürün kodunun gerçek
+  // `computeUsageReport`'undan CANLI bir HTTP isteği çıkardığı vektör. Artık AST tabanlı tarama
+  // sayesinde kalıcı negatif kontrol.
+  // ------------------------------------------------------------------------------------------
+  it("X1 — export { get } from 'node:http' (+ yerel import) yakalanır (QA'nın canlı sızıntı kanıtladığı vektör, gizleme YOK)", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-usage-netguard-x1-'))
+    try {
+      const reexport = path.join(dir, 'reexport.ts')
+      const entry = path.join(dir, 'entry.ts')
+      // Bu dosyada `import` kelimesi HİÇ geçmiyor — tam QA'nın repro'sundaki gibi.
+      fs.writeFileSync(reexport, "export { get as qaGet } from 'node:http'\n")
+      fs.writeFileSync(entry, "import { qaGet } from './reexport'\nqaGet\n")
+      const { violations } = scanModuleGraph([entry])
+      expect(violations.length).toBeGreaterThan(0)
+      expect(violations.some((v) => v.includes('node:http'))).toBe(true)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("X2 — export * from 'node:http' (tüm modülü yeniden dışa aktarma) yakalanır", () => {
+    withTempFixture("export * from 'node:http'\n", (file) => {
+      const { violations } = scanModuleGraph([file])
+      expect(violations.length).toBeGreaterThan(0)
+      expect(violations.some((v) => v.includes('node:http'))).toBe(true)
+    })
+  })
+
+  it("X2b — export * as ns from 'node:http' yakalanır", () => {
+    withTempFixture("export * as ns from 'node:http'\n", (file) => {
+      const { violations } = scanModuleGraph([file])
+      expect(violations.length).toBeGreaterThan(0)
+      expect(violations.some((v) => v.includes('node:http'))).toBe(true)
+    })
+  })
+
+  it("X3 — export type { X } from 'node:http' MUAF (tip-only, çalışma zamanı kapasitesi yok, yanlış pozitif değil)", () => {
+    withTempFixture("export type { IncomingMessage as X } from 'node:http'\n", (file) => {
+      const { violations } = scanModuleGraph([file])
+      expect(violations).toEqual([])
+    })
+  })
+
+  it('X4 — yorum içindeki sahte export/import metni YAKALANMAZ (AST düğüm üretmez, yanlış pozitif yok)', () => {
+    withTempFixture(
+      "// export { get } from 'node:http'\n" +
+        "/* import http from 'node:http' */\n" +
+        "import fs from 'node:fs'\nfs.readFileSync\n",
+      (file) => {
+        const { violations } = scanModuleGraph([file])
+        expect(violations).toEqual([])
+      }
+    )
+  })
+
+  it('X5 — çok satırlı export { … } from biçimi de yakalanır', () => {
+    withTempFixture("export {\n  get,\n  request,\n} from 'node:http'\n", (file) => {
+      const { violations } = scanModuleGraph([file])
+      expect(violations.length).toBeGreaterThan(0)
     })
   })
 

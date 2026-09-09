@@ -3674,3 +3674,74 @@ QA kararı **KALDI** (`docs/qa/F-011-2026-09-10-tur2.md`) → 3 bloklayıcı (AA
 
 **Sonraki adım**
 - qa-evaluator F-011'in düzeltme turu 2'sini (AA1-AA4 + nit) değerlendirsin.
+
+
+---
+
+## F-011 — QA düzeltme turu 3 (B1/AA1, tek madde)
+
+QA kararı **KALDI** (`docs/qa/F-011-2026-09-10-tur3.md`) → AA2/AA3/AA4 zaten GEÇTİ, tek bloklayıcı
+B1/AA1 kaldı. Sözleşme eki: `docs/qa/F-011-contract.md` §7.
+
+**Ne yapıldı**
+
+- **B1/AA1 (ağ çiti, metin taramasından AST'ye geçiş):** QA'nın X1 sondası
+  (`export { get } from 'node:http'`, gizlenmemiş, sıradan bir barrel yeniden dışa aktarımı)
+  eski `STATIC_IMPORT_RE`/`BARE_SIDE_EFFECT_IMPORT_RE` regex'lerini yendi çünkü ikisi de yalnızca
+  `import … from '<spec>'` ve `import '<spec>'` biçimlerini görüyordu — `export … from` hiçbir
+  desende yoktu. CEO kararı: sorun eksik desen değil, çitin kaynak metnini sözdizimi biçimi olarak
+  taraması (kılık değiştirmiş kara liste). Çözüm: `tests/features/usage/server/
+  network-capability-guard.test.ts`'te modül grafiği/beyaz liste kontrolü artık gerçek TypeScript
+  AST'i üzerinden yapılıyor (`ts.createSourceFile` + `ts.forEachChild`, `typescript` paketi zaten
+  `devDependencies`'te — yeni bağımlılık eklenmedi). `ImportDeclaration` VE `ExportDeclaration`
+  düğümlerinin (dahil `export * from`, `export * as ns from`) `moduleSpecifier`'ı aynı beyaz
+  listeye (`ALLOWED_BARE_MODULES = {'fs','path'}`) tabi; tip-only düğümler (`import type …`,
+  `export type … from`) aynen muaf. `createRequire(`/`require(`/`process.binding(`/`eval(`/
+  `Function(` metinsel taraması ile `import()`/`fetch()` blanket yasağı DEĞİŞMEDİ — QA bu ikinci
+  katmanı hiç yenemedi. Ürün koduna (`usage-aggregator.ts`, `handlers.ts`, `UsageScreen.tsx`)
+  dokunulmadı; yalnızca test dosyasındaki çit mekanizması değişti.
+
+**Nasıl doğrulandı**
+
+- Yeni kalıcı negatif kontroller eklendi: X1 (`export { get as qaGet } from 'node:http'` + yerel
+  `import`, tam QA'nın repro'su, gizleme yok), X2 (`export * from 'node:http'`), X2b (`export *
+  as ns from 'node:http'`), X3 (`export type { X } from 'node:http'` MUAF, yanlış pozitif değil),
+  X4 (yorum içindeki sahte `export`/`import` metni YAKALANMAZ, AST düğüm üretmediği için doğası
+  gereği yanlış pozitif yok), X5 (çok satırlı `export { … } from` biçimi). Hepsi ✔ KIRMIZI→YEŞİL
+  akışıyla doğrulandı (önce eski koda karşı manuel çalıştırılıp X1/X2/X2b/X5'in KIRMIZI verdiği,
+  yeni koda karşı YEŞİL verdiği gözlendi).
+- Ek manuel prob (repoya girmedi, yalnızca doğrulama): `export type * from 'node:http'`, `import
+  type { X } from`, `import type X from`, yorum içi sahte `export`, çok satırlı `export {…} from`
+  (satır sonunda `from`), `export { default } from` — hepsi beklenen davranışı verdi (tip-only
+  muaf, yorum yanlış pozitif üretmedi, çok satırlı biçim yakalandı). Yeni bir boşluk bulunmadı.
+- **Mutasyon (elle, `git checkout` KULLANILMADI):** `ALLOWED_BARE_MODULES`'e `'http'` eklendi →
+  **7 test KIRMIZI** (X1, X2, X2b, X5 + üç eski test). Elle geri yazıldı, `md5sum` başlangıç
+  değeriyle birebir eşleşti (`c24fd28f565256eccf8a1a6e6ab6a441`), tekrar çalıştırılıp 23/23 YEŞİL
+  görüldü.
+- 2. ve 3. turun tüm eski ağ sondaları (P1-P8, N1-N6, `import type` muafiyeti, transitif derinlik,
+  beyaz liste yanlış-pozitif-yok testi) değiştirilmeden **YEŞİL** kaldı — regresyon yok.
+- `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca önceki turlardan kalan
+  meşru test adları (`write-gate-manifest.test.ts:124` dahil), `src/` altında sıfır eşleşme.
+- `npx tsc --noEmit` → temiz.
+- `npm run verify` (tek koşu, ikinci koşuya gerek kalmadı — worker-fork kararsızlığı bu turda
+  GÖRÜLMEDİ): typecheck 0, lint 0, **test: 84 dosya geçti + 1 skip (85), 1298 test geçti + 4 skip
+  (1302)** — bu turdan önceki 1292'den **+6 yeni test** (X1, X2, X2b, X3, X4, X5), build başarılı.
+- `npm run e2e`: **55/55 geçti (43,1s)** — F-011'e ait değişiklik yok, tam regresyon koşusu.
+- Yetim süreç: bu turda hiçbir sunucu/`npm run dev` çalıştırılmadı (yalnızca `vitest`/`tsc`/
+  `playwright test`); `netstat` ile 7333/7334/4599/4601 portlarında dinleyici yok teyit edildi.
+
+**Kalan risk / bir sonraki QA turuna notlar**
+
+- `createRequire(`/`require(`/`process.binding(`/`eval(`/`Function(` hâlâ metinsel (kara-liste
+  kalıntısı) — bölünmüş erişimler (`process['bind'+'ing']`) bu taramanın yapısal sınırı, tur 3
+  QA raporunda §1.3'te bloklayıcı olmayan borç olarak zaten kayıtlı, bu turda dokunulmadı.
+- AA3'ün eşiğinin ileride proje başına değerlendirilmesi (tur 3 QA raporu §8 madde 3) hâlâ açık,
+  bu tur kapsamı dışında.
+- Çalışma zamanı katmanının (`usage-aggregator.test.ts`'teki gerçek dinleyici testi) yalnızca
+  kendi rastgele portunu görebildiği, dolayısıyla "iki katman" iddiasının statik katmana daha
+  bağımlı olduğu tur 3 QA raporunda (§1.2 madde 3) not edildi — bu tur AST'ye geçerek statik
+  katmanı güçlendirdi ama çalışma zamanı katmanının kapsamı genişletilmedi (ürün koduna
+  dokunulmaması kararı gereği).
+
+**Sonraki adım**
+- qa-evaluator F-011'in düzeltme turu 3'ünü (B1/AA1) değerlendirsin.

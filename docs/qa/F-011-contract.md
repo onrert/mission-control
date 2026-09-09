@@ -270,3 +270,43 @@ kapsamında dokunulmadı.
 - `agentType` dağılımı bu makinede yalnızca 5 değer gösterdi (`developer/qa-evaluator/explorer/
   ux/architect`) — başka bir makinede farklı persona adları (`spark`, `kraken`, …) çıkabilir; kod
   bunu SABİT bir listeyle KISITLAMAZ (herhangi bir string kabul edilir), bu yüzden risk yok.
+
+## 7. Düzeltme turu 3 (`docs/qa/F-011-2026-09-10-tur3.md`, KALDI → bu turun tek maddesi, B1/AA1)
+
+CEO kararı: AA1'in kalıcı yenilgi nedeni desen eksikliği değil, çitin kaynak metnini **sözdizimi
+biçimi olarak** taraması (kılık değiştirmiş kara liste). Çözüm: metinsel `STATIC_IMPORT_RE` /
+`BARE_SIDE_EFFECT_IMPORT_RE` yerine **gerçek TypeScript AST ayrıştırması** (`typescript` paketi
+zaten `devDependencies`'te — yeni bağımlılık eklenmedi).
+
+**Ne yapılacak:** `network-capability-guard.test.ts` içinde `ts.createSourceFile` ile her taranan
+dosyanın AST'si kurulacak, `ts.forEachChild` ile tüm ağaç gezilecek ve şu düğüm tipleri modül
+grafiğine/beyaz listeye tabi tutulacak:
+
+- `ImportDeclaration` (`import x from '<spec>'`, `import '<spec>'`, çok satırlı — hepsi tek düğüm)
+  — `importClause?.isTypeOnly` ise muaf (mevcut davranışla birebir).
+- `ExportDeclaration` ile `moduleSpecifier` (`export { x } from '<spec>'`, `export * from '<spec>'`,
+  `export * as ns from '<spec>'`) — düğümün kendi `isTypeOnly` alanı true ise (`export type {x}
+  from '<spec>'`) muaf.
+- Yorum içindeki sahte `import`/`export` metni AST'de düğüm ÜRETMEZ — ayrıştırma bunu doğası
+  gereği yanlış pozitif üretmeden dışlar (regex'in taşımadığı bir garanti).
+
+Beyaz liste (`ALLOWED_BARE_MODULES = {'fs','path'}`) ve dolaylı edinme yollarının metinsel taraması
+(`createRequire(`/`require(`/`process.binding(`/`eval(`/`Function(`) ile `DYNAMIC_IMPORT_RE`/
+`FETCH_CALL_RE` (blanket yasak, hedef modülden bağımsız) **AYNEN KALIR** — QA bunları yenemedi,
+ikinci katman olarak korunuyor. Yalnızca "hangi import biçimleri modül grafiğine/beyaz listeye
+girer" mekanizması regex'ten AST'ye geçiyor.
+
+**Kapsam dışı (dokunulmadı):** `usage-aggregator.ts`, `handlers.ts`, `UsageScreen.tsx`, AA2/AA3/AA4
+— yalnızca test dosyasındaki çit mekanizması değişiyor, ürün kodu değişmiyor.
+
+| # | Davranış | Nasıl doğrulanacak |
+|---|---|---|
+| X1 | `export { get } from 'node:http'` (+ yerel `import { qaGet } from './x'`) KIRMIZI verir | Kalıcı `it()`: geçici dosyada `export { get as qaGet } from 'node:http'` → `violations.length > 0` |
+| X2 | `export * from 'node:http'` da yakalanır | Kalıcı `it()` |
+| X3 | `export type { X } from 'node:http'` MUAF (yanlış pozitif değil, tip-only) | Kalıcı `it()`, `violations` boş |
+| X4 | Yorum içindeki sahte `export { x } from 'node:http'` metni YAKALANMAZ (yanlış pozitif yok) | Kalıcı `it()`, `violations` boş |
+| Regresyon | 2. ve 3. turun tüm ağ sondaları (P1-P8, N1-N6, Y1/Y2/Y4, `import type` muafiyeti, transitif derinlik) KIRMIZI/YEŞİL durumunu KORUR | Aynı test dosyasındaki mevcut `it()`'ler değiştirilmeden çalıştırılır |
+| Mutasyon | Beyaz listeyi gevşeten mutasyon (`ALLOWED_BARE_MODULES`'e `'http'` eklenir) hâlâ KIRMIZI verir | Elle mutasyon, KIRMIZI görülür, elle geri alınır (`git checkout` KULLANILMAZ) |
+
+**Bitti tanımı:** X1-X4 + tüm regresyon testleri yeşil, mutasyon KIRMIZI, `npm run verify` ve
+`npm run e2e` exit 0 (koşulan test sayısıyla raporlanır), feature notu `status: qa`.

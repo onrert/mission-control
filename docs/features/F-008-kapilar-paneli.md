@@ -1,7 +1,7 @@
 ---
 id: F-008
 title: Kapılar paneli (G0–G6 / ASSETS) — onay, red, arşiv akışı
-status: qa
+status: done
 owner: developer
 deps: [F-006, F-007]
 sprint: 2

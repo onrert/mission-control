@@ -1,293 +1,439 @@
 KARAR: GEÇTİ
 ESKALE: false
 
-# F-013 — QA raporu (düzeltme turu, 2. tur — DAR KAPSAM)
-
-- **Tarih:** 2026-09-08
-- **Değerlendiren:** qa-evaluator
-- **Commit:** `d55ee89 docs(F-013): record QA fix round K1-K6 in progress.md`
-  (düzeltmeler: `7b8d8ce` güvenlik, `f518a29` UX)
-- **Kapsam:** yalnızca 1. turun (`docs/qa/F-013-2026-09-08.md`, KALDI) açık bulguları —
-  B1, B2 ve Ö1-Ö4. 1. turda GEÇTİ verilen AC'ler (AC1/AC2/AC5/AC7/AC8/AC9) yeniden ölçülmedi;
-  yalnızca düzeltmenin dokunduğu focus-trap yüzeyi regresyon için sınandı.
-- **Yöntem:** temiz `npm run build && npm start` (port 7357, `MC_CHAT_ENABLED=0`, izole
-  `MC_DATA_DIR` + gerçek `docs/` kopyasından üretilmiş fixture proje); gerçek tarayıcıda
-  (Playwright) tıklama ve klavye; 6 bağımsız mutasyon; doğrudan `buildFeatureDetail` /
-  `resolveInsideRootForRead` çağıran bağımsız sızıntı probu (11 saldırı vektörü);
-  `npm run verify` + `npm run e2e`.
-- **Ekran görüntüleri:** `docs/qa/screens/F-013-t2-01-modal-1280.png`,
-  `docs/qa/screens/F-013-t2-02-yenile-sonrasi.png`, `docs/qa/screens/F-013-t2-03-320px.png`
-
+---
+feature: F-008
+title: Kapılar paneli — G0-G6/ASSETS onay, red, arşiv akışı
+reviewer: qa-evaluator
+date: 2026-09-09
+tur: kod turu (A sunucu + B arayüz birlikte), gerçek tarayıcı
 ---
 
-## 1. Karar özeti
+# F-008 QA raporu — Kapılar paneli
 
-**GEÇTİ.** 1. turun iki bloklayıcısı da (B1, B2) ve dört önemli bulgusunun dördü de (Ö1-Ö4)
-kapandı; brief'in istediği dört mutasyonun (guard, desen, manifest, bayatlık) **dördü de
-KIRMIZI**. Yeni bloklayıcı yok.
+Kaynaklar: `docs/features/F-008-kapilar-paneli.md` (kabul kriterleri), `docs/qa/F-008-contract.md`
+(tur 3, §3-§11), `docs/03-ux.md:185-215` (ekran 4 mockup + Türkçe metinler), `docs/PROCESS.md` §2,
+`docs/decisions/ADR-005` madde 9, `ADR-009` (yalnızca Windows), `ADR-013` (`x-mc-write`),
+`CLAUDE.md` "Öğrenilen kurallar".
 
-En kritik sonuç: 1. turda **gerçekten sızdırdığım** kök dışı okuma artık iki bağımsız katman
-tarafından kapatılıyor ve **her iki katmanın da kendi mutasyonu var** — katmanlardan birini
-kaldırmak testleri kırmızıya düşürüyor, diğerini kaldırmak da. 1. turda `SAFE_ID_PATTERN`
-mutasyonu 109/109 yeşil bırakıyordu; artık kırmızı.
+**Bu bir güvenlik sınırı feature'ıdır** (G0 kararı: "panelden verilen kapı onayı kullanıcının
+onayı sayılır"). Raporun ağırlığı "çalışıyor gibi görünüyor"da değil, **çitlerin mutasyonla
+kırmızı verdiğini kanıtlamakta**.
 
-Bir tane NOT seviyesi çit zayıflığı buldum (N6, aşağıda): K6'nın E2E assert'i `locator.focus()`
-kullandığı için "kap klavye ile odaklanabilir" iddiasını **ölçmüyor**. Kullanıcıya görünen
-davranış gerçek tarayıcıda doğrulandı (Tab kaba ulaşıyor, `PageDown` kaydırıyor), bu yüzden
-bloklayıcı değil — ama rapora yazılıyor.
+## 0. Ölçüm ortamı ve güvenlik kısıtı
 
----
+- Uygulama **`npm run build && npm start`** ile üretim derlemesinden koşturuldu
+  (`MC_PORT=4599`, `MC_DATA_DIR=<scratchpad>/sandbox/data`). `npm run dev` KULLANILMADI.
+- Tüm yazma ölçümleri **sandbox proje dizinlerinde** yapıldı
+  (`<scratchpad>/sandbox/proj`, `<scratchpad>/caseproj`) — bunların kendi `docs/PROCESS.md` +
+  `docs/approvals/`'ı var.
+- **Gerçek `docs/approvals/` hiç değişmedi.** Tur başında ve sonunda alınan sha256 listeleri
+  birebir aynı:
 
-## 2. 1. tur bulgularının kapanış tablosu
-
-| 1. tur | Düzeltme | Sonuç | Kanıt (özet) |
-|---|---|---|---|
-| **B2 / AC4** — `SAFE_ID_PATTERN` tek savunma, sıfır testi | K1 | **KAPANDI** | `readOptionalDocument` artık gövdeyle **aynı** `resolveInsideRootForRead`'ten geçiyor; 11 saldırı vektörünün 11'i reddedildi; iki katmanın **ayrı ayrı** mutasyonu KIRMIZI (M1, M2) |
-| **Ö4 / AC4** — guard "kök altında"yı kısıtlıyor, "docs/features altında"yı değil | K2 | **KAPANDI** | `buildFeatureDetail(repo,'../../package.json')` 1. turda `ok` (2296 karakter okundu) → şimdi `invalid_path`; `../../CLAUDE.md` 1. turda `ok` (13438 karakter) → `invalid_path` |
-| **Ö1 / AC3** — manifest testi iddia ettiğini ölçmüyor | K3 | **KAPANDI** | M3a (mutlu yola gerçek `fs.writeFileSync`) 1. turda `-t "manifest"` ile **2 passed** → şimdi **2 failed**; silme mutasyonu da KIRMIZI |
-| **B1 / AC6** — `docs/qa/*` sessiz bayatlık | K4 | **KAPANDI** | "Son yenileme: `<saat>`" her zaman görünür + "Yenile" düğmesi; canlı ölçüm: disk değişti → panel 2 dk boyunca eski içerik gösterdi **ama saat 20:48:31'de sabit kaldı (o an 20:50:43)**, "Yenile" ile içerik + yeni rapor + saat tazelendi |
-| **Ö3** — 254px'lik kutularda 27.922px gizli içerik | K5 | **KAPANDI** | İç içe kaydırma kabı **11 → 0**; belgeler `<details>` bölümlerine alındı, gövde açık/gerisi kapalı |
-| **Ö2** — içerik klavyeyle okunamıyor | K6 | **KAPANDI** | Kaydırma bölgesi **12 → 1**; `Tab` ile kaba ulaşılıyor, `PageDown` `scrollTop` 0 → **399**, `ArrowDown` → 439, `End` → 6513, `Home` → 0 (1. turda hepsi 0'da sabitti) |
-
----
-
-## 3. K1/K2 — güvenlik (en kritik)
-
-### 3.1 Gerçek saldırılar — hepsi reddedildi
-
-Bağımsız prob (üretim kodunu doğrudan çağırır, testlerden bağımsız), fixture: kök dışında
-`outside/qa/EVIL-contract.md`, kök içinde `package.json` / `.env` / `.claude/settings.json`.
-
-```
-A) 1. turun BİREBİR saldırısı — frontmatter `id: ../../../outside/qa/EVIL`
-   F-902-evil.md  => contract.exists=false   qa_reports=0        (1. turda: exists=true, içerik SIZDI)
-B) `id: ../../package` (kök içinde, docs/qa dışı)
-   F-903-dotdot.md => contract.exists=false  qa_reports=0
-C) mutlu yol kontrolü
-   F-001.md       => contract.exists=true  content="SOZLESME-ICERIGI"
-D) `file` parametresiyle docs/features dışına çıkma
-   ../../package.json          => invalid_path
-   ../../.env                  => invalid_path
-   ../../.claude/settings.json => invalid_path
-E) guard doğrudan
-   [package.json]           => ok=false reason=not-allowed
-   [.env]                   => ok=false reason=not-allowed
-   [.claude/settings.json]  => ok=false reason=not-allowed
-   [docs]                   => ok=false reason=not-allowed
-   [docs/qa]                => ok=true
-   [docs/features/F-001.md] => ok=true
-F) GERÇEK repo kökü üzerinde (1. turun Ö4 repro'su)
-   buildFeatureDetail(repo,'../../package.json') => invalid_path   (1. tur: ok, 2296 karakter)
-   buildFeatureDetail(repo,'../../CLAUDE.md')    => invalid_path   (1. tur: ok, 13438 karakter)
-```
-
-### 3.2 İki katman, iki ayrı mutasyon — ikisi de KIRMIZI
-
-**M1 — guard'ın üçüncü kontrolü kaldırıldı** (`read-guard.ts:78`, `if (!matchesAllowedPrefix…)`
-bloğu `void matchesAllowedPrefix(...)` ile etkisizleştirildi):
-
-- `Tests 3 failed | 115 passed` → **KIRMIZI**
-  - "QA'nın ölçtüğü gerçek çağrı: root'un doğrudan altındaki bir dosya (docs/features|docs/qa DIŞI) reddedilir"
-  - "docs/ altında ama docs/features veya docs/qa DIŞINDA bir dosya reddedilir"
-  - "MUTASYON emsali: `file` parametresi ile kök İÇİNDE ama docs/features DIŞINDA bir dosyaya kaçış reddedilir"
-- Çit **yük taşıyor**, totoloji değil: mutasyonlu kodda prob gerçekten sızdırdı —
-  `../../package.json => ok BODY="{\"gizli\":\"PACKAGE-JSON-SIZINTI\"}"`, `.env => ok`,
-  `.claude/settings.json => ok`, gerçek repoda `CLAUDE.md` **14.532 karakter okundu**.
-
-**M2 — `SAFE_ID_PATTERN` kaldırıldı** (`feature-detail.ts:133`, `SAFE_ID_PATTERN.test(card.id)`
-→ `card.id !== ''`):
-
-- `Tests 1 failed | 117 passed` → **KIRMIZI**
-  (`id="F-001/../F-002"`: başka feature'ın sözleşmesi `docs/qa` İÇİNDE kaldığı için guard'ın
-  göremediği, yalnızca desenin kapattığı senaryo). **1. turda bu mutasyon 109/109 YEŞİLDİ.**
-- M2 altında A/B/D/E vektörlerinin hepsi hâlâ **reddedildi** — yani desen kalksa bile kök dışı
-  sızıntı yok. Savunma derinliği iki yönlü doğrulandı.
-
-Developer'ın progress.md'deki "guard TEK BAŞINA kaldırılırsa `id` senaryosu yeşil kalır, bu
-matematiksel olarak beklenen" açıklaması **doğru** — ölçtüm; guard'ın tek başına kattığı değer
-`file` parametresi yolunda (M1'in kırdığı 3 test) ve orada çitli.
-
----
-
-## 4. K3 — manifest testi artık gerçek mi?
-
-`tests/features/kanban/server/feature-detail.test.ts:331-399` + `tests/helpers/manifest.ts`.
-Anlık görüntü artık **tüm** `buildFeatureDetail` çağrılarından önce alınıyor ve
-`expect(after).toEqual(before)` **tam eşitlik** ile karşılaştırılıyor (kod okundu, doğrulandı).
-
-Üç mutasyon, `npx vitest run … -t "manifest"` ile izole koşuldu:
-
-| Mutasyon | 1. tur | 2. tur |
-|---|---|---|
-| **M3a** mutlu yola sabit içerikli `fs.writeFileSync(docs/qa/.mc-read.log)` (**yeni dosya**) | **YEŞİL (2 passed)** | **KIRMIZI (2 failed)** — `expected [ …(3) ] to deeply equal [ …(1) ]` |
-| **M3c** `readOptionalDocument` okuduğu dosyayı `fs.rmSync` ile **siler** | ölçülmedi | **KIRMIZI (1 failed)** |
-| **M3d** var olan dosyaya **boş** `appendFileSync` (yalnızca `mtime` dokunur, içerik/boyut aynı) | ölçülmedi | **YEŞİL** manifest testinde — ama `no-write-gate-bypass` statik taraması **KIRMIZI** verdi |
-
-M3d, testin iddia ettiği kapsamın gerçek sınırını gösteriyor: `snapshotDir` bilinçli olarak
-`mtimeMs` taşımıyor (`tests/helpers/manifest.ts:6-9` bunu yazıyor), dolayısıyla içerik-nötr bir
-dokunuşu göremez. Bu bir **yanlış iddia değil** (testin adı "hiçbir dosyayı değiştirmez",
-yorumu yeni dosya/silme kapsamını doğru anlatıyor) ve ikinci katman (statik tarama) o boşluğu
-kapatıyor. AC3'ün "savunma derinliği, totoloji değil" iddiası artık **iki gerçek katman** ile
-karşılanıyor — 1. turda fiilen tek katmandı.
-
----
-
-## 5. K5/K6 — okunabilirlik, gerçek tarayıcıda ölçüldü
-
-F-012 kartı (11 belge, gerçek repo içeriğinin kopyası), 1280×900:
-
-| Ölçü | 1. tur | 2. tur |
-|---|---|---|
-| Kaydırma bölgesi sayısı (modal içi) | **12** (1 dış kap + 11 `<pre>`) | **1** |
-| İç içe kaydırma kabı | 11 | **0** (bölümler açıldıktan sonra da **0**) |
-| `<pre>` `overflow-y` | `auto` (`max-h-64` → `clientHeight` 254px) | `visible`, yükseklik serbest (sözleşme `<pre>` açıkken 27.712px, tek akışta) |
-| `PageDown` sonrası `scrollTop` | **0** (sabit) | **399** |
-| `ArrowDown` sonrası | 0 | 439 |
-| `End` / `Home` | — | 6513 / 0 |
-| Katlanabilir bölüm | yok | **11** (`Açıklama` **açık**, `Sözleşme` + 9 QA raporu **kapalı**) |
-| Odaklanabilir öğe sayısı (focus-trap seçicisi) | **1** ("Kapat") | **14** (Kapat, Yenile, içerik kabı, 11 `summary`) |
-
-**Klavye ile bölüm açma (brief'in istediği):** `Tab` → `Tab` → içerik kabı (`tabindex=0`,
-`activeElement` doğrulandı) → `Tab` → `summary "Açıklama"`; **`Enter`** bölümü kapattı
-(`open=false`, kabın `scrollHeight` 7068 → 394), **`Space`** yeniden açtı (`open=true`,
-`scrollHeight` 7068). Yani hem `Enter` hem `Space` çalışıyor.
-
-**Focus-trap regresyonu yok** (düzeltme seçiciye `summary` ekledi — bu yüzden yeniden ölçtüm):
-15 `Tab` sonrası odak modalın içinde ve "Kapat"a sarıyor (`inModal: true`); `Esc` pencereyi
-kapatıyor (`modalCount: 0`).
-
-**Mutasyon M5** — `<pre>`'ye `max-h-64 overflow-y-auto` geri konuldu (düzeltmeyi birebir geri
-saran mutasyon): jsdom paketi yeşil kaldı ama **E2E KIRMIZI** —
-`expect(nestedScrollBoxCount).toBe(0)` → `Received: 2`. K5 çitli.
-
----
-
-## 6. K4 — bayatlık, canlı ölçüm
-
-1. **20:48:31** — F-012 penceresi açıldı, panelde `Son yenileme: 20:48:31`, 9 QA raporu.
-2. **20:50:26** — pencere açıkken, **gövdeye dokunmadan** diskten üç yazma:
-   `F-012-contract.md` üzerine yazıldı, `F-012-contract-review-1.md` üzerine yazıldı,
-   **yeni** `F-012-2026-09-08-probe.md` oluşturuldu.
-3. **20:50:43** (8 sn bekleme sonrası) — panel hâlâ eski içerik (beklenen: `docs/qa` SSE ile
-   izlenmiyor, J6/K4 bilinçli kararı) **ama** `Son yenileme: 20:48:31` yazıyor ve o an saat
-   20:50:43 → kullanıcı içeriğin 2 dakikalık olduğunu **görüyor**. 1. turdaki "hiçbir bayatlık
-   göstergesi yok, elle tazeleme yolu yok" durumu ortadan kalktı.
-4. **20:50:55** — "Yenile" tıklandı: sözleşme `YENI-SOZLESME-TUR2-MARKER`,
-   review-1 `QA-TUR2-BAYATLIK-MARKER-XYZ`, rapor sayısı **9 → 10** (yeni `-probe.md` listede),
-   `Son yenileme: 20:50:55` (tıklama anıyla uyumlu). **Sessiz bayatlık kalmadı.**
-
-**Mutasyon M4** — `onClick={refresh}` → `onClick={() => {}}` (düzeltmeyi birebir geri sarar):
-`Tests 1 failed | 132 passed` → **KIRMIZI** ("Yenile butonu YENİ bir `/api/features/detail`
-çağrısı tetikler ve güncel sözleşme içeriğini gösterir (content_hash DEĞİŞMESE bile)").
-
-AC6'nın "veya bayat olduğu belli olur" dalıyla karşılandığı `docs/03-ux.md:133-142`'de açıkça
-yazılı — AC sessizce `[x]` bırakılmadı, belge güncellendi.
-
----
-
-## 7. Mutasyon tablosu (6 bağımsız mutasyon)
-
-| # | Hedef | Mutasyon | Sonuç | Kanıt |
-|---|---|---|---|---|
-| M1 | Guard üçüncü kontrol (K2) | `read-guard.ts:78` izinli önek kontrolü etkisizleştirildi | **KIRMIZI (3 test)** | + prob: `.env`/`package.json`/`settings.json` gerçekten sızdı, repoda `CLAUDE.md` 14.532 karakter |
-| M2 | `SAFE_ID_PATTERN` (K1) | `feature-detail.ts:133` → `card.id !== ''` | **KIRMIZI (1 test)** | 1. turda **YEŞİL (109/109)** idi |
-| M3a | Manifest (K3) | Mutlu yola sabit içerikli `fs.writeFileSync` (yeni dosya) | **KIRMIZI (2 test)** | 1. turda `-t "manifest"` ile **2 passed** idi |
-| M3c | Manifest kapsamı — silme | `readOptionalDocument` okuduğu dosyayı siler | **KIRMIZI (1 test)** | testin iddia ettiği kapsam gerçek |
-| M4 | Bayatlık (K4) | `onClick={refresh}` → no-op | **KIRMIZI (1 test)** | `KanbanScreen.test.tsx` K4 testi |
-| M5 | Okunabilirlik (K5) | `<pre>`'ye `max-h-64 overflow-y-auto` geri kondu | **KIRMIZI (E2E)** | `nestedScrollBoxCount` beklenen 0, gelen 2 |
-
-Ek kontrol (mutasyon değil, çit denetimi): **M6 — `tabIndex={0}` kaldırıldı** → `verify` paketi
-**YEŞİL**, K5/K6 E2E testi de **YEŞİL** kaldı. Bkz. N6.
-
-`grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca meşru test adları
-(11 satır; `write-gate-manifest.test.ts:124` dahil, dokunulmadı). Tüm mutasyonlar
-`git checkout --` ile birebir geri alındı; `dist/` mutasyonsuz kaynaktan **yeniden derlendi**
-(`tabIndex:0` bundle'da var, `max-h-64` yok); `git status` temiz.
-
----
-
-## 8. Dar genişlik regresyonu (`<details>` yapısı bir şey bozdu mu?)
-
-Kırpılmış görünür genişlikle ölçüldü (`toBeVisible()` **kullanılmadı**), F-012 penceresi açık:
-
-| Genişlik | modal | `summary` | `<pre>` | "Yenile" | "Son yenileme" | belge `scrollWidth` | sağ kenarı aşan öğe | iç kaydırma kabı |
-|---|---|---|---|---|---|---|---|---|
-| 320 | 288 | 239 | 239 | 61 | 158 | 320 | **0** | **0** |
-| 375 | 343 | 294 | 294 | 61 | 158 | 375 | **0** | **0** |
-| 480 | 448 | 399 | 399 | 61 | 158 | 480 | **0** | **0** |
-| 639 | 607 | 558 | 558 | 61 | 158 | 639 | **0** | **0** |
-| 640 | 608 | 559 | 559 | 61 | 158 | 640 | **0** | **0** |
-
-Hiçbir genişlikte yatay belge kaydırması yok, hiçbir öğe kırpılmıyor. 320px'te "Son yenileme"
-metni 33..191, "Yenile" düğmesi 226..287 — çakışma yok. (Kırılma noktasının iki yanı 639/640 ile
-ayrıca sınandı.) `screens/F-013-t2-03-320px.png`
-
----
-
-## 9. Test paketleri
-
-| Komut | Sonuç |
+| Dosya | sha256 (tur başı = tur sonu) |
 |---|---|
-| `npm run verify` | **EXIT=0** — `943 passed | 2 skipped (945)`, `66 passed` dosya, build 298,93 kB JS / 20,95 kB CSS. Tek koşuda yeşil, tekrar gerekmedi (worker fork kararsızlığı görülmedi) |
-| `npm run e2e` | **EXIT=0** — `28 passed (34.0s)` |
+| `G0.ok` | `3b21fd8e7c4b2d1f3797275eb18dfe476a7f2c83435b905df3d6f31824148565` |
+| `G1.ok` | `72bcf9757aec9ca5ba76f1a02bddad85f3051d1110d7e7a62189c1dc8d5b5234` |
+| `G2.ok` | `a87cd696dd44424084594e2a32e83f0f32b4fc797cbb0148ef8b3cbdefba1bf5` |
+| `G3.ok` | `36b18d582ac02afd3d0709d908ef256079b6ff147f09c08afccda5757bf9eef2` |
+| `G4-1.ok` | `08d0fe3aaa80ed11a1eece6956a4c48272903ebadcb74974aa09c8fffba0d82b` |
+| `README.md` | `770799bb377c769c3633217a73d579f5ddfc9d705c84a5c730f2425f554a3ed7` |
 
-Developer'ın "943 test / 66 dosya" ve "28/28" iddiaları **doğrulandı**.
-Tailwind `@source` kapsamı: K4/K5'in getirdiği 10 sınıf (`cursor-pointer`, `font-semibold`,
-`space-y-3`, `min-h-8`, `justify-between`, `whitespace-pre-wrap`, `break-words`,
-`text-amber-400`, `pt-2`, `gap-2`) → **10/10** `dist/web/assets/index-WlzTwQSg.css` içinde.
+`ls docs/approvals/` tur sonunda: `G0.ok G1.ok G2.ok G3.ok G4-1.ok README.md` — **yeni dosya yok,
+`archive/` oluşmadı, silme/taşıma yok.** `git status --porcelain` tur boyunca yalnızca bu raporun
+ve ekran görüntülerinin eklenmesini gösterdi (tüm mutasyonlar geri alındı).
 
----
-
-## 10. NOT'lar (bloklayıcı değil)
-
-- **N6 (YENİ, çit zayıflığı)** — `tests/e2e/kanban.spec.ts:630-636`'daki K6 assert'i
-  `scrollBox.focus()` ile başlıyor. Playwright'ın `locator.focus()`'u CDP üzerinden odağı
-  **zorla** verir: ölçtüm, `tabIndex={0}` tamamen kaldırılmış bir bundle'da bile
-  `document.activeElement` o `div` oluyor ve test **yeşil kalıyor** (M6). Yani "kap klavye ile
-  odaklanabilir" iddiası ölçülmüyor. Kullanıcıya görünen davranışın bozulmadığını ayrıca
-  ölçtüm — mutasyonlu bundle'da bile gerçek `Tab` akışı `summary`'lere ulaşıp kabı kaydırıyor
-  (K5'in getirdiği `<details>` başlıkları doğal olarak odaklanabilir), bu yüzden bloklayıcı
-  değil. Düzeltme ucuz: `focus()` yerine `page.keyboard.press('Tab')` ile gerçek odak akışını
-  yürüt ve `document.activeElement === scrollBox` assert'i ekle. **Bir sonraki dokunuşta
-  kapatılsın.**
-- **N1/N2/N3 (1. turdan devir)** — CEO bilinçli olarak kapsam dışı bıraktı, değişmedi.
-- **N4/N5 (F-007'den miras)** — F-013'e ait değil; 320px'te `h2` sağ kenarı 255px ile "Kapat"
-  sol kenarı 255px hâlâ bitişik (bu turda da ölçüldü, F-013 başlık satırına dokunmadı).
-- `docs/qa/*` hâlâ SSE ile izlenmiyor: kullanıcı "Yenile"ye basmazsa panel eski içeriği
-  göstermeye devam eder. AC6 bunu "bayat olduğu belli olur" dalıyla karşılıyor ve
-  `docs/03-ux.md` bunu açıkça yazıyor — kabul edilebilir, ama otomatik tazeleme istenirse
-  ayrı bir feature olmalı.
+- `npm run verify`: ilk koşuda **worker fork kararsızlığı** (`exit code 3221226505`, önce
+  `features-api.test.ts` sonra `gates-api.test.ts` worker'ı), **elle ikinci koşuda yeşil**:
+  `73 passed | 1 skipped`, `1066 passed | 4 skipped`, build ✓. (CLAUDE.md'nin bilinen sınıfı —
+  bu turda **iki kez** görüldü, rapora yazıldı.)
+- `npx playwright test` (prod config): **36/36 geçti**, `gates.spec.ts`'in 8 testi dahil.
+- `MC_GATES_LIVE_TESTS=1 npm run test:gates-live`: **1 kez** koşturuldu, **2/2 geçti** (32 s).
 
 ---
 
-## 11. Puanlar
+## 1. Kabul kriterleri — tek tek
 
-| Boyut | 1. tur | 2. tur | Gerekçe |
-|---|---|---|---|
-| İşlevsellik | 7 | **8** | Bayatlık artık yalan söylemiyor: saat + "Yenile" ile kullanıcı her zaman güncel içeriğe ulaşabiliyor (canlı ölçüldü). Otomatik tazeleme yokluğu bilinçli ve belgeli |
-| Özellik bütünlüğü | 5 | **8** | 9 AC'nin 9'u karşılanıyor; AC3/AC4/AC6'nın istediği çitler artık gerçekten ölçüyor. Eksi: N6 (bir E2E assert'i vakum) |
-| Görsel / UX | 6 | **8** | 12 → 1 kaydırma bölgesi, 0 iç içe kutu, klavyeyle tam kontrol (`Tab`/`Enter`/`Space`/`PageDown`/`Home`/`End`), beş genişlikte kırpma ve taşma yok |
-| Kod kalitesi | 7 | **8** | Altı mutasyonun beşi KIRMIZI, ikisi (M1/M2) savunma katmanlarını **ayrı ayrı** çitliyor; yorumlar kodla uyumlu; `write-gate.ts`'e dokunulmamış; dosya sahipliği ihlali yok; `verify` 943/66 + `e2e` 28/28 doğrulandı. Eksi: N6 |
+### AC1 — durum türetme (onaylandı / reddedildi / bekliyor / çelişkili) — **GEÇTİ (bir uyarıyla)**
 
-Dört boyut da ≥ 7 → **GEÇTİ**.
+Sandbox fixture: `G0.ok`, `G1.deny.md`, `G3.ok`+`G3.deny.md` (deny daha yeni), `G4-1.ok`,
+`G4-2.ok`, `G4-10.ok`, `g2.ok`, `README.md`, `DANGER.ok`, `.gitkeep`, `G6.ok.tmp`, `archive/`.
+
+`GET /api/gates` çıktısı (ekran görüntüsü: `docs/qa/screens/F-008-01-liste-1280.png`):
+
+- `G0 approved` · `G1 denied` · `G3 conflict` (`newer_side: "deny"`, mtime tabanlı) ·
+  `ASSETS/G5/G6 pending` ✓
+- **Ekli kimlikler listeleniyor:** `G4-1`, `G4-2`, `G4-10` üç ayrı satır olarak, **sayısal**
+  sırada (`G4-10` `G4-2`'den SONRA) ✓ — sabit `G0..G6` varsayımı yok.
+- Sıra `docs/03-ux.md:192` ile birebir: `G0, G1, G2, G3, ASSETS, G4-N, G5, G6` ✓
+- **Hariç tutma kümesi çalışıyor:** `README.md`, `archive/`, `DANGER.ok`, `.gitkeep`,
+  `G6.ok.tmp` **kapı sanılmıyor ve `unrecognized`'a da girmiyor**; yalnızca `g2.ok`
+  raporlanıyor ✓
+- Etiketler gerçek `docs/PROCESS.md` §2'den okunuyor (`process_doc_readable: true`).
+
+**Uyarı → Bulgu 1 (ÖNEMLİ):** aynı `g2.ok` dosyası hem "Tanınmayan dosyalar" listesinde hem
+`G2 = Onaylandı (kilitli)` durumunun kaynağı. Ayrıntı §4.
+
+### AC2/AC7 — iki adımlı onay, iptal hiçbir şey yazmaz, `.ok` PROCESS.md formatında — **GEÇTİ**
+
+**İptal (fotoğraf İŞLEMDEN ÖNCE alındı — F-013 dersi):**
+1. `node manifest.mjs <sandbox/proj> before-cancel.json` → 17 girdi (yol + boyut + sha256 +
+   **mtimeMs**).
+2. Tarayıcıda `G5 → [Onayla]` → modal açıldı, `Onayı Yaz →` **boşken `disabled`** ✓,
+   çok satırlı/özel karakterli karar metni yazıldı → `[İptal]`.
+3. `after-cancel.json` → `diff` **tamamen boş**: "İPTAL SONRASI FARK YOK (tam eşitlik, mtime
+   dahil)". Ekran görüntüsü: `F-008-02-onay-modali.png`.
+4. Aynı ölçüm **Escape tuşuyla** da tekrarlandı → yine sıfır fark.
+
+**Önizleme ↔ diske yazılan bayt eşitliği** (sözleşme §5'in temel iddiası):
+
+| | sha256 | bayt |
+|---|---|---|
+| Modaldaki `approve-preview` metni (tarayıcıdan okundu) | `a3b722852d1dded41219be75a7b76d2ad9e557ef2b63dc66013380aae84e2c68` | 357 |
+| `docs/approvals/G5.ok` (diskten) | `a3b722852d1dded41219be75a7b76d2ad9e557ef2b63dc66013380aae84e2c68` | 357 |
+
+**EŞİT** ✓ — çift tırnak, `&`, `<tag>`, ters bölü, sekme ve satır sonu dahil.
+Manifest diffi: **yalnızca `G5.ok` eklendi**, başka hiçbir dosya değişmedi.
+
+`.ok` içeriği `docs/PROCESS.md:34` ("tarih + onaylanan özet + kullanıcının kararı") ile birebir:
+
+```
+G5 — Güvenlik/kalite kapısı ONAYLANDI
+Tarih: 2026-09-09
+Onaylayan: Panel kullanıcısı (Kapılar ekranı, iki adımlı onay)
+
+Onaylanan özet: Panel Kapılar ekranından "G5 — Güvenlik/kalite" kapısı onaylandı (proje: sandbox-proj).
+
+Kullanıcının kararı: Onaylıyorum. Özel karakterler: "tırnak" & <tag> \ ters bölü
+İkinci satır	sekme
+```
+
+Sunucu tarafı çit: `confirmed` olmadan `POST .../approve` → **400** ✓ (dosya yazılmadı).
+
+### AC3/AC8 — red gerekçesi zorunlu, olduğu gibi geçer — **GEÇTİ**
+
+- Form boşken **ve yalnızca boşluk (`"   "`) girildiğinde** `Reddet - Kaydet` **`disabled`** ✓
+- Sunucu: `{"reason":"   "}` → **400 `invalid_body`**, dosya yazılmadı ✓
+- Gerçek red (`G6`) yazıldı; `.deny.md` içeriği gerekçeyi **karakter karakter** taşıyor:
+  `"smoke"` tırnakları, `&`, `<riskli>`, sekme, satır sonu dahil (od dökümüyle doğrulandı).
+  Ekran görüntüsü: `F-008-03-red-formu.png`.
+
+### AC4 — çelişkili durum — **GEÇTİ**
+
+`G3` (hem `.ok` hem `.deny.md`) → rozet **"⚠ Çelişkili durum"**, aksiyon sütununda **yalnızca
+`[Detay]`** (Onayla/Reddet butonları DOM'da **yok**, `hasApprove:false, hasDeny:false`).
+`[Detay]` genişleyen salt-okunur alt satır:
+
+```
+Onay (.ok) tarihi: 2026-09-09
+Red (.deny.md) tarihi: 2026-09-09 (daha yeni)
+Bu durum panelden düzeltilemez; dosyaları docs/approvals/ altında elle inceleyin.
+```
+
+Hiçbir dosya otomatik silinmedi/taşınmadı (manifest diffi boş).
+Ekran görüntüsü: `F-008-07-celiski-detay.png`.
+
+### AC5 — yazma hatası: geri alma, okunabilir hata, panel çökmez — **GEÇTİ**
+
+Fault injection (gerçek, ACL ile): `icacls <sandbox>/docs/approvals /deny <user>:(NP)(WD,AD)`
+→ dizinde **yeni dosya oluşturulamaz** ama **dizinden dışarı `rename` çalışır**. Bu asimetri
+tam olarak §6'nın "yarı-başarı" senaryosunu üretir. Ayrıntı §2.
+
+Sonuç: modal **kapanmadı**, karar metni **korundu**, buton yeniden aktifleşti, hata satır içi
+gösterildi, **başarı toast'ı çıkmadı**, satır taze duruma (`Bekliyor`) döndü, **sunucu süreci
+yaşadı** (`/api/health` cevap verdi, `uptime` sürekli). Artık `.tmp` dosyası kalmadı
+(`atomicWriteOnce`'ın `finally` temizliği çalıştı). Ekran görüntüsü: `F-008-04-yari-basari.png`.
+
+### AC6 — tüm yazmalar F-006 yazma kapısından geçer — **GEÇTİ**
+
+İki bağımsız katman mutasyonla kanıtlandı (M3, M4 — §3). Ayrıca `x-mc-write` başlıksız
+`POST .../approve` → **403** ✓, ve reddedilen tüm isteklerden sonra manifest diffi **boş**
+("REDDEDİLEN İSTEKLER SONRASI HİÇBİR DEĞİŞİKLİK YOK").
+
+### AC9 — arşivle, sonra onayla — **GEÇTİ**
+
+Reddedilmiş `G1` panelden onaylandı. Manifest diffi:
+
+| Değişim | Kanıt |
+|---|---|
+| `docs/approvals/G1.deny.md` **kayboldu** | — |
+| `docs/approvals/archive/G1-2026-09-09T01-05-57-885Z.deny.md` **oluştu** | sha256 `9d6a34ca…` — **kaynak dosyayla aynı**, `mtimeMs` de aynı → **kopyala+sil değil, TAŞIMA** |
+| `docs/approvals/G1.ok` oluştu | — |
+
+"İçeriği kaybolan dosya" taraması: **`[]`** — hiçbir içerik yok olmadı.
 
 ---
 
-## 12. Süreç hijyeni
+## 2. Yarı-başarı davranışı (kritik ölçüm)
 
-- **Yetim süreç: 0.** Bu turda başlattığım tek sunucu (port 7357, PID ağacı
-  52228 → 33548 → 37080 → 49208) `taskkill /T /F` ile sonlandırıldı; `netstat` 7350-7359
-  aralığında LISTENING **yok**. Kalan 5 `node.exe`: **3'ü `C:\dev\apps\hayat-mentoru`**
-  (PID 37640 `npm run dev`, 27556 `next dev`, 34488 `start-server.js`) — **dokunulmadı**;
-  2'si Playwright MCP aracı (PID 32828, 29464). Mission Control'e ait süreç **0**.
-- **Repo durumu:** tüm mutasyonlar `git checkout --` ile geri alındı, `dist/` temiz kaynaktan
-  yeniden derlendi, `git status` temiz. Fixture proje ve izole `MC_DATA_DIR` scratchpad'de
-  kaldı — depoya hiçbir test dosyası yazılmadı (`docs/features` ve `docs/qa` orijinal hâlinde).
-- **Ürün kodu düzenlenmedi.** Yazdıklarım: bu rapor, `docs/qa/latest.md`, üç ekran görüntüsü,
-  feature notunun `status` satırı.
+Senaryo: `G6` reddedilmiş; `docs/approvals` yazmaya kapalı (ACL), taşımaya açık.
+`[Onayla] → Onayı Yaz →`:
 
-## 13. Doğrulayamadıklarım
+| Beklenen (sözleşme §6) | Gerçekleşen |
+|---|---|
+| HTTP 500 `write_failed` | ✓ (`console`: 500 @ `/api/gates/…/G6/approve`) |
+| Mesajda **gerçek arşiv yolu** | ✓ `"Red kaydı docs/approvals/archive/G6-2026-09-09T01-08-32-182Z.deny.md altına taşındı ama onay yazılamadı; kapı şu an \"Bekliyor\" durumunda. Tekrar deneyin."` |
+| Gövdede taze `data`, `status:'pending'` | ✓ (satır anında `Bekliyor`'a döndü) |
+| Kullanıcı "oldu" sanmıyor | ✓ **başarı toast'ı YOK**, modal açık, hata kırmızı, buton tekrar aktif |
+| Yeniden deneme idempotent | ✓ ACL açıkken ikinci deneme: **"Kaydedilemedi, tekrar deneyin."** (ikinci arşivleme denenmedi, ikinci arşiv dosyası oluşmadı); ACL kalkınca üçüncü deneme **200** ve `G6.ok` yazıldı |
 
-- **Dosya symlink'i / UNC / hardlink** — 1. turdaki kısıtlar aynen geçerli (Windows'ta
-  `fs.symlinkSync(...,'file')` EPERM, erişilebilir ağ payı yok). Dizin junction'ı yolu 1. turda
-  kapalı ölçülmüştü ve bu turda guard'a eklenen üçüncü kontrol o yolu **daha da** daraltıyor.
+**Yani yarı-başarı dürüstçe raporlanıyor** — F-007'nin "yazma oldu, istemci hiç yanıt almadı"
+sınıfı burada tekrarlamıyor.
+
+---
+
+## 3. Mutasyon tablosu (uygula → KIRMIZI gör → geri al)
+
+Toplam **11 bağımsız mutasyon** koşturuldu. Her biri sonrasında dosya birebir geri yazıldı;
+tur sonunda `git status --porcelain` yalnızca rapor/ekran görüntüsü gösterdi.
+
+| # | Mutasyon | Hedef | Sonuç | Kırılan çit |
+|---|---|---|---|---|
+| M1 | İki adımlı onayın atlanması (`confirmed !== true` kaldırıldı) | `gates/server/handlers.ts` | **KIRMIZI** | `gates-api.test.ts` "confirmed eksik/false → 400, dosya yazılmaz" |
+| M2 | `x-mc-write` muafiyeti (dağıtıcıya `/api/gates` istisnası eklendi) | `src/server/index.ts` | **KIRMIZI** | `gates-api.test.ts` "x-mc-write eksik → 403" |
+| M3 | Arşivin **silmeye** dönmesi (`archiveDenial` → `fs.unlinkSync`) | `gates/server/handlers.ts` | **KIRMIZI ×2** | `no-write-gate-bypass.test.ts` (statik) **ve** `gates-manifest.test.ts` (dinamik, arşiv girdisi yok) |
+| M4 | Salt-okunur modüle doğrudan `fs.writeFileSync` | `gates/server/list-gates.ts` | **KIRMIZI** | `no-write-gate-bypass.test.ts` (statik tarama `src/features/gates/**`'i gerçekten kapsıyor) |
+| M5 | Red gerekçesi zorunluluğunun kalkması | `gates/server/handlers.ts` | **KIRMIZI ×3** | `gates-api.test.ts` (boş + >4000) ve `gates-manifest.test.ts` |
+| M6 | **AC9 sırasının tersine çevrilmesi** (önce onay, sonra arşiv) | `gates/server/handlers.ts` | **doğru kodda YEŞİL (2/2), mutantta KIRMIZI** | `gates-api.test.ts` M6 fault injection — mutantta mesaj `"Kaydedilemedi, tekrar deneyin."`e düşüyor, arşivleme hiç olmuyor |
+| M9 | `gates` SSE yayınının silinmesi | `gates/server/handlers.ts` | **KIRMIZI** | `gates-api.test.ts` M9. **Maskeleme kontrolü:** o testte dosya izleyicisi koşmuyor, hub doğrudan dinleniyor → maskelenmiyor |
+| R1 | **Kapalı küme çiti**: koşulsuz **beşinci** sekme eklendi | `src/web/App.tsx` | **KIRMIZI ×5** | `App.test.tsx` (2), `App.chat-tab.test.tsx` (2), `App.interaction.test.tsx` (1) |
+| R5 | `projectsService.list()` asenkron IIFE'nin **DIŞINA** geri alındı | `kanban/server/handlers.ts` | **KIRMIZI** | `features-api.test.ts` R5 — *"Test timed out in 5000ms"* + `ÇOK GİZLİ İÇ HATA` sızıntısı: tam olarak korunması gereken sınıf |
+| QA-A | Onaylı kapıda `deny` 409 çitinin kaldırılması (**R2 sınırı**) | `gates/server/handlers.ts` | **KIRMIZI ×2** | `gates-api.test.ts` B6 + `gates-manifest.test.ts` B6 |
+| QA-C/D | `isExcludedApprovalsEntry` izleyiciden / listeden kaldırıldı | `gates-watcher.ts`, `list-gates.ts` | **KIRMIZI ×3** | `gates-watcher.test.ts` (README + kendi `.tmp`), `list-gates.test.ts` |
+
+### Yeşil kalan mutasyon (bulgu üretti)
+
+| # | Mutasyon | Sonuç |
+|---|---|---|
+| **QA-B** | `ApproveModal` onaya gönderdiği metni değiştiriyor: `onConfirm(decision)` → `onConfirm(decision + ' [QA gizli ek]')` — yani **kullanıcının onayladığı önizleme ile diske giden içerik ayrışıyor** | **1066/1066 YEŞİL.** Ayrıca `gates.spec.ts`'in `toContain(...)` iddiası da yakalayamaz (ek metin sonda). → Bulgu 2 |
+
+`grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca **önceden var olan
+meşru test adları** (F-013/F-007/F-006 dönemi + `gates-manifest.test.ts:202`, `write-gate-manifest.test.ts:124`).
+Ürün kodunda **sıfır** kalıntı.
+
+---
+
+## 4. Bulgular
+
+### Bulgu 1 — ÖNEMLİ · Windows'ta büyük/küçük harf: aynı dosya hem "tanınmayan" hem kapıyı kilitliyor
+
+**Tekrar üretme (izole, tek nedenli):**
+1. Boş bir sandbox projesi: `docs/PROCESS.md`, `docs/features/`, `docs/approvals/`.
+2. `docs/approvals/` içine **yalnızca** iki dosya: `g2.ok` ve `g5.deny.md` (küçük harfli).
+3. Projeyi panele ekle, Kapılar → projeyi seç.
+
+**Beklenen:** her iki dosya da kapı deseniyle eşleşmiyor → yalnızca "Tanınmayan dosyalar"
+olarak raporlanmalı; G2 ve G5 **Bekliyor** kalmalı.
+
+**Gerçek:**
+```
+Tanınmayan dosyalar: g2.ok, g5.deny.md
+G2 Mimari         ✔ Onaylandı    2026-09-09   (kilitli)
+G5 Güvenlik/kalite ✘ Reddedildi   2026-09-09   [Onayla]
+```
+Ayrıca `POST /api/gates/<id>/G2/deny` → **409 `"Bu kapı zaten onaylı, reddedilemez."`**
+Ekran görüntüsü: `docs/qa/screens/F-008-08-buyuk-kucuk-harf-celiskisi.png`.
+
+**Kök neden:** sınıflandırma **büyük/küçük harfe duyarlı regex** ile
+(`src/features/gates/shared/gate-id.ts:21-22` — `OK_FILE_PATTERN`/`DENY_FILE_PATTERN`), durum
+türetme ise **`fs.existsSync`** ile yapılıyor (`src/features/gates/server/list-gates.ts:96-99`).
+Windows'ta (ADR-009: yalnızca Windows) `existsSync` harfe duyarsızdır → iki katman aynı dosya
+hakkında **zıt** karar veriyor.
+
+**Neden bloklayıcı değil:** aynı harfe-duyarsızlık `.claude/hooks/gate-check.cjs:11`
+(`exists('docs/approvals/G2.ok')`) için de geçerli — yani sistemin **tamamı** bu platformda
+`g2.ok`'u G2 onayı sayıyor. Panelin türettiği **durum** platform semantiğiyle tutarlı; yanlış
+olan, aynı dosyayı **aynı ekranda** "tanınmıyor" diye raporlaması ve kullanıcıya bu kilidi
+açıklayacak hiçbir yol bırakmaması. Hiçbir test bu vakayı ölçmüyor.
+
+**Muhtemel dosya:satır:** `src/features/gates/shared/gate-id.ts:9,21,22` (desenler harfe duyarlı)
+· `src/features/gates/server/list-gates.ts:96-99` (`existsSync`). Öneri: `readdirSync` sonucu
+üzerinden **tek** bir gerçek kaynağa dayanmak (dizin girdilerini eşleyip durum onlardan
+türetmek), ya da desenleri `i` bayrağıyla kurup id'yi normalize etmek.
+
+### Bulgu 2 — ÖNEMLİ · Onaylanan önizleme ile diske yazılan içeriğin aynılığını hiçbir test korumuyor
+
+Sözleşme §5 bu aynılığı, "ayrı bir `/preview` ucu gerekmiyor" gerekçesinin **tamamı** yapıyor;
+G0 kararı da doğrulama adımının anlamını buna dayandırıyor.
+
+**(a) Çit yok:** `ApproveModal.tsx:73` (`await onConfirm(decision)`) satırını
+`onConfirm(decision + ' [QA gizli ek]')` yapan mutasyon **1066/1066 yeşil** kaldı; `gates.spec.ts`
+de yakalamaz (`toContain` önek eşleşmesi).
+
+**(b) Gerçek bir ayrışma üretilebiliyor** (tekrar üretme):
+1. Sandbox'ta `G0` bekliyor durumda; panelde `[Onayla]` → modal açık.
+2. Modal **açıkken** projenin `docs/PROCESS.md` §2 tablosunda `| G0 Fikir |` → `| G0 DEGISTIRILMIS-ETIKET |`.
+   (İzleyici yalnızca `docs/approvals`'ı izler; panel etiketi tazelemez.)
+3. Karar metnini yaz → `Onayı Yaz →`.
+
+| | değer |
+|---|---|
+| Modalda gösterilen | `G0 — Fikir kapısı ONAYLANDI` … `"G0 — Fikir" kapısı onaylandı` |
+| Diske yazılan `G0.ok` | `G0 — DEGISTIRILMIS-ETIKET kapısı ONAYLANDI` … `"G0 — DEGISTIRILMIS-ETIKET" kapısı onaylandı` |
+
+**Neden bloklayıcı değil:** ayrışma yalnızca **türetilmiş etikette** (ve gece yarısını geçen bir
+modalda tarihte) oluşuyor; kullanıcının **kendi karar metni**, kapı kimliği, proje ve yazılacak
+dosya yolu her koşulda birebir korunuyor — bunlar mutlu yolda bayt bayt eşit olarak **ölçüldü**
+(§1 AC2 tablosu). Yine de sözleşmenin merkez iddiası ölçülmüyor.
+
+**Muhtemel dosya:satır:** `src/features/gates/web/ApproveModal.tsx:73,118` (önizleme istemcide
+üretiliyor) · `src/features/gates/server/handlers.ts:168,172` (sunucu etiketi/tarihi **yeniden**
+türetiyor). Öneri: (i) modalın gönderdiği metnin önizlemeyle aynı olduğunu doğrulayan bir birim
+testi, (ii) `gates.spec.ts`'te önizleme metnini okuyup diskteki dosyayla **tam eşitlik**
+(`toBe`, `toContain` değil) karşılaştırması, (iii) istemcinin ürettiği gövdeyi sunucuya gönderip
+sunucunun **karşılaştırması** (aksi hâlde 409) — üçü de küçük.
+
+### Bulgu 3 — ÖNEMLİ (F-008 kapsamı DIŞI, proje düzeyi) · `npm run e2e:dev` kırmızı
+
+`npx playwright test -c playwright.dev.config.ts` **2/2 koşuda başarısız**:
+`dev-shell.spec.ts:22` → Vite `/api` proxy'si **500**, çünkü `npm run dev`'in
+`dev:server`'ı **hiç dinlemeye başlamıyor** (`ECONNREFUSED 127.0.0.1:7433`).
+
+**F-008'e ait olmadığı kanıtlandı:**
+- `npm run dev:server` **tek başına** çalışıyor (`Mission Control API 127.0.0.1:7433 adresinde dinliyor.`)
+- `npx tsx watch src/server/index.ts` **tek başına** çalışıyor.
+- F-008'in gates izleyicisi devre dışı bırakıldığında (`service.ts:128`
+  `startWatchingGatesIfPossible(record)` mutasyonu) **yine dinlemiyor**.
+- Boş bir `MC_DATA_DIR` ile (hiç proje kaydı yok) **yine dinlemiyor**.
+- Süreç tablosunda `tsx watch` çocuğu **yaşıyor** ama hiçbir port dinlemiyor.
+
+Yani `concurrently` + `tsx watch` bileşimi bu makinede takılıyor; F-008 öncesine ait bir altyapı
+sorunu. **F-008'in kararını etkilemiyor**, ama dört E2E yapılandırmasından biri kırmızı ve bu
+`docs/blockers.md`'ye alınmalı.
+
+### Bulgu 4 — ÖNEMLİ · Etiketi olmayan kapılarda ad tekrarı, kalıcı onay dosyasına da sızıyor
+
+`GateRow.tsx:44` (`{gate.id} {gate.label}`) ve `list-gates.ts:88`/`readProcessLabels` birlikte,
+`PROCESS.md`'de ikinci hücresi olmayan kapılarda `label = id` ürettiği için ekranda
+**"ASSETS ASSETS"**, **"G4-1 G4-1"**, **"G4-10 G4-10"** yazıyor.
+`docs/03-ux.md:203,208` mockup'ı bu satırları **`ASSETS`** ve **`G4-1`** olarak çiziyor.
+
+Daha kötüsü, aynı tekrar **diske yazılan kalıcı artefakta** geçiyor:
+modal başlığı `ASSETS — ASSETS kapısını onayla`, `.ok` içeriği
+`ASSETS — ASSETS kapısı ONAYLANDI` (`F-008-06-modal-320px.png`).
+
+Not: `list-gates.ts:16` yedek tablosu ASSETS için `'Higgsfield kredi bütçesi'` diyor, ama
+`PROCESS.md` okunabildiğinde (normal durum) `label = 'ASSETS'` oluyor — iki yol tutarsız.
+
+**Muhtemel dosya:satır:** `src/features/gates/web/GateRow.tsx:44,73` ·
+`src/features/gates/server/list-gates.ts:16-22,55`.
+
+### Bulgu 5 — DÜŞÜK · Dar genişlik: 320px'te Aksiyon sütunu 0 px, "Kapılar" sekmesi 13/59 px
+
+`toBeVisible()` **kullanılmadı**; kırpılmış görünür genişlik (kaydırma kaplarının kesişimi) ölçüldü:
+
+| Genişlik | "Kapılar" sekmesi | Aksiyon hücresi | `[Onayla]` | Tablo kabı |
+|---|---|---|---|---|
+| 320 px | **13 / 59 px** | **0 / 146 px** | 0 px | `clientWidth 281` vs `scrollWidth 458` |
+| 375 px | 59 / 59 px ✓ | 39 / 146 px | 31 / 61 px | `336` vs `458` |
+| 480 px | 59 / 59 px ✓ | 144 / 146 px ✓ | 61 / 61 px ✓ | `441` vs `458` |
+
+**Kararım: kabul edilebilir, bulgu olarak DÜŞÜK önemde kaydediliyor — bloklayıcı değil.**
+Gerekçeler:
+1. `docs/03-ux.md:49` dar genişlikte sekme çubuğunu zaten **"yatay kaydırılabilir şerit"**
+   olarak tanımlıyor; 13 px kırpılma bu tasarımın içinde ve **görünür bir kaydırma çubuğu** var
+   (`F-008-05-320px.png`). F-007'nin bloklayıcısı **0 px + görünür affordance yok**'tu; burada
+   durum farklı.
+2. Aksiyon sütunu 320px'te ekran dışında ama **klavyeyle erişilebilir**: butona `focus()`
+   verildiğinde kap `scrollLeft: 177`'ye kayıyor ve buton **61/61 px tam görünür** oluyor.
+   Ayrıca tablo kabının altında **görünür yatay kaydırma çubuğu** var.
+3. 375 px (Simple Browser'ın tipik genişliği) ve 480 px'te aksiyon **tıklanabilir/okunabilir**.
+4. Aynı `overflow-x-auto` deseni kanban tahtasında zaten kabul edilmiş durumda.
+5. Onay modalı 320 px'te tamamen kullanılabilir (`F-008-06-modal-320px.png`).
+
+**Ama belge borcu var:** `docs/03-ux.md:813` hâlâ *"Ölçüldü: 320px ve 375px'te **iki sekme de**
+tam görünür"* diyor. Sekme sayısı dörde çıktı ve 320 px'te dördüncüsü tam görünmüyor — bu satır
+güncellenmeli (F-008'in eklediği bir hata değil, F-008'in geçersizleştirdiği bir ölçüm notu).
+
+### Not 1 — sözleşmenin vaat ettiği `tests/features/gates/server/handlers.test.ts` yok
+
+Sözleşme §10.1 bu dosyayı listeliyor; disk üzerinde yok. Kapsamı
+`tests/integration/gates-api.test.ts` (gerçek `createServer()` + HTTP) **fazlasıyla** karşılıyor
+— birim yerine entegrasyon, daha güçlü. Bulgu değil, sözleşme–kod sapması notu.
+
+### Not 2 — canlı test hâlâ bir model kararına bakıyor
+
+`gates-write-permission-live.test.ts:92` `expect(sawToolName).toBe('Write')` — modelin **hangi
+aracı seçtiğine** assert ediyor. CLAUDE.md'nin "canlı testte modelin ne söyleyeceğine assert
+etme" dersinin yumuşak bir ihlali; model başka bir araca yönelirse (ya da hiç araç kullanmazsa)
+mekanizma sağlamken kırmızı verebilir. Bu turda **2/2 yeşil** geçti; ileride kararsızlık
+görülürse iddia `canUseToolCalled === true` + dosya yokluğuyla sınırlanabilir.
+
+### Not 3 — worker fork kararsızlığı bu turda iki kez görüldü
+
+`exit code 3221226505`, farklı dosyalarda (`features-api.test.ts`, `gates-api.test.ts`).
+İkisinde de elle ikinci koşu yeşil. Kod regresyonu değil; CLAUDE.md'nin kayıtlı sınıfı,
+her görüldüğünde raporlanıyor.
+
+---
+
+## 5. Ek sınır ölçümleri
+
+| Ölçüm | Sonuç |
+|---|---|
+| `x-mc-write` **başlıksız** `POST .../approve` | **403** ✓ |
+| `confirmed` yok | **400** ✓ |
+| `reason: "   "` | **400** ✓, dosya yok |
+| Geçersiz kapı (`G9`) | **400** ✓ |
+| Yol geçişi (`..%2F..%2Fevil`) | **400** ✓ |
+| Bilinmeyen proje | **404** ✓ |
+| **Onaylı kapıda `deny`** (R2) | **409 `conflict`** + taze `data` ✓, arayüz o butonu **hiç çizmiyor** ✓ |
+| Reddedilen isteklerden sonra dosya sistemi | **tam eşitlik**, hiç değişmedi ✓ |
+| **Panel çelişkili durum üretebiliyor mu** | 8 turluk eşzamanlı `approve` ∥ `deny` yarışı → **8/8 `approved`**, hiç `conflict` üretilmedi. Arayüzde de üretilemiyor (onaylıda `deny` 409, reddedilmişte önce arşiv). ✓ |
+| Canlı güncelleme (harici dosya değişimi) | Panel yenilenmeden `Reddedildi`'ye döndü ✓ (`/api/health` `watchers: 2` — features + gates) |
+| Escape ile modal kapatma | Modal kapandı, manifest **değişmedi** ✓ |
+| Üretim CSS'i (`@source` çiti) | `src/features/gates/web` altında **yalnızca orada** geçen 7 sınıfın **7'si** de `dist/web/assets/*.css` içinde; eksik **0** ✓ |
+| Türkçe metinler | `(kilitli)`, `Bekliyor/Onaylandı/Reddedildi/Çelişkili durum`, `Tanınmayan dosyalar: …`, `PROCESS.md okunamadı, varsayılan adlar gösteriliyor.`, `docs/approvals/G5.ok yazıldı`, `Önce bir proje seçin.`, `Kapı durumları okunamadı. [Tekrar dene]`, `Bu durum panelden düzeltilemez; …` → `docs/03-ux.md` ile birebir ✓ |
+| Marka adı (`lang="tr"` büyük harf tuzağı) | `innerText` = `MISSION CONTROL` ✓ (`MİSSİON` değil) |
+| Konsol hataları | Yalnızca kasıtlı fault injection'ın 500'leri; başka hata/uyarı yok ✓ |
+
+---
+
+## 6. Puanlar
+
+| Boyut | Puan | Gerekçe |
+|---|---|---|
+| İşlevsellik | **8** / 10 | 9 kabul kriterinin tamamı gerçek tarayıcıda uçtan uca doğrulandı; yarı-başarı dürüst, yeniden deneme idempotent, süreç fault injection altında yaşadı, çelişkili durum üretilemedi. Eksi: Bulgu 1 (harf duyarlılığı çelişkisi). |
+| Özellik bütünlüğü | **8** / 10 | Sözleşmedeki her uç, durum makinesi, arşiv akışı, SSE kanalı, dar genişlik ve canlı L5 ölçümü mevcut. Eksi: Bulgu 4 (etiket tekrarı UX mockup'ından sapıyor), Not 1 (vaat edilen birim test dosyası yok). |
+| Görsel / UX | **7** / 10 | Ekran mockup'a sadık, dört durum ayrımı net, modal 320px'te kullanılabilir, erişilebilirlik (focus trap, Escape, `aria-live`) çalışıyor. Eksi: "ASSETS ASSETS"/"G4-1 G4-1" tekrarı kalıcı `.ok` dosyasına da sızıyor; 320px'te Aksiyon sütunu keşfedilmesi gereken yatay kaydırmanın arkasında; `docs/03-ux.md:813` ölçüm notu geçersizleşti. |
+| Kod kalitesi (test, hata yönetimi) | **7** / 10 | 1066 birim/entegrasyon + 8 E2E; **11 mutasyonun 10'u kırmızı**, iki katmanlı savunmalar (statik + dinamik) ayrı ayrı kanıtlandı; asenkron handler'lar kendi `try/catch`'ini taşıyor ve R5 sınıfı gerçekten çitlenmiş. Eksi: **QA-B yeşil kaldı** — sözleşmenin merkez iddiasının (önizleme ≡ diske yazılan) sıfır kapsaması var; harf duyarlılığı vakası hiç test edilmiyor. |
+
+**Hiçbiri < 7.**
+
+## 7. Karar
+
+**KARAR: GEÇTİ** · **ESKALE: false**
+
+Bloklayıcı yok. Gerekçe: yazma kapısı çitleri (statik + dinamik), iki adımlı onay, red gerekçesi
+zorunluluğu, AC9 sırası, `x-mc-write` sınırı ve R1/R5 çitlerinin hepsi bağımsız mutasyonlarla
+**kırmızı** verdi; iptal "hiçbir dosya yazmaz" iddiası **işlemden önce alınmış** manifestle tam
+eşitlik olarak kanıtlandı; yarı-başarı dürüstçe raporlanıyor ve veri kaybı yok; panel kendi
+eylemiyle çelişkili durum üretemiyor; gerçek `docs/approvals/` bozulmadı.
+
+Dört ÖNEMLİ + bir DÜŞÜK bulgu bir sonraki tura devrediliyor (Bulgu 3 F-008'in değil, projenin
+borcu). Bulgu 1 ve 2 için `docs/blockers.md`'ye madde açılması önerilir.
+
+## 8. Kota ve yetim süreç
+
+- **Kota harcayan tek koşu:** `MC_GATES_LIVE_TESTS=1 npm run test:gates-live` — **1 kez**,
+  2 test, ~32 s, model `claude-haiku-4-5`, her ikisinde de `canUseTool` **her zaman reddet**
+  (hiçbir araç gerçekten çalışmadı). Başka hiçbir canlı model çağrısı yapılmadı
+  (`playwright.config.ts` `MC_CHAT_ENABLED: '0'`).
+- **Yetim süreç: 0.** Tur sonunda `mission-control` komut satırı içeren **hiç** `node.exe`
+  kalmadı; `:4599` kapalı (`HTTP=000`). QA'nın açtığı iki süreç ağacı (üretim sunucusu +
+  teşhis amaçlı `npm run dev`) `taskkill /T /F` ile kapatıldı.
+  **`C:\dev\apps\hayat-mentoru` süreçlerine dokunulmadı** (`next dev` ve `next start -p 3211`
+  ağaçları ölçüm sırasında da tur sonunda da ayakta).
+
+## 9. Ekran görüntüleri
+
+| Dosya | İçerik |
+|---|---|
+| `docs/qa/screens/F-008-01-liste-1280.png` | Kapı listesi, dört durum, G4-N sayısal sıra, "Tanınmayan dosyalar" |
+| `docs/qa/screens/F-008-02-onay-modali.png` | İki adımlı onay modalı + önizleme |
+| `docs/qa/screens/F-008-03-red-formu.png` | Satır içi zorunlu gerekçe formu |
+| `docs/qa/screens/F-008-04-yari-basari.png` | Yarı-başarı: gerçek arşiv yolu, modal açık, satır "Bekliyor" |
+| `docs/qa/screens/F-008-05-320px.png` | 320 px — kaydırma çubukları, Aksiyon sütunu ekran dışında |
+| `docs/qa/screens/F-008-06-modal-320px.png` | 320 px onay modalı (+ "ASSETS — ASSETS" tekrarı) |
+| `docs/qa/screens/F-008-07-celiski-detay.png` | Çelişkili durum `[Detay]` alt satırı |
+| `docs/qa/screens/F-008-08-buyuk-kucuk-harf-celiskisi.png` | Bulgu 1'in izole kanıtı |

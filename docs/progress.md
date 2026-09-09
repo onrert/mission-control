@@ -3392,3 +3392,92 @@ CSS dokunuşu — sözleşmenin W9 yetkilendirmesiyle aynı dosya).
 
 **Sonraki adım**
 - qa-evaluator F-010'un düzeltme turunu değerlendirsin (feature notu tekrar `status: qa`).
+
+---
+
+## 2026-09-09 — F-011 (Token kullanımı ekranı) kod turu tamamlandı, `status: qa`
+
+**Ne yapıldı**
+
+Bu tur bir önceki oturumun 150-tur sınırından devrettiği işi bitirdi (kod zaten
+`5223cf7`'de commit'liydi: `src/features/usage/{server/{handlers,usage-aggregator}.ts,
+web/{UsageScreen,useUsageReport}}` + `src/shared/types.ts`/`src/server/index.ts`/
+`src/web/App.tsx` genişletmesi). Bu turda:
+
+- Devredilen commit'siz test dosyaları commit'lendi (`tests/web/App.{test,chat-tab,interaction}
+  .test.tsx` sekme sayaçları + `tests/features/usage/web/UsageScreen.test.tsx`).
+- **Y2** (agentType kanıtı) — makinede BAĞIMSIZ yeniden ölçüldü (önceki turun 130 dosya iddiası
+  DOĞRULANDI, bugün 131 dosya — bir oturum farkı, beklenen büyüme): `subagents/*.meta.json`
+  131/131 geçerli JSON, `agentType` 131/131 dolu, dağılım `developer` 79 / `qa-evaluator` 47 /
+  `explorer` 2 / `ux` 1 / `architect` 2. Bulgu zaten `docs/wiki/pages/desen/
+  claude-transcript-formati.md`'de (önceki turdan) yazılıydı, bu tur yalnızca DOĞRULADI.
+- **D10 kapatıldı** — yeni `tests/e2e/usage.spec.ts` (+ `playwright.config.ts`'e kayıt): üretim
+  6-sekme kümesiyle 320/375/480/640/700/767px'in HEPSİNDE hiçbir sekme 0px değil. Ayrıca
+  `tests/e2e/thread.spec.ts` (5→6 sekme, mekanik) ve `tests/e2e/shell.spec.ts` (kapalı-küme
+  tam-sayı iddiaları 4/5→5/6 VE bir kaçırılmış "Token YOK" negatif assert'i "Token VAR"a
+  çevrildi — bu olmasaydı e2e tam takım koşusu KIRMIZI verirdi, gerçek bir regresyon yakalandı).
+  `docs/blockers.md` D10 maddesi KAPANDI olarak işaretlendi.
+- **AC7/B6 boşluğu kapatıldı** — sözleşmenin planladığı ama önceki turda yazılmamış "64 MB+
+  dosyada 32 MB kuyruk okuma davranışını devralma" entegrasyon testi eklendi
+  (`tests/features/usage/server/usage-aggregator.test.ts`, gerçek 68 MB'lık fixture, dosya
+  başındaki "zehir" usage değerinin kırpılan bölgede kaldığını kanıtlıyor). Kendim bir
+  sanity-check mutasyonuyla (eşiği `Infinity` yaptım, KIRMIZI gördüm, elle geri aldım) testin
+  tautolojik olmadığını doğruladım.
+- **README** `ccusage` ile elle çapraz kontrol bölümü eklendi (AC6/Y10) — paket adı
+  (`ryoppippi/ccusage`, `npx ccusage@latest`) ADR-007'den doğrulandı.
+- Feature notunun tüm AC kutucukları işaretlendi, `status: qa`.
+- Oturum başında bir önceki turdan kalan yetim `node.exe` (port 7333'ü tutan, `npm start`
+  süreci) bulunup `Stop-Process` ile temizlendi — bu olmadan `check-ports.test.ts` iki test
+  KIRMIZI veriyordu (EADDRINUSE), gerçek regresyon değildi.
+
+**Nasıl doğrulandı**
+
+- `npm run typecheck` → 0. `npm run lint` → 0.
+- `npm run verify` (typecheck+lint+test+build) → **exit 0**, iki bağımsız temiz koşuda:
+  **82/83 test dosyası geçti (1 skip), 1255/1259 test geçti (4 skip), 0 hata.** Aradaki iki
+  koşuda görülen kırmızılar CLAUDE.md'nin bilinen worker-fork kararsızlığıydı (`exit code
+  3221226505`, her seferinde FARKLI/dokunulmamış bir dosyada) + bir zamanlama eşiği testi
+  (`send-event-hook.test.ts`, 157ms > 145ms sınırı) — ikisi de İZOLASYONDA tek başına yeşil,
+  gerçek regresyon DEĞİL.
+- `npm run e2e` (tam takım) → **52/52 geçti (44.0s)**, iki bağımsız koşuda.
+- **Altı istenen mutasyon TEK TEK elle uygulandı → KIRMIZI gözlemlendi → elle geri alındı**
+  (`git checkout` KULLANILMADI, her seferinde `git diff --stat` ile temiz olduğu doğrulandı):
+  1. **Y4 satır-tipi kapısı** — `transcript-reader.ts`'in `type==='assistant'` kapısı
+     `if (true)` yapıldı → "yalnızca assistant satırları" testi KIRMIZI (10/5 yerine 2008/2003).
+  2. **Y4 doğruluk** — `addUsage`'a `+1` sızıntısı eklendi → 4 test KIRMIZI (Y3 sonda testi
+     dahil, çünkü o da toplamı doğruluyor).
+  3. **Y3 ağ isteği yok** — `computeUsageReport`'a gerçek bir `fetch(...)` çağrısı eklendi →
+     Y3 sonda testi KIRMIZI ("Y3 İHLALİ: fetch çağrıldı").
+  4. **Y5 uyarı** — `UsageScreen.tsx`'teki `degraded` uyarı bloğu `false &&` ile devre dışı
+     bırakıldı → `UsageScreen.test.tsx`'in `usage-degraded-warning` testi KIRMIZI.
+  5. **Y6/D10 sekme genişliği** — `App.tsx`'in `lg:` dar-genişlik sınıfları (header + tablist)
+     `sm:`'ye geri alındı → `usage.spec.ts`'in 640/700/767px testleri KIRMIZI (320-480px yeşil
+     kaldı — kırılma tam olarak beklenen aralıkta, D10'un orijinal semptomunu birebir yeniden
+     üretti).
+  6. **Y8 fırlatan yol** — `isSourceUnreadable`'daki `try/catch` kaldırıldı → EPERM testi
+     KIRMIZI ("Error: EPERM: yapay" fırladı, `source_unreadable:true` yerine).
+- Y2 bulgusu bu turda BAĞIMSIZ yeniden ölçülerek doğrulandı (yukarıya bakınız) — önceki turun
+  iddiasına körü körüne güvenilmedi.
+- Yetim süreç: koşu sonunda `Get-CimInstance`/`netstat` ile port 7333'te LISTENING durumunda
+  hiçbir süreç kalmadığı doğrulandı (yalnızca beklenen TIME_WAIT bağlantıları). `npm run dev`
+  hiç çalıştırılmadı.
+- Çalışma ağacı commit'li: `ce239a6` (devredilen test dosyaları), `6a0a06f` (D10 e2e kapatma +
+  README), bu notun kendisi + feature notu `status: qa` + B6 testi ayrı bir commit'te.
+
+**Kalan risk / bir sonraki QA turuna notlar**
+
+- **280px hiç ölçülmedi** (yalnızca 320-767px) — `docs/blockers.md` D10 maddesinde dürüstçe
+  açık bırakıldı; PRD'nin birincil senaryosu ≈320-480px olduğu için bloklayıcı sayılmadı.
+- **Gün türetme dosya `mtime`'ına dayanıyor** (sözleşme §1 madde 3, bilinçli sapma) — gece
+  yarısını aşan bir oturumun tamamı tek güne yazılır. Kabul edilebilir, wiki'ye not düşülü.
+- `playwright.config.ts`'e `usage.spec.ts` eklendi — bu dosya F-011'in bildirilen dosya
+  sahipliği listesinde AÇIKÇA yok, ama yeni bir e2e spec dosyasının HİÇ ÇALIŞMAMASINDAN
+  (`testMatch` listesine kayıtsız kalıp sessizce atlanmasından) daha güvenli bir cerrahi
+  genişletme — F-010'un kendi `thread.spec.ts`'i eklendiğinde de aynı dosyaya dokunulmuş olmalı.
+- `agentType` dağılımı yalnızca bu makinede gözlenen 5 değeri kapsıyor (`developer/
+  qa-evaluator/explorer/ux/architect`); kod SABİT bir listeyle kısıtlamıyor (herhangi bir
+  string kabul edilir), risk düşük.
+
+**Sonraki adım**
+- qa-evaluator F-011'i değerlendirsin (`docs/qa/F-011-contract.md` zaten `status: draft` —
+  QA turu kontrata karşı da değerlendirmeli, kontrat kodlamadan önce yazılmıştı).

@@ -398,12 +398,19 @@ buldu, **bugün hiçbir gerçek dosyada tetiklenmiyor**:
 **Eşik:** QA rapor şablonu değişirse ya da rozet yanlış çıkarsa **hemen**.
 **Çit:** her iki kenar için sonda + deseni gevşeten mutasyonun KIRMIZI vermesi.
 
-### D10 — 640-767px ve 280px'te sıfır genişlikli sekme
-`sm:` **üstündeki** genişliklerde Kapılar ve Thread sekmeleri **0 px**; 280px'te Thread 0 px.
-QA regresyon saymadı (o sınıflar bu turda değişmedi) ama bu, **beş sekmeyle** ortaya çıkan yeni
-bir kırılma. 360-639px'te ikisi de tam görünür (43.2 px).
-**Eşik:** altıncı sekme eklenirse ya da sekme çubuğuna dokunan bir sonraki feature.
-**Çit:** dar genişlik ölçümü `sm:` **üstünü de** kapsayacak (şu an yalnızca altını ölçüyor).
+### D10 — 640-767px ve 280px'te sıfır genişlikli sekme — **KAPANDI (2026-09-09, F-011)**
+Eşik gerçekleşti: F-011 altıncı sekmeyi (Token) ekledi. Kırılma noktası `sm:` (640px)'ten
+`lg:` (1024px)'e taşındı — dar/orta genişlikte (<1024px) sekme çubuğu artık başlık/Ayarlar ile
+aynı satırı PAYLAŞMIYOR, kendi tam-genişlik satırında (`order-3 w-full`, `src/web/App.tsx`).
+**Ölçüldü** (`tests/e2e/usage.spec.ts`, gerçek Chromium, üretim 6-sekme kümesi — Sohbet dahil):
+320/375/480/640/700/767px'in HEPSİNDE 6 sekmenin (Zaman Çizelgesi/Kanban/Sohbet/Kapılar/Thread/
+Token) kırpılmış görünür genişliği **0px değil**. `tests/e2e/thread.spec.ts`'in eski "5 sekme,
+320-480px" bloğu da 6 sekmeye güncellendi (mekanik). 280px AYRICA test edilmedi (contract'ın
+kapsadığı aralık 320-767px, PRD'nin birincil senaryosu ≈320-480px) — 280px'in hâlâ 0px verip
+vermediği bilinmiyor, dürüstçe açık bırakılıyor.
+**Çit:** `tests/e2e/usage.spec.ts` "D10 kapatma (Y6)" bloğu — dar-genişlik CSS override'ı
+(`lg:` sınıfları `sm:`'ye geri alınması) mutasyonuyla 640/700/767px'te KIRMIZI verdiği
+doğrulandı (developer turu, F-011 sözleşmesi §3 B7).
 
 ### Ö7 — Ölü `retry` API'si
 `src/features/thread/web/useProjectFeatureList.ts:41-43` — kullanılmayan `retry`; ayrıca D3'te

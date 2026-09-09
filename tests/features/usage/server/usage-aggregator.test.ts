@@ -360,6 +360,41 @@ describe('computeUsageReport — Y3: ağ isteği yok', () => {
   })
 })
 
+describe('computeUsageReport — AC7/B6: 64 MB+ dosyada 32 MB kuyruk okuma davranışı devralınır', () => {
+  // F-011 sözleşmesi §3 B6 — W1/Y1 gereği İKİNCİ bir kuyruk-okuma testi İCAT EDİLMEZ
+  // (`transcript-reader.ts`'in KENDİ testi F-009'da bu mekanizmayı zaten kanıtlıyor). Bu test
+  // yalnızca `computeUsageReport`'un `readAllowedTranscript`'i GERÇEK varsayılan eşiklerle
+  // (64 MiB/32 MiB, hiçbir seçenek geçirilmeden) çağırdığını, yani DAVRANIŞI DEVRALDIĞINI uçtan
+  // uca kanıtlar: dosyanın başındaki (kırpılan bölgedeki) bir "zehir" usage değeri sayılmamalı,
+  // yalnızca son satırdaki (kuyruktaki) gerçek değer sayılmalı.
+  it('dosya başındaki zehir usage değeri (kırpılan bölge) sayılmaz, yalnızca kuyruktaki gerçek satır sayılır', () => {
+    const claudeRoot = tempDir()
+    const project = tempDir()
+    const encoded = encodeProjectDirName(project)
+    const projDir = path.join(claudeRoot, encoded)
+    const filePath = path.join(projDir, 'sess-big.jsonl')
+    fs.mkdirSync(projDir, { recursive: true })
+
+    const poison = `${assistantLine({ input_tokens: 999_999, output_tokens: 999_999 })}\n`
+    const filler = `${JSON.stringify({ type: 'user', pad: 'a'.repeat(500) })}\n`
+    const real = `${assistantLine({ input_tokens: 5, output_tokens: 2 })}\n`
+    // Gerçek `DEFAULT_MAX_BYTES_BEFORE_TAIL` (64 MiB) eşiğini kesin aşacak toplam boyut —
+    // dosya başındaki zehir, `DEFAULT_TAIL_BYTES` (32 MiB) kuyruğun ÇOK dışında kalır.
+    const targetBytes = 68 * 1024 * 1024
+    const fillerBytesNeeded = targetBytes - Buffer.byteLength(poison) - Buffer.byteLength(real)
+    const fillerCount = Math.ceil(fillerBytesNeeded / Buffer.byteLength(filler))
+    const content = poison + filler.repeat(fillerCount) + real
+    fs.writeFileSync(filePath, content)
+    const t = new Date('2026-09-04T00:00:00Z')
+    fs.utimesSync(filePath, t, t)
+
+    const report = computeUsageReport(claudeRoot, [{ id: 'p1', label: 'p', path: project }])
+    // Zehir (999999) sayılsaydı toplam 1.000.004 olurdu — kuyruk kırpması gerçekten devralındı.
+    expect(report.usage.input_tokens).toBe(5)
+    expect(report.usage.output_tokens).toBe(2)
+  })
+})
+
 describe('computeUsageReport — boş/izlenmeyen durumlar', () => {
   it('hiç transkript bulunamayan proje `projects` dizisinde YER ALMAZ', () => {
     const claudeRoot = tempDir()

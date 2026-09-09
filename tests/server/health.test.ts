@@ -137,7 +137,7 @@ describe('createServer', () => {
     await once(server, 'close')
   })
 
-  it('GET /api/health 200 döner ve dokuz alanı içerir (write_errors — QA düzeltme turu 1, B1 madde e)', async () => {
+  it('GET /api/health 200 döner ve on alanı içerir (write_errors — QA düzeltme turu 1, B1 madde e; transcript_reader — F-009 T5)', async () => {
     const server = createServer(0, dataDir)
     await once(server, 'listening')
     const address = server.address()
@@ -157,6 +157,7 @@ describe('createServer', () => {
       service: string
       corrupt_lines: number
       write_errors: number
+      transcript_reader: { files_seen: number; lines_ok: number; lines_bad: number }
     }
     expect(body.ok).toBe(true)
     expect(typeof body.version).toBe('string')
@@ -170,6 +171,8 @@ describe('createServer', () => {
     expect(body.corrupt_lines).toBe(0)
     expect(typeof body.write_errors).toBe('number')
     expect(body.write_errors).toBe(0)
+    // F-009 T5 — bu turda hiçbir üretim kodu transkript okumuyor, üçü de dürüstçe sıfır.
+    expect(body.transcript_reader).toEqual({ files_seen: 0, lines_ok: 0, lines_bad: 0 })
     server.close()
     await once(server, 'close')
   })

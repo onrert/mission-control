@@ -1,0 +1,4 @@
+{"type":"future-thing","payload":{"foo":"bar"}}
+{"type":"assistant","message":{"usage":{"input_tokens":"not-a-number","output_tokens":null}}}
+{"type":"assistant"}
+{"type":123}

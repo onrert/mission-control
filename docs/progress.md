@@ -2880,3 +2880,114 @@ Onaylanmış hiçbir bölüme dokunulmadı; yalnızca aşağıdaki üç değişi
 
 **Sonraki adım**
 - qa-evaluator bu üç düzeltmeyi (S1/S2/S3) mutasyon kanıtlarıyla birlikte yeniden değerlendirsin.
+
+---
+
+## 2026-09-09 — F-009 (transkript format spike'ı + dayanıklı okuyucu + fixture'lar) kod turu tamamlandı, `status: qa`
+
+**Ne yapıldı**
+- Sözleşme (kod yazılmadan önce, `docs/qa/F-009-contract.md`): araştırma önce yapıldı —
+  `C:\Users\pc\.claude\projects\C--dev-apps-mission-control\` altındaki **217 gerçek `.jsonl`**
+  dosyası (ana oturum + subagent) yalnızca `type` sayıları ve `message.usage` alan adları için
+  tarandı (ham içerik hiçbir yere yapıştırılmadı — CLAUDE.md "iddiaları doğrula" + görev
+  talimatının "6 MB+ dosyaları tamamen okuma" uyarısı). Kurulu CLI **2.1.205**, transkriptlerin
+  kendi `version` alanı **2.1.261** (ikisi ayrı, ikisi de kaydedildi).
+- `src/features/thread/server/transcript-reader.ts` (tek dosya): `readTranscript` (satır bazlı
+  `try/catch`, bilinmeyen `type` atlanır+sayılır — bu makinede gözlemlenen 13 tipten yalnızca 4'ü
+  `user`/`assistant`/`system`/`summary` tanınıyor, geri kalan 9'u atlanıyor — ASLA throw etmez,
+  64 MB+ dosyalarda kuyruk kırpması), `encodeProjectDirName` (karakter eşlemesi, regex yok),
+  `findAllowedTranscriptDirectories` (T3 — yedek yol, harf duyarsız, yalnızca izin verilen
+  projeler), `resolveAllowedTranscriptPath` (T4 — F-013 `read-guard.ts` deseninin okuma-guard
+  uyarlaması: `node:path` + `fs.realpathSync.native` + `path.relative` kapsama + symlink
+  savunması), `readAllowedTranscript` (guard+okuyucu tek giriş noktası),
+  `createTranscriptReaderStatsTracker` (T5, `/api/health` sayaçları).
+- 5 fixture (`tests/fixtures/transcripts/{valid,truncated-last-line,unknown-schema,empty,
+  bom-crlf}.jsonl`) **elle üretildi** (gerçek transkriptten kopya DEĞİL, gözlemlenen şemaya göre
+  anonim veri) — geçici bir Node script'iyle (scratchpad'de, repoya dahil değil) tam kontrollü
+  bayt düzeyinde (BOM/CRLF/kesik son satır) yazıldı.
+- `tests/features/thread/transcript-reader.test.ts` (25 test) + `tests/features/thread/
+  transcripts-privacy-guard.test.ts` (10 test, T1 — `readdirSync` ile fixture dizinini
+  numaralandırıp mutlak kullanıcı yolu/secret-biçimli dizge/ilgisiz proje adı/200+ karakter
+  serbest metin arayan yapısal çit, CLAUDE.md'nin "sabit liste değil dizin taraması" dersiyle
+  aynı desen).
+- **CEO'nun T5 genişletmesi (asgari dokunuş):** `src/server/index.ts`'e
+  `createTranscriptReaderStatsTracker()` + `handleHealth`'in yeni `transcript_reader` alanı
+  (mevcut `getCorruptLines`/`getWriteErrors` getter desenini tekrarlar), `tests/server/
+  health.test.ts`'e bu alanı doğrulayan assert genişletmesi.
+- Feature notu (`docs/features/F-009-transkript-spike.md`) 7 AC işaretlendi, `status: qa`.
+
+**Nasıl doğrulandı**
+- `npm run verify` (typecheck + lint + test + build) = **0** — iki kez koşturuldu (ilk koşuda
+  `tests/integration/sse-stream.test.ts` worker'ı `exit code 3221226505` ile çöktü, CLAUDE.md'nin
+  kayıtlı "worker-fork kararsızlığı" dersi — ikinci koşuda temiz). **1115 test / 76 dosya (75
+  geçti + 1 atlandı, 4 skip)**, `npm run e2e` = **0 (36/36)**.
+- **Kod turunda bulunan gerçek bir mimari çit ihlali, düzeltildi:** ilk taslak 64 MB+ dosyalarda
+  yalnızca kuyruğu okumak için `fs.openSync`/`fs.readSync`/`fs.closeSync` kullanıyordu; `npm run
+  verify` bunun `tests/no-write-gate-bypass.test.ts`'i (dosya sahipliğimiz DIŞI, tüm `src/**`'i
+  tarayan repo-geneli bir çit — düşük seviyeli fd erişimi yalnızca `write-gate.ts`'e ayrılmış)
+  kırdığını gösterdi. Çözüm: yalnızca `fs.readFileSync` (izinli) + Buffer'da bellek içi kırpma —
+  `no-write-gate-bypass.test.ts` DEĞİŞTİRİLMEDİ (dosya sahipliği dışı). Ayrıca bu düzeltmenin
+  KENDİ açıklayıcı yorumu da (`openSync(` alt dizgesini içeriyordu) aynı naif dizge taramasını
+  yanlışlıkla tetikledi — yorum metni de düzeltildi. Detay: `docs/qa/F-009-contract.md` §6a.
+- **5 mutasyon, sözleşme §3/§4'ün planladığı gibi, gerçek kaynak kodunda uygulandı → KIRMIZI
+  gözlendi → Edit ile birebir geri alındı:**
+  1. T2 — satır bazlı `try/catch` kaldırıldı → `truncated-last-line.jsonl` testi gerçek
+     `SyntaxError: Unterminated string in JSON` ile KIRMIZI (throw guard'ın maskelemediği
+     doğrudan kanıt).
+  2. T3 — `findAllowedTranscriptDirectories`'teki `.toLowerCase()` çağrıları kaldırıldı → karışık
+     harfli dizin testi KIRMIZI (`expected [...] to have length 1 but got +0`).
+  3. T4 — `resolveAllowedTranscriptPath`'teki izin-listesi kontrolü kaldırıldı (her zaman
+     `ok:true`) → "kaçış denemesi" testi (izlenmeyen bir projenin transkriptini okuma) KIRMIZI:
+     mutant, `readAllowedTranscript`'in ilgisiz projenin dosyasını GERÇEKTEN OKUDUĞUNU
+     (`lines_ok:1`) gösterdi — tam da T4'ün önlemesi gereken sızıntı.
+  4. T5 — `readTranscript`'in `degraded: linesBad > 0` satırı `degraded: false`'a sabitlendi →
+     `truncated-last-line` testi KIRMIZI (`expected false to be true`).
+  5. T1 — gizlilik çitindeki `WINDOWS_USER_PATH_PATTERN` kontrolü kaldırıldı → hem "mutlak
+     kullanıcı yolu ekleyince çit yakalar mı" hem "çitsiz taklit gerçek ihlali kaçırır mı"
+     testleri KIRMIZI (`expected 0 to be greater than 0` — mutant, `C:\Users\pc\...` içeren bir
+     satırı SESSİZCE kabul ediyordu).
+  Her mutasyondan sonra Edit ile birebir geri alındı; `npm run verify` yeniden 0'a döndüğü ve
+  `git status`/`git diff` üzerinde iz kalmadığı doğrulandı. `grep -rn "MUTATION\|MUTASYON" src/
+  tests/ electron/ scripts/` yalnızca kalıcı, meşru test adlarını gösteriyor (ör. `tests/server/
+  write-gate-manifest.test.ts:124` ve bu turun kendi 8 kalıcı regresyon testi, aynı repo
+  konvansiyonunda) — geçici mutasyon izi yok.
+- Yetim süreç/port hijyeni: `npm run e2e` sonrası `Get-CimInstance Win32_Process -Filter
+  "Name='node.exe'"` boş döndü — hiçbir mission-control süreci arkada kalmadı. `npm run dev`
+  hiç çalıştırılmadı (yasak, uyuldu).
+- `docs/wiki/pages/desen/claude-transcript-formati.md` yazıldı: gözlemlenen 13 üst-seviye `type`
+  değeri + sayıları, `usage` alan adları (dört toplanan + toplanmayan diğerleri), kurulu sürüm
+  (CLI 2.1.205 / transkript 2.1.261), her Claude Code güncellemesinden sonra tekrarlanacak 6
+  adımlı kontrol listesi, ✓ DOĞRULANDI/⊢ ÇIKARIM/[T] TAHMİN işaretleyicileriyle.
+
+**Sözleşmeden sapmalar**
+- `readTranscript`'in ADR-007 pseudocode'undaki `records[]` alanı kasıtlı olarak yok —
+  `docs/qa/F-009-contract.md` §6'da kod yazılmadan ÖNCE not düşüldü (tek somut ihtiyaç token
+  toplama, ham satır içeriğini bellekte tutmak gereksiz gizlilik yüzeyi).
+- fd tabanlı kısmi okuma yerine tam `readFileSync` + bellekte kırpma — kod turunda ortaya çıktı,
+  yukarıya bakınız, `docs/qa/F-009-contract.md` §6a'ya işlendi.
+
+**Kalan risk / QA'ya ve F-010/F-011'e devredilen açık maddeler**
+- `createTranscriptReaderStatsTracker()`'ın `.record()`'unu bu turda hiçbir üretim kodu
+  ÇAĞIRMIYOR — `/api/health.transcript_reader` bu turda dürüstçe `{0,0,0}` kalıyor (henüz hiçbir
+  Thread/Token ucu yok). F-010/F-011 kendi okuma noktalarında bu tracker'ı besleyecek.
+  `transcript_path`'in gerçek hook olayı akışından (`src/features/events/**`) toplanması da bu
+  turun kapsamı dışında (dosya sahipliği yalnızca `transcript-reader.ts` tek dosya) —
+  `resolveAllowedTranscriptPath`/`readAllowedTranscript` bunu ALACAK şekilde tasarlandı
+  (`candidatePath` parametresi), ama kimin `transcript_path`'i topladığı F-010/F-011'e devredilir.
+  `allowedProjectPaths` de aynı şekilde çağırana (gelecekteki F-010/F-011) bırakıldı —
+  `ProjectRecord.path` listesinden türetilmesi beklenir (`src/features/projects/server/
+  service.ts`), bu turda import edilmedi (dosya sahipliği dışı).
+  `~/.claude/projects/` altındaki 64 MB+ gerçek bir dosya bu makinede hiç gözlenmedi; kuyruk
+  kırpması yalnızca sentetik (küçük eşikli) testlerle doğrulandı — wiki sayfasında [T] TAHMİN
+  olarak işaretlendi.
+- BOM/CRLF ve kesik-son-satır senaryoları bu makinedeki gerçek dosyalarda gözlenmedi (fixture'lar
+  savunma amaçlı, gerçek bir vakadan değil) — wiki sayfasında ayrıca not edildi.
+- `summary` tipi (mimari §9.3'ün örnek listesindeki) bu turda hiç gözlenmedi; okuyucu yine de
+  "tanınan" kümesine dahil ediyor (zararsız fazlalık, gelecekte görülürse hazır).
+
+**Sonraki adım**
+- qa-evaluator F-009'u değerlendirsin (feature notu `status: qa`, sözleşme `docs/qa/
+  F-009-contract.md`).
+- Sıradaki feature (Faz 2 sırası, kullanıcı kararı): F-010 (Thread görünümü) veya F-011 (Token
+  ekranı) — F-009'un ürettiği `transcript-reader.ts` API'sini (`readAllowedTranscript` giriş
+  noktası) tüketecekler.

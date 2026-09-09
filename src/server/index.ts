@@ -28,6 +28,10 @@ import {
 } from '../features/gates/server/handlers'
 import { createChatSession } from '../features/chat/server/session'
 import {
+  createTranscriptReaderStatsTracker,
+  type TranscriptReaderStats,
+} from '../features/thread/server/transcript-reader'
+import {
   handleChatStatus,
   handleChatHistory,
   handleChatMessage,
@@ -234,7 +238,8 @@ function handleHealth(
   instanceId: string,
   getCorruptLines: () => number,
   getWriteErrors: () => number,
-  getWatcherCount: () => number
+  getWatcherCount: () => number,
+  getTranscriptReaderStats: () => TranscriptReaderStats
 ): void {
   const body = JSON.stringify({
     ok: true,
@@ -249,6 +254,9 @@ function handleHealth(
     write_errors: getWriteErrors(),
     // F-005 (sözleşme §7 "izleyici sayacı"): aktif project-watcher sayısı.
     watchers: getWatcherCount(),
+    // F-009 T5 — bu turda hiçbir üretim kodu transkript okumuyor (Thread/Token F-010/F-011'de
+    // gelecek), bu yüzden üçü de dürüstçe sıfır kalır; sessizce uydurulmuş bir sayı DEĞİL.
+    transcript_reader: getTranscriptReaderStats(),
   })
   res.writeHead(200, { 'content-type': 'application/json' })
   res.end(body)
@@ -324,6 +332,8 @@ export function createServer(
   const maxPayload = resolveEnvInt(process.env, 'MC_MAX_PAYLOAD', 65536)
   const hub = createSseHub()
   const projectsService = createProjectsService(resolvedDataDir, hub)
+  // F-009 T5 — bu turda kimse `.record()` çağırmıyor (bkz. `transcript-reader.ts` üst yorumu).
+  const transcriptReaderStats = createTranscriptReaderStatsTracker()
 
   // F-012 — `deps`'in alan kümesi KAPALI (Ö7): yalnızca bu beşi, `store`/`projectsService`
   // ASLA geçirilmez (K4, olay akışı CEO bağlamına beslenmez). Bootstrap arka planda,
@@ -378,7 +388,8 @@ export function createServer(
           instanceId,
           () => store.getCorruptLines(),
           () => store.getWriteErrors(),
-          () => projectsService.getActiveWatcherCount()
+          () => projectsService.getActiveWatcherCount(),
+          () => transcriptReaderStats.getStats()
         )
         return
       }

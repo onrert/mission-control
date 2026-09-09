@@ -1,0 +1,5 @@
+# Bu dizindeki fixture'lar BAYT-BİRE-BİR korunmalı — repo-geneli `.gitattributes`'in
+# `* text=auto eol=lf` kuralı `bom-crlf.jsonl`'in CRLF satır sonlarını (fixture'ın TÜM amacı)
+# sessizce LF'ye çevirirdi (F-009, 2026-09-09). `-text`: git bu dosyaları normalize etmez,
+# BOM/CRLF/kesik-son-satır bayt düzeyinde tam olarak yazıldığı gibi kalır.
+* -text

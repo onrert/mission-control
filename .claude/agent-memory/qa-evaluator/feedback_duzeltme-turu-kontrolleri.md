@@ -282,3 +282,34 @@ zaten tarihli bir kopyası var mı diye bak (`diff -q`) — ikinci kez yanlış 
     yani her katmanın kendi testi var ama koruduğu senaryolar farklı. "İki mutasyon da kırmızı"
     demek yetmez; her mutasyonun altında **hangi saldırının açıldığını** ayrıca probla ölç,
     yoksa iki testin de aynı şeyi ölçtüğünü fark edemezsin.
+
+44. **"Kabul et ve normalize et" düzeltmelerinde İKİ katman vardır; ikincisi genelde çitsiz kalır.**
+    F-008 tur 2: S2 hem regex'e `i` bayrağı ekledi hem ayrıştırılan id'yi `.toUpperCase()` ile
+    kanonikleştirdi. Brief'in istediği mutasyon (`i` bayrağını kaldır) KIRMIZI verdi, ama
+    `.toUpperCase()`'i kaldıran ikinci mutasyon **1077/1077 YEŞİL** kaldı — üstelik gerçek sızıntı
+    üretiyordu: aynı kapı listede **iki satır** (`G2` + `g2`, ikincisi bilinmeyen id olduğu için
+    sıralamada sona düşüyor). Test yalnızca `unrecognized` boş mu + hedef kapı `approved` mi diye
+    bakıyordu; **satır kümesinin tamamını** (`ids.toEqual([...])`) iddia etmiyordu. Kural:
+    normalizasyon düzeltmelerinde "tanıma" ve "kanonikleştirme" katmanlarını AYRI mutasyonla sına,
+    ve liste döndüren her çitte tam küme eşitliği iste — "aradığım eleman var mı" yetmez.
+45. **Bir düzeltme diagnostik bir sinyali kaldırıyorsa, o sinyalin GİZLEDİĞİ çıkmazı ölç.**
+    F-008 S2, `g2.ok`'u artık normal bir kapı sayıyor ve "Tanınmayan dosyalar" satırını (bilinçli,
+    sözleşme gereği) kaldırıyor. Ama kanonik olmayan harfli dosya varken yazma yolu hâlâ kalıcı
+    500 veriyor: `write-gate.ts` en yakın var olan atayı `fs.realpathSync.native` ile diskteki
+    gerçek yazıma çeviriyor (`G2.ok` → `g2.ok`), sonra harfe **duyarlı** `OPERATION_PATTERNS` ile
+    karşılaştırıp `write_denied` diyor. Yani düzeltme çelişkiyi kaldırdı ama çıkmazın tek ipucunu
+    da kaldırdı. Ölçüm sırası: (a) yeni davranışı listede doğrula, (b) o satırın SUNDUĞU aksiyonu
+    tarayıcıda gerçekten tıkla, (c) `git log -- <yazma modülü>` ile hatanın bu turun ürünü olup
+    olmadığını tarihlendir (F-008'de değildi → taşınan borç, bloklayıcı değil).
+46. **İki adımlı onay/önizleme akışlarında 409 yolunun "hiçbir dosyaya dokunmaz" iddiasını
+    YAN ETKİLİ bir kurulumla sına.** Uyuşmazlık testini boş dizinde yapmak yetersiz: hedef kapıya
+    ait bir `.deny.md` KOYUP dene — çünkü doğru kodda arşivleme adımı eşitlik kontrolünden SONRA
+    gelmeli. F-008'de bu, "409 döndü ama deny dosyası arşive taşındı" sınıfını tek ölçümde eledi
+    (`deny mtime değişmedi` + `archive/ oluşmadı`). Ardından **kurtarma yolunu** da yürüt (kapat →
+    yeniden aç → 200): 409 bir çıkmaz mı yoksa tazelenebilir bir durum mu, ancak böyle anlaşılır.
+47. **React kontrollü input'a `evaluate` ile değer yazarsan buton `disabled` kalır.** Doğrudan
+    `el.value = x` React'in değer izleyicisini günceller ve `onChange` yutulur; ardından
+    Playwright'ın `fill()`'i de aynı değeri yazdığı için hiç olay üretmez — "buton etkin değil"
+    diye 5 sn timeout alırsın. Çözüm: prototype value setter ile ÖNCE `''` yaz + `input` olayı,
+    SONRA gerçek metni yaz + `input` olayı. (Ya da hiç `evaluate` kullanma, temiz modalda yalnızca
+    `browser_type`.)

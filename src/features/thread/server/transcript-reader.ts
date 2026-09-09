@@ -38,7 +38,10 @@ export interface TranscriptReadResult {
   lines_ok: number
   lines_bad: number
   unknown_type_lines: number
-  /** `lines_bad > 0` (T5 — dürüst bozulma bayrağı, sessiz kısmi başarı yok). */
+  /**
+   * `lines_bad > 0` VEYA kuyruk kırpmasında satır sınırı hiç bulunamadığı için verinin TAMAMI
+   * kayboldu (T5 — dürüst bozulma bayrağı, sessiz kısmi/tam başarı yok; QA U4/B5 düzeltmesi).
+   */
   degraded: boolean
   /** Dosyanın kendisi hiç açılamadıysa (ENOENT/EPERM/…) true; diğer tüm sayaçlar 0 kalır. */
   file_read_failed: boolean
@@ -86,16 +89,31 @@ function toFiniteNumber(value: unknown): number {
  * bir dosyada bile tek seferlik bir `readFileSync` işlem sınırını aşmaz, yalnızca işlenen metin
  * kuyruğa kırpılır (ADR-007'nin "yalnızca son 32 MB işlenir" niyeti korunur).
  */
-function readRelevantText(filePath: string, maxBytesBeforeTail: number, tailBytes: number): string {
+interface RelevantTextResult {
+  text: string
+  /**
+   * QA düzeltme turu (U4, B5) — kuyruk kırpması sırasında satır sınırı BULUNAMAZSA (tüm kuyruk
+   * tek bir newline'sız blok), önceki davranış `''` dönüp `degraded:false` ile "sağlıklı, hiç
+   * sorun yok" diyordu — oysa dosyanın TAMAMI sessizce kayboluyordu. Bu bayrak `readTranscript`'e
+   * bu veri kaybını dürüstçe bildirmesi için taşınır (T5 — sessiz kısmi/tam başarısızlık yok).
+   */
+  dataLostNoLineBoundary: boolean
+}
+
+function readRelevantText(
+  filePath: string,
+  maxBytesBeforeTail: number,
+  tailBytes: number
+): RelevantTextResult {
   const buffer = fs.readFileSync(filePath)
   if (buffer.length <= maxBytesBeforeTail) {
-    return buffer.toString('utf8')
+    return { text: buffer.toString('utf8'), dataLostNoLineBoundary: false }
   }
   const start = Math.max(0, buffer.length - tailBytes)
   const tail = buffer.subarray(start)
   const newlineIndex = tail.indexOf(0x0a)
-  if (newlineIndex === -1) return ''
-  return tail.subarray(newlineIndex + 1).toString('utf8')
+  if (newlineIndex === -1) return { text: '', dataLostNoLineBoundary: true }
+  return { text: tail.subarray(newlineIndex + 1).toString('utf8'), dataLostNoLineBoundary: false }
 }
 
 function stripBom(text: string): string {
@@ -115,8 +133,11 @@ export function readTranscript(
   const tailBytes = options.tailBytes ?? DEFAULT_TAIL_BYTES
 
   let text: string
+  let dataLostNoLineBoundary = false
   try {
-    text = readRelevantText(filePath, maxBytesBeforeTail, tailBytes)
+    const relevant = readRelevantText(filePath, maxBytesBeforeTail, tailBytes)
+    text = relevant.text
+    dataLostNoLineBoundary = relevant.dataLostNoLineBoundary
   } catch {
     return emptyResult(filePath, true)
   }
@@ -176,7 +197,7 @@ export function readTranscript(
     lines_ok: linesOk,
     lines_bad: linesBad,
     unknown_type_lines: unknownTypeLines,
-    degraded: linesBad > 0,
+    degraded: linesBad > 0 || dataLostNoLineBoundary,
     file_read_failed: false,
     usage,
   }

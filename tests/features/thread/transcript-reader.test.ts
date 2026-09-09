@@ -170,6 +170,27 @@ describe('64 MB üstü dosyalarda yalnızca kuyruk okunur (ADR-007 §9.4)', () =
       fs.rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it("QA U4/B5 — kuyrukta satır sınırı HİÇ bulunamazsa (tüm kuyruk newline'sız) degraded:true döner, sessizce sağlıklı görünmez", () => {
+    // QA'nın bire bir tekrar ürettiği senaryo: geçerli bir satır + eşiği aşan, hiç `\n` içermeyen
+    // dev bir kuyruk. Düzeltmeden önce bu `{lines_ok:0,lines_bad:0,degraded:false}` döndürüyordu —
+    // dosyanın TAMAMI kayboldu ama sonuç "sorun yok" diyordu.
+    const dir = mkTempRoot('mc-transcript-tail-loss-')
+    try {
+      const file = path.join(dir, 'no-boundary.jsonl')
+      const validLine = JSON.stringify({ type: 'user' })
+      const newlineLessTail = 'y'.repeat(4096) // eşiği aşıyor, hiç \n yok
+      fs.writeFileSync(file, validLine + '\n' + newlineLessTail, 'utf8')
+
+      const result = readTranscript(file, { maxBytesBeforeTail: 100, tailBytes: 64 })
+      expect(result.lines_ok).toBe(0)
+      expect(result.lines_bad).toBe(0)
+      expect(result.file_read_failed).toBe(false)
+      expect(result.degraded).toBe(true) // MUTASYON hedefi: `dataLostNoLineBoundary` çıkarılırsa KIRMIZI
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('encodeProjectDirName (ADR-007 §9.1 kodlaması)', () => {
@@ -319,11 +340,27 @@ describe('resolveAllowedTranscriptPath (T4 — en küçük yetki)', () => {
     }
   })
 
-  it('proje dizini kendisi symlink (junction) ise ve gerçek hedef izin verilen kümenin dışındaysa reddedilir', () => {
+  // QA U7/B6 — burada duran "MUTASYON hedefi (T4)" testi kendi kendine referans veriyordu
+  // (kendi tanımladığı `alwaysAllowed` sabitini doğruluyordu). Gerçek koruma zaten yukarıdaki
+  // "KAÇIŞ DENEMESİ" testinde var (GERÇEK `resolveAllowedTranscriptPath` çağrısı, `not-allowed`
+  // reddi) — izin listesi kontrolü kaldırılırsa o test KIRMIZI olur. Dekoratif kopya kaldırıldı.
+
+  // ------------------------------------------------------------------------------------------
+  // QA U3/B4 — dört savunma katmanının (ata-symlink/L2, hedef-symlink/L3, realpath-öncesi
+  // kapsama/L1, realpath-sonrası kapsama/L4) HİÇBİRİNİN kendi testi yoktu; M6/M6b/M10/M11
+  // mutasyonlarının hepsi "69 passed" ile fark edilmeden geçti çünkü tek iddia `ok:false`'du —
+  // hangi katman reddettiği önemli değildi. Aşağıdaki testler `reason` alanını KESİN olarak
+  // iddia eder: bir katman kaldırılırsa akış BİR SONRAKİ katmana düşer ve reason DEĞİŞİR.
+  // ------------------------------------------------------------------------------------------
+
+  it('M6 hedefi — proje dizini İÇİNDEKİ bir ATA dizin junction ise reason KESİNLİKLE "symlink" (ata kontrolü, L2)', () => {
     const { claudeRoot, allowedProjectPath } = setup()
     const realOutsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-real-outside-'))
     const realOutsideFile = path.join(realOutsideDir, 'session-c.jsonl')
     fs.writeFileSync(realOutsideFile, '{"type":"user"}\n')
+    // Junction ATA dizin konumunda (final segment DEĞİL) — yalnızca L2 (ata-symlink kontrolü)
+    // bunu yakalayabilir. L2 kaldırılırsa (M6) akış L4'e düşer ve reason 'outside-root' olur —
+    // bu test o farkı KESİN reason iddiasıyla yakalar (eski test yalnızca `ok:false` bakıyordu).
     const junctionDir = path.join(
       claudeRoot,
       encodeProjectDirName(allowedProjectPath),
@@ -333,32 +370,100 @@ describe('resolveAllowedTranscriptPath (T4 — en küçük yetki)', () => {
       fs.symlinkSync(realOutsideDir, junctionDir, 'junction')
       const candidate = path.join(junctionDir, 'session-c.jsonl')
       const result = resolveAllowedTranscriptPath(claudeRoot, [allowedProjectPath], candidate)
-      expect(result).toMatchObject({ ok: false })
+      expect(result).toEqual({ ok: false, reason: 'symlink' })
     } finally {
       fs.rmSync(claudeRoot, { recursive: true, force: true })
       fs.rmSync(realOutsideDir, { recursive: true, force: true })
     }
   })
 
-  it('MUTASYON hedefi (T4) — izin listesi kontrolü kaldırılırsa (her zaman true) kaçış testi KIRMIZI olurdu', () => {
-    // Üretim kodunu değiştirmeden aynı mutasyonu burada taklit eder: "her zaman izinli" bir
-    // guard, foreignFile'ı da kabul ederdi — bu, gerçek fonksiyonun DOĞRU şekilde reddettiğini
-    // (bir sonraki testte) tersinden kanıtlar.
-    const { claudeRoot, foreignFile } = setup()
+  it('M6b hedefi — adayın KENDİSİ (final segment) junction ise reason KESİNLİKLE "symlink" (hedef kontrolü, L3)', () => {
+    const { claudeRoot, allowedProjectPath } = setup()
+    const realOutsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-real-outside-'))
+    // Bu kez junction'ın KENDİSİ aday yol (ata değil, final segment) — yalnızca L3 (hedef-symlink
+    // kontrolü) bunu yakalayabilir; ata döngüsü final segmenti hiç kontrol etmez (kod yorumu:
+    // "son segment HARİÇ"). L3 kaldırılırsa (M6b) akış L4'e düşer, reason 'outside-root' olur.
+    const junctionAsFinalSegment = path.join(
+      claudeRoot,
+      encodeProjectDirName(allowedProjectPath),
+      'leak-target'
+    )
     try {
-      const alwaysAllowed = (): { ok: true; targetPath: string } => ({
-        ok: true,
-        targetPath: foreignFile,
-      })
-      expect(alwaysAllowed()).toMatchObject({ ok: true })
-      const actual = resolveAllowedTranscriptPath(
+      fs.symlinkSync(realOutsideDir, junctionAsFinalSegment, 'junction')
+      const result = resolveAllowedTranscriptPath(
         claudeRoot,
-        ['C:\\dev\\apps\\izlenen-proje'],
-        foreignFile
+        [allowedProjectPath],
+        junctionAsFinalSegment
       )
-      expect(actual).toEqual({ ok: false, reason: 'not-allowed' })
+      expect(result).toEqual({ ok: false, reason: 'symlink' })
     } finally {
       fs.rmSync(claudeRoot, { recursive: true, force: true })
+      fs.rmSync(realOutsideDir, { recursive: true, force: true })
+    }
+  })
+
+  it('M6+M11 birleşik (QA bulgusu, GERÇEK kaçış) — REAL fonksiyon güvenli kalır, iki katman birlikte kaldırılmış bir taklit KAÇAR', () => {
+    // QA bulgusu: M6 (ata-symlink kontrolü kaldırıldı) VE M11 (realpath-sonrası kapsama
+    // `resolved` yerine `candidatePath` kullanıyor) AYNI ANDA uygulanınca izin verilen proje
+    // içindeki bir junction, kökün TAMAMEN DIŞINDAKİ bir dosyayı OKUTTU (ok:true). Üretim kodu
+    // (`transcript-reader.ts`) DEĞİŞTİRİLMEDEN, bu iki katmanın birlikte kaldırıldığı bir taklidi
+    // burada yeniden üretip GERÇEK kaçışın koşulunu kanıtlıyoruz; ardından REAL fonksiyonun AYNI
+    // fixture'da güvenli kaldığını (ok:false) doğruluyoruz. `M6 hedefi`/`M6b hedefi` testleri
+    // yukarıda TEK BAŞINA her katmanın reason'ını zaten çitliyor.
+    const { claudeRoot, allowedProjectPath } = setup()
+    const realOutsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-real-outside-combo-'))
+    const realOutsideFile = path.join(realOutsideDir, 'session-c.jsonl')
+    fs.writeFileSync(realOutsideFile, '{"type":"user"}\n')
+    const junctionDir = path.join(
+      claudeRoot,
+      encodeProjectDirName(allowedProjectPath),
+      'evil-junction-combo'
+    )
+    try {
+      fs.symlinkSync(realOutsideDir, junctionDir, 'junction')
+      const candidate = path.join(junctionDir, 'session-c.jsonl')
+
+      function resolveWithM6AndM11Removed(
+        root: string,
+        allowed: readonly string[],
+        candidatePath: string
+      ): { ok: true; targetPath: string } | { ok: false; reason: string } {
+        if (!path.isAbsolute(candidatePath)) return { ok: false, reason: 'path-invalid' }
+        if (!fs.existsSync(root)) return { ok: false, reason: 'path-invalid' }
+        const relFromRootRaw = path.relative(root, candidatePath)
+        if (
+          relFromRootRaw === '' ||
+          relFromRootRaw.startsWith('..') ||
+          path.isAbsolute(relFromRootRaw)
+        ) {
+          return { ok: false, reason: 'outside-root' }
+        }
+        // M6: ata-dizin symlink kontrolü (L2) KALDIRILDI — normalde burada olan lstat döngüsü yok.
+        if (!fs.existsSync(candidatePath)) return { ok: false, reason: 'not-found' }
+        if (fs.lstatSync(candidatePath).isSymbolicLink()) return { ok: false, reason: 'symlink' } // L3 hâlâ aktif
+        // M11: realpath-sonrası kapsama `resolved` yerine `candidatePath` (lexical) ile yapılıyor.
+        const relFromRoot = path.relative(root, candidatePath)
+        if (relFromRoot === '' || relFromRoot.startsWith('..') || path.isAbsolute(relFromRoot)) {
+          return { ok: false, reason: 'outside-root' }
+        }
+        return { ok: true, targetPath: fs.realpathSync.native(candidatePath) }
+      }
+
+      const simulatedBypass = resolveWithM6AndM11Removed(
+        claudeRoot,
+        [allowedProjectPath],
+        candidate
+      )
+      expect(simulatedBypass.ok).toBe(true) // taklit KAÇAR — QA'nın bulduğu gerçek zafiyet budur
+      if (simulatedBypass.ok) {
+        expect(path.resolve(simulatedBypass.targetPath)).toBe(path.resolve(realOutsideFile))
+      }
+
+      const real = resolveAllowedTranscriptPath(claudeRoot, [allowedProjectPath], candidate)
+      expect(real.ok).toBe(false) // GERÇEK fonksiyon güvenli — M6 hedefi testiyle aynı fixture
+    } finally {
+      fs.rmSync(claudeRoot, { recursive: true, force: true })
+      fs.rmSync(realOutsideDir, { recursive: true, force: true })
     }
   })
 })
@@ -408,12 +513,47 @@ describe('createTranscriptReaderStatsTracker (T5 — /api/health sayaçları)', 
     expect(tracker.getStats()).toEqual({ files_seen: 2, lines_ok: 8, lines_bad: 1 })
   })
 
-  it('MUTASYON hedefi (T5) — degraded her zaman false yapılırsa fixture testi KIRMIZI olur', () => {
-    // Üretim kodunu değiştirmeden aynı mutasyonu burada taklit eder: `degraded` sabit `false`
-    // olsaydı, gerçek `readTranscript` çağrısının döndürdüğü değerle eşleşmezdi.
-    const mutatedDegraded = false
-    const real = readTranscript(fixture('truncated-last-line.jsonl'))
-    expect(real.degraded).toBe(true)
-    expect(real.degraded).not.toBe(mutatedDegraded)
+  // QA U7/B6 — burada duran "MUTASYON hedefi (T5)" testi kendi kendine referans veriyordu
+  // (`mutatedDegraded=false` sabitiyle karşılaştırma, hiçbir gerçek kod yolunu ölçmüyordu).
+  // Gerçek koruma zaten yukarıdaki ilk `describe` bloğundaki fixture testlerinde var:
+  // `truncated-last-line.jsonl` → `degraded:true`, `valid.jsonl` → `degraded:false` — ikisi de
+  // GERÇEK `readTranscript` çağrısını doğruluyor; `degraded: linesBad > 0 → false` mutasyonu bu
+  // iki testten en az birini KIRMIZI yapar. Tekrar eden dekoratif test kaldırıldı.
+})
+
+// -------------------------------------------------------------------------------------------
+// QA U3/B4 (M10/M11) — kod ŞEKLİ çiti. `no-write-gate-bypass.test.ts`/`write-gate-manifest.
+// test.ts`'in KANITLANMIŞ deseni (kaynak metnini oku, kritik güvenlik satırının TAM biçimini
+// grep'le): M10 (realpath-ÖNCESİ kapsama kontrolü kaldırıldı) ve M11 (realpath-SONRASI kapsama
+// `resolved` yerine `candidatePath` kullanıyor) davranışsal olarak TESPİT EDİLEMEZ — L2/L3
+// (symlink kontrolleri) her ikisi de sağlamken bu iki katman matematiksel olarak L4 ile
+// ÖRTÜŞÜR (sembolik bağ yoksa `path.relative(root, candidatePath)` ve
+// `path.relative(root, realpathSync(candidatePath))` AYNI sonucu verir) — yani hiçbir black-box
+// senaryo TEK BAŞINA bu ikisini davranışla ayırt edemez (M6/M6b `reason` testleriyle ayırt
+// edilebiliyor, bunlar edilemiyor). QA'nın "69 passed" ölçümü bunu doğruluyor. Kaynağın TAM
+// bu iki satırının şeklini (QA'nın literal mutasyon yöntemiyle birebir) çitlemek tek pratik yol.
+// -------------------------------------------------------------------------------------------
+describe('resolveAllowedTranscriptPath — kod şekli çiti (M10/M11 regresyonu)', () => {
+  const source = fs.readFileSync(
+    path.join(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      'src',
+      'features',
+      'thread',
+      'server',
+      'transcript-reader.ts'
+    ),
+    'utf8'
+  )
+
+  it('M10 hedefi — realpath ÖNCESİ (lexical) kapsama kontrolü kaynakta var (relFromRootRaw)', () => {
+    expect(source).toMatch(/relFromRootRaw\.startsWith\(['"]\.\.['"]\)/)
+  })
+
+  it('M11 hedefi — realpath SONRASI kapsama kontrolü `resolved` üzerinden yapılıyor (candidatePath DEĞİL)', () => {
+    expect(source).toMatch(/path\.relative\(claudeProjectsRoot,\s*resolved\)/)
   })
 })

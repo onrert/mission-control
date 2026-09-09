@@ -3971,3 +3971,72 @@ B1/AA1 kaldı. Sözleşme eki: `docs/qa/F-011-contract.md` §7.
 
 **Sonraki adım**
 - qa-evaluator F-011'in düzeltme turu 6'sını (CC1/CC2) değerlendirsin.
+
+---
+
+## 2026-09-09 — test takımı sessiz atlama çiti (altyapı işi, yeni feature değil)
+
+**Kaynak:** `docs/blockers.md` "2026-09-10 — YÜKSEK ÖNCELİK: test takımı sessizce test atlıyor".
+Sözleşme: `docs/qa/test-skip-gate-contract.md`.
+
+**Teşhis:** `node_modules/vitest/dist/chunks/index.B89dZ0-N.js:11463/21045-21049/21374-21375` —
+worker fork çöktüğünde vitest bunu `state.catchError` → `_checkUnhandledErrors` yoluyla
+`process.exitCode = 1`'e çeviriyor. **10 canlı `npx vitest run` koşusunda 5/10 çöktü** (Windows
+`exit code 3221226505`, STATUS_ACCESS_VIOLATION) — **hepsinde** vitest doğru şekilde `exit 1`
+verdi. Raporlanan "çökme + sessiz exit 0" kombinasyonu bu turda **tekrar üretilemedi**; kök neden
+dürüstçe **açık** bırakıldı (muhtemel yarış durumu, kanıtlanamadı).
+
+**Ne yapıldı:** `scripts/verify-test-run.mjs` — `vitest run`'ı sarıp KENDİ çıkış koduna
+güvenmeden iki bağımsız sinyal daha kontrol ediyor:
+1. Vitest'in kendi özet satırlarının (`Test Files`/`Tests`) kategori toplamı parantez içindeki
+   toplamla eşleşiyor mu (eşleşmezse = sessiz düşüş; testler arttıkça kendiliğinden güncellenen
+   bir kontrol, sabit sayı bakımı gerekmiyor).
+2. Çıktıda bilinen çökme imzaları var mı (`Worker forks emitted error` / `Worker exited
+   unexpectedly` / `Unhandled Error`).
+
+İkisinden biri tetiklenirse `verify`/`test` **KIRMIZI** verir, vitest'in kendi çıkış kodu ne
+olursa olsun. Ayrıca `MIN_EXPECTED_TESTS=500` sabit alt sınırı (bugünkü 1327'nin çok altında,
+yalnızca "vitest 0 test topladı ve başarı saydı" felaket senaryosu için, bakım gerektirmez).
+`package.json`'daki `test` betiği (`"node scripts/verify-test-run.mjs"`) bu sarmalayıcıyı çağırıyor;
+`npm run verify` zaten `test`'i zincirlediği için otomatik kapsanıyor. `eslint.config.js`'e
+`scripts/**/*.mjs` + `tests/fixtures/**/*.mjs` için `console`/`Buffer` globalleri eklendi (mevcut
+`process` globaline ek, aynı blok).
+
+**Nasıl doğrulandı:**
+- `npx tsc --noEmit` → 0. `npx eslint .` → 0.
+- `tests/verify-test-run.test.ts` (17 test): saf fonksiyonların (`parseSummaryLine`,
+  `findCrashSignature`, `evaluateOutput`) birim testleri (gerçek vitest çıktısından birebir
+  kopyalanmış satırlarla) + `tests/fixtures/fake-vitest-*.mjs` fixture'larına karşı gate
+  betiğinin GERÇEK alt süreç olarak (`spawnSync`) çalıştırılması (mock değil).
+- **Mutasyon kanıtı** (elle, `git checkout` KULLANILMADI — `scratchpad`'e alınan yedekten elle
+  geri yazıldı, md5 başlangıç değeriyle birebir eşleşti — `59ca8938915e4284c028efdc3007769b`):
+  1. Toplam-karşılaştırma satırı (`summary.sum !== summary.total`) `false &&` ile devre dışı
+     bırakıldı → ilgili birim testi + uçtan-uca "silent-drop" fixture testi **KIRMIZI**; geri
+     alınınca **YEŞİL**.
+  2. Çökme-imzası kontrolü aynı şekilde devre dışı bırakıldı → ilgili testler **KIRMIZI**; geri
+     alınınca **YEŞİL**.
+- **Gerçek suitede canlı yakalama:** bir `npm run test` koşusunda gerçek bir worker çökmesi oldu
+  (`tests/server/adr-013-write-header.test.ts`, `exit code 3221226505`) — gate hem çökme-imzasını
+  hem toplam-uyuşmazlığını (`Test Files 85/86`, `Tests 1316/1327`) yakalayıp **exit 1** verdi.
+- **`npm run verify`:** ilk koşuda bilinen Windows temp-dizin yarış durumuyla (`ENOTEMPTY`,
+  `tests/integration/gates-api.test.ts`, CLAUDE.md'de kayıtlı sınıf) KIRMIZI verdi; ikinci koşuda
+  **exit 0**, **`Test Files 85 passed | 1 skipped (86)`, `Tests 1323 passed | 4 skipped (1327)`**,
+  build başarılı, gate uyarısı yok.
+- **`npm run e2e`:** exit 0, **55/55 geçti** (43,9s).
+- Yetim süreç: her adımdan sonra `tasklist` ile `node.exe`/`chrome.exe` kontrol edildi, hiçbiri
+  kalmadı. `hayat-mentoru`'ya dokunulmadı.
+
+**Kalan risk / kapanmayan:**
+- Kök neden (bazen `3221226505` çökmesinin exit 0 ile sonuçlanması) **tekrar üretilemedi** —
+  çit bunu her hâlükârda yakalıyor ama NEDEN bazen olduğunu açıklamıyor. Bir sonraki oturumda
+  yine "exit 0 + eksik test" görülürse artık gate onu **her durumda** kırmızıya çevirecek; asıl
+  vitest davranışını anlamak isteyen biri `docs/qa/test-skip-gate-contract.md` §1'deki iz sürme
+  notlarından devam edebilir.
+- Worker fork çökmesinin kendisi (`3221226505`, Windows STATUS_ACCESS_VIOLATION) `CLAUDE.md`'de
+  bilinen ayrı bir sınıf — bu turda **çözülmedi**, yalnızca sonucunun sessiz kalması engellendi.
+  Bu turda **5/10** koşuda tekrarladı (yüksek oran) — CLAUDE.md'nin "kırmızı verdiğinde bir kez
+  daha koştur" kuralı hâlâ geçerli ve gerekli.
+- `docs/blockers.md`'deki asıl madde **KISMEN KAPANDI** olarak işaretlendi (sessiz atlama artık
+  imkânsız; kök neden açık) — ayrıntı orada.
+
+**Sonraki adım:** qa-evaluator değerlendirsin.

@@ -436,6 +436,49 @@ Alternatif: worker havuzu yapılandırmasını değiştirip hatayı kırmızıya
 **Eşik:** F-011 kapandıktan **hemen sonra**, ayrı bir devops/altyapı turu olarak.
 Bu kapanana kadar "testler yeşil" ifadesi **koşulan test sayısıyla birlikte** raporlanmalı.
 
+## 2026-09-09 — KISMEN KAPANDI (developer, altyapı turu): sessiz atlama artık İMKÂNSIZ, kök neden AÇIK
+
+**Teşhis (kod okuma + 10 canlı `npx vitest run` koşusu):** `node_modules/vitest/dist/chunks/
+index.B89dZ0-N.js:11463` — worker fork çöktüğünde (`ChildProcess.emitUnexpectedExit`) bu,
+`runFiles()`'ta (`:21045-21049`) `state.catchError(err, "Unhandled Error")`'a düşüyor;
+`_checkUnhandledErrors` (`:21374-21375`) `process.exitCode = 1` yazıyor. **10 canlı koşuda 5/10
+çöktü** (`exit code 3221226505`, Windows STATUS_ACCESS_VIOLATION) — **hepsinde** vitest kendi
+kendine doğru `exit 1` verdi. Yani bu depodaki pinned `vitest@5.0.0`'da (`package-lock.json`),
+raporlanan "çökme + sessiz exit 0" kombinasyonu bu turda **tekrar üretilemedi**; muhtemelen
+zamanlamaya bağlı bir yarış durumuydu (worker'ın çökme sinyali `onFinished` mesajıyla yarışırsa
+resolver zaten `resolve()` olmuş olabilir) ama bu **kanıtlanamadı**. **Kök neden dürüstçe AÇIK
+kaldı.**
+
+**Yapılan (kök-neden-kapatma değil, çit stratejisi — brief'in izin verdiği yol):**
+`scripts/verify-test-run.mjs`, `vitest run`'ı sarıp KENDİ çıkış koduna güvenmeden iki bağımsız
+sinyal daha kontrol ediyor: (1) vitest'in kendi özet satırlarındaki (`Test Files`/`Tests`)
+kategori toplamının parantez içindeki toplamla eşleşmesi (eşleşmezse = sessiz düşüş, testler
+büyüdükçe kendiliğinden güncellenen bir kontrol, bakım gerektirmiyor), (2) çıktıda bilinen çökme
+imzaları (`Worker forks emitted error`/`Worker exited unexpectedly`/`Unhandled Error`). İkisinden
+biri tetiklenirse `verify`/`test` **KIRMIZI** verir, vitest'in kendi çıkış kodu ne olursa olsun.
+Ayrıca `MIN_EXPECTED_TESTS=500` sabit alt sınırı (bugünkü 1327'nin çok altında, yalnızca
+felaket-senaryosu için, bakım gerektirmez). `package.json`'daki `test` betiği bu sarmalayıcıyı
+çağırıyor; `npm run verify` otomatik kapsıyor.
+
+**Doğrulama:** `tests/verify-test-run.test.ts` (17 test, saf fonksiyon birim testleri + gerçek alt
+süreç olarak `scripts/fixtures/fake-vitest-*.mjs` fixture'larına karşı uçtan uca). **Mutasyon
+kanıtı (elle, `git checkout` KULLANILMADI, md5 başlangıç değeriyle birebir eşleşti):** (1) toplam
+karşılaştırma satırı (`summary.sum !== summary.total`) `false &&` ile devre dışı bırakıldı →
+ilgili birim testi + uçtan-uca "silent-drop" fixture testi **KIRMIZI**; geri alındı, tekrar YEŞİL.
+(2) çökme-imzası kontrolü aynı şekilde devre dışı bırakıldı → ilgili testler **KIRMIZI**; geri
+alındı, tekrar YEŞİL. Gerçek suitede de doğrulandı: bir koşuda gerçek bir worker çökmesi oldu
+(`adr-013-write-header.test.ts`, `exit code 3221226505`) ve `npm run test` bunu hem çökme-imzası
+hem toplam-uyuşmazlığı ile yakalayıp **exit 1** verdi (vitest zaten kendi başına da 1 vermişti —
+ikinci bir kanıt katmanı).
+
+**Kalan risk:** kök neden (bazen `3221226505` çökmesinin exit 0 ile sonuçlanması) hâlâ tekrar
+üretilemedi/doğrulanamadı — çit bunu **her hâlükârda** yakalıyor ama NEDEN bazen olduğunu
+açıklamıyor. Worker fork çökmesinin kendisi (`3221226505`) `CLAUDE.md`'de bilinen ayrı bir sınıf,
+bu turda dokunulmadı (kapsam dışı, brief'in kısıtı). Detay: `docs/progress.md`
+"2026-09-09 — test takımı sessiz atlama çiti" ve `docs/qa/test-skip-gate-contract.md`.
+
+**Durum:** qa-evaluator değerlendirmesi bekliyor.
+
 ## 2026-09-09 — F-011 tur 5 kapanışından taşınan borçlar (bloklayıcı DEĞİL, karar: bu turda düzeltilmedi)
 
 Kaynak: `docs/qa/F-011-2026-09-10-tur5.md` §4/§7. BB1/BB2 (sentinel öz-testi, `process.binding`

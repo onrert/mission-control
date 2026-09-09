@@ -1,7 +1,7 @@
 ---
 id: F-010
 title: Feature thread görünümü (docs/qa birincil, transkript best-effort)
-status: fix
+status: qa
 owner: developer
 deps: [F-007, F-009]
 sprint: 2

@@ -260,6 +260,18 @@ hiçbir şey ölçmüyor. Bir regresyon fark edilmeden geçebilir.
 **Kapatma yolu:** `page.keyboard.press('Tab')` + `document.activeElement` assert'i.
 **Eşik:** Kanban ekranına dokunan bir sonraki feature.
 
+**2026-09-10 güncelleme (developer, F-010 düzeltme turu, X4) — AYNI SINIF Thread ekranında da
+tekrarladı ve ORADA kapatıldı; bu maddenin kendisi (Kanban/`kanban.spec.ts`) AÇIK kalıyor.**
+QA'nın F-010 kod turu raporu (`docs/qa/F-010-2026-09-10.md` M7) tam bu deseni Thread ekranında
+(`ThreadScreen.tsx` `tabIndex={0}`) da buldu: `tabIndex` kaldırılınca 1210/1210 yeşil kalıyordu.
+`tests/e2e/thread.spec.ts`'e `page.keyboard.press('Tab')` + `document.activeElement` ile GERÇEK
+klavye odağını ölçen bir test eklendi (`.focus()` KULLANILMADI); mutasyon (tabIndex kaldırma)
+elle uygulanıp KIRMIZI görüldü, geri alındı. **Bu, N6'nın kapatma yolunun artık bu depoda
+kanıtlanmış bir örneği var demek — ama `kanban.spec.ts`'in kendisi F-010'un dosya sahipliği
+DIŞINDA (`src/features/thread/**` + ilgili testler) olduğu için DOKUNULMADI.** N6'nın orijinal
+eşiği ("Kanban ekranına dokunan bir sonraki feature") hâlâ geçerli ve karşılanmadı — bu madde
+tam olarak kapanmadı, yalnızca aynı sınıfın bir başka örneği (Thread) kapandı.
+
 ## 2026-09-09 — Kanban'da yakalanmamış asenkron çağrı (F-008 tur A'da bulundu)
 
 **Bulgu:** `handlePatchFeatureStatus`, `projectsService.list()` çağrısını kendi asenkron

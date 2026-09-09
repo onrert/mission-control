@@ -3291,3 +3291,104 @@ sözleşmesi); bu tur onları tamamladı ve devreye aldı:
 
 **Sonraki adım**
 - qa-evaluator F-010'u değerlendirsin (feature notu `status: qa`).
+
+## 2026-09-10 — F-010 QA KALDI düzeltme turu (1 bloklayıcı + 6 önemli + 4 çitsiz mutasyon kapatıldı), tekrar `status: qa`
+
+**Görev:** `docs/qa/F-010-2026-09-10.md`'nin KARAR: KALDI bulgularını (CEO'nun bağlayıcı kararları
+X1-X6, `docs/qa/F-010-contract.md` "Düzeltme turu 1" eki) kapatmak. Dosya sahipliği DEĞİŞMEDİ
+(`src/features/thread/**`, ilgili testler, `docs/03-ux.md`; X3 için `src/web/App.tsx`'e asgari
+CSS dokunuşu — sözleşmenin W9 yetkilendirmesiyle aynı dosya).
+
+**Yapılanlar**
+
+- **X1/B1 (BLOKLAYICI)** — `thread-detail.ts` `buildTranscriptSection` içinde `readAllowedTranscript`
+  çağrısı (dolayısıyla `resolveAllowedTranscriptPath`'in `fs.realpathSync.native`'i) artık
+  `try/catch` ile sarılı; fırlarsa yalnızca transkript bölümü "okunamadı" olur, `statsTracker.record`
+  de kendi `catch`'iyle korunuyor. Eskiden bu tek çağrı sarılmamıştı ve gerçek bir Windows EPERM'i
+  (AV kilidi/ACL/ağ sürücüsü) ekranın TAMAMINI HTTP 500'e düşürüyordu (ADR-007 karar 2 ihlali).
+- **X2/Ö4** — `isEscalatedFor` artık `ESKALE: true` satırını yalnızca "başlık bloğu"nda
+  (ilk frontmatter sınırlayıcısından ÖNCEKİ satırlar, yoksa ilk 5 satır) arıyor — gövdedeki
+  alıntılanmış bir rapor formatı örneği artık rozeti tetiklemiyor. Anchor'lar (`^…$`/`m`) İKİNCİ
+  savunma katmanı olarak KORUNDU.
+- **X5/Ö5+Ö6** — `buildThreadDetail` artık Developer raporu (sözleşme) + tüm QA kararlarını
+  rol'e göre SABİT sırada değil, GERÇEK dosya `mtime`'ına göre artan sırada BİRLEŞTİRİP
+  listeliyor (`ceo_brief` hâlâ ilk sırada — farklı kaynak kategorisi). Her QA kararı başlığına
+  kaynak dosya adı eklendi (`QA kararı: KALDI · F-012-...tur3.md`) — tekrarlı turlar artık ayırt
+  edilebilir.
+- **X6/Ö1** — Transkript `degraded`/`lines_bad` sinyali artık yalnızca sunucu logunda değil,
+  bölüm içeriğinde de görünür ("⚠ Bu oturumun N satırı ayrıştırılamadı … veri eksik olabilir.").
+  `lines_ok === 0` dalı (tam okunamama) değişmedi, ama artık bu dalı hedefleyen özel bir test var
+  (M10'un kapattığı çit boşluğu).
+- **X3/Ö2+Ö3** — `ThreadScreen.tsx`'teki Proje/Feature `<select>`'lerine `min-w-0`/sabit
+  `w-*`/`max-w-full`/`truncate` eklendi (Feature seçeneği en uzun `<option>`'a göre 828px'e kadar
+  şişip `thread-screen`'i 555px yatay kaydırıyordu). `App.tsx`'in sekme çubuğunda YALNIZCA dar
+  genişlikte (`sm:` altı) `gap-1.5`/`text-xs` uygulanarak üretim varsayılanında (sohbet açık, 5
+  sekme) 320/375/480px'te tüm sekmelerin kırpılmış görünür genişliği artık **0px değil**
+  (320px'te ölçülen: Thread 19.2px, diğerleri ≥43px — ölçüm `.scratch-measure-tabs.mjs` ile
+  gerçek Chromium'da, sonra kalıcı E2E testine taşındı).
+- **X4** — M7 (`tabIndex`) ve M8 (`title`) için gerçek çit eklendi: `tests/e2e/thread.spec.ts`'e
+  `page.keyboard.press('Tab')` + `document.activeElement` ile GERÇEK klavye odağını ölçen yeni
+  bir test (`.focus()` KULLANILMADI — F-013/N6 dersi); `ThreadScreen.test.tsx`'e `title`
+  özniteliğini doğrudan ölçen bir assert. `docs/blockers.md`'nin N6 maddesi güncellendi: AYNI
+  sınıf Thread'de kapandığını not düşüldü, ama `kanban.spec.ts`'in kendisi F-010'un dosya
+  sahipliği DIŞINDA olduğu için o madde TAM kapanmadı (dürüstçe işaretlendi).
+- `docs/03-ux.md` ekran 5 güncellendi: gerçek kronoloji + ayırt edici başlık, degraded uyarı
+  metni, ESKALE başlık-bloğu taraması, transkript okuma hatasının izolasyonu.
+
+**Nasıl doğrulandı**
+
+- Beş yeni/güncellenmiş birim test dosyası: `thread-detail.test.ts` (+7 test: B1 EPERM,
+  lines_ok===0/M10, iki Ö4 testi, X5'in F-012 deseni testi, iki mevcut testin yeni başlık/sıra
+  beklentisine güncellenmesi), `thread-api.test.ts` (+1 entegrasyon testi: gerçek HTTP üzerinden
+  B1 — 500 yerine 200), `ThreadScreen.test.tsx` (+1 `title` assert'i).
+- Dört istenen mutasyon TEK TEK elle uygulandı → **KIRMIZI gözlemlendi** → geri alındı:
+  1. **B1 sarmalayıcısı kaldırıldı** (`catch → throw err`) → birim VE entegrasyon testi KIRMIZI
+     (entegrasyon: beklenen 200 yerine ölçülen 500 — QA'nın orijinal reprosu birebir yeniden
+     üretildi).
+  2. **M10** (`lines_ok === 0` dalı silindi) → yeni test KIRMIZI.
+  3. **M11** (ESKALE anchor'ları kaldırıldı) → yeni anchor-gereklilik testi KIRMIZI.
+  4. **M8** (`title` özniteliği kaldırıldı) → yeni `ThreadScreen.test.tsx` assert'i KIRMIZI.
+  Hepsi elle (Edit ile, `git checkout` KULLANILMADI — bkz. kalan risk) geri alındı,
+  `git diff --stat` her seferinde temiz.
+- `npx vitest run --no-file-parallelism` → **1216 passed, 4 skipped (80 dosya), 0 hata**
+  (normal `npm run verify`/`npx vitest run` üç ayrı koşuda CLAUDE.md'nin bilinen worker-fork
+  kararsızlığına rastladı — her seferinde FARKLI, dokunulmamış bir dosyada `exit code
+  3221226505`; `--no-file-parallelism` ile tek bir temiz koşu alındı, gerçek bir regresyon
+  DEĞİL).
+- `npm run typecheck` → 0. `npm run lint` → 0. `npm run build` → başarılı.
+- `npx playwright test` (tam takım) → **45 passed (38.9s)** — F-010'un 9 testi (2 yeni test bloğu
+  dahil: üretim-sekme-kümesi X3/Ö2, gerçek-klavye-odağı X4) + diğer 5 spec dosyasının tamamı
+  (`shell.spec.ts`'in sabit "4 sekme"/"5 tıklanabilir öğe" tam-sayı çitleri DOKUNULMADAN yeşil
+  kaldı — X3/Ö2 testi paylaşılan `playwright.config.ts`'e DOKUNMADI, yalnızca `page.route` ile
+  `GET /api/chat/status`'u kendi test dosyasında sahteleştirdi).
+- Dar genişlik ölçümü üretim yapılandırmasıyla: 320/375/480px'te 5 sekmenin (Zaman Çizelgesi/
+  Kanban/Sohbet/Kapılar/Thread) hepsi `clippedVisibleWidth() > 0`; `thread-screen.scrollWidth ===
+  clientWidth` (Ö3'ün hayalet yatay kaydırması artık yok).
+- Yetim süreç: `Get-CimInstance Win32_Process` mission-control'e ait hiçbir `node.exe` göstermedi;
+  ölçüm için açılan tek scratch sunucusu (port 7444) turun ortasında bilinçli olarak durduruldu.
+  `npm run dev` hiç çalıştırılmadı.
+- Çalışma ağacı commit'li (`4c45618` — X1/X2/X5/X6 kodu + testler + docs; bu notun kendisi ve
+  feature notu `status: qa` ayrı, küçük bir commit'te).
+
+**Kalan risk / bir sonraki QA turuna notlar**
+
+- **`git checkout -- <dosya>` mutasyon geri alma aracı olarak KULLANILMADI** (bu turda bir kez
+  yanlışlıkla kullanılıp M11 denemesi sırasında henüz commit'lenmemiş TÜM B1/X1/X5/X6 kodu HEAD'e
+  sıfırlandı — önceki bir "Read" çıktısından elle yeniden inşa edilerek kurtarıldı, veri kaybı
+  olmadı ama pahalıydı). Bundan sonra: mutasyon denemeden ÖNCE gerçek düzeltme commit'lenir, ya
+  da mutasyon Edit ile elle geri alınır — memory'ye kaydedildi
+  (`.claude/agent-memory/developer/feedback_mutation_testing_safety.md`).
+- `docs/blockers.md` N6 maddesi TAM kapanmadı — yalnızca AYNI sınıfın Thread örneği kapandı;
+  `kanban.spec.ts`'in kendi `K6`/`scrollBox.focus()` assert'i hâlâ gerçek klavye odağını
+  ölçmüyor. Kanban ekranına dokunan bir sonraki feature bunu üstlenmeli.
+- Ö7 (feature listesi hata durumunda önceki projenin listesi sessizce ekranda kalması) CEO'nun
+  X1-X6 listesinde YOK — bu turda BİLEREK dokunulmadı (varsayım yapmak yerine atlandı).
+- X3/Ö2'nin CSS düzeltmesi yalnızca 320/375/480px için doğrulandı (CEO'nun bağlayıcı isteği);
+  640px'teki ÖNCEDEN VAR OLAN, ayrı bir sıkışma (tek-satır masaüstü düzenine geçiş sınırında
+  `tablist` 238px'e düşüyor, Kapılar/Thread sekmeleri 0px) bu turda DEĞİŞMEDİ — CEO'nun isteği bu
+  genişliği kapsamıyordu, ayrıca not düşülüyor.
+- Transkript zenginleştirmesinin "belirli bir QA turuna bağlı değil" sınırlaması (önceki turdan
+  devreden risk) değişmedi.
+
+**Sonraki adım**
+- qa-evaluator F-010'un düzeltme turunu değerlendirsin (feature notu tekrar `status: qa`).

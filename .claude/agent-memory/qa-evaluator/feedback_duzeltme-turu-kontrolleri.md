@@ -313,3 +313,32 @@ zaten tarihli bir kopyası var mı diye bak (`diff -q`) — ikinci kez yanlış 
     diye 5 sn timeout alırsın. Çözüm: prototype value setter ile ÖNCE `''` yaz + `input` olayı,
     SONRA gerçek metni yaz + `input` olayı. (Ya da hiç `evaluate` kullanma, temiz modalda yalnızca
     `browser_type`.)
+
+
+48. **Bir "kapsam daraltma" duzeltmesini HER IKI YONDE sina: yanlis pozitif VE yanlis negatif.**
+    F-010 tur 2: ESKALE taramasi "tum belge" yerine "ilk --- oncesi baslik blogu" ile
+    sinirlandirildi. Yanlis pozitif kapandi (govdedeki alinti artik tetiklemiyor), ama ayni
+    daraltma iki yeni kenar acti: (a) frontmatter'i OLMAYAN, ilk `---`'i ilerideki bir yatay
+    cizgi olan raporda baslik blogu 45 satira kadar uzuyor -> alinti yine sizabilir; (b)
+    frontmatter ILK satirdaysa baslik blogu BOS kalir -> gercek eskale KACIRILIR. Kural: daraltma
+    gorunce hedef korpusu (burada 54 gercek `docs/qa/*.md`) tarayip **sinir degerlerinin
+    dagilimini** cikar, sonra iki ucu da sonda ile vur. 12 sondalik bir tablo 10 dakikada cikiyor.
+49. **Kirilma noktasina (`sm:`) dayanan bir dar-genislik duzeltmesinde, kirilma noktasinin OTE
+    YANINI da olc ve "regresyon mu, tasinan borc mu" sorusunu SINIF DUZEYINDE cevapla.**
+    F-010 tur 2: `gap-1.5 sm:gap-4` + `text-xs sm:text-sm` 320/375'i duzeltti, ama 640px'te iki
+    sekme birden 0px kirpilmis genislige dustu. Bunu bloklayici yapmadan once sunu dogrula:
+    >=640'ta uygulanan siniflar duzeltme oncesiyle **birebir ayni mi**? Ayniysa regresyon degil,
+    tur 1'de olculmemis tasinan borctur. Olcum dizisi: 280/320/360/375/414/480/560/639/**640**/
+    768/1280 — kirilma noktasinin iki yanini bitisik olc.
+50. **`page.route` ile sahtelenen bir bayrak, ancak bayrak CALISMA ZAMANI ise uretim
+    yapilandirmasini olcer.** F-010 tur 2'de E2E, `GET /api/chat/status`'u mock'layip 5 sekmeli
+    uretim kumesini ciziyordu. Kabul etmeden once uc sey: (1) bayragin `vite define` ile derleme
+    anina gomulmedigini kodda dogrula, (2) testin kendi icinde `toHaveCount(5)` gibi bir kume
+    citi oldugunu gor, (3) **mock'suz, gercek uretim sunucusunu ayaga kaldirip ayni sayilari
+    kendin olc**. Ucu birden tutuyorsa mock dogru seyi olcuyordur.
+51. **Kronoloji iddiasini "monoton mu" diye TEK SATIRDA programatik olc, goz kararı bakma.**
+    F-010 tur 2'de dort gercek feature'in 24 bolumunu cekip ardisik zaman damgalarini
+    karsilastiran 10 satirlik bir sonda, tur 1'in bulgusunun kapandigini kesin olarak gosterdi.
+    Ayrica **kapsam disinda birakilan kategoriyi** (CEO brief) ayirt et: AC yalnizca `docs/qa/*`
+    diyorsa CEO brief'in geriye gitmesi ihlal degildir — ama bunu belgede (UX doc) yazili
+    gormeden "kabul" deme.

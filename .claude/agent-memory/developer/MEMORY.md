@@ -1,3 +1,4 @@
 - [Commit cadence](feedback_commit_cadence.md) — commit every 2-3 steps; on resume from a turn-limit cutoff, commit first, before anything else.
 - [fs guard + gitattributes gotchas](feedback_fs_guard_and_gitattributes.md) — no-write-gate-bypass bans fd-based fs calls repo-wide (even in comments); root .gitattributes normalizes CRLF, breaks byte-exact fixtures unless scoped `-text` override added first.
 - [Mutation testing safety](feedback_mutation_testing_safety.md) — never `git checkout -- <file>` to undo a mutation when that file has uncommitted real fixes; commit first or revert by hand.
+- [Orphan process before verify](feedback_orphan_process_before_verify.md) — on resume, check/kill orphaned node.exe on port 7333 before npm test/verify/e2e; EADDRINUSE looks like a regression but isn't.

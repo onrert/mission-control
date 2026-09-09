@@ -236,3 +236,32 @@ mutasyon planlanmamış kod yollarını, (b) çok katmanlı savunmaların ikinci
    Ayrica bu turda "MUTASYON hedefi" adli dort test kendi kendine referans veriyordu
    (`expect(alwaysAllowed()).toMatchObject({ok:true})` gibi); **test adinda "mutasyon" gecmesi
    mutasyon kanitlandi demek degildir** — uretim kodunu gercekten degistirip kostur.
+
+---
+
+## F-009 tur 3'te eklenen üç teknik (BEYAZ LİSTE çitini denetleme)
+
+28. **Beyaz liste (allowlist) çitinde saldırıyı desene değil, ÇİTİN KENDİ ONAYLI ŞEKİLLERİNE
+   yönelt.** "Yasak desen" aramak anlamsızdır; kaçış yalnızca (a) onaylı yapısal desenlerin
+   serbest bıraktığı karakter aralıklarından, (b) tokenizer'ın hiç görmediği baytlardan,
+   (c) muafiyetlerin kapsamından gelir. F-009'da üç kanal da açıktı: `^[A-Za-z]:$` (sürücü
+   harfi) tek harf taşıdığı için `g: e: r: c: e: k:` biçiminde keyfî metin; tokenizer charset'i
+   dışındaki her bayt (Kiril/CJK/emoji) **ayırıcı** sayıldığı için sıfır token → hiç denetlenmez;
+   `.gitattributes` muafiyeti **ada** dayalı olduğu için alt dizindeki aynı adlı dosya hiç
+   taranmaz. Standart sonda seti: doğal boşluklu telefon · sayıyı ≤N'lik gruplara bölme ·
+   onaylı desene (ISO/semver/uuid/msg-id) hane gömme · yalnızca onaylı sözcüklerden cümle ·
+   Latin dışı alfabe · muaf dosya adını alt dizinde kullanma.
+29. **Kararı "teorik bit taşıma" ile "pratik sızıntı" arasında AÇIKÇA böl — ve pratikliği
+   projenin FİİLEN kullandığı dilde ölç.** F-009'da 13 vektör geçti ama hiçbiri okunabilir
+   prompt değildi: Türkçe düz metin, İngilizce düz prompt ve aksanlı Latin **her seferinde**
+   reddedildi. Kontrol sondası olarak bu üçünü mutlaka koy — geçen vektörlerin listesi tek
+   başına bakıldığında çit yenilmiş gibi görünür. Kaza sınıfı (bir transkript satırı
+   yapıştırılır) ile kasıt sınıfını (harf harf kodlama) ayır; ikincisi borç, bloklayıcı değil.
+30. **Kaskad ("mekanizmayı kapat → 35/54 kırmızı") tek nokta çitinin yerini TUTMAZ: her onaylı
+   deseni TEK TEK gevşet.** F-009'da 7 desenin 3'ü (çıplak sayı, ISO, UUID) negatif birim
+   testleriyle çitliydi, 4'ü (semver, sürücü harfi, msg-id, iki nokta) gevşetildiğinde 54/54
+   yeşil kaldı. Gevşetme mutasyonu silme mutasyonundan daha ucuz ve daha gerçekçidir
+   (`{1,3}` → `{1,20}`, `^msg_example\d{1,4}$` → `^msg_.*$`). Ayrıca sözleşmenin sınıf düzeyli
+   iddialarını ("4+ haneli her sayı — telefon, TC, kart, IBAN — reddedilir") her sınıf için
+   ayrı sondayla sına: F-009'da kart ve IBAN yakalandı (harf taşıyorlar), telefon ve TC
+   boşluklu yazımda geçti — iddia sınıf düzeyinde yanlıştı.

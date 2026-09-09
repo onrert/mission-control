@@ -70,12 +70,14 @@ afterEach(() => {
 })
 
 describe("App — Sohbet sekmesi görünürlüğü ÇALIŞMA ZAMANINDA /api/chat/status.chat_enabled'a bağlı (Y2)", () => {
-  it('sunucu chat_enabled:false derken (ör. e2e sonrası derlenmiş ama açık sunucu) 2 sekme kalır, Sohbet hiç yok', async () => {
+  it('sunucu chat_enabled:false derken (ör. e2e sonrası derlenmiş ama açık sunucu) 3 sekme kalır (Kapılar koşulsuz eklenir), Sohbet hiç yok', async () => {
     FakeEventSource.reset()
     const restore = stubGlobals(false)
     try {
       await renderAndWaitForStatus()
-      expect(screen.getAllByRole('tab')).toHaveLength(2)
+      // F-008 (G0 kararı) — Kapılar Faz 1 kabuğuna KOŞULSUZ eklenir, `chat_enabled`'a bağlı
+      // değil. Sekmeler: [Zaman Çizelgesi, Kanban, Kapılar].
+      expect(screen.getAllByRole('tab')).toHaveLength(3)
       expect(screen.queryByRole('tab', { name: 'Sohbet' })).toBeNull()
       expect(document.getElementById('panel-chat')).toBeNull()
     } finally {
@@ -83,17 +85,17 @@ describe("App — Sohbet sekmesi görünürlüğü ÇALIŞMA ZAMANINDA /api/chat
     }
   })
 
-  it("sunucu chat_enabled:true derken 3. sekme (Sohbet) belirir, Kanban'dan sonra gelir", async () => {
+  it("sunucu chat_enabled:true derken 4. sekme (Sohbet) belirir, Kanban'dan sonra Kapılar'dan önce gelir", async () => {
     FakeEventSource.reset()
     const restore = stubGlobals(true)
     try {
       await renderAndWaitForStatus()
       const tabs = screen.getAllByRole('tab')
-      expect(tabs).toHaveLength(3)
+      expect(tabs).toHaveLength(4)
       const chatTab = screen.getByRole('tab', { name: 'Sohbet' })
       expect(chatTab).toBeTruthy()
       expect(document.getElementById('panel-chat')).not.toBeNull()
-      // Sıra: docs/03-ux.md — "[Zaman Çizelgesi][Kanban][Sohbet]".
+      // Sıra: docs/03-ux.md — "[Zaman Çizelgesi][Kanban][Sohbet][Kapılar]".
       expect(tabs[2]).toBe(chatTab)
     } finally {
       restore()

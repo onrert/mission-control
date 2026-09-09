@@ -167,6 +167,59 @@ describe('F-007: üretim CSS çıktısı src/features/kanban/web sınıflarını
   )
 })
 
+describe('F-008: üretim CSS çıktısı src/features/gates/web sınıflarını içerir (@source çiti)', () => {
+  let css: string
+
+  const otherRoots = [
+    path.join(repoRoot, 'src', 'web'),
+    path.join(repoRoot, 'src', 'features', 'events', 'web'),
+    path.join(repoRoot, 'src', 'features', 'projects', 'web'),
+    path.join(repoRoot, 'src', 'features', 'kanban', 'web'),
+    path.join(repoRoot, 'src', 'features', 'chat', 'web'),
+  ]
+
+  function readSourceFiles(root: string): string {
+    let combined = ''
+    for (const entry of fs.readdirSync(root, { withFileTypes: true, recursive: true } as never)) {
+      const e = entry as unknown as { name: string; parentPath?: string; path?: string }
+      const dir = e.parentPath ?? e.path ?? root
+      if (!e.name.endsWith('.ts') && !e.name.endsWith('.tsx')) continue
+      combined += fs.readFileSync(path.join(dir, e.name), 'utf8')
+    }
+    return combined
+  }
+
+  beforeAll(() => {
+    execFileSync(
+      process.execPath,
+      [path.join(repoRoot, 'node_modules', 'vite', 'bin', 'vite.js'), 'build'],
+      { cwd: repoRoot, stdio: 'pipe' }
+    )
+    css = readBuiltCss()
+  }, 60000)
+
+  // Yalnızca `src/features/gates/web/**`'te kullanılan 3 sınıf (aynı ön-koşul deseni).
+  const gatesOnlyClasses = [
+    ['text-fuchsia-400', 'text-fuchsia-400'],
+    ['max-w-lg', 'max-w-lg'],
+    ['border-collapse', 'border-collapse'],
+  ] as const
+
+  it.each(gatesOnlyClasses)('ön koşul: sınıf "%s" diğer beş kökte HİÇ geçmiyor', (cls) => {
+    for (const root of otherRoots) {
+      const content = readSourceFiles(root)
+      expect(content.includes(cls)).toBe(false)
+    }
+  })
+
+  it.each(gatesOnlyClasses)(
+    'sınıf "%s" (yalnızca gates/web) üretilen CSS çıktısında var',
+    (_cls, selectorForm) => {
+      expect(css).toContain(selectorForm)
+    }
+  )
+})
+
 describe('F-012 QA E2 — yapısal çit: src/features/*/web dizinlerinin TÜMÜ index.css @source listesinde', () => {
   // QA F-012 KALDI B1/E2: bu, aynı hata sınıfının (yeni bir `src/features/<x>/web` dizini
   // `@source` listesine eklenmeyi unutur) DÖRDÜNCÜ tekrarıydı (F-003/B1, F-005, F-007, F-012).

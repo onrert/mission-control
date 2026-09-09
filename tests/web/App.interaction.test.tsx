@@ -219,6 +219,9 @@ describe('App.interaction — tablist ok tuşu gezinmesi (QA düzeltme turu 1: T
 
       const timelineTab = screen.getByRole('tab', { name: 'Zaman Çizelgesi' })
       const kanbanTab = screen.getByRole('tab', { name: 'Kanban' })
+      // F-008 — Kapılar koşulsuz eklenir (chat kapalıyken bile); artık SON sekme budur, `End`
+      // bu yüzden Kanban değil Kapılar'ı seçer (tablar: [Zaman Çizelgesi, Kanban, Kapılar]).
+      const gatesTab = screen.getByRole('tab', { name: 'Kapılar' })
 
       timelineTab.focus()
       expect(document.activeElement).toBe(timelineTab)
@@ -235,8 +238,8 @@ describe('App.interaction — tablist ok tuşu gezinmesi (QA düzeltme turu 1: T
       expect(document.activeElement).toBe(timelineTab)
 
       fireEvent.keyDown(timelineTab, { key: 'End' })
-      expect(kanbanTab.getAttribute('aria-selected')).toBe('true')
-      expect(document.activeElement).toBe(kanbanTab)
+      expect(gatesTab.getAttribute('aria-selected')).toBe('true')
+      expect(document.activeElement).toBe(gatesTab)
 
       fireEvent.keyDown(kanbanTab, { key: 'Home' })
       expect(timelineTab.getAttribute('aria-selected')).toBe('true')
@@ -248,7 +251,7 @@ describe('App.interaction — tablist ok tuşu gezinmesi (QA düzeltme turu 1: T
 })
 
 describe('App.interaction — F-012 üçüncü "Sohbet" sekmesi (sunucu chat_enabled:true derken, Y2)', () => {
-  it("End tuşu artık son sekme olan Sohbet'i seçer (üç sekmeli tablist)", async () => {
+  it("End tuşu artık son sekme olan Kapılar'ı seçer (dört sekmeli tablist, F-008)", async () => {
     FakeEventSource.reset()
     const restore = stubGlobals({ chatEnabled: true })
     try {
@@ -263,16 +266,24 @@ describe('App.interaction — F-012 üçüncü "Sohbet" sekmesi (sunucu chat_ena
 
       const timelineTab = screen.getByRole('tab', { name: 'Zaman Çizelgesi' })
       const chatTab = screen.getByRole('tab', { name: 'Sohbet' })
-      expect(screen.getAllByRole('tab')).toHaveLength(3)
+      // F-008 — Kapılar Sohbet'ten SONRA eklenir (docs/03-ux.md sekme sırası), artık SON sekme
+      // budur: [Zaman Çizelgesi, Kanban, Sohbet, Kapılar].
+      const gatesTab = screen.getByRole('tab', { name: 'Kapılar' })
+      expect(screen.getAllByRole('tab')).toHaveLength(4)
 
       timelineTab.focus()
       fireEvent.keyDown(timelineTab, { key: 'End' })
-      expect(chatTab.getAttribute('aria-selected')).toBe('true')
-      expect(document.activeElement).toBe(chatTab)
-      expect(screen.getByTestId('chat-screen')).toBeTruthy()
+      expect(gatesTab.getAttribute('aria-selected')).toBe('true')
+      expect(document.activeElement).toBe(gatesTab)
+      expect(screen.getByTestId('gates-screen')).toBeTruthy()
 
-      fireEvent.keyDown(chatTab, { key: 'Home' })
+      fireEvent.keyDown(gatesTab, { key: 'Home' })
       expect(timelineTab.getAttribute('aria-selected')).toBe('true')
+
+      // Sohbet sekmesine tıklamak hâlâ çalışır (yalnızca End'in hedefi değişti).
+      fireEvent.keyDown(timelineTab, { key: 'ArrowRight' })
+      fireEvent.keyDown(screen.getByRole('tab', { name: 'Kanban' }), { key: 'ArrowRight' })
+      expect(chatTab.getAttribute('aria-selected')).toBe('true')
     } finally {
       restore()
     }

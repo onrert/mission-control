@@ -93,6 +93,12 @@ export interface UseEventStreamOptions {
    */
   onFeatures?: (signal: { project_id: string }) => void
   /**
+   * F-008 (sözleşme §7): `'gates'` SSE kanalına abone olunur — `onFeatures` ile BİREBİR aynı
+   * desen (yalnızca bu callback SAĞLANMIŞSA, ADR-004 madde 1). Payload yalnızca `{project_id}`
+   * taşır (`onFeatures` sapmasının aynısı, §7 — `hub.broadcast('features', ...)` emsali).
+   */
+  onGates?: (signal: { project_id: string }) => void
+  /**
    * F-012 (sözleşme §5) — altı yeni `chat_*` kanalı, `onFeatures` ile BİREBİR aynı desende
    * (yalnızca callback SAĞLANMIŞSA abone olunur, ADR-004 madde 1 "tek bağlantı çok kanal").
    * `onChatSync` farklıdır: bir SSE kanalına değil, native `EventSource` `'open'` olayına
@@ -220,6 +226,15 @@ export function useEventStream(
         // bozuk `features` verisi sessizce yok sayılır — akışın geri kalanını etkilemez.
       }
     }
+    const handleGates = (evt: MessageEvent): void => {
+      if (!options.onGates) return
+      try {
+        const signal = JSON.parse(evt.data as string) as { project_id: string }
+        options.onGates(signal)
+      } catch {
+        // bozuk `gates` verisi sessizce yok sayılır — akışın geri kalanını etkilemez.
+      }
+    }
     // F-012 §5 — altı `chat_*` kanalı, `onFeatures`'ın BİREBİR aynı deseni (bozuk JSON sessizce
     // yok sayılır, yalnızca callback SAĞLANMIŞSA abone olunur). Tek bir fabrika ile tekrar
     // önlenir; her kanalın kendi `MessageEvent` dinleyicisi olması gerektiği için (`removeEventListener`
@@ -257,6 +272,9 @@ export function useEventStream(
     if (options.onFeatures) {
       es.addEventListener('features', handleFeatures)
     }
+    if (options.onGates) {
+      es.addEventListener('gates', handleGates)
+    }
     for (const [name, handler] of chatHandlers) {
       es.addEventListener(name, handler)
     }
@@ -271,6 +289,9 @@ export function useEventStream(
       if (options.onFeatures) {
         es.removeEventListener('features', handleFeatures)
       }
+      if (options.onGates) {
+        es.removeEventListener('gates', handleGates)
+      }
       for (const [name, handler] of chatHandlers) {
         es.removeEventListener(name, handler)
       }
@@ -282,6 +303,7 @@ export function useEventStream(
     loadEvents,
     options.onProjects,
     options.onFeatures,
+    options.onGates,
     options.onChatMessage,
     options.onChatUserEcho,
     options.onChatToolEvent,

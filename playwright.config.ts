@@ -11,7 +11,13 @@ process.on('exit', () => removeTempDataDir(e2eDataDir))
 
 export default defineConfig({
   testDir: 'tests/e2e',
-  testMatch: ['shell.spec.ts', 'timeline.spec.ts', 'settings.spec.ts', 'kanban.spec.ts'],
+  testMatch: [
+    'shell.spec.ts',
+    'timeline.spec.ts',
+    'settings.spec.ts',
+    'kanban.spec.ts',
+    'gates.spec.ts',
+  ],
   // Tüm spec dosyaları TEK paylaşılan `webServer`/`MC_DATA_DIR`/proje kaydını kullanıyor
   // (yukarıdaki yorum). `kanban.spec.ts` gerçek `POST/DELETE /api/projects` çağrıları yapan
   // testler eklediğinden (F-007), varsayılan çoklu-worker paralelliği farklı spec

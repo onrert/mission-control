@@ -7,17 +7,23 @@ import { SettingsScreen } from '../features/projects/web/SettingsScreen'
 import { KanbanScreen } from '../features/kanban/web/KanbanScreen'
 import { ChatScreen } from '../features/chat/web/ChatScreen'
 import { useChatSession } from '../features/chat/web/useChatSession'
+import { GatesScreen } from '../features/gates/web/GatesScreen'
 import type { ProjectListItem } from '../shared/types'
 
-type ActiveScreen = 'timeline' | 'settings' | 'kanban' | 'chat'
-type TabScreen = 'timeline' | 'kanban' | 'chat'
+type ActiveScreen = 'timeline' | 'settings' | 'kanban' | 'chat' | 'gates'
+type TabScreen = 'timeline' | 'kanban' | 'chat' | 'gates'
 
+// F-008 (G0 kararı: Kapılar F-009'un önüne geçer) — Kapılar Faz 2'den Faz 1 kabuğuna KOŞULSUZ
+// eklenir (chat'in aksine bir sunucu bayrağına bağlı değil). Sıra `docs/03-ux.md:735` — Sohbet
+// varsa ondan SONRA, yoksa Kanban'dan sonra (`docs/03-ux.md` sekme sırası: "[Zaman Çizelgesi]
+// [Kanban][Sohbet][Kapılar][Thread][Token]").
 function buildTabs(chatEnabled: boolean): Array<{ screen: TabScreen; label: string }> {
   const tabs: Array<{ screen: TabScreen; label: string }> = [
     { screen: 'timeline', label: 'Zaman Çizelgesi' },
     { screen: 'kanban', label: 'Kanban' },
   ]
   if (chatEnabled) tabs.push({ screen: 'chat', label: 'Sohbet' })
+  tabs.push({ screen: 'gates', label: 'Kapılar' })
   return tabs
 }
 
@@ -42,6 +48,7 @@ export default function App() {
   const [lastTabScreen, setLastTabScreen] = useState<TabScreen>('timeline')
   const [projectsUpdate, setProjectsUpdate] = useState<ProjectListItem[] | null>(null)
   const [featuresSignal, setFeaturesSignal] = useState<{ project_id: string } | null>(null)
+  const [gatesSignal, setGatesSignal] = useState<{ project_id: string } | null>(null)
 
   // F-003 §2.2: tek `useEventStream()` çağrısı App kökünde — tek SSE bağlantısı. TimelineScreen
   // kendi bağlantısını açmaz, bu sonucu prop olarak alır. F-005: `onProjects` de aynı tek
@@ -51,6 +58,7 @@ export default function App() {
   const stream = useEventStream('/api/stream', '/api/events', {
     onProjects: setProjectsUpdate,
     onFeatures: setFeaturesSignal,
+    onGates: setGatesSignal,
     onChatMessage: chat.handlers.onChatMessage as (payload: unknown) => void,
     onChatUserEcho: chat.handlers.onChatUserEcho as (payload: unknown) => void,
     onChatToolEvent: chat.handlers.onChatToolEvent as (payload: unknown) => void,
@@ -203,6 +211,21 @@ export default function App() {
             </ScreenErrorBoundary>
           </div>
         )}
+        <div
+          id="panel-gates"
+          role="tabpanel"
+          aria-labelledby="tab-gates"
+          hidden={activeScreen !== 'gates'}
+          className="h-full"
+        >
+          <ScreenErrorBoundary>
+            <GatesScreen
+              liveProjectsUpdate={projectsUpdate}
+              gatesSignal={gatesSignal}
+              onNavigateSettings={() => setActiveScreen('settings')}
+            />
+          </ScreenErrorBoundary>
+        </div>
         <div id="panel-settings" hidden={activeScreen !== 'settings'} className="h-full">
           <SettingsScreen liveUpdate={projectsUpdate} />
         </div>

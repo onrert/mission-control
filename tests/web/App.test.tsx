@@ -19,10 +19,19 @@ describe('App (AC6 — DOMsuz statik render)', () => {
     expect(html).toContain('Ayarlar')
   })
 
-  it('Faz 2 ekranları hiç görünmez (Kapılar, Thread, Token)', () => {
-    expect(html).not.toContain('Kapılar')
+  it('Faz 1 kabuğu üç sekme: Zaman Çizelgesi, Kanban, Kapılar; Thread/Token hâlâ Faz 2, hiç görünmez', () => {
+    // F-008 (G0 kararı) — Kapılar Faz 1 kabuğuna koşulsuz geçti; Thread/Token hâlâ eklenmedi.
+    // Kapalı-küme çiti (CLAUDE.md dersi, F-008 tur 3 Y1 madde 3): yalnızca "Kapılar artık var"
+    // demek yerine ÜÇ bilinen etiketin varlığı + toplam sekme sayısının TAM 3 olması BİRLİKTE
+    // doğrulanır — böylece ileride kazara eklenen dördüncü bir sekme de bu testi kırar.
+    expect(html).toContain('Zaman Çizelgesi')
+    expect(html).toContain('Kanban')
+    expect(html).toContain('Kapılar')
     expect(html).not.toContain('Thread')
     expect(html).not.toContain('Token')
+    const headerMatch = /<header[\s\S]*?<\/header>/.exec(html)
+    const headerHtml = headerMatch![0]
+    expect(headerHtml.match(/role="tab"/g)).toHaveLength(3)
   })
 
   it('üst çubukta (header) tam olarak bir tıklanabilir öğe var: Ayarlar düğmesi (F-005)', () => {
@@ -44,8 +53,9 @@ describe('App (AC6 — DOMsuz statik render)', () => {
     // Mimari sapması (kasıtlı, §6 madde 1) — `aria-current="page"` `aria-selected`'ın yerini aldı.
     expect(headerHtml).not.toContain('aria-current="page"')
     expect(headerHtml).toContain('role="tablist"')
-    // İki gerçek sekme: Zaman Çizelgesi (seçili, tabIndex 0) + Kanban (seçili değil, tabIndex -1).
-    expect(headerHtml.match(/role="tab"/g)).toHaveLength(2)
+    // Üç gerçek sekme (F-008): Zaman Çizelgesi (seçili, tabIndex 0) + Kanban + Kapılar (seçili
+    // değil, tabIndex -1).
+    expect(headerHtml.match(/role="tab"/g)).toHaveLength(3)
     expect(headerHtml).toContain('id="tab-timeline"')
     expect(headerHtml).toContain('aria-controls="panel-timeline"')
     expect(headerHtml).toContain('aria-selected="true"')

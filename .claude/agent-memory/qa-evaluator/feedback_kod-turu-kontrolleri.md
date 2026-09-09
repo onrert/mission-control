@@ -265,3 +265,49 @@ mutasyon planlanmamış kod yollarını, (b) çok katmanlı savunmaların ikinci
    iddialarını ("4+ haneli her sayı — telefon, TC, kart, IBAN — reddedilir") her sınıf için
    ayrı sondayla sına: F-009'da kart ve IBAN yakalandı (harf taşıyorlar), telefon ve TC
    boşluklu yazımda geçti — iddia sınıf düzeyinde yanlıştı.
+
+---
+
+## F-010 turunda eklenen beş teknik (salt-okunur "best-effort" ekran)
+
+31. **"Asla fırlatmaz" garantisi OKUYUCUYA aittir, GUARD'a değil — best-effort yolundaki her
+    `fs` çağrısını tek tek sayıp sarılı olup olmadığına bak.** F-010'da `buildTranscriptSection`
+    dört `fs` çağrısının üçünü özenle sarmıştı; sarılmayan tek çağrı
+    `readAllowedTranscript` → `resolveAllowedTranscriptPath` → **`fs.realpathSync.native`**'di.
+    `readTranscript`'in tepesindeki "ASLA istisna fırlatmaz" yorumu guard'ı kapsamıyor. Gerçek
+    Windows koşulunda (ACL/AV/kilit) EPERM fırladı, dağıtıcı hata sınırı 500 döndü ve
+    **ekranın tamamı** (CEO brief + sözleşme + tüm QA raporları) kayboldu — yani ekranın varlık
+    gerekçesi olan ADR ("bu kaynak okunamasa bile ekran kullanışlı kalır") tam olarak burada
+    düştü. F-002→F-005→F-007'nin YAZMA ikizinin OKUMA hâli. Ölçüm reçetesi: `icacls <dosya>
+    /deny "<kullanıcı>:(RA,RD,RX)"` sonra node sondası — `existsSync`/`lstatSync`/`statSync` OK
+    dönerken `realpathSync.native` ve `readFileSync` THROW eder. **Uzun yol tuzağı:** icacls
+    ~230 karakterlik yolda "Sistem belirtilen yolu bulamıyor" der; fixture'ı `C:\…\Temp\<kısa>`
+    altına kur.
+32. **E2E çitinin ölçtüğü YAPILANDIRMA ile ürünün SEVK EDİLEN varsayılanını karşılaştır.**
+    F-010'un dar-genişlik çiti `clippedVisibleWidth('#tab-thread') > 0` diyordu ve yeşildi —
+    ama `playwright.config.ts` `MC_CHAT_ENABLED:'0'` ile koşuyor, yani **dört** sekme ölçüyor.
+    Üretim varsayılanı (`/api/chat/status.session_active:true`) **beş** sekme ve orada yeni
+    sekmenin kırpılmış görünür genişliği 320 ve 375 px'te **0 px**. Ayrıca `> 0` eşiği 4 sekmeli
+    hâlde bile **5 piksellik** bir kıymığı geçerli sayıyordu. Kural: (a) sunucunun bayrak
+    durumunu canlı sor, (b) sekme/öğe sayısını DOM'dan say, (c) eşiği pikselle kalibre et,
+    (d) aynı ölçümü öğe DOM'dan çıkarılarak "diğer yapılandırma" için de yap (30 saniye).
+33. **`overflow-y-auto` tek başına yatay kaydırma da açar.** CSS'te bir eksen `auto` olunca
+    diğeri `visible` kalamaz, `auto`ya döner. F-010'da içerik-boyutlu bir `<select>` (828 px)
+    375 px'lik kapta **555 px** hayalet yatay kaydırma alanı yarattı; sağa kaydırınca ekran
+    tamamen boşaldı. "İç içe kaydırma kabı sayısı 0" bunu GÖRMEZ — kabın KENDİSİ kayıyor.
+    Her dar-genişlik turunda `root.scrollWidth` vs `root.clientWidth` karşılaştır ve taşan
+    torunu `getBoundingClientRect().right > box.right` ile bul.
+34. **Başlık/frontmatter alanı arayan regex'leri BELGENİN GÖVDESİNDEN yen.** `^ESKALE:\s*true$`
+    `m` bayrağıyla TÜM belgeyi tarıyordu; QA raporlarının zorunlu ilk satırlarını **kod bloğu
+    içinde alıntılayan** gerçekçi bir `latest.md` yanlış feature'da rozet çıkardı. En güçlü
+    kanıt: **raporun kendisi** aynı alıntıyı içerdiği için `latest.md` olarak kopyalandığında
+    bulguyu canlı üretti (`eskale=true`, oysa ilk satır `ESKALE: false`). Deseni gevşeten
+    mutasyon (çapaları + `m` kaldır) 1210/1210 yeşil kaldı → çit yok. Kural: "ilk satırlarda
+    şu alan varsa" tipi her iddiada gövdeye alıntı koy; negatif test iste.
+35. **"Kronolojik" iddiasını GERÇEK veriyle dök ve monotonluğu ölç.** F-010 zinciri ilk iki
+    bölümü ROLE göre sabitleyip QA raporlarını mtime'a göre sıralıyordu; bu depodaki beş gerçek
+    feature'ın **beşinde de** görünen zaman damgaları iki kez geriye gidiyordu (F-012'de
+    `-contract.md` 05:29, ondan sonra listelenen `-contract-review-1.md` 04:15). Üç satırlık
+    bir döküm betiği (`prev > cur` işaretle) bu sınıfı anında verir. Ayrıca aynı dökümde
+    "kaç bölüm birbirinden ayırt edilemiyor" sorusunu sor: F-012'de dokuz "QA kararı"nın beşi
+    başlık+damga dışında hiçbir ayırt edici bilgi taşımıyordu (dosya adı gösterilmiyor).

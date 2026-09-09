@@ -15,11 +15,30 @@ her iddia ✓ DOĞRULANDI (dosya okunarak), ⊢ ÇIKARIM veya [T] TAHMİN olarak
 - **Tarih:** 2026-09-09.
 - **Kurulu CLI sürümü** (`claude --version`): **2.1.205 (Claude Code)**. ✓ DOĞRULANDI (komut
   doğrudan çalıştırıldı).
-- **Transkriptlerin kendi `version` alanı: `2.1.261`** — CLI binary sürümünden **farklı**.
-  ✓ DOĞRULANDI (217 dosyanın tamamında aynı değer gözlendi). ⊢ ÇIKARIM: bu, oturumu üreten
-  SDK/harness'ın (`claude-agent-sdk` / masaüstü uygulaması) kendi iç sürümü olabilir, CLI paket
-  sürümüyle birebir eşleşmesi gerekmiyor. **Bir sonraki doğrulamada HER İKİSİNİ de yeniden
-  ölçüp buraya yaz** — biri değişip diğeri değişmeyebilir.
+- **Transkriptlerin kendi `version` alanı ÜÇ farklı değer taşıyor, TEK bir değer DEĞİL.**
+  QA düzeltme turu (U5, BLOKLAYICI) — önceki `✓ DOĞRULANDI (217 dosyanın tamamında aynı değer)`
+  iddiası **YANLIŞTI**: o ölçüm tek bir dosyanın ilk satırından okunmuştu, `version` alanı hiç
+  toplu sayılmamıştı. Bu turda (2026-09-09, aynı gün) **tam tarama** tekrarlandı:
+  `find ~/.claude/projects/C--dev-apps-mission-control -name '*.jsonl' -print0 | xargs -0 grep
+  -oh '"version":"[^"]*"' | sort | uniq -c` → **219 dosya, 47.396 satırda `version` alanı**:
+
+  | `version` | satır sayısı |
+  |---|---:|
+  | `2.1.260` | 45.494 (baskın, ~%96) |
+  | `2.1.261` | 1.894 |
+  | `2.1.205` | 8 |
+
+  ✓ DOĞRULANDI (219 dosyanın TAMAMI tarandı, içerik hiçbir yere kopyalanmadı — yalnızca alan
+  sayıları). **Baskın değer `2.1.260`** — önceki turun tek iddia ettiği `2.1.261` aslında
+  AZINLIKTA (%4). Ayrıca `2.1.205` — **kurulu CLI sürümünün kendisi** (`claude --version` →
+  `2.1.205 (Claude Code)`, aynı gün ✓ DOĞRULANDI) — transkript içinde de 8 satırda geçiyor. Bu,
+  önceki turun "transkript sürümü CLI'dan her zaman ayrı bir SDK/harness sürümüdür" ⊢ ÇIKARIM'ını
+  ÇÜRÜTÜYOR: en azından bazı oturumlarda ikisi AYNI. ⊢ DÜZELTİLMİŞ ÇIKARIM: transkriptin `version`
+  alanı, o satırı üreten Claude Code SÜRECİNİN o anki kendi sürümüdür (CLI güncellemesi sırasında
+  eski süreçler eski sürüm yazmaya devam eder) — sabit bir "SDK sürümü ≠ CLI sürümü" kuralı YOK,
+  gözlemlenen çoklu değer büyük olasılıkla art arda gelen CLI güncellemelerinin izidir. **Bir
+  sonraki doğrulamada yine TAM tarama yap** (tek dosya örneklemesi YETMEZ — bu turun asıl hatası
+  buydu), üç değeri de güncelle.
 - **İncelenen kaynak:** `C:\Users\pc\.claude\projects\C--dev-apps-mission-control\` altındaki
   **217 gerçek `.jsonl` dosyası** (ana oturum + `*/subagents/*.jsonl`), yalnızca `type` alanı
   sayıları ve `message.usage` alan adları toplandı (satır içerikleri bu sayfaya veya herhangi bir
@@ -114,17 +133,39 @@ elle tekrarlanabilir, kod yazmadan yapılır:
 2. **Yeni bir gerçek `.jsonl` oluştur** (kısa bir oturum başlat, birkaç mesaj gönder) ve dosyanın
    kendi `version` alanını oku (`grep -o '"version":"[^"]*"' <dosya> | head -1`). Bu sayfanın
    "transkriptlerin kendi version alanı" satırıyla karşılaştır.
-3. **Tip taraması tekrarla:** aşağıdaki tek satırlık script'i (veya benzerini) `~/.claude/
-   projects/<bu-projenin-kodlanmış-adı>/` üzerinde çalıştır ve "Gözlemlenen üst seviye type
-   değerleri" tablosuyla karşılaştır — **yeni bir tip çıktıysa** bu tablo satırı eklenerek
-   güncellenmeli (okuyucunun kendisi zaten güvenli — yeni tip otomatik olarak
-   `unknown_type_lines`'a düşer, throw ETMEZ):
+3. **Tip taraması tekrarla:** aşağıdaki script'i `~/.claude/projects/<bu-projenin-kodlanmış-adı>/`
+   üzerinde çalıştır ve "Gözlemlenen üst seviye type değerleri" tablosuyla karşılaştır — **yeni
+   bir tip çıktıysa** bu tablo satırı eklenerek güncellenmeli (okuyucunun kendisi zaten güvenli —
+   yeni tip otomatik olarak `unknown_type_lines`'a düşer, throw ETMEZ).
+   QA düzeltme turu (U6, B7) — önceki script `if False` dalında **hiç çalışmıyordu**
+   (`None` değerlendirip çıktı üretmiyordu); alttaki, **bu turda gerçekten çalıştırılıp** çıktısı
+   doğrulanan biçimdir:
+   ```bash
+   python3 -c "
+   import json, glob, os
+   d = os.path.expanduser('~/.claude/projects/C--dev-apps-mission-control')
+   t = {}
+   for f in glob.glob(os.path.join(d, '**', '*.jsonl'), recursive=True):
+       with open(f, encoding='utf-8', errors='replace') as fh:
+           for line in fh:
+               if not line.strip():
+                   continue
+               try:
+                   obj = json.loads(line)
+               except Exception:
+                   continue
+               ty = obj.get('type') if isinstance(obj, dict) else None
+               t[ty] = t.get(ty, 0) + 1
+   for k in sorted(t, key=lambda x: -t[x]):
+       print(k, t[k])
+   "
    ```
-   python3 -c "import json,glob;t={} ;[t.update({d.get('type'):t.get(d.get('type'),0)+1}) for f in glob.glob('*.jsonl') for l in open(f,encoding='utf-8',errors='replace') if l.strip() for d in [json.loads(l)] if True] if False else None"
-   ```
-   (Pratikte: bir dosyayı satır satır oku, her satırı `JSON.parse`/`json.loads` et, `type`
-   alanının değer kümesini topla — bu spike'ın araştırma script'inin aynısı, repoya dahil
-   edilmedi çünkü tek seferlik araştırma aracı, kalıcı ürün kodu değil.)
+   **Bu turda gerçekten koşturuldu (2026-09-09), gerçek çıktı** (219 dosya, 0 bozuk satır):
+   `assistant 21123`, `attachment 13701`, `user 12422`, `queue-operation 1078`,
+   `agent-setting 651`, `last-prompt 637`, `atis-latch 635`, `bridge-session 450`, `system 363`,
+   `custom-title 345`, `mode 336`, `permission-mode 2`, `file-history-snapshot 2` — aşağıdaki
+   tabloyla (dev turunun 217-dosyalık ölçümü) birebir aynı tip kümesi, sayılar oturum devam
+   ettiği için doğal olarak artmış. ✓ DOĞRULANDI (gerçekten çalıştırıldı, uydurulmuş çıktı değil).
 4. **`message.usage` alan adlarını karşılaştır:** aynı taramada `type:"assistant"` satırlarının
    `message.usage` anahtarlarını topla, "usage alan adları" bölümüyle karşılaştır. Yeni bir alan
    çıktıysa ve Token ekranı (F-011) için önemliyse `transcript-reader.ts`'e eklenmesi ayrı bir

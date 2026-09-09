@@ -1,7 +1,7 @@
 ---
 id: F-009
 title: Spike — transkript format doğrulama + dayanıklı okuyucu + fixture'lar
-status: fix
+status: qa
 owner: developer
 deps: [F-003]
 sprint: 2
@@ -29,4 +29,12 @@ detay `docs/qa/F-009-contract.md` §1 madde 6).
 ## Notlar / kararlar
 - Çıktısı kod değil, doğrulanmış format + fixture + okuyucudur; QA kriteri bozuk fixture'larda çökmemektir.
 - Sözleşme: `docs/qa/F-009-contract.md` (T1-T6 CEO kararları + davranış/doğrulama eşleşmesi + 5 mutasyon).
-- Kod turu tamamlandı 2026-09-09; QA turu bekleniyor.
+- Kod turu tamamlandı 2026-09-09; QA turu 1 KALDI kararı verdi (`docs/qa/F-009-2026-09-09.md`,
+  2 bloklayıcı + 5 önemli + 4 yeşil mutasyon). Düzeltme turu (CEO kararları U1-U8) aynı gün
+  tamamlandı, detay `docs/progress.md`. Feature durumu tekrar `qa`'ya alındı.
+- **F-010 bağlamazsa sil:** `createTranscriptReaderStatsTracker()`'ın `.record()`'u bu turda da
+  (round-2 sonunda) hiçbir üretim kodu tarafından çağrılmıyor (QA B8, "kabul edilebilir" kararı
+  round-1'de verildi). F-010/F-011 bu fonksiyonu gerçek bir okuma yoluna bağlamazsa, bu ~25
+  satırlık tüketicisiz kod Karpathy §2 gereği kaldırılmalı (`transcript-reader.ts`'teki
+  `createTranscriptReaderStatsTracker`/`TranscriptReaderStats`/`TranscriptReaderStatsTracker` +
+  `src/server/index.ts`'teki entegrasyonu + `/api/health.transcript_reader` alanı).

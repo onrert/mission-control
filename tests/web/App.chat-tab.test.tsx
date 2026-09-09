@@ -44,6 +44,30 @@ function stubGlobals(chatEnabled: boolean) {
         json: async () => ({ success: true, data: { entries: [], has_more: false } }),
       } as Response
     }
+    // F-011 — `/api/usage` bir dizi DEĞİL, `UsageReport` nesnesi döner (aşağıdaki genel `data:
+    // []` yedeği diğer uçlar için yeterli ama `UsageScreen`'in `report.projects` beklentisini kırar).
+    if (url.includes('/api/usage')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: {
+            projects: [],
+            usage: {
+              input_tokens: 0,
+              output_tokens: 0,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+            },
+            lines_ok: 0,
+            lines_bad: 0,
+            degraded: false,
+            source_unreadable: false,
+          },
+        }),
+      } as Response
+    }
     return { ok: true, status: 200, json: async () => ({ success: true, data: [] }) } as Response
   })
   window.fetch = fetchMock as unknown as typeof fetch
@@ -70,15 +94,15 @@ afterEach(() => {
 })
 
 describe("App — Sohbet sekmesi görünürlüğü ÇALIŞMA ZAMANINDA /api/chat/status.chat_enabled'a bağlı (Y2)", () => {
-  it('sunucu chat_enabled:false derken (ör. e2e sonrası derlenmiş ama açık sunucu) 3 sekme kalır (Kapılar koşulsuz eklenir), Sohbet hiç yok', async () => {
+  it('sunucu chat_enabled:false derken (ör. e2e sonrası derlenmiş ama açık sunucu) 5 sekme kalır (Kapılar/Thread/Token koşulsuz eklenir), Sohbet hiç yok', async () => {
     FakeEventSource.reset()
     const restore = stubGlobals(false)
     try {
       await renderAndWaitForStatus()
       // F-008 (G0 kararı) — Kapılar Faz 1 kabuğuna KOŞULSUZ eklenir, `chat_enabled`'a bağlı
-      // değil. F-010 (W9) — Thread de koşulsuz eklenir. Sekmeler: [Zaman Çizelgesi, Kanban,
-      // Kapılar, Thread].
-      expect(screen.getAllByRole('tab')).toHaveLength(4)
+      // değil. F-010 (W9) — Thread de koşulsuz eklenir. F-011 — Token de koşulsuz eklenir.
+      // Sekmeler: [Zaman Çizelgesi, Kanban, Kapılar, Thread, Token].
+      expect(screen.getAllByRole('tab')).toHaveLength(5)
       expect(screen.queryByRole('tab', { name: 'Sohbet' })).toBeNull()
       expect(document.getElementById('panel-chat')).toBeNull()
     } finally {
@@ -86,13 +110,13 @@ describe("App — Sohbet sekmesi görünürlüğü ÇALIŞMA ZAMANINDA /api/chat
     }
   })
 
-  it("sunucu chat_enabled:true derken 4. sekme (Sohbet) belirir, Kanban'dan sonra Kapılar'dan önce gelir", async () => {
+  it("sunucu chat_enabled:true derken 3. sekme (Sohbet) belirir, Kanban'dan sonra Kapılar'dan önce gelir", async () => {
     FakeEventSource.reset()
     const restore = stubGlobals(true)
     try {
       await renderAndWaitForStatus()
       const tabs = screen.getAllByRole('tab')
-      expect(tabs).toHaveLength(5)
+      expect(tabs).toHaveLength(6)
       const chatTab = screen.getByRole('tab', { name: 'Sohbet' })
       expect(chatTab).toBeTruthy()
       expect(document.getElementById('panel-chat')).not.toBeNull()

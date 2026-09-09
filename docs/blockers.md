@@ -366,8 +366,11 @@ yalnızca **teorik bit taşıyor**, okunabilir metin taşımıyor. Kalanlar:
    54/54 yeşil kalıyor. Çıplak sayı / ISO / UUID çitli.
 4. **Sözleşme §7.1'in "4+ haneli her sayı reddedilir" cümlesi sınıf düzeyinde yanlış** —
    ISO 15 hane, semver 9, msg-id 4 hane geçiyor. Belge düzeltilmeli.
-5. **`record()` hâlâ tüketicisiz** (`transcript_reader` sayaçları dürüstçe sıfır).
-   **Eşik:** F-010 bunu bağlamazsa **sil**.
+5. ~~**`record()` hâlâ tüketicisiz**~~ — **KAPANDI (2026-09-09, F-010).** `handleThreadDetail`
+   şimdi `transcriptReaderStats`'ı (`/api/health` ile PAYLAŞILAN örnek) her gerçek transkript
+   okumasından sonra `.record()` ile besliyor. Kanıt: `tests/integration/thread-api.test.ts`
+   "W2" bloğu + mutasyon (satır yorumlanınca sayaç testi TEK BAŞINA KIRMIZI, geri alındı).
 
-**Ortak eşik:** F-010 transkript okuyucusunu üretimde kullanmaya başladığında 1, 3 ve 5 birlikte
-ele alınmalı; 2 ve 4 belge/yapılandırma düzeltmesi, bağımsız kapatılabilir.
+**Ortak eşik:** F-010 transkript okuyucusunu üretimde kullanmaya başladı (5 kapandı); 1 ve 3 hâlâ
+açık, bir sonraki transkript-okuyucuya dokunan feature'da birlikte ele alınmalı. 2 ve 4 belge/
+yapılandırma düzeltmesi, bağımsız kapatılabilir.

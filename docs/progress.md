@@ -3186,3 +3186,108 @@ tekrarlıyorsa yamayı bırak, yapısal çit koy"). Kod yazmadan önce sözleşm
 
 **Sonraki adım**
 - qa-evaluator F-009'u tekrar değerlendirsin (feature notu `status: qa`).
+
+---
+
+## 2026-09-09 — F-010 (Thread görünümü) uygulandı, `status: qa`
+
+**Ne yapıldı**
+
+Sunucu tarafı (`src/features/thread/server/{thread-detail,handlers}.ts`) ve web tarafı
+(`src/features/thread/web/{ThreadScreen,ThreadSectionCard,useThreadDetail,
+useProjectFeatureList}.ts(x)`) önceki turda diskte hazırdı (bkz. `docs/qa/F-010-contract.md`
+sözleşmesi); bu tur onları tamamladı ve devreye aldı:
+
+- **W1 — ikinci okuma yolu kurulmadı**: `buildThreadDetail`, F-013'ün `buildFeatureDetail`'ini
+  ve F-013'ün `resolveInsideRootForRead`'ini DOĞRUDAN çağırıyor; transkript zenginleştirmesi
+  F-009'un `findAllowedTranscriptDirectories`/`readAllowedTranscript`'ini DOĞRUDAN kullanıyor —
+  hiçbir dosya bu iki fonksiyonun içeriğine dokunmadı (`git diff` transcript-reader.ts'te sıfır).
+- **W2 — `record()` bağlandı**: `src/server/index.ts`'in zaten sahip olduğu tek
+  `transcriptReaderStats` örneği (`/api/health` ile PAYLAŞILAN) `handleThreadDetail`'e geçirildi;
+  her gerçek transkript okumasından sonra `.record()` çağrılıyor. Kanıt: `tests/integration/
+  thread-api.test.ts` "W2" bloğu `GET /api/thread/detail` çağrısından SONRA `/api/health`'in
+  `files_seen`/`lines_ok` sayaçlarının 0'dan gerçekten arttığını ölçüyor (F-009'dan devreden borç
+  #5 kapandı — `docs/blockers.md` eşiği "F-010 bağlamazsa sil" yerine bağlandı).
+- **Asıl bu turun işi — App.tsx'e sekme bağlantısı (W9)**: `TabScreen` union'ına `'thread'`
+  eklendi, `buildTabs()` Kapılar'dan hemen sonra koşulsuz "Thread" ekliyor (Kapılar emsali, bir
+  sunucu bayrağına bağlı değil), yeni `panel-thread` `tabpanel` eklendi. Kapalı-küme çitleri
+  güncellendi: `tests/web/App.test.tsx` (3→4 sekme), `tests/web/App.chat-tab.test.tsx` (3→4,
+  4→5), `tests/web/App.interaction.test.tsx` ("End" artık son sekme olan Thread'i seçiyor),
+  `tests/e2e/shell.spec.ts` (`tabRoleCount`/`clickableCount` 3/4→4/5).
+- Web birim testleri yazıldı: `tests/features/thread/web/ThreadScreen.test.tsx` (9 test — boş
+  durumlar, kronolojik sıralama AC1, "sözleşme/QA yok" notu, okunamayan bölüm AC2/AC3, ESKALE
+  rozeti AC4/W6 var/yok, hata banner'ı W5).
+- E2E testleri yazıldı: `tests/e2e/thread.spec.ts` (3 test grubu — kronolojik zincir gerçek
+  tarayıcıda, feature değişince salt-okunurluk fs manifestiyle doğrulandı, 320/375/480px
+  `clippedVisibleWidth` + tek kaydırma bağlamı W7 ölçümü); `playwright.config.ts`'in
+  `testMatch`'ine eklendi (`e2e-config-guard` yapısal çiti bunu zorunlu kıldı).
+- `src/web/index.css`'e `@source "../features/thread/web"` eklendi (`build-css.test.ts`'in
+  yapısal çiti — F-003/F-005/F-007/F-012'de dört kez unutulan hatanın CLAUDE.md'nin önerdiği
+  `readdirSync` tabanlı testi bu kez YAKALADI, ilk denemede kırmızı verip düzeltmeyi zorladı).
+- `docs/03-ux.md` ekran 5: ESKALE banner metni zaten sabit/veriyle tutarlıydı (mockup'taki
+  illüstratif "3 QA turu aşıldı (tarih)" hiç yazılmamış) — W8 için ek değişiklik gerekmedi.
+
+**Nasıl doğrulandı**
+
+- `npx vitest run tests/features/thread tests/integration/thread-api.test.ts` → **102 passed**
+  (önceki turdan devreden sunucu testleri, bu turda dokunulmadı).
+- `npx vitest run tests/features/thread/web/ThreadScreen.test.tsx` → **9 passed**.
+- Beş zorunlu mutasyon uygulandı → **KIRMIZI gözlemlendi** → birebir geri alındı (`git diff`
+  her seferinde temiz):
+  1. **W2** — `statsTracker.record(...)` satırı yorumlandı → W2 sayaç testi TEK BAŞINA KIRMIZI
+     (`afterStats.files_seen` beklenen 1 yerine 0).
+  2. **W3** — `buildThreadDetail` içine `fs.writeFileSync(...,'.mutation-probe',...)` eklendi →
+     `thread-read-only-manifest.test.ts` KIRMIZI (manifest farkı: yeni dosya listede).
+  3. **W4** — `findAllowedTranscriptDirectories`'in dönüşü zorla `[]` yapıldı → yalnızca
+     transkript-spesifik iki test KIRMIZI oldu (geçerli transkript + bozuk satır testleri),
+     W4'ün kendi "dizin hiç yoksa CEO/dev/QA hâlâ dolu" testi YEŞİL KALDI — tam olarak beklenen
+     ayrım (resilience kanıtlanmış oldu, transkript-kapsamı testi doğru şekilde kırıldı).
+  4. **W5** — `readAllowedTranscript` çağrısından önce `throw new Error(...)` eklendi →
+     `tests/integration/thread-api.test.ts`'in W2 testi KIRMIZI (200 yerine 500) VE
+     `src/server/index.ts`'in `withDispatchErrorBoundary`'si (F-005/F-007 dersiyle kurulmuş
+     genel senkron hata sınırı) yakalayıp sabit "Beklenmeyen bir sunucu hatası oluştu"
+     mesajıyla 500 döndüğü doğrulandı — ham mesaj yalnızca sunucu `stderr`'ına yazıldı, HTTP
+     yanıtına SIZMADI.
+  5. **W6** — `isEscalatedFor`'daki feature-id eşleştirmesi kaldırıldı (yalnızca `ESKALE: true`
+     kontrolü kaldı) → "latest.md BAŞKA bir feature'a aitse rozet sızmaz" testi TEK BAŞINA
+     KIRMIZI (`eskale` beklenen `false` yerine `true`).
+  - `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca kalıcı, meşru test
+    adları (F-009'dan devreden `MUTASYON hedefi` başlıkları + `write-gate-manifest.test.ts:124`),
+    kaynak kodda kalıntı YOK.
+- `npm run verify` (typecheck + lint + test + build) → ilk koşuda 3 kırmızı (2'si dokunulmamış
+  `chat/history-log`/`send-event-hook` testleri — CLAUDE.md'nin bilinen vitest worker-fork
+  kararsızlığı, tekrar koşuda YEŞİL; 1'i `build-css.test.ts`'in yeni-dizin çiti — yukarıdaki
+  `@source` eklemesiyle düzeltildi). İkinci/son koşu: **0** — typecheck temiz, lint temiz,
+  **1210 passed, 4 skipped (80 dosya)**, build başarılı.
+- `npm run e2e` → **41 passed (38.3s)** — F-010'un 5 yeni testi dahil, önceki 36 test de
+  (kapalı-küme güncellemeleri sonrası) yeşil.
+- Dar genişlik: 320/375/480px'te `#tab-thread`, `thread-project-select`
+  `clippedVisibleWidth() > 0` (gerçek tıklanabilir alan, `toBeVisible()` DEĞİL); `thread-screen`
+  kökü DIŞINDA hiçbir torun eleman `overflow-y:auto|scroll` taşımıyor (`nestedScrollCount === 0`,
+  W7 tek kaydırma bağlamı doğrulandı).
+- Yetim süreç: `Get-CimInstance Win32_Process -Filter "Name='node.exe'"` yalnızca ilgisiz
+  `hayat-mentoru` süreçlerini + bağlantısız bir `04-settings.mjs` scriptini gösterdi (hiçbiri bu
+  turda başlatılmadı, dokunulmadı). `npm run dev` hiç çalıştırılmadı (`npm run build && npm
+  start` / Playwright'ın kendi `webServer`'ı kullanıldı).
+- Çalışma ağacı commit'li (`1afe427` — App.tsx wiring + testler; bu turdaki mutasyonlar disk
+  üzerinde iz bırakmadan geri alındığı için ayrı bir commit gerekmedi).
+
+**Kalan risk / bir sonraki QA turuna notlar**
+
+- Transkript zenginleştirmesi, ADR-007/sözleşme §3.2 gereği belirli bir QA turuna BAĞLANMIYOR —
+  yalnızca "seçili projenin en son değiştirilen üst düzey `.jsonl`'ı". Kullanıcı bunu belirli bir
+  QA turunun transkripti sanabilir; arayüz metni bilinçli olarak genel tutuldu ("en son görülen
+  oturum"), ama QA bu netliği tekrar test etmeli.
+- ESKALE eşleştirmesi frontmatter `feature:` alanı YOKSA ilk `# BAŞLIK`'taki `<id>` deseniyle
+  eşleşiyor (F-013/F-009 emsali) — `docs/qa/latest.md`'nin gerçek üretim formatı bu iki yoldan
+  hangisini kullanıyorsa onunla test edilmeli (bu turda sentetik fixture'larla ikisi de ayrı ayrı
+  test edildi, gerçek `qa-evaluator` çıktısıyla henüz doğrulanmadı).
+- `docs/qa/F-010-contract.md`'nin §1 madde 6'sı (ESKALE banner metni netleştirmesi) kontrol
+  edildi: `docs/03-ux.md` zaten sabit/veriyle tutarlı metni içeriyordu, ek değişiklik gerekmedi —
+  QA bunu ayrı bir "eksik" olarak işaretlemesin diye burada not düşülüyor.
+- F-011 (Token Kullanımı) bu turun KAPSAMI DIŞINDA bırakıldı: `record()`'un `/api/usage`
+  tarafından tüketilmesi, canlı (SSE) güncelleme, `docs/qa/latest.md`'nin QA turu sayısı/tarihini
+  metinden ayrıştırma — hiçbiri bu feature'ın parçası değil (sözleşme §1 "Dışında").
+
+**Sonraki adım**
+- qa-evaluator F-010'u değerlendirsin (feature notu `status: qa`).

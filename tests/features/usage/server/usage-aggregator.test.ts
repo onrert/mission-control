@@ -53,9 +53,11 @@ function writeWithMtime(filePath: string, content: string, mtimeIso: string): vo
  * kuşatır: hedef host/port ne olursa olsun, hangi SÖZDİZİMİYLE (`.js` uzantılı import,
  * `export … from`, dinamik `import()`, vb.) tetiklendiği tamamen ÖNEMSİZDİR — yalnızca
  * "gerçekten bir bağlantı girişimi oldu mu" ölçülür. Statik AST taraması (
- * `network-capability-guard.test.ts`) hâlâ birinci savunma hattı (erken uyarı); bu katman
- * onun kaçırdığı HER ŞEYİ (bilinen veya bilinmeyen bir sözdizimi boşluğunu) yakalayan asıl
- * korumadır.
+ * `network-capability-guard.test.ts`) hâlâ birinci savunma hattı (erken uyarı); bu katman JS
+ * seviyesindeki sözdizimi boşluklarını (bilinen veya bilinmeyen) yakalayan asıl korumadır —
+ * `process.binding`/`process.dlopen` de (tur 5, B2) ayrıca doğrudan kuşatılır, çünkü metinsel
+ * tarayıcının yakalayabildiği tek biçim (`process.binding(` literal) bu depoda derlenmez (bkz.
+ * `network-capability-guard.test.ts`teki N2/N2b).
  *
  * `record()` HER ZAMAN önce kaydeder, SONRA senkron çağıran için fırlatır / asenkron (`fetch`,
  * `dns.promises.*`) çağıran için reddedilmiş bir promise döner — böylece çağıran taraf hatayı
@@ -71,7 +73,11 @@ function installNetworkCapabilitySentinel(): {
 
   function patch(obj: Record<string, unknown>, key: string, label: string, isAsync = false): void {
     const original = obj[key]
-    obj[key] = () => {
+    // F-011 QA tur 5 (BLOKLAYICI B1) — `function` kullanılır (ok fonksiyonu DEĞİL) ki `new
+    // WebSocket(...)` gibi constructor çağrıları da yakalanabilsin (`new (() => {})()` "not a
+    // constructor" ile patlar; normal `function` hem düz çağrıda hem `new` ile atılan hatayı
+    // aynı şekilde dışarı fırlatır).
+    obj[key] = function () {
       calls.push(label)
       const err = new Error(`AĞ ÇİTİ İHLALİ (birincil katman): ${label} çağrıldı`)
       if (isAsync) return Promise.reject(err)
@@ -106,6 +112,13 @@ function installNetworkCapabilitySentinel(): {
   patch(dnsPromisesObj, 'lookup', 'dns.promises.lookup', true)
   patch(dnsPromisesObj, 'resolve', 'dns.promises.resolve', true)
   patch(globalObj, 'fetch', 'fetch', true)
+  // F-011 QA tur 5 (B1/B2) — `import`'suz global ağ API'leri (`new WebSocket(...)`) ve dolaylı
+  // yetenek edinme yolları (`process.binding`/`process.dlopen`) da doğrudan kuşatılır; AST
+  // katmanı bunları hiç göremez (bkz. `docs/qa/F-011-2026-09-10-tur5.md` §2.1/§2.2).
+  patch(globalObj, 'WebSocket', 'WebSocket')
+  const processObj = process as unknown as Record<string, unknown>
+  patch(processObj, 'binding', 'process.binding')
+  patch(processObj, 'dlopen', 'process.dlopen')
 
   return {
     calls,
@@ -473,6 +486,30 @@ describe('computeUsageReport — Y3: ağ isteği yok', () => {
     }
     expect(sentinel.calls).toEqual([])
     expect(report!.usage.input_tokens).toBe(8)
+  })
+
+  // F-011 QA tur 5 (BLOKLAYICI B1) — sentinel'in KENDİ öz-testi yoktu: `patch()`'i no-op yapan
+  // bir mutasyon 52/52 YEŞİL kalıyordu çünkü `calls` yalnızca yukarıdaki TEK negatif iddiada
+  // kullanılıyordu. Bu test sentinel kuruluyken KASITLI çağrılar yaparak mekanizmanın gerçekten
+  // çalıştığını kanıtlar: sentinel devre dışı bırakılırsa (ya da bu testin kendi assert'i
+  // gevşetilirse) bu test KIRMIZI verir.
+  it('sentinelin öz-testi: kasıtlı net.connect/http.get/WebSocket/process.binding/fetch çağrıları `calls` içinde yakalanır ve KIRMIZI verir (F-011 QA tur5 B1/B2)', async () => {
+    const sentinel = installNetworkCapabilitySentinel()
+    try {
+      expect(() => net.connect(80, '127.0.0.1')).toThrow(/AĞ ÇİTİ İHLALİ/)
+      expect(() => http.get('http://127.0.0.1:1')).toThrow(/AĞ ÇİTİ İHLALİ/)
+      // Ok fonksiyonu DEĞİL, `new` ile çağrılabilen bir yapıcı bekleniyor (bkz. `patch()`).
+      expect(() => new WebSocket('ws://127.0.0.1:1')).toThrow(/AĞ ÇİTİ İHLALİ/)
+      const qaProc = process as unknown as { binding: (name: string) => unknown }
+      expect(() => qaProc.binding('tcp_wrap')).toThrow(/AĞ ÇİTİ İHLALİ/)
+      await expect(globalThis.fetch('http://127.0.0.1:1')).rejects.toThrow(/AĞ ÇİTİ İHLALİ/)
+
+      expect(sentinel.calls).toEqual(
+        expect.arrayContaining(['net.connect', 'http.get', 'WebSocket', 'process.binding', 'fetch'])
+      )
+    } finally {
+      sentinel.restore()
+    }
   })
 })
 

@@ -418,6 +418,25 @@ describe('usage/server ağ/süreç yeteneği yapısal çiti (Z2, F-011 QA düzel
     })
   })
 
+  // F-011 QA tur 5 (BLOKLAYICI B2) — QA canlı kanıtladı: yukarıdaki N2'nin literal biçimi
+  // (`process.binding(`) bu depoda `Process` tipinde `binding` alanı olmadığı için ASLA
+  // DERLENMEZ (`TS2339`); gerçekte YAZILABİLİR/derlenen tek yol bir `unknown` cast'i ara
+  // değişkene atamaktır — ve bu biçim metinsel regex'in aradığı ardışık "process" + ".binding("
+  // dizisini kırdığı için tarayıcı tarafından YAKALANMAZ. Bu kalıcı negatif kontrol o sınırı
+  // ÖRTBAS ETMEDEN belgeler: bu vektördeki asıl savunma artık `usage-aggregator.test.ts`teki
+  // sentinel'in `process.binding`'i doğrudan kuşatmasıdır (çalışma zamanı katmanı), bu dosyanın
+  // statik taraması DEĞİL.
+  it("N2b — process.binding('tcp_wrap') GERÇEKTEN DERLENEN cast biçiminde (process as unknown as {…}) statik tarayıcı tarafından YAKALANMAZ (bilinen, kabul edilmiş sınır — asıl savunma sentinel'in runtime kuşatması)", () => {
+    withTempFixture(
+      'const qaProc = process as unknown as { binding: (name: string) => unknown }\n' +
+        "qaProc.binding('tcp_wrap')\n",
+      (file) => {
+        const { violations } = scanModuleGraph([file])
+        expect(violations.length).toBe(0)
+      }
+    )
+  })
+
   // ------------------------------------------------------------------------------------------
   // AA1 (F-011 QA düzeltme turu 3, BLOKLAYICI B1) — X1: QA'nın gizlenmemiş, sıradan bir
   // TypeScript deseniyle (barrel yeniden dışa aktarımı) çiti yendiği ve ürün kodunun gerçek

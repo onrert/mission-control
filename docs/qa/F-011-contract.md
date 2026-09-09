@@ -358,3 +358,39 @@ iki test dosyasındaki çit mekanizması değişiyor, ürün kodu değişmiyor. 
 **Bitti tanımı:** QA'nın tüm sondaları (P1-P8, N1/N5, Y1/Y2/Y4, X1-X5, V4-V9) KIRMIZI, yanlış
 pozitif yok, üç mutasyon kanıtı verildi, `npm run verify` ve `npm run e2e` exit 0 (koşulan test
 sayısıyla raporlanır), feature notu `status: qa`.
+
+---
+
+## Ek — tur 5 → tur 6 düzeltmesi (BB1/BB2, `docs/qa/F-011-2026-09-10-tur5.md`)
+
+**Ne yapılacak (yine yalnızca iki test dosyası, `usage/server/**` ürün kodu DOKUNULMAZ):**
+
+1. **BB1 — `usage-aggregator.test.ts`:** `installNetworkCapabilitySentinel`'in kendi öz-testi
+   yoktu (`patch()`'i no-op yapan mutasyon 52/52 YEŞİL kalıyordu). Aynı `describe` içine bir
+   **pozitif kontrol** testi eklenir: sentinel kurulduktan hemen sonra `net.connect`, `http.get`,
+   `new WebSocket(...)`, `process.binding('tcp_wrap')`, `globalThis.fetch(...)` KASITLI olarak
+   çağrılır; her biri "AĞ ÇİTİ İHLALİ" ile fırlamalı/reddetmeli VE `sentinel.calls` bu etiketlerin
+   hepsini içermeli. `patch()` yardımcı fonksiyonu `new` ile çağrılabilsin diye ok fonksiyonundan
+   normal `function`'a çevrilir (davranış aynı, yalnızca constructible olur — `WebSocket` için
+   gerekli). Sentinel'e `globalThis.WebSocket`, `process.binding`, `process.dlopen` de eklenir.
+2. **BB2 — `network-capability-guard.test.ts`:** N2'nin yanına, gerçekten derlenen ("yazılabilir")
+   `process as unknown as { binding: … }` cast biçimini kullanan kalıcı bir negatif kontrol
+   eklenir; bu biçimin metinsel tarayıcı tarafından **yakalanmadığı** açıkça belgelenir (bilinen,
+   kabul edilmiş sınır) — asıl savunma artık BB1'deki sentinel'in `process.binding`'i doğrudan
+   kuşatmasıdır. Mevcut N2 testi (literal `process.binding(` biçimi) değişmeden kalır.
+
+**Kapsam dışı:** `src/features/usage/server/**` — hiçbir ürün dosyası değişmez. Yeni bağımlılık yok.
+
+| # | Davranış | Nasıl doğrulanacak |
+|---|---|---|
+| BB1 pozitif kontrol | Sentinel kuruluyken kasıtlı çağrılar yakalanır | Yeni `it()`, `sentinel.calls` beklenen etiketleri içerir |
+| BB1 mutasyon | `patch()` no-op yapılırsa yeni test KIRMIZI | Elle mutasyon, KIRMIZI görülür, elle geri alınır (`git checkout` YOK) |
+| BB2 process.binding | Sentinel `process.binding`'i kuşatır | Yeni testteki `process.binding('tcp_wrap')` çağrısı KIRMIZI/throw verir |
+| BB2 mutasyon | `process.binding` kuşatması kaldırılırsa yeni test KIRMIZI | Elle mutasyon, KIRMIZI görülür, elle geri alınır |
+| BB2 N2 dürüstlüğü | Yazılabilir cast biçimi statik tarayıcıda yakalanmaz (belgelenmiş sınır) | Yeni kalıcı `it()`, `violations.length === 0` |
+| WebSocket sondası | `new WebSocket(...)` kasıtlı çağrısı sentinel tarafından yakalanır | Yeni testte `toThrow(/AĞ ÇİTİ İHLALİ/)` |
+
+**Bitti tanımı:** BB1 ve BB2 kapandı (üç mutasyon kanıtı: sentinel no-op, `process.binding`
+kuşatması kaldırma, QA'nın `WebSocket` sondası — üçü de KIRMIZI), `npm run verify` ve
+`npm run e2e` exit 0 (koşulan test sayısıyla raporlanır), yanlış pozitif ve M5 için karar yazılı,
+feature notu `status: qa`.

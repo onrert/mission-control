@@ -3833,3 +3833,72 @@ B1/AA1 kaldı. Sözleşme eki: `docs/qa/F-011-contract.md` §7.
 **Sonraki adım**
 - qa-evaluator F-011'in düzeltme turu 4'ünü (B1/AA1, davranış temelli birincil katman)
   değerlendirsin.
+
+---
+
+## 2026-09-09 — F-011 QA turu 5 düzeltmesi (BB1/BB2, sentinel'in kendi öz-testi + `process.binding`)
+
+**Ne yapıldı** (yalnızca iki test dosyası, `src/features/usage/**` DOKUNULMADI)
+- **BB1** — `usage-aggregator.test.ts`teki `installNetworkCapabilitySentinel`'in hiç öz-testi
+  yoktu: `patch()`'i no-op yapan bir mutasyon 52/52 YEŞİL kalıyordu çünkü `sentinel.calls`
+  yalnızca TEK bir negatif iddiada kullanılıyordu. Aynı `describe` içine bir **pozitif kontrol**
+  testi eklendi: sentinel kurulduktan hemen sonra `net.connect`, `http.get`, `new WebSocket(...)`,
+  `process.binding('tcp_wrap')`, `globalThis.fetch(...)` KASITLI çağrılır; hepsi "AĞ ÇİTİ İHLALİ"
+  ile fırlar/reddeder VE `sentinel.calls` beklenen etiketlerin hepsini içerir. `patch()` yardımcı
+  fonksiyonu ok fonksiyonundan normal `function`'a çevrildi (`new WebSocket(...)` gibi yapıcı
+  çağrılarını da yakalayabilsin diye — arrow fonksiyon `new` ile çağrılamaz).
+- **BB2** — QA canlı kanıtladı: `process.binding('tcp_wrap')`, tip-güvenli bir `unknown` cast'i
+  ara değişkene atayarak (`const p = process as unknown as {...}; p.binding(...)`) yazıldığında
+  hem **derlenir** hem de metinsel tarayıcının `/process\s*\.\s*binding\s*\(/` deseninden kaçar
+  (ara değişken atandığı için literal `process.binding(` dizisi metinde hiç oluşmaz). Sentinel'e
+  `process.binding` ve `process.dlopen` de eklendi — bu, sözdiziminden bağımsız çalışma-zamanı
+  katmanı olduğu için ara değişken kaçışını da yakalar.
+- **N2b (`network-capability-guard.test.ts`)** — mevcut N2 testi (literal `process.binding(`
+  biçimi) değiştirilmeden bırakıldı; yanına, gerçekten derlenen cast biçimini kullanan ve bu
+  biçimin **statik tarayıcı tarafından yakalanmadığını** açıkça belgeleyen kalıcı bir negatif
+  kontrol eklendi (`violations.length === 0` + yorum: asıl savunma artık sentinel'in runtime
+  kuşatması). Bilinen sınır örtbas edilmedi, tersine dondurulup test altına alındı.
+- `usage-aggregator.test.ts`teki "bu katman ... yakalayan ASIL korumadır" yorumundaki fazla
+  iddialı ifade, `process.binding`/`process.dlopen`in de kapsandığını belirtecek şekilde
+  düzeltildi (QA §7 son madde).
+- **Bilinçli olarak düzeltilmedi** (bloklayıcı değil, `docs/blockers.md`'ye eşiğiyle yazıldı):
+  4/4 yanlış pozitif (üründe yalnızca yorum satırı yazmak çiti düşürüyor) ve M5 (giriş uzantı
+  listesi kapsaması test edilmiyor).
+
+**Nasıl doğrulandı**
+- `npx tsc --noEmit` → exit 0. `npm run lint` → temiz.
+- Yeni testler: `usage-aggregator.test.ts`teki pozitif kontrol ✔, `network-capability-guard.
+  test.ts`teki N2b ✔ — ikisi de tam takımda YEŞİL.
+- **Üç mutasyon kanıtı** (hepsi elle, `bak/` kopyasından geri yazıldı, `git checkout`
+  KULLANILMADI, `md5sum` başlangıç değeriyle birebir eşleşti — `0db820ba42922b482b0a269d0f5bd695`):
+  1. `patch()` no-op yapıldı (M7 emsali) → yeni pozitif-kontrol testi **KIRMIZI**
+     (`ECONNREFUSED 127.0.0.1:80` ile gerçek bir bağlantı denemesi de gözlendi — sentinel
+     bozulursa sessizce ölmeyeceğinin kanıtı).
+  2. `process.binding` kuşatma satırı kaldırıldı → aynı test **KIRMIZI**.
+  3. QA'nın `WebSocket` sondası — `patch(globalObj, 'WebSocket', ...)` satırı kaldırıldı → aynı
+     test **KIRMIZI** (`new WebSocket(...)` artık fırlamıyor).
+- `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca önceki turlardan kalan
+  meşru test adları, `src/` altında sıfır eşleşme; `write-gate-manifest.test.ts:124` dahil
+  hiçbirine dokunulmadı.
+- `npm run verify`: iki koşu da **tamamen yeşil**, exit 0 — **typecheck 0, lint 0, test: 84 dosya
+  geçti + 1 skip (85), 1305 test geçti + 4 skip (1309)** (önceki tur 1303/1307 + bu turun 2 yeni
+  testi = 1305/1309, aritmetik doğrulandı), build başarılı.
+- `npm run e2e`: ilk koşuda `timeline.spec.ts`teki tek bir test bilinen worker-fork
+  kararsızlığıyla (`exit code 3221226505`, CLAUDE.md'de belgeli, F-011'e ait değil) çöktü, tek
+  başına tekrar koşulduğunda test paketiyle birlikte ikinci tam koşuda **55/55 geçti (43,9s)**.
+- Yetim süreç: bu turda `npm run dev` hiç çalıştırılmadı; `tasklist`/`netstat` ile node.exe
+  süreci ve 7333/45911/45921/45922'de dinleyici olmadığı teyit edildi. `hayat-mentoru`
+  süreçlerine dokunulmadı (bu turda hiç çalışmıyorlardı).
+
+**Kalan risk / bir sonraki QA turuna notlar**
+- `docs/blockers.md`e yazılan iki borç (yanlış pozitif metinsel katman, M5 giriş uzantı kapsamı)
+  hâlâ açık — bloklayıcı değil, eşiği yazılı.
+- `fs` üzerinden UNC/named-pipe egresi hâlâ teorik (tur 3/5'te not edildi, canlı kanıt
+  üretilemedi); `fs` izni bilinçli bir ADR kararı, bu turda dokunulmadı.
+- Sentinel artık `net`/`tls`/`http`/`https`/`dgram`/`dns`/`fetch`/`WebSocket`/`process.binding`/
+  `process.dlopen`'ı kapsıyor; Node'un bu yüzeyin tamamen dışında kalan, henüz denenmemiş bir
+  başka gizli API'si (ör. gelecekteki bir Node sürümünün yeni global'i) teorik olarak hâlâ
+  kapsam dışı — bu, davranış-tabanlı katmanın doğası gereği kapanmayan bir sınır.
+
+**Sonraki adım**
+- qa-evaluator F-011'in düzeltme turu 5'ini (BB1/BB2) değerlendirsin.

@@ -435,3 +435,25 @@ Alternatif: worker havuzu yapılandırmasını değiştirip hatayı kırmızıya
 
 **Eşik:** F-011 kapandıktan **hemen sonra**, ayrı bir devops/altyapı turu olarak.
 Bu kapanana kadar "testler yeşil" ifadesi **koşulan test sayısıyla birlikte** raporlanmalı.
+
+## 2026-09-09 — F-011 tur 5 kapanışından taşınan borçlar (bloklayıcı DEĞİL, karar: bu turda düzeltilmedi)
+
+Kaynak: `docs/qa/F-011-2026-09-10-tur5.md` §4/§7. BB1/BB2 (sentinel öz-testi, `process.binding`
+kuşatması) bu turda kapatıldı; aşağıdaki ikisi kasıtlı olarak **dokunulmadan** bırakıldı çünkü
+brief kapsamı "iki madde, ~11 satır" ile sınırlıydı ve ikisi de bloklayıcı değil, fail-closed
+yönde.
+
+- **Yanlış pozitif (4/4) — `network-capability-guard.test.ts`'in metinsel katmanı:** ürün
+  koduna yalnızca bir **yorum satırı** eklemek (`// Bu dosya fetch() cagrisi yapmaz.`,
+  `require()`, `Function()`, dizgede `import(`) çiti KIRMIZI yapıyor — 4 ayrı biçimde ölçüldü.
+  Güvenlik riski değil (fail-closed), ama tekrarlarsa "güvenlik ihlali" mesajıyla CI kıran bir
+  yanlış alarm; `stop-check` gürültüsüyle aynı sınıf. **Eşik:** bu dosyaya (`FORBIDDEN_CALL_
+  PATTERNS`/`FETCH_CALL_RE`/`DYNAMIC_IMPORT_RE`) dokunan bir sonraki tur, ya da yanlış alarm
+  3. kez gerçek bir geliştiriciyi durdurduğunda. **Düzeltme yönü:** AST zaten elde var
+  (`extractModuleSpecifierRefs`) — desenleri yorum/dizge trivia'sı çıkarılmış metne uygula.
+- **M5 — giriş uzantı listesi kapsaması test edilmiyor:** `SOURCE_ENTRY_EXTENSIONS`'ı `['.ts']`'e
+  indiren mutasyon `network-capability-guard.test.ts`'te **52/52 YEŞİL** kalıyor; `.mts`/`.cts`
+  bir **giriş** dosyası olarak eklenirse sessizce taramadan düşer (bugün `usage/server` yalnızca
+  düz `.ts` içerdiği için gerçek risk yok). **Eşik:** `usage/server`'a ilk `.mts`/`.cts` giriş
+  dosyası eklendiğinde. **Düzeltme yönü:** fixture dizininde `.mts` giriş dosyası kurup
+  `listSourceEntriesRecursively`'ye doğrudan assert eden ucuz bir kalıcı test.

@@ -30,3 +30,14 @@ Kaynak: PRD özellik 6; `docs/03-ux.md` ekran 6; ADR-007 karar 3.
 - QA düzeltme turu 3 (`docs/qa/F-011-2026-09-10-tur3.md`, KALDI → tek madde B1/AA1 düzeltildi,
   `docs/qa/F-011-contract.md` §7). Yalnızca `tests/features/usage/server/
   network-capability-guard.test.ts` değişti; ürün koduna dokunulmadı.
+- QA düzeltme turu 4 (`docs/qa/F-011-2026-09-10-tur4.md`, KALDI → B1 birincil davranış katmanı
+  eklendi, `installNetworkCapabilitySentinel` ile `net`/`tls`/`http`/`https`/`dgram`/`dns`/`fetch`
+  global kuşatıldı). Yalnızca `usage-aggregator.test.ts` + `network-capability-guard.test.ts`
+  değişti; ürün koduna dokunulmadı.
+- QA düzeltme turu 5 (`docs/qa/F-011-2026-09-10-tur5.md`, KALDI → BB1/BB2 düzeltildi,
+  `docs/qa/F-011-contract.md` "Ek — tur 5 → tur 6" bölümü): sentinel'in kendi öz-testi (pozitif
+  kontrol) eklendi, `process.binding`/`process.dlopen`/`WebSocket` de sentinel'e dahil edildi,
+  `network-capability-guard.test.ts`'e N2b (yazılabilir cast biçiminin statik tarayıcıda
+  yakalanmadığını belgeleyen kalıcı negatif kontrol) eklendi. Yine yalnızca iki test dosyası
+  değişti; ürün koduna dokunulmadı. Yanlış pozitif (yorumda "fetch()" yazmak) ve M5 (giriş
+  uzantı listesi kapsaması) bilinçli olarak bu turda kapatılmadı — bkz. `docs/blockers.md`.

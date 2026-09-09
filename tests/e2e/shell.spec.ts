@@ -35,21 +35,21 @@ test('kabuk açılır, başlık görünür, konsol hatası yok, tıklanabilir ö
   // (3) konsol/pageerror hatası yok
   expect(consoleErrors).toEqual([])
 
-  // (4) F-008: Kapılar Faz 1 kabuğuna koşulsuz eklendi (chat kapalıyken bile) — üst çubukta
-  // artık DÖRT etkileşimli öğe var: üç gerçek sekme (`role="tab"`, Zaman Çizelgesi/Kanban/
-  // Kapılar) + Ayarlar dişli düğmesi (tablist deseninin DIŞINDA kalan sabit düğme,
-  // `docs/03-ux.md:21`). Bu artık "üçe" değil "dörde" ölçen, ama hâlâ tam sayıyla çitleyen bir
+  // (4) F-010: Thread Faz 1 kabuğuna koşulsuz eklendi (chat kapalıyken bile, Kapılar emsali) —
+  // üst çubukta artık BEŞ etkileşimli öğe var: dört gerçek sekme (`role="tab"`, Zaman Çizelgesi/
+  // Kanban/Kapılar/Thread) + Ayarlar dişli düğmesi (tablist deseninin DIŞINDA kalan sabit düğme,
+  // `docs/03-ux.md:21`). Bu artık "dörde" değil "beşe" ölçen, ama hâlâ tam sayıyla çitleyen bir
   // iddia (F-003/F-005'in eski "tek tıklanabilir öğe" varsayımının yerini aldı).
   const clickableCount = await page
     .locator('header button, header a, header [role=button], header [role=tab]')
     .count()
-  expect(clickableCount).toBe(4)
+  expect(clickableCount).toBe(5)
   const settingsButton = page.locator('header [aria-label="Ayarlar"]')
   await expect(settingsButton).toBeVisible()
 
   // (4b) `aria-current` kaldırıldı, yerini `aria-selected` aldı (Karar 1, §6 madde 1) — artık
   // hiçbir öğe `aria-current` taşımıyor, ama TAM OLARAK bir `role="tab"` `aria-selected="true"`
-  // olmalı (varsayılan: Zaman Çizelgesi) ve toplam üç gerçek `tab` var (F-008).
+  // olmalı (varsayılan: Zaman Çizelgesi) ve toplam dört gerçek `tab` var (F-010).
   const ariaCurrentCount = await page.locator('header [aria-current]').count()
   expect(ariaCurrentCount).toBe(0)
   const selectedTabs = page.locator('header [role="tab"][aria-selected="true"]')
@@ -57,7 +57,7 @@ test('kabuk açılır, başlık görünür, konsol hatası yok, tıklanabilir ö
   const selectedTabText = await selectedTabs.innerText()
   expect(selectedTabText).toBe('Zaman Çizelgesi')
   const tabRoleCount = await page.locator('header [role="tab"]').count()
-  expect(tabRoleCount).toBe(3)
+  expect(tabRoleCount).toBe(4)
 
   // (5) yükleme kanıtı (birincil) — font gerçekten yüklendi mi
   const fontLoaded = await page.evaluate(async () => {
@@ -124,11 +124,11 @@ test('kabuk açılır, başlık görünür, konsol hatası yok, tıklanabilir ö
   expect(timelineBgRgb).toEqual(tokenRgb)
   expect(relativeLuminance(timelineBgRgb)).toBeLessThan(0.1)
 
-  // F-008 — Kapılar artık Faz 1 kabuğunun bir parçası (kapalı-küme doktrini `tabRoleCount`/
-  // `clickableCount` tam-sayı iddialarından geliyor; beşinci bir sekme eklenirse o sayılar
-  // kırılır). Thread/Token hâlâ Faz 2, hiç eklenmedi.
+  // F-010 — Thread de artık Faz 1 kabuğunun bir parçası (kapalı-küme doktrini `tabRoleCount`/
+  // `clickableCount` tam-sayı iddialarından geliyor; altıncı bir sekme eklenirse o sayılar
+  // kırılır). Token hâlâ Faz 2, hiç eklenmedi.
   expect(bodyText).toContain('Kapılar')
-  expect(bodyText).not.toContain('Thread')
+  expect(bodyText).toContain('Thread')
   expect(bodyText).not.toContain('Token')
 })
 

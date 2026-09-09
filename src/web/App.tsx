@@ -8,10 +8,11 @@ import { KanbanScreen } from '../features/kanban/web/KanbanScreen'
 import { ChatScreen } from '../features/chat/web/ChatScreen'
 import { useChatSession } from '../features/chat/web/useChatSession'
 import { GatesScreen } from '../features/gates/web/GatesScreen'
+import { ThreadScreen } from '../features/thread/web/ThreadScreen'
 import type { ProjectListItem } from '../shared/types'
 
-type ActiveScreen = 'timeline' | 'settings' | 'kanban' | 'chat' | 'gates'
-type TabScreen = 'timeline' | 'kanban' | 'chat' | 'gates'
+type ActiveScreen = 'timeline' | 'settings' | 'kanban' | 'chat' | 'gates' | 'thread'
+type TabScreen = 'timeline' | 'kanban' | 'chat' | 'gates' | 'thread'
 
 // F-008 (G0 kararı: Kapılar F-009'un önüne geçer) — Kapılar Faz 2'den Faz 1 kabuğuna KOŞULSUZ
 // eklenir (chat'in aksine bir sunucu bayrağına bağlı değil). Sıra `docs/03-ux.md:735` — Sohbet
@@ -24,6 +25,9 @@ function buildTabs(chatEnabled: boolean): Array<{ screen: TabScreen; label: stri
   ]
   if (chatEnabled) tabs.push({ screen: 'chat', label: 'Sohbet' })
   tabs.push({ screen: 'gates', label: 'Kapılar' })
+  // F-010 (W9) — Thread, Kapılar emsali gibi bir sunucu bayrağına bağlı değil, koşulsuz eklenir.
+  // Sıra `docs/03-ux.md` sekme sırası: "…[Kapılar][Thread][Token]" — Kapılar'dan hemen sonra.
+  tabs.push({ screen: 'thread', label: 'Thread' })
   return tabs
 }
 
@@ -222,6 +226,20 @@ export default function App() {
             <GatesScreen
               liveProjectsUpdate={projectsUpdate}
               gatesSignal={gatesSignal}
+              onNavigateSettings={() => setActiveScreen('settings')}
+            />
+          </ScreenErrorBoundary>
+        </div>
+        <div
+          id="panel-thread"
+          role="tabpanel"
+          aria-labelledby="tab-thread"
+          hidden={activeScreen !== 'thread'}
+          className="h-full"
+        >
+          <ScreenErrorBoundary>
+            <ThreadScreen
+              liveProjectsUpdate={projectsUpdate}
               onNavigateSettings={() => setActiveScreen('settings')}
             />
           </ScreenErrorBoundary>

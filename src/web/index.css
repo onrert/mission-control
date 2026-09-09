@@ -10,6 +10,7 @@
 @source "../features/kanban/web";
 @source "../features/chat/web";
 @source "../features/gates/web";
+@source "../features/thread/web";
 
 @theme {
   --font-display: 'Departure Mono', ui-monospace, monospace;

@@ -76,8 +76,9 @@ describe("App — Sohbet sekmesi görünürlüğü ÇALIŞMA ZAMANINDA /api/chat
     try {
       await renderAndWaitForStatus()
       // F-008 (G0 kararı) — Kapılar Faz 1 kabuğuna KOŞULSUZ eklenir, `chat_enabled`'a bağlı
-      // değil. Sekmeler: [Zaman Çizelgesi, Kanban, Kapılar].
-      expect(screen.getAllByRole('tab')).toHaveLength(3)
+      // değil. F-010 (W9) — Thread de koşulsuz eklenir. Sekmeler: [Zaman Çizelgesi, Kanban,
+      // Kapılar, Thread].
+      expect(screen.getAllByRole('tab')).toHaveLength(4)
       expect(screen.queryByRole('tab', { name: 'Sohbet' })).toBeNull()
       expect(document.getElementById('panel-chat')).toBeNull()
     } finally {
@@ -91,7 +92,7 @@ describe("App — Sohbet sekmesi görünürlüğü ÇALIŞMA ZAMANINDA /api/chat
     try {
       await renderAndWaitForStatus()
       const tabs = screen.getAllByRole('tab')
-      expect(tabs).toHaveLength(4)
+      expect(tabs).toHaveLength(5)
       const chatTab = screen.getByRole('tab', { name: 'Sohbet' })
       expect(chatTab).toBeTruthy()
       expect(document.getElementById('panel-chat')).not.toBeNull()

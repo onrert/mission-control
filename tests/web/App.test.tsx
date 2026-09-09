@@ -19,19 +19,20 @@ describe('App (AC6 — DOMsuz statik render)', () => {
     expect(html).toContain('Ayarlar')
   })
 
-  it('Faz 1 kabuğu üç sekme: Zaman Çizelgesi, Kanban, Kapılar; Thread/Token hâlâ Faz 2, hiç görünmez', () => {
-    // F-008 (G0 kararı) — Kapılar Faz 1 kabuğuna koşulsuz geçti; Thread/Token hâlâ eklenmedi.
-    // Kapalı-küme çiti (CLAUDE.md dersi, F-008 tur 3 Y1 madde 3): yalnızca "Kapılar artık var"
-    // demek yerine ÜÇ bilinen etiketin varlığı + toplam sekme sayısının TAM 3 olması BİRLİKTE
-    // doğrulanır — böylece ileride kazara eklenen dördüncü bir sekme de bu testi kırar.
+  it('Faz 1 kabuğu dört sekme: Zaman Çizelgesi, Kanban, Kapılar, Thread; Token hâlâ Faz 2, hiç görünmez', () => {
+    // F-008 (G0 kararı) — Kapılar Faz 1 kabuğuna koşulsuz geçti. F-010 (W9) — Thread de koşulsuz
+    // eklendi (Kapılar emsali, bir sunucu bayrağına bağlı değil). Token hâlâ eklenmedi.
+    // Kapalı-küme çiti (CLAUDE.md dersi, F-008 tur 3 Y1 madde 3): yalnızca "Thread artık var"
+    // demek yerine DÖRT bilinen etiketin varlığı + toplam sekme sayısının TAM 4 olması BİRLİKTE
+    // doğrulanır — böylece ileride kazara eklenen beşinci bir sekme de bu testi kırar.
     expect(html).toContain('Zaman Çizelgesi')
     expect(html).toContain('Kanban')
     expect(html).toContain('Kapılar')
-    expect(html).not.toContain('Thread')
+    expect(html).toContain('Thread')
     expect(html).not.toContain('Token')
     const headerMatch = /<header[\s\S]*?<\/header>/.exec(html)
     const headerHtml = headerMatch![0]
-    expect(headerHtml.match(/role="tab"/g)).toHaveLength(3)
+    expect(headerHtml.match(/role="tab"/g)).toHaveLength(4)
   })
 
   it('üst çubukta (header) tam olarak bir tıklanabilir öğe var: Ayarlar düğmesi (F-005)', () => {
@@ -53,9 +54,9 @@ describe('App (AC6 — DOMsuz statik render)', () => {
     // Mimari sapması (kasıtlı, §6 madde 1) — `aria-current="page"` `aria-selected`'ın yerini aldı.
     expect(headerHtml).not.toContain('aria-current="page"')
     expect(headerHtml).toContain('role="tablist"')
-    // Üç gerçek sekme (F-008): Zaman Çizelgesi (seçili, tabIndex 0) + Kanban + Kapılar (seçili
-    // değil, tabIndex -1).
-    expect(headerHtml.match(/role="tab"/g)).toHaveLength(3)
+    // Dört gerçek sekme (F-010): Zaman Çizelgesi (seçili, tabIndex 0) + Kanban + Kapılar + Thread
+    // (seçili değil, tabIndex -1).
+    expect(headerHtml.match(/role="tab"/g)).toHaveLength(4)
     expect(headerHtml).toContain('id="tab-timeline"')
     expect(headerHtml).toContain('aria-controls="panel-timeline"')
     expect(headerHtml).toContain('aria-selected="true"')

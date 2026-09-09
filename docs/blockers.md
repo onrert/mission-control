@@ -259,3 +259,20 @@ hiçbir şey ölçmüyor. Bir regresyon fark edilmeden geçebilir.
 
 **Kapatma yolu:** `page.keyboard.press('Tab')` + `document.activeElement` assert'i.
 **Eşik:** Kanban ekranına dokunan bir sonraki feature.
+
+## 2026-09-09 — Kanban'da yakalanmamış asenkron çağrı (F-008 tur A'da bulundu)
+
+**Bulgu:** `handlePatchFeatureStatus`, `projectsService.list()` çağrısını kendi asenkron
+`try/catch`'inin **dışında** yapıyor. Bu, `CLAUDE.md`'de kayıtlı ve sunucuyu **üç kez** öldüren
+hata sınıfı: dağıtıcının senkron hata sınırı asenkron handler gövdesini yakalamıyor; fırlarsa
+istemci yanıt almaz ve süreç düşer. Tetikleyici egzotik değil — Windows'ta antivirüs kilidi,
+salt-okunur disk, ağ sürücüsü.
+
+**Nasıl bulundu:** F-008 sunucu turu aynı sınıfı kendi kodunda (Q6 kararı gereği) önlerken
+kanban'daki emsalini fark etti. **Dosya sahipliği dışı olduğu için dokunulmadı** — doğru davranış.
+
+**Durum:** F-008'i bekletmiyor. **Eşik:** F-008 kod turu B ile birlikte kapatılacak
+(CEO açıkça yetkilendirdi); orada da kapanmazsa kanban'a dokunan bir sonraki feature.
+
+**Çit:** düzeltme mutasyonla kanıtlanmalı — `list()` fırlatıldığında istemci **500 almalı** ve
+süreç **ayakta kalmalı**; korumayı kaldıran mutasyon KIRMIZI vermeli.

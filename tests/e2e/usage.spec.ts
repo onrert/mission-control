@@ -69,9 +69,15 @@ async function clippedVisibleWidth(page: Page, selector: string): Promise<number
 
 const TAB_IDS = ['tab-timeline', 'tab-kanban', 'tab-chat', 'tab-gates', 'tab-thread', 'tab-usage']
 
-test.describe('D10 kapatma (Y6) — 320-767px arası (sm: ÜSTÜ dahil), üretim 6-sekme kümesi, hiçbir sekme 0px değil', () => {
+// F-011 QA düzeltme turu (Z5) — eski eşik (`> 0`) 320px'te 12px'lik bir "kıymık"ı da geçiriyordu
+// (CLAUDE.md dersi: "eşiği pikselle kalibre et"). Gerçek Chromium'da tekrar ölçüldü (`px-2`/
+// `gap-0.5`/`tracking-tighter` düzeltmesinden SONRA): 320-767px arası `scrollWidth ===
+// clientWidth` (HİÇ taşma yok), en dar sekme (Token) sabit ~30px. Eşik bu ölçümle kalibre edildi.
+const MEANINGFUL_MIN_TAB_WIDTH = 20
+
+test.describe('D10 kapatma (Y6) — 320-767px arası (sm: ÜSTÜ dahil), üretim 6-sekme kümesi, hiçbir sekme kıymık değil (Z5)', () => {
   for (const width of [320, 375, 480, 640, 700, 767]) {
-    test(`${width}px'te tüm sekmeler (Zaman Çizelgesi/Kanban/Sohbet/Kapılar/Thread/Token) kırpılmadan erişilebilir`, async ({
+    test(`${width}px'te tüm sekmeler (Zaman Çizelgesi/Kanban/Sohbet/Kapılar/Thread/Token) anlamlı bir genişlikte erişilebilir`, async ({
       page,
     }) => {
       await mockChatEnabled(page)
@@ -80,15 +86,42 @@ test.describe('D10 kapatma (Y6) — 320-767px arası (sm: ÜSTÜ dahil), üretim
 
       await expect(page.locator('header [role="tab"]')).toHaveCount(6)
 
+      // Sekme çubuğunun KENDİSİ taşmıyor mu (Z5 — QA'nın 320px'te ölçtüğü 21px'lik taşmanın
+      // regresyon çiti).
+      const tablistWidths = await page.evaluate(() => {
+        const el = document.querySelector('[role="tablist"]') as HTMLElement | null
+        if (!el) return null
+        return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }
+      })
+      expect(tablistWidths).not.toBeNull()
+      expect(tablistWidths!.scrollWidth).toBeLessThanOrEqual(tablistWidths!.clientWidth)
+
       for (const id of TAB_IDS) {
         const width_ = await clippedVisibleWidth(page, `#${id}`)
         expect(
           width_,
-          `#${id} kırpılmış görünür genişliği 0 olmamalı (${width}px)`
-        ).toBeGreaterThan(0)
+          `#${id} kırpılmış görünür genişliği anlamlı bir asgarinin (${MEANINGFUL_MIN_TAB_WIDTH}px) altında olmamalı (${width}px)`
+        ).toBeGreaterThan(MEANINGFUL_MIN_TAB_WIDTH)
       }
     })
   }
+
+  // F-011 QA düzeltme turu (Z5) — 280px `docs/03-ux.md`'nin tanımlı dar-genişlik aralığının
+  // (320-480px) DIŞINDA (QA notu N2); CEO kararı yine de "280px de ölçülecek" diyor. Bu test
+  // ölçümü kalıcı bir regresyon çitine çevirir — düzeltmeden ÖNCE Token 280px'te 0-1px'ti.
+  test('280px (tanımlı aralık dışı) — sekmeler ölçülür, hiçbiri TAMAMEN görünmez (0px) değil', async ({
+    page,
+  }) => {
+    await mockChatEnabled(page)
+    await page.setViewportSize({ width: 280, height: 700 })
+    await page.goto('/')
+    await expect(page.locator('header [role="tab"]')).toHaveCount(6)
+
+    for (const id of TAB_IDS) {
+      const width_ = await clippedVisibleWidth(page, `#${id}`)
+      expect(width_, `#${id} 280px'te tamamen görünmez (0px) olmamalı`).toBeGreaterThan(0)
+    }
+  })
 })
 
 test('Token sekmesi açılır, /api/usage 200 döner (500 değil), kaynak izlenen proje yoksa "okunamadı" DEĞİL boş durum gösterir', async ({

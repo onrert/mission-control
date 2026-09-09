@@ -126,10 +126,16 @@ export default function App() {
           F-011/D10 — kırılma noktası eskiden `sm:` (640px) idi; altıncı sekme (Token) eklenince
           640-900px arası ("tek satır ama hâlâ dar") tek-satır stiliyle en az bir sekme 0px'e
           düşüyordu (QA/CEO ölçtü, `docs/blockers.md` D10). İki satırlı KOMPAKT düzen çok daha
-          geniş bir aralıkta (1024px'e kadar) TAM genişlik satırında kaldığı için 6 sekmeyi de
-          320px'te dahi sığdırabiliyor — kırılma noktası `lg:`'ye taşındı, tek-satır düzenin
-          KENDİSİ değişmedi. */}
-      <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-zinc-800 px-3 py-2 lg:h-14 lg:flex-nowrap lg:gap-y-0 lg:px-4 lg:py-0">
+          geniş bir aralıkta (1024px'e kadar) TAM genişlik satırında kalıyor.
+          F-011 QA düzeltme turu (Z5) — QA gerçek Chromium'da ölçtü: yukarıdaki "320px'te 6
+          sekmenin TAMAMINI sığdırıyor" iddiası YANLIŞTI (`scrollWidth 317 / clientWidth 296`,
+          21px taşma, Token 12px'e kırpılıyordu). `px-3`→`px-2` (yalnızca `lg:` altı) + tablist
+          `gap-1`→`gap-0.5` + sekme metnine `tracking-tight` (yalnızca `lg:` altı, geniş ekranda
+          `lg:tracking-normal` ile sıfırlanır) toplamda ~25px kazandırıyor — 320px'te artık
+          taşma YOK. 280px (tasarımın tanımlı 320-480 aralığının DIŞINDA, `docs/03-ux.md`) hâlâ
+          bir miktar kırpılıyor — bkz. `tests/e2e/thread.spec.ts` ölçümü ve `docs/qa/
+          F-011-2026-09-10.md` N2. */}
+      <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-zinc-800 px-2 py-2 lg:h-14 lg:flex-nowrap lg:gap-y-0 lg:px-4 lg:py-0">
         <span
           data-testid="app-title"
           // Tailwind'in min-width sıfırlama yardımcı sınıfı KASITLI OLARAK class değil, inline
@@ -154,7 +160,7 @@ export default function App() {
           // gerçek Chromium'da ölçüldü). `gap-1`/`text-[11px]` (yalnızca `lg:` altı) + kırılma
           // noktasının `lg:`'ye taşınması (üstteki not) birlikte 320px'te 6 sekmenin TAMAMINI
           // (`scrollWidth <= clientWidth`) sığdırıyor — metin/yapı/geniş ekran görünümü DEĞİŞMEZ.
-          className="order-3 flex w-full shrink-0 items-center gap-1 overflow-x-auto lg:order-none lg:w-auto lg:flex-1 lg:gap-4"
+          className="order-3 flex w-full shrink-0 items-center gap-0.5 overflow-x-auto lg:order-none lg:w-auto lg:flex-1 lg:gap-4"
         >
           {TABS.map((tab) => {
             const isSelected = selectedTab === tab.screen
@@ -170,8 +176,8 @@ export default function App() {
                 onKeyDown={onTabKeyDown}
                 className={
                   isSelected
-                    ? 'cursor-pointer whitespace-nowrap text-[11px] font-mono text-amber-400 lg:text-sm'
-                    : 'cursor-pointer whitespace-nowrap text-[11px] font-mono text-zinc-400 lg:text-sm'
+                    ? 'cursor-pointer whitespace-nowrap tracking-tighter text-[11px] font-mono text-amber-400 lg:tracking-normal lg:text-sm'
+                    : 'cursor-pointer whitespace-nowrap tracking-tighter text-[11px] font-mono text-zinc-400 lg:tracking-normal lg:text-sm'
                 }
               >
                 {tab.label}

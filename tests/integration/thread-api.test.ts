@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { once } from 'node:events'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -192,5 +192,50 @@ describe('W2 — /api/health.transcript_reader gerçek okumalarla besleniyor', (
     ).transcript_reader
     expect(afterStats.files_seen).toBe(1)
     expect(afterStats.lines_ok).toBe(1)
+  })
+})
+
+describe('X1/B1 — transkript okuma yolu EPERM fırlatırsa HTTP 500 DEĞİL, 200 + "okunamadı" bölümü döner', () => {
+  it('gerçek dispatcher üzerinden: realpathSync.native fırlar, diğer bölümler dolu kalır', async () => {
+    const encoded = encodeProjectDirName(fs.realpathSync.native(projectDir))
+    const sessionDir = path.join(claudeProjectsRoot, encoded)
+    fs.mkdirSync(sessionDir, { recursive: true })
+    const transcriptFile = path.join(sessionDir, 'session-1.jsonl')
+    fs.writeFileSync(
+      transcriptFile,
+      `${JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: 1, output_tokens: 1 } } })}\n`
+    )
+
+    // QA'nın gerçek reprosu (icacls /deny → EPERM) — yalnızca transkript dosyası için taklit
+    // edilir, `resolveInsideRootForRead`'in (CEO brief/sözleşme okuması) kullandığı ÇAĞRILAR
+    // etkilenmez.
+    const originalRealpathNative = fs.realpathSync.native
+    const realpathSpy = vi.spyOn(fs.realpathSync, 'native').mockImplementation((p: fs.PathLike) => {
+      if (path.resolve(p.toString()) === path.resolve(transcriptFile)) {
+        throw new Error('EPERM: operation not permitted, realpath')
+      }
+      return originalRealpathNative(p as fs.PathLike)
+    })
+
+    try {
+      const res = await request(
+        handle.baseUrl,
+        'GET',
+        `/api/thread/detail?project_id=${projectId}&file=F-001.md`
+      )
+      // Bloklayıcının özü buydu: eskiden bu 500 dönüyordu (ekranın TAMAMI kayboluyordu).
+      expect(res.status).toBe(200)
+      const body = res.json as ApiResponse<ThreadDetail>
+      expect(body.success).toBe(true)
+      const ceo = body.data?.sections.find((s) => s.kind === 'ceo_brief')
+      const dev = body.data?.sections.find((s) => s.kind === 'developer_report')
+      const transcript = body.data?.sections.find((s) => s.kind === 'transcript')
+      expect(ceo?.readable).toBe(true)
+      expect(dev?.readable).toBe(true)
+      expect(transcript?.readable).toBe(false)
+      expect(transcript?.content).toBeNull()
+    } finally {
+      realpathSpy.mockRestore()
+    }
   })
 })

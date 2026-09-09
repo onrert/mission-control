@@ -70,6 +70,48 @@ async function clippedVisibleWidth(page: Page, selector: string): Promise<number
   }, selector)
 }
 
+/**
+ * X3/Ö2 — QA ölçtü: paylaşılan `playwright.config.ts` webServer'ı `MC_CHAT_ENABLED:'0'` ile
+ * çalışır (dosya sahipliği DIŞINDA — `shell.spec.ts`'in sabit "4 sekme" tam-sayı çitini kırardı,
+ * `CLAUDE.md` "dosya sahipliği dışına çıkma" kuralı), bu yüzden eski dar-genişlik testi 5 sekmeli
+ * ÜRETİM varsayılanını hiç ÖLÇMÜYORDU (yalnızca 4 sekme). `GET /api/chat/status`'u
+ * `page.route` ile `chat_enabled:true` döndürecek şekilde sahteleştirmek üretim sekme kümesini
+ * (Sohbet dahil, 5 sekme) GERÇEK tarayıcıda, GERÇEK App.tsx bileşeniyle render eder — hiçbir
+ * gerçek/ücretli model çağrısı YAPILMAZ (`session.ts` "uygulama açılışı sıfır model çağrısı
+ * yapar" garantisi; yalnızca durum yanıtı sahte, hiçbir mesaj gönderilmiyor). `GET
+ * /api/chat/history` de zararsız boş bir yanıtla sahteleştirilir ki `useChatSession` gerçek
+ * sunucudan `503 chat_disabled` almasın.
+ */
+async function mockChatEnabled(page: Page): Promise<void> {
+  await page.route('**/api/chat/status', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          session_active: true,
+          session_id: undefined,
+          busy: false,
+          api_key_barrier_tripped: false,
+          stripped_env_vars: [],
+          chat_enabled: true,
+          api_key_helper_configured: false,
+          max_budget_usd: 20,
+          pending_permissions: [],
+        },
+      }),
+    })
+  })
+  await page.route('**/api/chat/history**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: { entries: [], has_more: false } }),
+    })
+  })
+}
+
 const fixtureDirs: string[] = []
 const projectIds: string[] = []
 
@@ -173,6 +215,74 @@ test.describe('Dar genişlik (320/375/480px) — kırpılmış görünür geniş
         return count
       })
       expect(nestedScrollCount).toBe(0)
+
+      // X3/Ö3 — Feature `<select>`'in en uzun `<option>`'a göre boyutlanıp `thread-screen`'i
+      // yatay olarak taşırması (QA 375px'te 555px hayalet kaydırma ölçtü) artık olmamalı:
+      // kapsayıcının kaydırılabilir genişliği görünür genişliğiyle birebir eşleşir.
+      const widths = await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="thread-screen"]') as HTMLElement | null
+        if (!el) return null
+        return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }
+      })
+      expect(widths).not.toBeNull()
+      expect(widths!.scrollWidth).toBe(widths!.clientWidth)
     })
   }
+})
+
+test.describe('Dar genişlik, üretim sekme kümesi (5 sekme, sohbet açık) — hiçbir sekme 0px değil (X3/Ö2)', () => {
+  for (const width of [320, 375, 480]) {
+    test(`${width}px'te tüm sekmeler (Zaman Çizelgesi/Kanban/Sohbet/Kapılar/Thread) kırpılmadan erişilebilir`, async ({
+      page,
+    }) => {
+      await mockChatEnabled(page)
+      await page.setViewportSize({ width, height: 700 })
+      await page.goto('/')
+
+      // Üretim varsayılanı gerçekten 5 sekme mi (sahte durum doğru alındı mı) — önce doğrula.
+      await expect(page.locator('header [role="tab"]')).toHaveCount(5)
+
+      const tabIds = ['tab-timeline', 'tab-kanban', 'tab-chat', 'tab-gates', 'tab-thread']
+      for (const id of tabIds) {
+        const width_ = await clippedVisibleWidth(page, `#${id}`)
+        expect(width_, `#${id} kırpılmış görünür genişliği 0 olmamalı`).toBeGreaterThan(0)
+      }
+    })
+  }
+})
+
+test('X4/D1 — Thread ekranı gerçek klavye odağıyla (Tab tuşu) erişilebilir, .focus() ile zorlanmadan', async ({
+  page,
+}) => {
+  const dir = makeFixtureProject()
+  fixtureDirs.push(dir)
+  const id = await addProject(page, dir, 'thread-keyboard-focus')
+  projectIds.push(id)
+
+  await openThreadTab(page, 'thread-keyboard-focus', 'F-004 — Kanban paneli')
+
+  // F-013/N6 dersi (`docs/blockers.md`) — Playwright'ın `locator.focus()`'u CDP ile odağı
+  // ZORLA verir, "klavyeyle odaklanabilir" iddiasını DOĞRULAMAZ (tabIndex kaldırılsa bile test
+  // yeşil kalırdı). Gerçek `Tab` tuşuna basıp `document.activeElement`'i ölçmek asıl kanıttır.
+  // `thread-screen`'in kendisi (`tabIndex={0}`) tek kaydırma bağlamı olduğu için sekme sırasında
+  // erişilebilir olmalı.
+  let reachedThreadScreen = false
+  for (let i = 0; i < 30 && !reachedThreadScreen; i++) {
+    await page.keyboard.press('Tab')
+    reachedThreadScreen = await page.evaluate(
+      () => document.activeElement?.getAttribute('data-testid') === 'thread-screen'
+    )
+  }
+  expect(reachedThreadScreen).toBe(true)
+
+  // Aynı gerçek-klavye tekniğiyle: bir bölüm kartının `<summary>`'sine kadar `Tab` ile devam
+  // edilebilir (F-013/K5 deseni — `<details>` doğal olarak odaklanabilir).
+  let reachedSummary = false
+  for (let i = 0; i < 10 && !reachedSummary; i++) {
+    await page.keyboard.press('Tab')
+    reachedSummary = await page.evaluate(
+      () => document.activeElement?.tagName.toLowerCase() === 'summary'
+    )
+  }
+  expect(reachedSummary).toBe(true)
 })

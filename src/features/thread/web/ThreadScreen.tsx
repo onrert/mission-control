@@ -88,14 +88,21 @@ export function ThreadScreen({
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-zinc-300">
-              <span className="text-zinc-500">Proje:</span>
+            {/* QA düzeltme turu 1 (X3/Ö3) — Feature seçeneklerinin metni (`id — title`)
+                sınırsız uzayabilir; native `<select>` kapalıyken bile en uzun `<option>`'ın
+                içerik genişliğine göre boyutlanıyordu (375px'te 828px ölçüldü, `thread-screen`
+                915px'e taşıp 555px hayalet yatay kaydırma yaratıyordu). `min-w-0` (flex item
+                varsayılan `min-width:auto`'yu kapatır) + sabit `w-*`/`max-w-full` + `truncate`
+                select'i viewport'a bağlı, kırpılan bir kutuya sabitler — tam metin dropdown
+                açılınca zaten görünür. */}
+            <label className="flex min-w-0 items-center gap-2 text-sm text-zinc-300">
+              <span className="shrink-0 text-zinc-500">Proje:</span>
               <select
                 aria-label="Proje"
                 data-testid="thread-project-select"
                 value={selectedProjectId ?? ''}
                 onChange={(e) => handleProjectChange(e.target.value)}
-                className="min-h-8 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-100"
+                className="min-h-8 w-32 min-w-0 max-w-full truncate rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-100 sm:w-48"
               >
                 <option value="" disabled>
                   Proje seçin…
@@ -109,14 +116,14 @@ export function ThreadScreen({
             </label>
 
             {selectedProjectId !== null && (
-              <label className="flex items-center gap-2 text-sm text-zinc-300">
-                <span className="text-zinc-500">Feature:</span>
+              <label className="flex min-w-0 items-center gap-2 text-sm text-zinc-300">
+                <span className="shrink-0 text-zinc-500">Feature:</span>
                 <select
                   aria-label="Feature"
                   data-testid="thread-feature-select"
                   value={selectedFile ?? ''}
                   onChange={(e) => setSelectedFile(e.target.value || null)}
-                  className="min-h-8 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-100"
+                  className="min-h-8 w-40 min-w-0 max-w-full truncate rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-100 sm:w-64"
                 >
                   <option value="" disabled>
                     Feature seçin…

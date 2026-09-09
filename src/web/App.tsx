@@ -136,7 +136,14 @@ export default function App() {
         <div
           role="tablist"
           aria-label="Ekranlar"
-          className="order-3 flex w-full shrink-0 items-center gap-4 overflow-x-auto sm:order-none sm:w-auto sm:flex-1"
+          // QA düzeltme turu 1 (X3/Ö2) — beşinci sekme (Thread) eklenince üretim varsayılanında
+          // (sohbet açık, 5 sekme) 320/375px'te son sekme(ler) `overflow-x-auto` şeridinin
+          // TAMAMEN dışına düşüyordu (kırpılmış görünür genişlik 0px, QA ölçtü — E2E çiti eskiden
+          // sohbeti kapalı koşan bir yapılandırmayla 4 sekme ölçtüğü için bunu YAKALAYAMIYORDU).
+          // Yalnızca dar genişlikte (`sm:` altı) boşluk/yazı boyutu küçültülür — metin/yapı/geniş
+          // ekran görünümü DEĞİŞMEZ; bu, 5 sekmenin tamamının en azından bir kısmının başlangıç
+          // kaydırma konumunda (scrollLeft=0) görünür kalması için yeterli.
+          className="order-3 flex w-full shrink-0 items-center gap-1.5 overflow-x-auto sm:order-none sm:w-auto sm:flex-1 sm:gap-4"
         >
           {TABS.map((tab) => {
             const isSelected = selectedTab === tab.screen
@@ -152,8 +159,8 @@ export default function App() {
                 onKeyDown={onTabKeyDown}
                 className={
                   isSelected
-                    ? 'cursor-pointer whitespace-nowrap text-sm font-mono text-amber-400'
-                    : 'cursor-pointer whitespace-nowrap text-sm font-mono text-zinc-400'
+                    ? 'cursor-pointer whitespace-nowrap text-xs font-mono text-amber-400 sm:text-sm'
+                    : 'cursor-pointer whitespace-nowrap text-xs font-mono text-zinc-400 sm:text-sm'
                 }
               >
                 {tab.label}

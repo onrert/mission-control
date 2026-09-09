@@ -208,6 +208,10 @@ describe('ThreadScreen — okunamayan bölüm (AC2/AC3)', () => {
     await waitFor(() => expect(screen.getByTestId('thread-section-transcript')).toBeTruthy())
     const transcriptCard = screen.getByTestId('thread-section-transcript')
     expect(transcriptCard.textContent).toBe('Bu bölüm okunamadı.')
+    // X4/D2 — `docs/03-ux.md` akış (g): üzerine gelince kısa açıklama (`title` özniteliği).
+    // Eskiden hiçbir test bunu ÖLÇMÜYORDU (M8 mutasyonu — `title` kaldırılınca 1210/1210 yeşil
+    // kalıyordu, QA ölçtü). Bu assert olmadan bir regresyon fark edilmeden geçebilir.
+    expect(transcriptCard.getAttribute('title')).toBe('Transkript formatı tanınmadı veya bozuk.')
     // Diğer bölümler etkilenmedi — normal render devam ediyor (W4).
     expect(screen.getByTestId('thread-section-ceo_brief')).toBeTruthy()
   })

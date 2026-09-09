@@ -171,8 +171,10 @@ export interface FeatureDetail {
  * F-010 sözleşmesi — Thread ekranının tel tipi (`GET /api/thread/detail`). Birincil kaynak
  * `docs/qa/<id>-contract.md` + `docs/qa/*.md` (ADR-007 karar 2), F-013'ün `feature-detail.ts`'i
  * ÜZERİNDEN okunur — ikinci bir dosya okuma yolu İCAT EDİLMEDİ (CEO kararı W1). `sections` her
- * zaman kronolojik sırada: gövde (CEO brief) → sözleşme (Developer raporu) → QA raporları
- * (dosya mtime artan) → transkript zenginleştirmesi (en sonda, best-effort, ADR-007 karar 2).
+ * zaman: gövde (CEO brief) ilk sırada, ardından sözleşme (Developer raporu) + QA raporları
+ * GERÇEK dosya `mtime`'ına göre artan sırada KARIŞIK listelenir (QA düzeltme turu 1, X5/Ö5 —
+ * sözleşme rol'e göre sabit ikinci sırada DEĞİL, gerçek zamanına göre), en sonda transkript
+ * zenginleştirmesi (best-effort, ADR-007 karar 2, kronolojiye dahil değil).
  */
 export type ThreadSectionKind = 'ceo_brief' | 'developer_report' | 'qa_verdict' | 'transcript'
 

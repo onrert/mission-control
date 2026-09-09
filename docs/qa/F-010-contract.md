@@ -170,3 +170,85 @@ başka bir feature'ın ESKALE'si yanlışlıkla gösterilebilir. Eşleşme + `ES
   bölüme bağlanmaz.
 - ESKALE badge metni mockup'taki illüstratif "3 QA turu aşıldı (tarih)" yerine sabit, veriyle
   tutarlı bir cümle kullanır (§1 madde 6).
+
+---
+
+## Düzeltme turu 1 (2026-09-10) — QA KALDI kararına (`docs/qa/F-010-2026-09-10.md`) yanıt
+
+CEO'nun bağlayıcı kararları (X1-X6) doğrudan uygulanır; her biri için "ne yapılacak + nasıl
+doğrulanacak" aşağıda. Dosya sahipliği DEĞİŞMEDİ (`src/features/thread/**`, ilgili testler,
+`docs/03-ux.md`; X3 için `src/web/App.tsx`'e asgari CSS dokunuşu, sözleşmenin §1 madde 5/W9'unun
+zaten yetkilendirdiği aynı dosya).
+
+1. **X1/B1 — `readAllowedTranscript` + `statsTracker.record` çağrısı `buildTranscriptSection`
+   içinde TEK bir `try/catch` ile sarılır**, `catch → unreadableTranscriptSection()`.
+   **Doğrulama:** (a) birim test — `fs.realpathSync.native`'i `vi.spyOn` ile EPERM fırlatacak
+   şekilde sahteleştirip diğer üç bölümün (`ceo_brief`/`developer_report`) dolu kaldığını,
+   transkriptin `readable:false` olduğunu ölçmek; (b) aynı senaryo `tests/integration/
+   thread-api.test.ts`'te gerçek HTTP üzerinden — yanıt **200** olmalı (500 DEĞİL), transkript
+   bölümü okunamadı. (c) mutasyon: sarmalayıcı kaldırılınca bu iki test KIRMIZI vermeli; ayrıca
+   düzeltmeyi birebir geri saran ikinci mutasyon (`catch` → `throw err`) de elle uygulanıp
+   KIRMIZI görülüp geri alınacak (kalıcı test değil, elle doğrulama — CLAUDE.md deseni).
+
+2. **X6/Ö1 — `degraded`/`lines_bad` arayüze taşınır.** `access.result.degraded` true iken
+   transkript içeriğinin sonuna sabit bir uyarı cümlesi eklenir (metin önce `docs/03-ux.md`
+   ekran 5'e, sonra `buildTranscriptSection`'a yazılır) — bölüm yine `readable:true` kalır
+   (ADR-007'nin "oran düşerse UI 'veri eksik olabilir' uyarısı gösterir" azaltımı). Ayrı bir
+   `ThreadSection` alanı EKLENMEZ (Karpathy §2 — metne gömmek yeterli, mevcut sözleşmeyi
+   bozmuyor). `lines_ok === 0` dalı (bölüm tamamen okunamaz) DEĞİŞMEZ. **Doğrulama:** (a) 1
+   geçerli + 1 bozuk satırlı fixture'da içerik uyarı cümlesini içeriyor mu; (b) YALNIZCA bozuk
+   satır içeren (lines_ok=0) yeni bir fixture'da bölüm `readable:false` — bu, M10 mutasyonunun
+   (dalın silinmesi) artık KIRMIZI vermesini sağlayan eksik testi kapatır.
+
+3. **X2/Ö4 — ESKALE deseni yalnızca "başlık bloğu"nu tarar** (ilk frontmatter sınırlayıcısından
+   (`---`) önceki satırlar; yoksa ilk 5 satır) — gövdedeki alıntılanmış kod bloğu artık asla
+   eşleşmez. Anchor'lar (`^…$`/`m`) KORUNUR (ikinci savunma katmanı — başlık bloğu içinde bile
+   "ESKALE: true" bir cümlenin PARÇASI olarak geçerse anchor'sız desen yanlış eşleşir).
+   **Doğrulama:** (a) Ö4'ün kendi reprosu (gerçek `ESKALE: false` başlığı + gövdede alıntılanmış
+   `ESKALE: true` kod bloğu) → `eskale:false`; (b) başlık bloğu İÇİNDE "ESKALE: true" ifadesi bir
+   cümlenin parçası olarak geçen (ör. "önceki turda ESKALE: true idi") ama gerçek satırı
+   `ESKALE: false` olan bir fixture → anchor'lar KALDIRILINCA (M11) KIRMIZI verir, anchor'lı
+   haliyle YEŞİL.
+
+4. **X3/Ö2+Ö3 — dar genişlik.** (a) `ThreadScreen.tsx`'teki Proje/Feature `<select>`'lerine
+   sınırlı genişlik + `truncate` (`min-w-0 max-w-full`, sabit `w-*`) eklenir — 320/375/480px'te
+   `thread-screen.scrollWidth === clientWidth` olur (yatay hayalet kaydırma biter, Ö3).
+   (b) `App.tsx`'in sekme çubuğunda YALNIZCA dar genişlikte (`sm:` altı) geçerli responsive
+   CSS (küçültülmüş `gap`/`text-xs`) ile 320/375/480px'te 5 sekmenin TAMAMI (üretim varsayılanı,
+   sohbet açık) kırpılmadan (>0px) erişilebilir olur (Ö2) — metin/etiket/yapı DEĞİŞMEZ, yalnızca
+   boyut/boşluk. **Doğrulama:** `tests/e2e/thread.spec.ts`'e YENİ bir dar-genişlik bloğu eklenir;
+   bu blok `GET /api/chat/status`'u `page.route` ile `chat_enabled:true` döndürecek şekilde
+   sahteleştirir (gerçek, ücretli bir model çağrısı YOK — sözleşme §I2/`session.ts` "uygulama
+   açılışı sıfır model çağrısı yapar" garantisi; yalnızca durum yanıtı sahteleştiriliyor, hiçbir
+   mesaj gönderilmiyor) — böylece paylaşılan `playwright.config.ts` `MC_CHAT_ENABLED:'0'`
+   webServer'ına DOKUNMADAN (dosya sahipliği dışı, `shell.spec.ts`'in sabit "4 sekme" sayımını
+   kırar) üretim sekme kümesi (5 sekme) gerçek tarayıcıda ölçülür. 320/375/480'de 5 sekmenin
+   tamamı `clippedVisibleWidth > 0`.
+
+5. **X5/Ö5+Ö6 — gerçek kronoloji + ayırt edici etiket.** `buildThreadDetail` artık
+   `developer_report` + tüm `qa_verdict` bölümlerini (transkript HARİÇ, o her zaman sonda) tek
+   bir dizide TOPLAYIP gerçek `mtime`'a göre artan sırada birleştirir (rol-sabit "önce sözleşme,
+   sonra QA" varsayımı KALDIRILDI — AC1'in "kronolojik" sözü artık gerçek zaman damgasına
+   dayanıyor, F-012'nin gözlemlenen geriye-gidiş vakası bir daha olmaz). `ceo_brief` her zaman
+   ilk sırada kalır (kaynak belge farklı bir kategori — PRD F5/mockup'ın "CEO→dev→QA zinciri"
+   anlatısı hâlâ CEO brief'in kökeni temsil ettiğini varsayar; sözleşmenin kapsam dışı bıraktığı
+   bir CEO kararı olmadıkça bu değişmez). Her `qa_verdict` başlığına dosya adı eklenir (Ö6) —
+   `QA kararı: KALDI (F-012-2026-09-06-tur3.md)` gibi — aynı görünen bölümler artık ayırt
+   edilebilir. **Doğrulama:** contract mtime'ı QA raporlarından SONRA olacak şekilde kurulmuş bir
+   fixture'da (F-012'nin gerçek deseni) `developer_report`'un ilgili `qa_verdict`'lerden SONRA
+   geldiğini ölçen yeni bir test; sıralamayı bozan (mtime karşılaştırmasını kaldıran) mutasyon bu
+   testte KIRMIZI. Başlık testi: iki `qa_verdict` bölümünün başlıklarının dosya adlarıyla
+   birbirinden ayrıldığını ölçer.
+
+6. **X4 — M7/M8/M10 çitleri.** `tabIndex={0}` (M7) ve `title` ipucu (M8) için gerçek klavye
+   odağı ölçen E2E assert'i (`page.keyboard.press('Tab')` + `document.activeElement`, CLAUDE.md
+   dersi — `.focus()` KULLANILMAZ); M10 çiti madde 2'de kapanıyor. Kapanınca `docs/blockers.md`
+   N6 maddesi (2026-09-08) güncellenip kapatılır — teknik NOT, Kanban'daki (`kanban.spec.ts`)
+   AYNI SINIFTAN ayrı örnek bu turda değiştirilmedi (dosya sahipliği dışı), yalnızca aynı doğru
+   ölçüm tekniğinin artık bu depoda ikinci kez KANITLANDIĞI not düşülür.
+
+**Kapsam dışı (bu turda DEĞİŞMEZ):** Ö7 (feature listesi hata durumu — QA raporunda "ÖNEMLİ"
+ama CEO'nun X1-X6 listesinde YOK, brief'in dosya sahipliği/görev listesi bunu içermiyor; varsayım
+yapmadan atlanıyor, gerekirse ayrı madde olarak sorulur), D3 (transcript-reader.ts bayat yorumu —
+o dosya F-010'un sahipliği dışında, "DEĞİŞTİRİLMEZ" kararı hâlâ geçerli), D5 (çift okuma
+optimizasyonu — kozmetik, brief'te yok).

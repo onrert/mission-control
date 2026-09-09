@@ -2991,3 +2991,106 @@ Onaylanmış hiçbir bölüme dokunulmadı; yalnızca aşağıdaki üç değişi
 - Sıradaki feature (Faz 2 sırası, kullanıcı kararı): F-010 (Thread görünümü) veya F-011 (Token
   ekranı) — F-009'un ürettiği `transcript-reader.ts` API'sini (`readAllowedTranscript` giriş
   noktası) tüketecekler.
+
+---
+
+## 2026-09-09 — F-009 QA düzeltme turu (KALDI → düzeltildi, tekrar `qa`)
+
+**Ne yapıldı**
+QA round-1 kararı **KALDI** idi (`docs/qa/F-009-2026-09-09.md`: 2 bloklayıcı + 5 önemli + 4 yeşil
+mutasyon, puanlar 7/5/6/6). CEO'nun U1-U8 bağlayıcı kararlarının tamamı uygulandı:
+- **U1 (B1, bloklayıcı)** — `transcripts-privacy-guard.test.ts` tamamen yeniden yazıldı:
+  fixture taraması artık özyinelemeli + uzantısız; her satır JSON ayrıştırmasına bakılmaksızın
+  "naif çift-tırnak bölme" ile ham metin üzerinden taranıyor (ayrıştırılamayan/kesik satırlar
+  artık ATLANMIYOR); yol deseni POSIX (`/c/Users/...`), ileri bölü (`C:/Users/...`), ortam
+  değişkeni (`%USERPROFILE%`) ve UNC (`\\SUNUCU\pay`) biçimlerini kapsayacak şekilde genişletildi;
+  ilgisiz proje listesi artık `~/.claude/projects` dizin adlarından TÜRETİLİYOR (sabit taban liste
+  + dinamik, stopword filtreli tokenizasyon) — bu makinede gerçekten `sandbox`/`workdir`/`sdk`
+  gibi QA'nın P10 örneklerini otomatik yakalıyor; opak-blok eşiği 80→40 (P6); satır başına TOPLAM
+  dizge uzunluğu eşiği eklendi (P9, parçalanmış prompt); 11 haneli TC-kimlik-biçimli sayı deseni +
+  çok-kelimeli serbest metin için ONAYLI SÖZCÜK DAĞARCIĞI (beyaz liste) eklendi (P1 — hiçbir
+  yapısal desene takılmayan kısa kişisel metin artık kelime dağarcığı dışı kaldığı için
+  yakalanıyor). QA'nın 12 sondasının (P1-P12) her biri artık kalıcı, sentetik (gerçek veri kopyası
+  DEĞİL), test-içinde-üret-ve-sil regresyon testi. Mevcut 5 fixture hâlâ 0 ihlalle geçiyor
+  (23/23 yeşil).
+- **U2 (B3)** — T1c mutasyon sondası `'x'.repeat(250)` (opak-blok deseniyle maskeleniyordu) yerine
+  yalnızca ONAYLI kelimelerden oluşan, boşluklu, doğal görünümlü bir metinle değiştirildi; artık
+  SADECE uzunluk eşiğini ölçüyor. `MAX_FREE_TEXT_CHARS` 200→100000 mutasyonu elle uygulanıp
+  KIRMIZI görüldü, geri alındı.
+- **U3 (B4)** — `resolveAllowedTranscriptPath`'in dört savunma katmanının (ata-symlink/L2,
+  hedef-symlink/L3, realpath-öncesi kapsama/L1, realpath-sonrası kapsama/L4) her biri artık
+  bağımsız çitli: L2/L3 için mevcut junction testi `reason:'symlink'` KESİN iddiasına yükseltildi
+  + yeni bir "final segment junction" testi eklendi (M6b) — ikisi de matematiksel olarak
+  gösterildiği üzere M10/M11'i (L1/L4) davranışla AYIRT EDEMEZ (sembolik bağ yokken L1 ve L4 aynı
+  koşulu hesaplar) — bu ikisi için `write-gate-manifest.test.ts`/`no-write-gate-bypass.test.ts`
+  emsaliyle **kaynak-şekli çiti** eklendi (kaynak metninde tam satırın varlığını grep'ler). Ayrıca
+  QA'nın bulduğu GERÇEK M6+M11 birleşik kaçışı, üretim kodu değiştirilmeden bir taklit fonksiyonla
+  yeniden üretilip (`ok:true`, kök dışı dosyayı okuttuğu KANITLANDI) aynı fixture'da GERÇEK
+  fonksiyonun güvenli kaldığı (`ok:false`) doğrulandı. Dört mutasyon da (M6/M6b/M10/M11) elle
+  uygulanıp TEK TEK KIRMIZI görüldü, geri alındı (bkz. "Nasıl doğrulandı").
+- **U4 (B5)** — `readRelevantText` artık `{text, dataLostNoLineBoundary}` döndürüyor; kuyruk
+  kırpmasında satır sınırı hiç bulunamazsa (`''` dönen eski yol) `readTranscript` artık
+  `degraded:true` işaretliyor — QA'nın bire bir tekrar ürettiği "dosyanın tamamı kayboldu ama
+  sonuç sağlıklı görünüyor" hatası kapandı. `degraded: linesBad>0 || dataLostNoLineBoundary`
+  mutasyonu (yalnızca `linesBad>0`'a düşürülerek) elle KIRMIZI görüldü, geri alındı.
+- **U5 (B2, bloklayıcı)** — wiki'deki `version` alanı iddiası düzeltildi: önceki `✓ DOĞRULANDI
+  (217 dosyanın tamamında aynı değer)` YANLIŞTI (tek dosyanın ilk satırından okunmuştu). Bu turda
+  TAM tarama tekrarlandı: 219 dosya, 47.396 `version` alanı → `2.1.260` (45.494, baskın),
+  `2.1.261` (1.894), `2.1.205` (8, **kurulu CLI sürümünün kendisi** — önceki "SDK sürümü CLI'dan
+  her zaman ayrı" çıkarımını çürütüyor). Sayfa üç değerle ve düzeltilmiş çıkarımla güncellendi.
+- **U6 (B7)** — wiki kontrol listesinin 3. adımındaki `if False` dalında hiç çalışmayan Python
+  tek-satırlığı, gerçekten çalışan bir script ile değiştirildi ve **bu turda fiilen çalıştırılıp**
+  gerçek çıktısı (219 dosya, 0 bozuk satır, 13 tip) sayfaya yapıştırıldı.
+- **U7 (B6)** — dört kendi-kendine-referans veren "MUTASYON hedefi" testi (transcript-reader.
+  test.ts'teki fake T4/T5, privacy-guard'daki T1d) kaldırıldı/gerçek koda bağlandı: T4/T5 zaten
+  bitişik gerçek testlerle örtüşüyordu (kaldırıldı, yorum bırakıldı); T1d artık GERÇEK
+  `hasOnlyApprovedWords` fonksiyonunu onaylı/onaysız girdiyle çağırıp ayrımı kanıtlıyor.
+- **U8 (B8)** — `record()` tüketicisiz kalmaya devam ediyor (bilinçli, round-1'de "kabul
+  edilebilir" kararı verildi); feature notuna "F-010 bağlanmazsa sil" maddesi eklendi.
+- Feature notu `status: qa`'ya alındı (`docs/features/F-009-transkript-spike.md`).
+
+**Nasıl doğrulandı**
+- Her düzeltme mutasyonla kanıtlandı (uygula → KIRMIZI gözlemle → Edit ile birebir geri al):
+  M1c (T1c maskelemesi giderildi), M6, M6b, M10, M11 (dördü de TEK TEK KIRMIZI), degraded/
+  dataLostNoLineBoundary mutasyonu. M10/M11 için ayrıca AYNI ANDA ikisi birden uygulanıp kaynak
+  dosyası geçici olarak bozuldu, iki structural test de KIRMIZI göründü, `git diff --stat` ile
+  yalnızca beklenen U4 değişikliğinin kaldığı doğrulanıp dosya yedekten (`cp`) birebir geri
+  yüklendi.
+- `npx vitest run tests/features/thread/` → **51 passed** (privacy-guard 23, transcript-reader 28
+  — round-1'e göre +8 kalıcı P1-P12 regresyonu + M6b/M10/M11/kombine testleri, -2 dekoratif
+  self-referential test).
+- `npm run verify` (typecheck + lint + test + build) → **0**, tek seferde yeşil (worker-fork
+  kararsızlığı bu turda gözlenmedi): **1131 passed, 4 skipped (76 dosya)**, build başarılı.
+- `npm run e2e` → **36 passed (36.3s)**, mevcut paketler bozulmadı.
+- `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca kalıcı, meşru test
+  adları (bu turun 8 yeni kalıcı testi dahil, repo genelinde aynı adlandırma konvansiyonu).
+- Yetim süreç: `tasklist /FI "IMAGENAME eq node.exe"` boş döndü. `npm run dev` hiç çalıştırılmadı.
+- Çalışma ağacı commit'li: 3 ayrı commit (privacy-guard, transcript-reader+testler, wiki+feature
+  notu) — her biri kendi dosya sahipliği alanında.
+
+**Sözleşmeden sapmalar**
+- Bu düzeltme turu için ayrı bir `docs/qa/F-009-contract.md` revizyonu YAZILMADI — CEO'nun görev
+  metnindeki U1-U8 kararları zaten "ne yapılacak + nasıl doğrulanacak" ayrıntısını (dosya:satır
+  düzeyinde) içeriyordu; orijinal sözleşme hâlâ geçerli, yalnızca bu progress kaydı revizyon notu
+  olarak hizmet ediyor.
+
+**Kalan risk / bir sonraki QA turuna notlar**
+- M10/M11 (realpath öncesi/sonrası kapsama) için eklenen çit KAYNAK METNİ okuyor (structural) —
+  davranışsal bir black-box testi YOKTUR çünkü matematiksel olarak L2/L3 sağlamken L1/L4
+  davranışla ayırt edilemez (ölçüldü, `transcript-reader.test.ts`'teki açıklayıcı yorumda
+  gerekçesi var). Kaynak satırı yeniden biçimlendirilirse (aynı mantık, farklı değişken adı) bu
+  çit yanlışlıkla KIRMIZI verebilir — o zaman regex'i güncelle, mantığı zayıflatma.
+- Onaylı sözcük dağarcığı (whitelist) mekanizması KASITLI sürtünme yaratıyor: yeni bir fixture
+  yeni bir çok-kelimeli serbest metin eklerse, kelimeler `APPROVED_FREE_TEXT_WORDS`'e bilinçli
+  eklenmelidir — eklenmezse test KIRMIZI verir (bu istenen davranış, unutma).
+- `~/.claude/projects` dizin taramasından türetilen ilgisiz-proje listesi MAKİNEYE BAĞIMLI: P10
+  testi bu dizin yoksa/farklıysa kendini atlıyor (erken çıkış) — CI/temiz klonda bu test anlamsız
+  hâle gelir, sabit taban liste (6 öğe) yine de korunuyor.
+- `createTranscriptReaderStatsTracker().record()` hâlâ tüketicisiz (U8, bilinçli, F-010/F-011'e
+  devredildi — feature notunda "bağlanmazsa sil" maddesi var).
+- Wiki'deki `version`/tip tablosu 2026-09-09 tarihli TAM taramaya dayanıyor; bir sonraki Claude
+  Code güncellemesinden sonra kontrol listesinin 1-3. adımları TAM tarama ile tekrarlanmalı (tek
+  dosya örneklemesi bu turun asıl hatasıydı, tekrarlanmamalı).
+
+**Sonraki adım**
+- qa-evaluator F-009'u tekrar değerlendirsin (feature notu `status: qa`).

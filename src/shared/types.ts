@@ -168,6 +168,36 @@ export interface FeatureDetail {
 }
 
 /**
+ * F-010 sözleşmesi — Thread ekranının tel tipi (`GET /api/thread/detail`). Birincil kaynak
+ * `docs/qa/<id>-contract.md` + `docs/qa/*.md` (ADR-007 karar 2), F-013'ün `feature-detail.ts`'i
+ * ÜZERİNDEN okunur — ikinci bir dosya okuma yolu İCAT EDİLMEDİ (CEO kararı W1). `sections` her
+ * zaman kronolojik sırada: gövde (CEO brief) → sözleşme (Developer raporu) → QA raporları
+ * (dosya mtime artan) → transkript zenginleştirmesi (en sonda, best-effort, ADR-007 karar 2).
+ */
+export type ThreadSectionKind = 'ceo_brief' | 'developer_report' | 'qa_verdict' | 'transcript'
+
+export interface ThreadSection {
+  kind: ThreadSectionKind
+  title: string
+  /** Kaynak dosyanın `mtime`'ı, ISO 8601. Bilinmiyorsa (ör. transkript hiç bulunamadıysa) `null`. */
+  timestamp: string | null
+  /** `readable:false` iken her zaman `null` — arayüz "Bu bölüm okunamadı." gösterir (PRD F5/
+   *  AC2/AC3: ham hata/stack trace ASLA buraya gelmez). */
+  content: string | null
+  readable: boolean
+  /** Yalnızca `kind:'qa_verdict'` iken dolabilir — `docs/qa/*.md`'nin ilk satırından ayrıştırılır. */
+  verdict?: 'GEÇTİ' | 'KALDI' | null
+}
+
+/** `GET /api/thread/detail?project_id=…&file=…`'in tel tipi (F-010 sözleşmesi). */
+export interface ThreadDetail {
+  feature_id: string
+  /** PRD F5/AC4 — `docs/qa/latest.md` bu feature'a aitse VE içinde `ESKALE: true` varsa. */
+  eskale: boolean
+  sections: ThreadSection[]
+}
+
+/**
  * F-008 sözleşmesi §4 — `docs/approvals/` içeriğinden türetilen tek bir kapının durumu.
  * `error:true` ise `status` yalnızca güvenli bir varsayılandır (`'pending'`) — gerçek durum
  * `fs.statSync` başarısız olduğu için belirlenemedi, istemci "Durum belirlenemedi" gösterir

@@ -31,6 +31,8 @@ import {
   createTranscriptReaderStatsTracker,
   type TranscriptReaderStats,
 } from '../features/thread/server/transcript-reader'
+import { resolveClaudeProjectsRoot } from '../features/thread/server/thread-detail'
+import { handleThreadDetail } from '../features/thread/server/handlers'
 import {
   handleChatStatus,
   handleChatHistory,
@@ -332,8 +334,10 @@ export function createServer(
   const maxPayload = resolveEnvInt(process.env, 'MC_MAX_PAYLOAD', 65536)
   const hub = createSseHub()
   const projectsService = createProjectsService(resolvedDataDir, hub)
-  // F-009 T5 — bu turda kimse `.record()` çağırmıyor (bkz. `transcript-reader.ts` üst yorumu).
+  // F-010 W2 — artık `handleThreadDetail` her gerçek transkript okumasında `.record()` çağırıyor
+  // (bkz. `thread-detail.ts` `buildTranscriptSection`); bu sayaçlar dürüstçe sıfır kalmıyor.
   const transcriptReaderStats = createTranscriptReaderStatsTracker()
+  const claudeProjectsRoot = resolveClaudeProjectsRoot(process.env)
 
   // F-012 — `deps`'in alan kümesi KAPALI (Ö7): yalnızca bu beşi, `store`/`projectsService`
   // ASLA geçirilmez (K4, olay akışı CEO bağlamına beslenmez). Bootstrap arka planda,
@@ -443,6 +447,10 @@ export function createServer(
         const rawProjectId = rest.slice(0, sepIndex)
         const rawFile = rest.slice(sepIndex + 1)
         handlePatchFeatureStatus(req, res, projectsService, rawProjectId, rawFile)
+        return
+      }
+      if (pathname === '/api/thread/detail' && req.method === 'GET') {
+        handleThreadDetail(req, res, projectsService, claudeProjectsRoot, transcriptReaderStats)
         return
       }
       if (pathname === '/api/gates' && req.method === 'GET') {

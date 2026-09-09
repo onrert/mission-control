@@ -3745,3 +3745,91 @@ B1/AA1 kaldı. Sözleşme eki: `docs/qa/F-011-contract.md` §7.
 
 **Sonraki adım**
 - qa-evaluator F-011'in düzeltme turu 3'ünü (B1/AA1) değerlendirsin.
+
+---
+
+## F-011 düzeltme turu 4 (B1/AA1, 2026-09-09)
+
+**Ne yapıldı**
+
+- **B1/AA1 (ağ çiti, davranış temelli birincil katman eklendi):** Tur 3'ün AST'ye geçişi doğruydu
+  ama `resolveRelativeImport` çözemediği bir yerel import'u SESSİZCE ATLIYORDU (fail-open) — beyaz
+  listenin "varsayılan RET" felsefesiyle çelişen, X1'in kök nedeninin aynısı başka bir kapıdan.
+  QA'nın V5/V6/V7 sondaları bunu gizlenmemiş, sıradan NodeNext/ESM alışkanlığıyla (`./x.js`/
+  `./x.mjs`/`./x.cjs`) kanıtladı; hatta MEVCUT bir import'a yalnızca `.js` eklemek bile ürün
+  kodunun gerçek `computeUsageReport`'undan canlı bir HTTP isteği çıkarmaya yetiyordu, `npm run
+  verify` tamamen yeşilken. CEO kararı: çit bir daha sözdizimi analizine dayanmasın — kök neden
+  dört kez (kara liste → modül adı kara listesi → regex beyaz liste → AST + fail-open çözücü)
+  tekrarladı ve ortak nokta hep "kodu OKUMA"ydı.
+  - **Birincil katman (yeni, `usage-aggregator.test.ts` —
+    `installNetworkCapabilitySentinel`):** gerçek bağlantı kurma noktalarının kendisi
+    (`net.connect`/`net.createConnection`/`net.Socket.prototype.connect`, `tls.connect`,
+    `http.request`/`http.get`, `https.request`/`https.get`, `dgram.createSocket`, `dns.lookup`/
+    `dns.resolve`/`dns.promises.lookup`/`dns.promises.resolve`, `globalThis.fetch`) GLOBAL olarak
+    kuşatılıyor — hedef host/port ve tetikleyen sözdizimi tamamen önemsiz, yalnızca "gerçekten bir
+    bağlantı girişimi oldu mu" ölçülüyor. GERÇEK `computeUsageReport` mock'suz, gerçek fixture
+    verisiyle çalıştırılıyor. Önceki "kendi rastgele portunu dinleyen sunucu" testi bu katmanla
+    DEĞİŞTİRİLDİ (QA §2.5: o yaklaşım yalnızca kendi portunu görebiliyordu, V5/V6/V7 başka bir
+    porta gitti ve kaçırıldı).
+  - **İkincil katman (mevcut AST taraması, fail-closed'a çevrildi,
+    `network-capability-guard.test.ts`):** `resolveRelativeImport` artık `.js→.ts`, `.mjs→.mts`,
+    `.cjs→.cts` eşlemesini dener; hiçbir aday bulunamazsa dosya **İHLAL** sayılır (eskiden
+    sessizce atlanıyordu). Giriş numaralandırması `.mts`/`.cts`'i kapsar ve alt dizinleri
+    özyinelemeli tarar. "Körlük assert'i" dosya SAYISI yerine BEKLENEN KÜMEYE
+    (`transcript-reader.ts` taranan kümede OLMALI) bağlandı — eskisi iki yerel giriş dosyasıyla
+    geçişli takip tamamen kırılsa bile asla tetiklenemezdi.
+  - Ürün koduna (`usage-aggregator.ts`, `handlers.ts`, `UsageScreen.tsx`) dokunulmadı; yalnızca iki
+    test dosyasındaki çit mekanizması değişti. Yeni bağımlılık eklenmedi.
+
+**Nasıl doğrulandı**
+
+- Yeni kalıcı negatif kontroller: birincil katman testi (`usage-aggregator.test.ts`) + V5/V6/V7
+  (`.js`/`.mjs`/`.cjs` uzantılı, önceden çözülemeyen relative import), fail-closed testi
+  (`./does-not-exist-anywhere`), "patlama yarıçapı" regresyonu (mevcut importa yalnızca `.js`
+  eklenmesi taramayı düşürmüyor) — hepsi ✔ YEŞİL, tam paket **52/52** (usage feature dosyaları).
+- **Mutasyon (a) — birincil katman:** gerçek `usage-aggregator.ts`'e geçici bir `http.get(...)`
+  çağrısı enjekte edildi (sentinel aktifken) → primary-layer testi **KIRMIZI** (`AĞ ÇİTİ İHLALİ:
+  http.get çağrıldı`, senkron, hang yok — sentinel gerçek bağlantı denemesinden ÖNCE yakalıyor).
+  Elle geri alındı (`git checkout` KULLANILMADI), `md5sum` başlangıç değeriyle birebir eşleşti
+  (`5908d3fb493999736e21e8601c29b11a`).
+- **Mutasyon (b) — ikincil katmanın fail-closed'u geri sarıldı** (eski fail-open davranışına
+  dönüldü) → yalnızca ilgili kalıcı test (`çözülemeyen yerel import artık İHLAL sayılır`)
+  **KIRMIZI**, diğer 27 test etkilenmedi (V5/V6/V7 zaten `resolveRelativeImport`'un uzantı
+  eşlemesiyle çözüldüğü için ayrıca etkilenmedi — beklenen, çünkü bu mutasyon yalnızca "hiç
+  çözülemeyen" durumu hedefliyor). Elle geri alındı, `md5sum` eşleşti.
+- **Mutasyon (c) — beyaz liste gevşetildi** (`ALLOWED_BARE_MODULES`'e `'http','net'` eklendi) →
+  **12/28 test KIRMIZI**. Elle geri alındı, `md5sum` başlangıç değeriyle birebir eşleşti
+  (`7c872d35fdb9e06f7b583bd7177257d8`).
+- `npx tsc --noEmit` → temiz. `npm run lint` → temiz.
+- `npm run verify`: 1. koşu worker-fork kararsızlığıyla çöktü (bilinen ortam gürültüsü,
+  `exit code 3221226505`, CLAUDE.md'de belgeli), 2. koşu **tamamen yeşil**: typecheck 0, lint 0,
+  **test: 84 dosya geçti + 1 skip (85), 1303 test geçti + 4 skip (1307)**, build başarılı.
+- `npm run e2e`: ilk koşuda `kanban.spec.ts` tek başına kırmızı verdi (409 banner'ın kapanma
+  zamanlaması, F-011'e ait değil), tek başına tekrar koşulduğunda 13/13 geçti (flake); tam paket
+  ikinci koşuda **55/55 geçti (44,2s)**.
+- `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca önceki turlardan kalan
+  meşru test adları, `src/` altında sıfır eşleşme; `write-gate-manifest.test.ts:124` dahil
+  hiçbirine dokunulmadı.
+- Yetim süreç: bu turda hiçbir sunucu/`npm run dev` başlatılmadı (yalnızca `vitest`/`tsc`/`eslint`/
+  `playwright test`); `netstat` ile 7333'te dinleyici olmadığı teyit edildi. Ortamda önceden var
+  olan, bana ait olmayan bir `npm run dev` (PID 21016, tur 4 QA raporunda da not edilmiş aynı
+  süreç) ve `hayat-mentoru`'ya ait süreçler dokunulmadan bırakıldı.
+
+**Kalan risk / bir sonraki QA turuna notlar**
+
+- `createRequire(`/`require(`/`process.binding(`/`eval(`/`Function(` hâlâ metinsel (kara-liste
+  kalıntısı) — bölünmüş erişimler (`process['bind'+'ing']`) bu taramanın yapısal sınırı, tur 3 QA
+  raporunda §1.3'te bloklayıcı olmayan borç olarak zaten kayıtlı, bu turda dokunulmadı.
+- AA3'ün eşiğinin ileride proje başına değerlendirilmesi (tur 3 QA raporu §8 madde 3) hâlâ açık.
+- Birincil davranış katmanı `net`/`tls`/`http`/`https`/`dgram`/`dns`/`fetch`'in ANA giriş
+  noktalarını kuşatıyor; UNC/WebDAV (`fs` üzerinden, tur 3'ün Y6 sondası) veya bölünmüş
+  `process.binding` ile kurulan ham soket gibi Node'un standart ağ API'lerinin tamamen dışındaki
+  egzotik yollar bu katmanın kapsamı dışında kalır (tur 3'te de kanıtlanamadığı, yalnızca teorik
+  olduğu not edilmişti).
+- Ortamdaki önceden var olan yetim `npm run dev` (PID 21016) hâlâ duruyor — bu benim turumdan önce
+  başlamış, CLAUDE.md'deki bilinen "yetim dev süreç ağacı" borcunun bir örneği, bu turda da
+  dokunulmadı (bana ait değil).
+
+**Sonraki adım**
+- qa-evaluator F-011'in düzeltme turu 4'ünü (B1/AA1, davranış temelli birincil katman)
+  değerlendirsin.

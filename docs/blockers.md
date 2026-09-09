@@ -457,3 +457,21 @@ yönde.
   düz `.ts` içerdiği için gerçek risk yok). **Eşik:** `usage/server`'a ilk `.mts`/`.cts` giriş
   dosyası eklendiğinde. **Düzeltme yönü:** fixture dizininde `.mts` giriş dosyası kurup
   `listSourceEntriesRecursively`'ye doğrudan assert eden ucuz bir kalıcı test.
+
+## 2026-09-10 — F-011 kapanışından taşınan iki borç (QA yumuşatmadı, ~12 satır)
+
+QA 7. turda **GEÇTİ** verdi ama iki borcu açıkça bloklamayan olarak işaretledi. İkisi de deponun
+tekrar eden hata sınıfının **özyinelemeli** hâli: çitleri korumak için eklenen çitin kendi çiti yok.
+
+### 1. Precapture katmanının POZİTİF KONTROLÜ yok
+`tests/features/usage/server/network-precapture-sentinel.ts` — `push` satırını silmek ya da
+sarma döngüsünü boşaltmak **54/54 YEŞİL** bırakıyor ve **26 canlı istek** sızdırıyor.
+Bu, 5. turda sentinel'in kendisinde bulunan hatanın **bir katman yukarısı**.
+
+### 2. İlk-import sırası yalnızca YORUMLA korunuyor
+Precapture modülünün ürün import'undan **önce** olması taşıyıcı (QA ölçtü: sıra bozulunca aynı
+sızıntı 54/54 yeşil). Ama bunu koruyan **yapısal çit yok** — biri import'ları yeniden sıralarsa
+koruma sessizce ölür.
+
+**Kapatma:** ~6+6 satır, tek turda. **Eşik:** F-011'e ya da `tests/features/usage/**`'a dokunan
+bir sonraki iş; ya da Faz 3 başlamadan önce (CEO önerisi: hemen, çünkü sınıf kanıtlanmış).

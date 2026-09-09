@@ -3481,3 +3481,111 @@ web/{UsageScreen,useUsageReport}}` + `src/shared/types.ts`/`src/server/index.ts`
 **Sonraki adım**
 - qa-evaluator F-011'i değerlendirsin (`docs/qa/F-011-contract.md` zaten `status: draft` —
   QA turu kontrata karşı da değerlendirmeli, kontrat kodlamadan önce yazılmıştı).
+
+## 2026-09-09 — F-011 QA KALDI düzeltme turu tamamlandı (Z1-Z7), tekrar `status: qa`
+
+**Görev:** `docs/qa/F-011-2026-09-10.md`'nin KALDI kararının bulgularını (B1 BLOKLAYICI + Ö1-Ö7)
+`docs/qa/F-011-contract.md` §5 ekindeki CEO kararları Z1-Z7 ile kapatmak. Bu oturum 150-tur
+sınırından devraldı; Z1-Z6 önceki turlarda commit'lenmişti (`904edb5`, `bd258e3`, `0d1a3d2`,
+`27cf2f8`), bu turda yalnızca **Z7** (README AC6 yordamı) tamamlandı ve tüm turun doğrulaması
+tekrarlandı.
+
+**Z1-Z6 özeti (önceki turlardan, bu turda yeniden doğrulandı):**
+- **Z1 (BLOKLAYICI)** — `transcript-reader.ts`'in `readTranscript`'i artık aynı `message.id`+
+  `requestId` çiftini taşıyan `assistant` satırlarından yalnızca ilkini sayıyor (dosya-içi `Set`).
+  Kök neden B1'di: Claude Code tek bir yanıtı birden çok içerik-bloğu satırına yazıyor, her satır
+  aynı `usage` nesnesini taşıyor, eski kod hepsini topluyordu (+%101 şişme).
+- **Z2** — ağ çiti yapısal: `network-capability-guard.test.ts` `usage/server/**`'in TÜM yerel
+  import zincirini tarayıp `net/http/https/dns/tls/child_process/…` import edemeyeceğini,
+  `fetch`/dinamik `import()` kullanamayacağını doğruluyor.
+- **Z3** — `usage-read-only-manifest.test.ts` (Thread emsali): `computeUsageReport` çağrılarından
+  önce/sonra dizin anlık görüntüsü karşılaştırılıyor, dolaylı yazma da (`fs['w'+'riteFileSync']`)
+  yakalanıyor.
+- **Z4** — üç sessiz veri kaybı artık `degraded:true` + görünür uyarı: format değişimi
+  (`unknown_type_lines` artık "tanınan oran"a dahil), okunamayan dosya (`unreadable_file_count`),
+  32 MB kuyruk kırpması (`truncated_file_count`).
+- **Z5** — 320px'teki 21px sekme-çubuğu taşması giderildi, E2E eşiği anlamlı bir asgari genişliğe
+  kalibre edildi (280px de dahil).
+- **Z6** — `UsageScreen.tsx`'e mockup'la birebir sütun başlıkları (`Proje | Gün | Giriş | Çıkış |
+  Dağılım`) eklendi; 320px'te proje sütunu artık boşalmıyor (grid şablonu `1fr_auto_auto_auto_auto`).
+
+**Z7 (bu turda tamamlandı) — README AC6 çapraz kontrol yordamının YENİDEN YAZILMASI:**
+
+Eski yordam iki noktada uygulanamazdı (QA Ö4): `ccusage daily/monthly` proje filtresi almıyor
+(makinedeki TÜM projeleri topluyor, panel yalnızca izlenenleri) ve "%10+ sapmada 'veri eksik
+olabilir' uyarısına bak" yönlendirmesi B1 gibi bir çift-sayım hatasını hiç YAKALAMAZ (o uyarı
+yalnızca tanınmayan/okunamayan satır oranını yansıtır, aritmetik hatayı değil).
+
+Yeni yordam `ccusage session --json`'a ve **oturum kimliği eşleştirmesine** dayanıyor (QA'nın
+kullandığı, kanıtlanmış yöntem): kullanıcı önce kendi projesinin `~/.claude/projects/<kodlanmış
+proje yolu>/*.jsonl` üst düzey dosya adlarını (oturum kimlikleri) listeliyor, sonra
+`ccusage session --json` çıktısını yalnızca bu kimliklerle (`period` alanı) süzüp
+`inputTokens+outputTokens+cacheCreationTokens+cacheReadTokens` topluyor — üç kısa `node -e`
+komutu, kopyala-yapıştır. README'ye kapsam farkı (ccusage TÜM makine vs panel İZLENEN projeler)
+ve eski "degraded uyarısına bak" yönlendirmesinin neden yanlış olduğu açıkça yazıldı.
+
+**Kendi makinemde çalıştırıp doğruladım (varsayım değil, ölçüm):**
+1. Bu deponun `~/.claude/projects/C--dev-apps-mission-control/` dizininde **98** üst düzey oturum
+   dosyası var; bunlardan **67**'sinin en az bir `assistant` satırı var (kalan 31'i yalnızca
+   `agent-setting`/`queue-operation` gibi CEO-önyüz olayları taşıyor, gerçek `usage` YOK — bunu
+   tek tek doğruladım, 30/31'i sıfır `assistant` satırı, 1'i `usage` alanları hepsi 0 olan tek bir
+   satır taşıyor; hiçbiri toplama katkı yapmıyor).
+2. README'deki 3 adımlık komutu **birebir** (yalnızca `/tmp` yerine kendi scratchpad'ime
+   yönlendirerek) çalıştırdım: `ccusage session --json` → 67 eşleşen oturum → toplam
+   **2.477.281.303** (bu, o anki ölçüm — depo canlı büyüyor, aşağıya bakınız).
+3. Panelin ürettiği sayıyı **koddan ayrı bir script ile, sunucuyu hiç çalıştırmadan** doğrudan
+   `computeUsageReport`'u çağırarak ölçtüm (`tsx`, gerçek `~/.claude/projects` kökü, gerçek
+   `data/projects.json`'daki tek izlenen proje): **2.741.166.920**.
+4. Ham fark **%10,65** — ilk bakışta B1'in geri geldiği izlenimi verir. Bunu oturum-oturum
+   kırılımına indirdim: **66 oturumun 66'sı da** (kapanmış/tamamlanmış oturumlar) panel ile
+   `ccusage session` arasında **BİREBİR (0 fark, tek token bile sapmıyor)** eşleşiyor — hem ana
+   oturum hem TÜM subagent dosyaları dahil, `message.id`+`requestId` tekilleştirmesiyle. **Tek
+   sapma kaynağı**: bu ölçümü yaptığım SIRADA hâlâ açık/büyümekte olan bu oturumun kendisi
+   (`b13e8d3f-…`) — panel ve `ccusage` onu İKİ FARKLI anda okuduğu için (klasik "sandviç" etkisi,
+   QA'nın F-008/F-011 raporlarında defalarca tarif ettiği sınıf), bu TEK oturumda fark var. O
+   oturumu hariç tutunca: kapanmış oturumlar toplamı **272.022.327 = 272.022.327**, sapma
+   **%0,0000**. Bu, Z1'in dedup mantığının `ccusage`'ın kendi hesabıyla **tam** örtüştüğünün
+   bağımsız kanıtı — QA'nın önceki turda ölçtüğü %0,19'dan (o da kısmen aynı sandviç etkisiydi)
+   daha güçlü bir doğrulama.
+5. README'ye bu ölçümü ("kapanmış oturumlarda %0, aktif oturumda geçici sapma normaldir, büyük
+   sapma GÖRÜRSEN önce tek bir oturuma mı ait olduğuna bak") dürüstçe yazdım — QA'nın orijinal
+   %0,19 rakamını KOPYALAMADIM çünkü o farklı bir andaki ölçümdü; bunun yerine METODU ve NASIL
+   YORUMLANACAĞINI belgeledim, sabit bir yüzde değil.
+
+**Nasıl doğrulandı (tüm tur, Z1-Z7 birlikte)**
+
+- `npm run verify` (typecheck+lint+test+build): ilk koşuda `tests/integration/usage-api.test.ts`
+  worker-fork ile **çıkış kodu 3221226505** ile çöktü (CLAUDE.md'nin bilinen kararsızlığı — bu
+  koşuda 1278 test geçti, dosya sayımı 85 dosyanın 1'i çökme olarak görünmüyordu, yani sessizce
+  eksik saydırıyordu). **İkinci, temiz koşu: exit 0 — typecheck 0, lint 0, 84 test dosyası geçti
+  + 1 skip (85 dosya), 1281 test geçti + 4 skip (1285 test), build başarılı.** Rapor edilen sayı
+  bu ikinci, temiz koşudan.
+- `npm run e2e`: **54/54 geçti (44,5s)**, tek koşuda (yeniden koşmaya gerek kalmadı).
+- `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca kalıcı, meşru test
+  adları (yukarıdaki dosyalar), kaynakta kalıntı yok.
+- Yetim süreç: oturum başında `Get-CimInstance Win32_Process` üç mission-control'e ait yetim
+  `node.exe` buldu (port 7599'da `npm start` + iki `tsx` çocuğu, bir önceki turdan kalma) —
+  `hayat-mentoru`/`04-settings.mjs` süreçlerine DOKUNULMADI, yalnızca bu üçü `Stop-Process` ile
+  temizlendi. `verify`/`e2e` öncesi ve sonrasında `node.exe`/`electron.exe` süreç listesi BOŞ.
+  `npm run dev` bu turda hiç çalıştırılmadı.
+- Çalışma ağacı commit'li: bu turdan önceki dört commit (`904edb5`, `bd258e3`, `0d1a3d2`,
+  `27cf2f8`) zaten Z1-Z6'yı taşıyordu; bu turun kendi değişikliği yalnızca `README.md` (Z7) +
+  bu not + feature notu `status: qa` — ayrı, küçük bir commit'te.
+
+**Kalan risk / bir sonraki QA turuna notlar**
+
+- README'nin yeni yordamı **kullanıcının kendi projesinin kodlanmış dizin adını bilmesini**
+  gerektiriyor (`ls ~/.claude/projects` ile bulunabilir, adım 1'de not düşüldü) — tam otomatik
+  değil, bilinçli olarak (sözleşme §1 "Dışında": ccusage'ı otomatik çalıştırmak kapsam dışı).
+- Aktif/büyüyen bir oturum varken karşılaştırma yapmak KAÇINILMAZ OLARAK gürültülü olacak
+  (yukarıda ölçülen %10,65 bunun somut örneği) — README bunu bir hata sanıp paniklememesi için
+  açıkça uyarıyor, ama kullanıcı yine de "yordamı takip ettim, %10 sapma var" diye QA'ya
+  gelebilir; bu durumda önce "hangi TEK oturum" sorusunun sorulması gerektiği not düşüldü.
+- Z1-Z6'nın kendi kalan riskleri (contract §4: `mtime` bazlı gün türetme, `agentType`'ın sabit
+  bir listeyle kısıtlanmaması) değişmedi, bu turda yeniden değerlendirilmedi.
+- Panel `degraded:true` gösteriyor (bu makinede gerçek, `unknown_type_lines` oranı eşiği aşıyor)
+  — bu Z4'ün doğru çalıştığının bir kanıtı, hata değil; QA turu ekranda "veri eksik olabilir"
+  uyarısının göründüğünü teyit etmeli.
+
+**Sonraki adım**
+- qa-evaluator F-011'in Z1-Z7 düzeltme turunu değerlendirsin.

@@ -3,3 +3,4 @@
 - [Mutation testing safety](feedback_mutation_testing_safety.md) — never `git checkout -- <file>` to undo a mutation when that file has uncommitted real fixes; commit first or revert by hand.
 - [Orphan process before verify](feedback_orphan_process_before_verify.md) — on resume, check/kill orphaned node.exe on port 7333 before npm test/verify/e2e; EADDRINUSE looks like a regression but isn't.
 - [Isolate live session before blaming a bug](feedback_isolate_live_session_before_blaming_bug.md) — big aggregate deviation vs ccusage/etc: diff per-session first, the active/growing session is usually the whole gap.
+- [Nested real-suite fork bomb](feedback_nested_real_suite_fork_bomb.md) — a test spawning the real vitest suite must exclude its own test file, or it recursively re-triggers and forks exponentially.

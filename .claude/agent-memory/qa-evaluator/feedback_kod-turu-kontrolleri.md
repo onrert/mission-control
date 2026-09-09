@@ -478,3 +478,54 @@ CALISMA ZAMANI casusu yakaliyor (iki katman), `require` ailesinde **sifir** katm
    brief'in bloklayici tanimina bak (F-011 tur 7'de tanim "modul YERINDEYKEN pratik canli
    sizinti" idi; modulu mutasyona ugratmak "yerinde" degildir → borc, karar degil) — ama
    yumusatmadan, esik+duzeltme yonuyle yaz.
+51. **Ayristirma tabanli sayac citlerinde asil sondaj: "her iki taraf TUTARLI kalarak" kayip.**
+   Sessiz-test-atlama citi (2026-09-10) vitest'in `X passed | Y skipped (T)` satirinda
+   `sum == T` mi diye bakiyordu. Gercek cokmede `sum < T` olustugu icin cit calisiyor gorunuyor.
+   Ama bir dosya hic TOPLANMAZSA `sum` da `T` de birlikte duser → cit tamamen kor.
+   Kanit ucuz ve GERCEK komutla alinir: `npm run test -- --exclude "<bir test dosyasi>"` →
+   16 test kayboldu, exit 0, cit sessiz; iki dizini birden dusurunce %52 kayip, yine exit 0.
+   **Sor:** citin okudugu sayinin KARSI TARAFI nerede? Diskten numaralandirilmis bir gercekle
+   karsilastirilmiyorsa cit yalnizca kendi ic tutarliligini olcuyor. Sabit taban (`MIN_EXPECTED
+   _TESTS=500` vs gercek 1327) bir savunma degil, tabeladir — yuzdesini hesapla ve yaz.
+52. **Citin KARAR katmani degil, BAGLANTI katmani mutasyona ugratilmali.** `evaluateOutput`i
+   `return {ok:true}` yapmak 17 testin 7'sini KIRMIZI yapiyordu (pozitif kontrol var). Ama
+   `package.json`'daki `"test": "node scripts/verify-test-run.mjs"` → `"vitest run"` mutasyonu
+   **1323/1327 YESIL** birakti: cit tek satirla devreden cikariliyor ve hicbir test fark
+   etmiyor. `grep -rn "<cit-dosyasi>" --include=*.ts --include=*.json .` ile citi cagiran
+   satirin TEST tarafindan okunup okunmadigini dogrula. Bu depoda hook'lar `.js` uzantisi
+   yuzunden iki feature boyunca olu kostu — ayni sinifin betik-adi versiyonu.
+53. **Kok neden "acik birakildi" iddiasini kendi olcumunle dogrula, sonra teorik/pratik ayrimi yap.**
+   Developer "cokme+exit 0 tekrar uretilemedi" dedi. 8 ham `npx vitest run` kosturdum: 2 cokme,
+   ikisi de exit 1 ve ikisi de aritmetik uyusmazlik uretti → iddia DOGRULANDI ve kok nedenin
+   acik kalmasi kabul edilebilir oldu. **Ama karari kok nedene baglama:** KALDI gerekcesi
+   citin kendi kapsamindaki delikler olmali. Boylece duzeltme turu dogru yere bakar.
+54. **CI/CLI citlerinde ucuz yan sondalar:** `FORCE_COLOR=3 npm run test` (ANSI kacislari
+   `\s*$` cipasini kirar → saglikli kosu KIRMIZI, fail-closed ama yanlis alarm),
+   `--reporter=dot`, ozetin yalnizca stderr'e yazilmasi, alt surecin hic `exit` cagirmamasi,
+   `spawn` hatasi, ve **argumanli hedefli kosu** (`npm run test -- tek-dosya` → taban altinda
+   sahte KIRMIZI). Hepsi saniyeler surer, ucu birden bulgu cikardi.
+55. **Bir cit "muafiyet" (skip/bypass) katmani icerdigi anda, asil saldiri yuzeyi o katmandir.**
+   Sessiz-test-atlama citi 2. turunda disk-vs-rapor karsilastirmasi B1'i kapatti, ama kapsam
+   kontrollerini kapatan `hasExplicitPositionalFilter` muafiyeti fazla genisti: bilinen dort
+   bayrak disindaki HER deger alan bayragin degeri "pozisyonel hedef" sayiliyordu. Sonuc:
+   `npm run test -- --maxWorkers 4 --exclude "<iki dizin>"` → 685 test sessizce dustu, EXIT=0;
+   ayni komut `--maxWorkers 4` OLMADAN KIRMIZI. **Sonda seti:** `-t X`, `--dir X`, `--shard 1/2`,
+   `--pool X`, `--retry N`, `--reporter junit --outputFile r.xml` — ayrica esitli biciminin
+   (`--shard=1/2`) farkli siniflandigini kontrol et. **Ikinci sonda:** cit muafiyet uygularken
+   EKRANA BIR SEY BASIYOR MU? Sessiz muafiyet = kosullu olarak olmus kapi.
+   **Ucuncu sonda:** ortam degiskeni kill-switch'leri (`MC_TEST_RUN_CMD`,
+   `MC_EXPECTED_TEST_FILE_COUNT` gibi test kancalari) citi tumden susturuyor mu.
+56. **Baglanti citini iki yonde yen: "betigi sil" YETMEZ, "betige bayrak sizdir" da dene.**
+   `"test": "vitest run"` mutasyonu KIRMIZI veriyordu; asil deger `verify` zincirine
+   `npm run test -- --maxWorkers 4` sizdirmakta cikti — o da KIRMIZI verdi ve boylece
+   yukaridaki muafiyet deliginin CI'a TASINAMADIGI kanitlandi. Bir delik bulunca hemen
+   "betik/CI yoluna tasinabiliyor mu" diye sor; tasinamiyorsa bloklayici degil, hardening'dir.
+57. **Ayristirici citlerinde fail-open/fail-closed'i TAM KOSU YAPMADAN olc.** `computeExpected
+   FileCount(repoRoot)` gibi parametreli fonksiyonlari scratchpad'de sahte bir repo koku
+   (kucuk `tests/` agaci + varyant `vitest.config.ts`) ile cagir: degiskene alinmis / spread /
+   kosullu `include` → THROW (fail-closed) mi, `[]` (fail-open) mi? Yedi bicim varyanti 1 saniyede
+   olculur; tam suite kosusu her biri icin ~25 sn olurdu.
+58. **Bu depoda `verify` kirmizisinin iki BILINEN cevresel sinifi var; ucuncu kosuya kadar
+   karar verme.** (a) `3221226505` worker cokmesi (~%25-50 oran), (b) Windows temp-dizin
+   yarisi (`afterEach` `fs.rmSync` → `ENOTEMPTY`). Ikisi de citle ilgisiz; raporda ayrik yaz,
+   yoksa developer'in duzeltmesini haksiz yere kirmizi gostermis olursun.

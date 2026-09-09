@@ -192,3 +192,47 @@ mutasyon planlanmamış kod yollarını, (b) çok katmanlı savunmaların ikinci
    mu, (b) araci (`tsx watch`) tek basina calisiyor mu, (c) feature'in katkisini (yeni izleyici)
    mutasyonla devre disi birak — hala kirmizi mi, (d) bos bir veri dizini ile hala kirmizi mi.
    Dorduncusu de kirmiziysa bulgu proje borcudur, feature'in kararini etkilemez.
+
+---
+
+## F-009 turunda eklenen bes teknik (arastirma/fixture feature'i)
+
+23. **Kara listeye dayanan "gizlilik/sizinti citi"ni 12'lik standart sonda setiyle yen.**
+   F-009'da fixture'lari tarayan cit 12/12 sizdiran sondadan gecti. En verimli iki delik
+   desenin kendisinde degil, **numaralandirma ve on-isleme** katmanindaydi: (a) `readdirSync`
+   yalnizca ust seviye + yalnizca `.jsonl` suzuyordu → `.json` uzantili ve alt dizindeki
+   sizintilar **hic taranmadi**; (b) tarayici satiri `JSON.parse` edip basarisiz olunca
+   `continue` ediyordu → secret/uzunluk kontrolleri **yalnizca ayristirilabilen** satirlarda
+   kosuyordu, yani fixture setinin **tanim geregi bozuk** uyesi (`truncated-last-line`)
+   sizinti icin serbest kanaldi. Sonda seti: kisa-ama-kisisel metin · POSIX yol (`/c/Users/…`)
+   · `%USERPROFILE%` · UNC · ileri bolu (`C:/Users/…`) · 80 karakter altinda base64 ·
+   ayristirilamayan satirda uzun prompt · JSON **anahtari** olarak metin · uzun metni
+   <esik parcalara bolme · listede olmayan gercek proje adi · farkli uzanti · alt dizin.
+   Sondalari fixture dizinine birak, gercek cit testini kostur, sonra sil.
+24. **Bir BELGE teslimatinda `✓ DOGRULANDI` isaretli her sayisal iddiayi tam taramayla yeniden
+   uret.** F-009 wiki sayfasi "217 dosyanin tamaminda ayni `version` degeri" diyordu; tam tarama
+   uc ayri deger buldu ve **baskin deger sayfada hic gecmiyordu** (%96). Bu tur iddialar genelde
+   tek dosyanin `head -1`'inden gelir. Arastirma feature'inda teslimat kod degil belge oldugu icin
+   bu dogrudan bloklayicidir; ayrica sayfanin cikarimlarini (burada "transkript surumu CLI'dan
+   ayridir") da cokertebilir. Ucuz olcum: `find … | xargs grep -oh '"alan":"[^"]*"' | sort | uniq -c`.
+25. **`.gitattributes` ile "bayt korunuyor" iddiasini UC yerde olc.** Diskte, `git show HEAD:<yol>`
+   blob'unda ve **temiz klonda** (`git clone --no-hardlinks .` scratchpad'e). F-009'da ucu de
+   3 CRLF + BOM gosterdi. Dikkat: `git check-attr -a` hala `eol: lf` gosterebilir — `text: unset`
+   oldugu icin etkisizdir, ama bunu belgeye degil **olcume** dayanarak soyle. Kontrol grubu sart:
+   kardes fixture'da (`valid.jsonl`) 0 CRLF olmali, yoksa fixture ayirt edici degildir.
+26. **Cok katmanli yol guard'inda her katmani AYRI kaldir; birlesik mutasyonun kirmizi vermesi
+   citi kanitlamaz.** F-009'un guard'i dort katmanliydi (ata symlink · hedef symlink ·
+   realpath ONCESI kapsama · realpath SONRASI kapsama); dordu de **tek tek** kaldirildiginda
+   69/69 yesil kaldi, yalnizca ikisi birlikte kaldirilinca kirmizi verdi (ve o hâlde gercek
+   kok-disi okuma gerceklesti). Kok neden: junction testi yalnizca `{ok:false}` iddia ediyordu,
+   `reason`'a bakmiyordu — bir katman dusunce digerinin farkli `reason` ile reddetmesi testi
+   yesil birakiyor. Kural: rededilme iddialarinda **`reason` alanini da** assert ettir.
+27. **Esik mutasyonlarinda sondanin BASKA bir desene takilip takilmadigini kontrol et.**
+   `MAX_FREE_TEXT_CHARS = 200 → 100000` mutasyonu yesil kaldi; cunku testin sondasi
+   `'x'.repeat(250)` idi ve bu dizge esikten bagimsiz olarak "uzun opak blok" desenine
+   (`[A-Za-z0-9+/_=]{80,}`) de uyuyordu. Test "ihlal bulundu" diye geciyor ama olctugunu sandigi
+   esigi hic olcmuyor. Genel kural: bir mutasyon beklenmedik sekilde YESIL kaldiginda once
+   "test dogru sebeple mi geciyordu" diye sor — cogu zaman ikinci bir desen/dal maskeliyor.
+   Ayrica bu turda "MUTASYON hedefi" adli dort test kendi kendine referans veriyordu
+   (`expect(alwaysAllowed()).toMatchObject({ok:true})` gibi); **test adinda "mutasyon" gecmesi
+   mutasyon kanitlandi demek degildir** — uretim kodunu gercekten degistirip kostur.

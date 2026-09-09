@@ -110,6 +110,7 @@ export function handleListGates(
 interface ApproveBody {
   confirmed?: unknown
   decision?: unknown
+  expectedBody?: unknown
 }
 
 /** `POST /api/gates/:project_id/:gate/approve` (§4). */
@@ -130,7 +131,15 @@ export function handleApproveGate(
       sendInvalidBody(res, 'Karar metni zorunludur.')
       return
     }
+    // S1 (QA Bulgu 2 düzeltmesi) — `expectedBody` istemcinin GÖSTERDİĞİ önizlemenin kendisi;
+    // aşağıda sunucunun kendi ürettiği `bodyText`'le TAM EŞİTLİK karşılaştırılır (herhangi bir
+    // dosya mutasyonundan ÖNCE). Eksik/yanlış tipte gelirse istemci bozuk demektir — 400.
+    if (typeof parsed.expectedBody !== 'string') {
+      sendInvalidBody(res, 'Beklenen içerik eksik.')
+      return
+    }
     const decision = parsed.decision as string
+    const expectedBody = parsed.expectedBody
 
     // NOT (Q6 — asenkron handler kendi try/catch'ini taşır): `req.on('end', ...)` zaten
     // dağıtıcının SENKRON çağrı yığınının DIŞINDADIR (`withDispatchErrorBoundary` bunu
@@ -166,6 +175,27 @@ export function handleApproveGate(
         }
 
         const label = getGateStatus(project.path, gate).label
+        const bodyText = buildApprovalBody(gate, label, project.label, isoDate(), decision)
+
+        // S1 (QA Bulgu 2 düzeltmesi) — istemcinin gösterdiği önizleme (`expectedBody`) sunucunun
+        // KENDİ ürettiği içerikle uyuşmuyorsa (ör. `decision` önizleme render edildikten SONRA
+        // değişti, ya da etiket modal açıkken güncellendi) hiçbir dosyaya dokunmadan (arşivleme
+        // DAHİL) 409 döner — sözleşme §13 S1, mutasyon: QA-B sınıfı.
+        if (bodyText !== expectedBody) {
+          const staleData = getGateStatus(project.path, gate, label)
+          sendJson(res, 409, {
+            success: false,
+            error: {
+              code: 'conflict',
+              message:
+                'Onay önizlemesi güncelliğini yitirdi (gösterilen bilgiler değişmiş olabilir); ' +
+                'pencereyi kapatıp tekrar deneyin.',
+            },
+            data: staleData,
+          } satisfies ApiResponse<GateStatusItem>)
+          return
+        }
+
         const denyPath = path.join(project.path, 'docs', 'approvals', `${gate}.deny.md`)
         let archivedPath = ''
         if (fs.existsSync(denyPath)) {
@@ -184,7 +214,6 @@ export function handleApproveGate(
           archivedPath = archiveResult.path
         }
 
-        const bodyText = buildApprovalBody(gate, label, project.label, isoDate(), decision)
         const writeResult = await writeGateApproval(project.path, gate, bodyText)
 
         if (writeResult.ok) {

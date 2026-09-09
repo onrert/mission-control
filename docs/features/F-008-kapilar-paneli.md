@@ -1,7 +1,7 @@
 ---
 id: F-008
 title: Kapılar paneli (G0–G6 / ASSETS) — onay, red, arşiv akışı
-status: done
+status: qa
 owner: developer
 deps: [F-006, F-007]
 sprint: 2
@@ -49,3 +49,27 @@ genişletmesiyle düzeltilen bir madde: `src/features/kanban/server/handlers.ts`
 `handlePatchFeatureStatus`'un `projectsService.list()` çağrısı asenkron IIFE'nin dışındaydı
 (sunucuyu üç kez öldüren hata sınıfı) — düzeltildi ve mutasyonla kanıtlandı, `docs/blockers.md`
 maddesi kapatıldı.
+
+## Kod turu — dar kapsamlı düzeltme (2026-09-09, `docs/qa/F-008-2026-09-09.md` sonrası)
+
+QA kararı bu raporda **GEÇTİ** idi (bloklayıcı yok), ama üç ÖNEMLİ bulgu kapatıldı (CEO talimatı,
+sözleşme: `docs/qa/F-008-contract.md` §13):
+
+- **S1 (Bulgu 2 — önizleme≡diske yazılan çitsizdi):** `POST .../approve` gövdesine `expectedBody`
+  eklendi (istemcinin gösterdiği önizlemenin kendisi); sunucu kendi ürettiği içerikle **tam
+  eşitlik** karşılaştırır, uyuşmazsa (ör. `decision` önizlemeden sonra değişti, ya da etiket modal
+  açıkken değişti) hiçbir dosyaya dokunmadan 409 döner. Mutasyonla kanıtlandı (QA-B sınıfının
+  birebir tekrarı + label-drift senaryosu).
+- **S2 (Bulgu 1 — Windows harf duyarsızlığı split-brain):** `gate-id.ts`'in dosya tarama
+  regex'leri `i` bayrağıyla harfe duyarsız yapıldı, id kanonik büyük harfe normalize edilir.
+  Karar: **kabul et ve normalize et** (reddetme) — `.claude/hooks/gate-check.cjs`'in kendi
+  harfe-duyarsız `existsSync`'iyle tutarlı kalmak için (o dosyaya dokunulmadı).
+- **S3 (Bulgu 4 — etiketsiz kapılarda "ASSETS ASSETS"/"G4-1 G4-1" tekrarı, kalıcı `.ok`'a da
+  sızıyordu):** yeni paylaşılan saf yardımcı `formatGateTitle(id, label, separator)` — `label ===
+  id` ise tekrar etmez. Dört kullanım yeri (`GateRow`, `ApproveModal`, `format-approval.ts`'in iki
+  fonksiyonu) güncellendi.
+
+Üçü de mutasyonla KIRMIZI/YEŞİL döngüsüyle kanıtlandı (uygula → kırmızı gör → geri al).
+`docs/blockers.md`'ye ayrı madde: `npm run e2e:dev` kırmızısı (proje borcu, F-008'e ait değil,
+dört ayrı ölçümle kanıtlandı). `docs/03-ux.md:813`'ün dar genişlik ölçüm notu QA'nın gerçek
+değerleriyle güncellendi. Ayrıntı ve test sayıları: `docs/progress.md`.

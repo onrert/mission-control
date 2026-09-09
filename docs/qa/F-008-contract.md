@@ -733,3 +733,121 @@ durumları aynı metni kullanır — UX bu ayrımı yapmıyor, F-008 icat etmiyo
 **Tur 3'te belirlenen (artık tahmin değil):** `tests/web/App.test.tsx:48`'in yeni `role="tab"`
 sayısı **3**'tür — `src/web/App.tsx:15-22,34` okunarak türetildi (§10.2), kod turunda yeniden
 ölçmeye gerek yok.
+
+---
+
+## 13. Tur 4 — dar kapsamlı düzeltme (QA GEÇTİ, `docs/qa/F-008-2026-09-09.md`, 3 ÖNEMLİ bulgu)
+
+QA kararı **GEÇTİ** (bloklayıcı yok), ama CEO üç ÖNEMLİ bulguyu kapatmadan kapatmıyor: Bulgu 2
+(S1), Bulgu 1 (S2), Bulgu 4 (S3). Onaylanmış hiçbir bölüm yeniden açılmıyor; yalnızca üç dosya
+kümesi değişiyor. Bulgu 3 (`e2e:dev` kırmızısı) ve `docs/03-ux.md:813` notu **kod değişikliği
+değil**, belge/blocker kaydı (bkz. görev metni "AYRICA").
+
+### S1 — Önizleme ≡ diske yazılan bayt eşitliği artık ÇİTLİ
+
+**Kök sorun:** İstemci (`ApproveModal.tsx`) `onConfirm(decision)` ile yalnızca ham karar metnini
+gönderiyordu; sunucu (`handlers.ts`) etiket/tarih/proje adını **kendi** kaynağından yeniden
+üretip `decision`'ı olduğu gibi gövdeye gömüyordu. Önizlemede gösterilen ile sunucunun ürettiği
+metin arasında sunucu tarafında **hiçbir karşılaştırma** yoktu — QA'nın ölçtüğü gibi, `decision`
+gönderilmeden hemen önce değiştirilse (ör. bir mutasyon) önizleme yalan söylemiş olur ve hiçbir
+test bunu yakalamaz.
+
+**Çözüm (ayrı `/preview` ucu YOK, Karpathy §2 — mevcut karar korunuyor):**
+- İstemci artık `onConfirm(decision, expectedBody)` çağırır; `expectedBody` = `ApproveModal`'ın
+  zaten hesapladığı `preview` metninin **kendisi** (`buildApprovalBody(...)`, aynı saf fonksiyon).
+- `POST .../approve` gövdesine yeni bir alan eklenir: `expectedBody: string` (zorunlu — `confirmed`
+  ve `decision` ile aynı senkron doğrulama bloğunda, `typeof !== 'string'` ise 400 `invalid_body`).
+- Sunucu, kendi güvendiği girdilerle (`label` — `getGateStatus` üzerinden, `isoDate()`, `decision`
+  — gövdeden) `bodyText`'i **her zaman kendisi üretir** (istemcinin gönderdiği metni asla doğrudan
+  diske yazmaz — sahte etiket/tarih enjeksiyonu böylece imkânsız kalır). Ardından
+  `bodyText === expectedBody` **tam eşitlik** karşılaştırması yapılır — **arşivleme/yazma
+  adımlarından ÖNCE**, herhangi bir `fs` mutasyonu olmadan.
+- Uyuşmazsa: 409 `conflict`, mesaj *"Onay önizlemesi güncelliğini yitirdi (gösterilen bilgiler
+  değişmiş olabilir); pencereyi kapatıp tekrar deneyin."*, taze `data` döner, **hiçbir dosyaya
+  dokunulmaz** (deny arşivi dahil).
+- Bu, QA'nın ölçtüğü iki gerçek ayrışmayı da kapatır: (a) `decision`'ın önizleme render edildikten
+  SONRA değiştirildiği mutasyon sınıfı (QA-B) — `expectedBody` orijinal `decision`'dan üretildiği
+  için sunucunun tamponladığı `decision`'la üretilen `bodyText` uyuşmaz. (b) modal açıkken
+  `PROCESS.md` etiketinin değişmesi — istemcinin eski etiketle ürettiği `expectedBody`, sunucunun
+  taze etiketle ürettiği `bodyText`'le uyuşmaz; en azından ayrışma **tespit edilebilir** hale
+  gelir (görev metninin istediği asgari garanti).
+
+**Çit:** `tests/integration/gates-api.test.ts`'e üç yeni test — (i) `expectedBody` sunucunun
+üreteceğinden farklı → 409, dosya yazılmaz; (ii) `expectedBody` eksik/string değil → 400, dosya
+yazılmaz; (iii) QA-B'nin **birebir tekrarı** — `decision` gönderilmeden önce değiştirilmiş gibi
+simüle edilir (`expectedBody` orijinal karardan, `decision` alanı farklı) → 409, dosya yazılmaz.
+Mevcut mutlu-yol testleri (`geçerli istek`, M9, AC9 mutlu yol, M6) artık gerçek `expectedBody`
+göndermek zorunda (`buildApprovalBody` ile aynı parametrelerle test dosyasında yeniden üretilir) —
+aksi hâlde yeni 400/409 çitine takılıp KIRMIZI verirlerdi (bu, çitin çalıştığının da kanıtı).
+`tests/e2e/gates.spec.ts`'in mevcut AC2 testine gerçek tarayıcıda **tam eşitlik** (`toBe`, `toContain`
+değil) karşılaştırması eklenir: `approve-preview`'ın `textContent`'i okunur, `.ok` dosyası okunur,
+ikisi birebir karşılaştırılır. `tests/features/gates/web/useGates.test.ts`'in `approve` body
+iddiası üçüncü argümanı (`expectedBody`) da içerecek şekilde güncellenir.
+
+**Dosyalar:** `src/features/gates/web/ApproveModal.tsx`, `src/features/gates/web/GatesScreen.tsx`,
+`src/features/gates/web/useGates.ts`, `src/features/gates/server/handlers.ts`, `docs/03-ux.md`
+(yeni hata metni, kod turundan önce eklendi — L8).
+
+### S2 — Windows harf duyarsızlığı: kabul et ve normalize et (reddetme)
+
+**Karar: KABUL ET.** Gerekçe: `.claude/hooks/gate-check.cjs:11`'in kendisi `fs.existsSync` ile
+harfe duyarsız kontrol yapıyor ve bu dosya F-008'in dosya sahipliği dışında (`CLAUDE.md`
+"Kısıtlar" — `.claude/hooks/**` değişmiyor). Sistemin geri kalanı `g2.ok`'u ZATEN G2 onayı
+sayıyor (`getGateStatus`'un kendi `fs.existsSync`'i de harfe duyarsız). "Reddet ve açıkça bildir"
+seçeneği, panelin hook'la **çelişen** bir semantiğe geçmesi anlamına gelirdi — split-brain'i
+düzeltmek yerine yerini değiştirirdi. Dosyayı yeniden adlandırmak (kanonik büyük harfe taşımak)
+**yapılmıyor** — panel kullanıcının onayladığı dosyaya kullanıcı eylemi dışında dokunmaz (ADR-005
+madde 9'un ruhu).
+
+**Kök neden ve düzeltme:** `src/features/gates/shared/gate-id.ts`'in `OK_FILE_PATTERN`/
+`DENY_FILE_PATTERN`'i **harfe duyarlıydı**; `list-gates.ts`'in durum türetmesi (`existsSync`) ise
+duyarsızdı — iki katman aynı dosya için farklı sınıflandırma üretiyordu. Düzeltme: iki desen `i`
+bayrağıyla harfe duyarsız yapılır, `parseGateFileName`'in döndürdüğü `gateId` **kanonik büyük
+harfe** normalize edilir (`.toUpperCase()`) — böylece `g2.ok` artık dizin taramasında da `G2`
+olarak sınıflandırılır, `unrecognized`'a hiç girmez, ve `getGateStatus`'un zaten verdiği kararla
+(`approved`) tutarlı hale gelir. `isExcludedApprovalsEntry`'ye (README.md/archive/DANGER.ok/vb.)
+dokunulmuyor — QA'nın ölçtüğü ayrışma yalnızca `OK_FILE_PATTERN`/`DENY_FILE_PATTERN` sınıfında.
+
+**Çit:** `tests/features/gates/server/list-gates.test.ts`'e yeni test grubu — yalnızca `g2.ok`
+(küçük harf) varken `listGates()` sonucu: `G2` durumu `approved`, `result.unrecognized` **BOŞ**
+(eskiden `['g2.ok']` idi — o test satırı gerçek bir tanınmayan dosya adıyla değiştirilir, davranış
+kasıtlı olarak değişiyor). Aynı desen küçük harfli `.deny.md` için de eklenir.
+
+**Dosyalar:** `src/features/gates/shared/gate-id.ts`, `tests/features/gates/server/list-gates.test.ts`.
+`list-gates.ts`'e dokunulmuyor (kök neden yalnızca `gate-id.ts`'in regex'lerinde).
+
+### S3 — Etiketsiz kapılarda ad tekrarı (ekranda VE kalıcı `.ok`/`.deny.md` içinde)
+
+**Kök neden:** `label` hiçbir zaman boş dönmüyor — ayırt edici bir etiket yoksa (`ASSETS`,
+`G4-1` gibi tek-kelimelik/bilinmeyen id'ler) `label = id` fallback'i kullanılıyor
+(`list-gates.ts:96` — bu kısım DOĞRU ve DEĞİŞMİYOR, panel asla "etiketsiz" bir durumla
+karşılaşmamalı). Sorun, `id` ve `label`'ı **birleştiren** dört yerin `label === id` durumunu
+kontrol etmeden her zaman ikisini yan yana yazması: `GateRow.tsx` (tablo satırı, iki yer), 
+`ApproveModal.tsx` (modal başlığı), `format-approval.ts` (`.ok`/`.deny.md` içeriği — kalıcı!).
+
+**Çözüm (yeni soyutlama YOK — tek saf yardımcı, zaten `fs`'siz paylaşılan dosyada):**
+`src/features/gates/shared/gate-id.ts`'e `formatGateTitle(id, label, separator = ' — ')` eklenir:
+`label === id ? id : \`${id}${separator}${label}\``. `format-approval.ts` ve `ApproveModal.tsx`
+bunu varsayılan (em-dash) ayraçla kullanır (mevcut dash formatını korur, yalnızca tekrarı
+kaldırır). `GateRow.tsx` kendi mevcut boşluk-ayraçlı formatını (`{id} {label}`, `docs/03-ux.md`
+mockup'ıyla birebir) korumak için `formatGateTitle(id, label, ' ')` çağırır — iki farklı ayraç
+stili F-008'in **icat ettiği** bir şey değil, zaten var olan iki farklı yerdeki mevcut biçim;
+S3 yalnızca tekrarı kaldırıyor, ayraç stilini birleştirmiyor (kapsam dışı).
+
+**Çit:** `tests/features/gates/server/format-approval.test.ts`'e `label === id` (ör. `ASSETS`,
+`ASSETS`) senaryosu için yeni golden-string testleri (`"ASSETS kapısı ONAYLANDI"`, tekrarsız).
+`tests/features/gates/web/GatesScreen.test.tsx`'e (ya da mevcut bir teste ek olarak) `ASSETS` id'li
+bir satırın `"ASSETS ASSETS"` DEĞİL `"ASSETS"` render ettiğini doğrulayan bir test.
+
+**Dosyalar:** `src/features/gates/shared/gate-id.ts`, `src/features/gates/shared/format-approval.ts`,
+`src/features/gates/web/ApproveModal.tsx`, `src/features/gates/web/GateRow.tsx`.
+
+### Kapsam dışı (bu turda dokunulmuyor)
+
+- `e2e:dev` kırmızısı (Bulgu 3) — proje borcu, `docs/blockers.md`'ye ayrı madde.
+- `docs/03-ux.md:813` ölçüm notu — QA'nın gerçek 320/375/480px değerleriyle güncellenir (belge
+  düzeltmesi, kod değil).
+- ApproveModal'ın başlık ayracı (dash vs. UX mockup'ının boşluk formatı) — QA'nın GEÇTİ verdiği,
+  bu turun konusu olmayan bir sapma.
+- Deny formu için önizleme/eşitlik çiti — QA Bulgu 2 yalnızca `ApproveModal`'ı ölçtü; `DenyInlineForm`
+  hiç önizleme göstermiyor, kapsam dışı kalıyor.

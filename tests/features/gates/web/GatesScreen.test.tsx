@@ -170,6 +170,16 @@ describe('GatesScreen — dört durumlu aksiyon sütunu (§4)', () => {
     )
   })
 
+  it('S3 (QA Bulgu 4): etiketsiz kapıda ad TEKRARLANMAZ ("ASSETS", "ASSETS ASSETS" DEĞİL)', async () => {
+    stubRouter({ gates: [gate({ id: 'ASSETS', label: 'ASSETS', status: 'pending' })] })
+    render(<GatesScreen liveProjectsUpdate={null} gatesSignal={null} onNavigateSettings={noop} />)
+    await selectProject()
+    await waitFor(() => expect(screen.getByTestId('gate-row-ASSETS')).toBeTruthy())
+    const row = screen.getByTestId('gate-row-ASSETS')
+    const nameCell = within(row).getAllByRole('cell')[0]
+    expect(nameCell.textContent).toBe('ASSETS')
+  })
+
   it('satır hatası (error:true): "Durum belirlenemedi" gri, aksiyon yok', async () => {
     stubRouter({ gates: [{ id: 'G3', label: 'UX', status: 'pending', error: true }] })
     render(<GatesScreen liveProjectsUpdate={null} gatesSignal={null} onNavigateSettings={noop} />)
@@ -243,6 +253,28 @@ describe('GatesScreen — onay akışı (AC7 iki adım, iptal yazmaz)', () => {
     await user.click(screen.getByTestId('approve-cancel-button'))
     expect(screen.queryByTestId('approve-modal')).toBeNull()
     expect(postCalls).toHaveLength(0)
+  })
+
+  it('S1 (QA Bulgu 2): sunucuya gönderilen decision/expectedBody, EKRANDAKİ önizlemeyle birebir aynı', async () => {
+    const { postCalls } = stubRouter({ gates: [gate({ id: 'G2', status: 'pending' })] })
+    render(<GatesScreen liveProjectsUpdate={null} gatesSignal={null} onNavigateSettings={noop} />)
+    await selectProject()
+    await waitFor(() => expect(screen.getByTestId('gate-approve-G2')).toBeTruthy())
+
+    const user = userEvent.setup()
+    await user.click(screen.getByTestId('gate-approve-G2'))
+    const modal = await screen.findByTestId('approve-modal')
+    await user.type(within(modal).getByTestId('approve-decision-input'), 'onaylıyorum')
+    const shownPreview = within(modal).getByTestId('approve-preview').textContent
+    await user.click(within(modal).getByTestId('approve-confirm-button'))
+
+    expect(postCalls).toHaveLength(1)
+    const body = postCalls[0]!.body as { decision: string; expectedBody: string }
+    // Bu iki iddia, `ApproveModal.tsx:73`'e (`decision`'ı önizlemeden BAĞIMSIZ bir metinle
+    // değiştiren) benzer bir mutasyonu KIRMIZI verdirir — sunucuya giden `decision` ekranda
+    // yazılan metinden, `expectedBody` ise görüntülenen önizlemeden FARKLI olursa bu test kırılır.
+    expect(body.decision).toBe('onaylıyorum')
+    expect(body.expectedBody).toBe(shownPreview)
   })
 
   it('karar metni boşken "Onayı Yaz →" devre dışı, yazınca aktifleşir (Ö11)', async () => {

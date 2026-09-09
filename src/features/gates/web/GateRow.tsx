@@ -3,6 +3,7 @@ import type { GateStatus, GateStatusItem } from '../../../shared/types'
 import type { GateActionOutcome } from './useGates'
 import { DenyInlineForm } from './DenyInlineForm'
 import { AlertTriangle, CheckCircle2, Clock, XCircle } from './icons'
+import { formatGateTitle } from '../shared/gate-id'
 
 export interface GateRowProps {
   gate: GateStatusItem
@@ -43,7 +44,7 @@ export function GateRow({
     return (
       <tr data-testid={`gate-row-${gate.id}`} className="border-b border-zinc-800">
         <td className="p-2 font-mono text-sm text-zinc-300">
-          {gate.id} {gate.label}
+          {formatGateTitle(gate.id, gate.label, ' ')}
         </td>
         <td colSpan={3} className="p-2 text-sm text-zinc-500">
           Durum belirlenemedi
@@ -74,7 +75,7 @@ export function GateRow({
         onClick={isConflict ? () => setExpanded((v) => !v) : undefined}
       >
         <td className="p-2 font-mono text-sm text-zinc-300">
-          {gate.id} {gate.label}
+          {formatGateTitle(gate.id, gate.label, ' ')}
         </td>
         <td className={`p-2 text-sm ${badge.className}`}>
           <span className="inline-flex items-center gap-1">

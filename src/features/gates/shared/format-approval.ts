@@ -1,6 +1,7 @@
 // F-008 sözleşmesi §5 — saf içerik biçimlendiricileri. `fs` importu YOK: hem sunucu (gerçekten
 // yazılan içerik) hem istemci (adım-1 modalının önizlemesi) import edebilir, böylece önizleme
 // ile gerçekte yazılan içerik BAYT BAYT aynı olur (ayrı bir `POST …/preview` ucu gerekmiyor).
+import { formatGateTitle } from './gate-id'
 
 /** `docs/approvals/<gate>.ok` içeriği — `docs/PROCESS.md` §2 biçimiyle birebir (§5). */
 export function buildApprovalBody(
@@ -10,11 +11,13 @@ export function buildApprovalBody(
   isoDate: string,
   decision: string
 ): string {
+  // S3 (QA Bulgu 4) — `label === gateId` ise (etiketsiz kapı, ör. ASSETS/G4-1) tekrar edilmez.
+  const title = formatGateTitle(gateId, label)
   return (
-    `${gateId} — ${label} kapısı ONAYLANDI\n` +
+    `${title} kapısı ONAYLANDI\n` +
     `Tarih: ${isoDate}\n` +
     `Onaylayan: Panel kullanıcısı (Kapılar ekranı, iki adımlı onay)\n\n` +
-    `Onaylanan özet: Panel Kapılar ekranından "${gateId} — ${label}" kapısı onaylandı ` +
+    `Onaylanan özet: Panel Kapılar ekranından "${title}" kapısı onaylandı ` +
     `(proje: ${projectLabel}).\n\n` +
     `Kullanıcının kararı: ${decision}\n`
   )
@@ -28,8 +31,10 @@ export function buildDenialBody(
   isoDate: string,
   reason: string
 ): string {
+  // S3 (QA Bulgu 4) — `label === gateId` ise tekrar edilmez.
+  const title = formatGateTitle(gateId, label)
   return (
-    `# ${gateId} — ${label} kapısı REDDEDİLDİ\n\n` +
+    `# ${title} kapısı REDDEDİLDİ\n\n` +
     `- **Tarih:** ${isoDate}\n` +
     `- **Reddeden:** Panel kullanıcısı (Kapılar ekranı)\n` +
     `- **Proje:** ${projectLabel}\n\n` +

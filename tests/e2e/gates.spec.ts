@@ -107,6 +107,13 @@ test('onay yazma (AC2): gerçek .ok dosyası PROCESS.md formatında oluşur, sat
   await openGatesTab(page, 'gates-approve')
   await page.getByTestId('gate-approve-G2').click()
   await page.getByTestId('approve-decision-input').fill('G2 onaylandı, ilerleyelim')
+  // S1 (QA Bulgu 2 düzeltmesi) — modaldaki önizlemeyi YAZMADAN ÖNCE oku, sonra diske yazılan
+  // gerçek içerikle `toBe` (TAM EŞİTLİK, `toContain` DEĞİL) karşılaştır. `textContent` kullanılır
+  // (`innerText` DEĞİL) — bu bir `<pre>` metni, CSS dönüşümü yok; `innerText` tarayıcıya göre
+  // sondaki `\n`'i kırpabilir ve bayt-bayt karşılaştırmayı bozar (CLAUDE.md'nin `innerText`
+  // dersi yalnızca `text-transform` gibi CSS render farkları için geçerli, burada uygulanmıyor).
+  const previewText = await page.getByTestId('approve-preview').textContent()
+  expect(previewText).not.toBeNull()
   await page.getByTestId('approve-confirm-button').click()
 
   await expect(page.getByTestId('gates-toast')).toHaveText('docs/approvals/G2.ok yazıldı')
@@ -117,6 +124,7 @@ test('onay yazma (AC2): gerçek .ok dosyası PROCESS.md formatında oluşur, sat
   const content = fs.readFileSync(okPath, 'utf8')
   expect(content).toContain('G2 — Mimari kapısı ONAYLANDI')
   expect(content).toContain('Kullanıcının kararı: G2 onaylandı, ilerleyelim')
+  expect(content).toBe(previewText)
 })
 
 test('red (AC3/AC8): gerçek .deny.md dosyası oluşur, gerekçe olduğu gibi geçer, satır Reddedildi olur', async ({

@@ -52,9 +52,9 @@ export function GatesScreen({
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null
 
-  async function handleApproveConfirm(decision: string) {
+  async function handleApproveConfirm(decision: string, expectedBody: string) {
     if (!approvingGate) throw new Error('onaylanacak kapı seçilmemiş')
-    const outcome = await approve(approvingGate.id, decision)
+    const outcome = await approve(approvingGate.id, decision, expectedBody)
     if (outcome.kind === 'success') {
       setApprovingGate(null)
       setToast(`docs/approvals/${outcome.item.id}.ok yazıldı`)

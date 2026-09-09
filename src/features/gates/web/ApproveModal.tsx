@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { buildApprovalBody } from '../shared/format-approval'
+import { formatGateTitle } from '../shared/gate-id'
 import type { GateStatusItem } from '../../../shared/types'
 import type { GateActionOutcome } from './useGates'
 
@@ -7,7 +8,12 @@ export interface ApproveModalProps {
   gate: GateStatusItem
   projectLabel: string
   onCancel: () => void
-  onConfirm: (decision: string) => Promise<GateActionOutcome>
+  /**
+   * Tur 4 (S1, QA Bulgu 2 düzeltmesi) — `expectedBody` bu bileşenin ZATEN hesapladığı `preview`
+   * metninin kendisi: sunucu kendi ürettiği içerikle bunu BİREBİR karşılaştırır, uyuşmazsa
+   * hiçbir dosyaya dokunmadan 409 döner. Ayrı bir `/preview` ucu eklenmedi (Karpathy §2).
+   */
+  onConfirm: (decision: string, expectedBody: string) => Promise<GateActionOutcome>
 }
 
 function todayIso(): string {
@@ -64,18 +70,21 @@ export function ApproveModal({ gate, projectLabel, onCancel, onConfirm }: Approv
   const trimmedDecision = decision.trim()
   const disabled = trimmedDecision === '' || submitting
 
+  const preview = buildApprovalBody(gate.id, gate.label, projectLabel, todayIso(), decision)
+
   async function handleConfirm(): Promise<void> {
     if (disabled) return
     setSubmitting(true)
     setErrorMessage(null)
-    const outcome = await onConfirm(decision)
+    // S1 — sunucuya gönderilen `expectedBody`, EKRANDA GÖSTERİLEN `preview` ile AYNI değişkendir
+    // (yeniden hesaplanmıyor) — bu satırı `decision`'dan bağımsız bir metinle değiştiren bir
+    // mutasyon, sunucunun kendi ürettiği içerikle uyuşmadığı için 409 alır (bkz. sözleşme §13 S1).
+    const outcome = await onConfirm(decision, preview)
     if (outcome.kind === 'success') return
     // AC5 — yazma hatasında buton durumu geri alınır, modal KAPANMAZ, karar metni KAYBOLMAZ.
     setSubmitting(false)
     setErrorMessage(outcome.message)
   }
-
-  const preview = buildApprovalBody(gate.id, gate.label, projectLabel, todayIso(), decision)
 
   return (
     <div
@@ -92,7 +101,7 @@ export function ApproveModal({ gate, projectLabel, onCancel, onConfirm }: Approv
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id="approve-modal-title" className="mb-3 font-mono text-sm text-zinc-200">
-          {gate.id} — {gate.label} kapısını onayla
+          {formatGateTitle(gate.id, gate.label)} kapısını onayla
         </h2>
         <dl className="mb-3 space-y-1 text-xs text-zinc-400">
           <div>

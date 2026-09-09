@@ -2789,3 +2789,94 @@ değil). CEO K1-K6 kararlarını verdi, bu turda hepsi kapatıldı.
 **Sonraki adım**
 - qa-evaluator tam feature'ı (A+B) değerlendirsin (feature notu `status: qa`).
 - Sıradaki feature: F-009 (transkript spike) — Faz 2 sırası kullanıcı kararıyla F-008 → F-009.
+
+## 2026-09-09 — F-008 dar kapsamlı düzeltme turu (QA GEÇTİ sonrası 3 ÖNEMLİ bulgu kapatıldı), `status: qa`
+
+QA `docs/qa/F-008-2026-09-09.md`'de **GEÇTİ** kararı vermişti (bloklayıcı yok), ama CEO üç ÖNEMLİ
+bulguyu kapatmadan geçmedi. Sözleşme: `docs/qa/F-008-contract.md` §13 (kodlamadan önce yazıldı).
+Onaylanmış hiçbir bölüme dokunulmadı; yalnızca aşağıdaki üç değişiklik.
+
+**Ne yapıldı**
+
+1. **S1 (QA Bulgu 2 — önizleme≡diske yazılan çitsizdi).** `POST /api/gates/:project_id/:gate/approve`
+   gövdesine `expectedBody: string` eklendi (`ApproveModal`'ın zaten hesapladığı `preview`
+   metninin kendisi). Sunucu kendi güvendiği girdilerle (`label`, `isoDate()`, gövdeden gelen
+   `decision`) `bodyText`'i **her zaman kendisi üretir**, ardından **arşivleme/yazma
+   adımlarından ÖNCE** `bodyText === expectedBody` tam eşitliğini karşılaştırır. Uyuşmazsa 409
+   `conflict`, hiçbir dosyaya dokunulmaz, taze `data` döner. Bu, QA'nın ölçtüğü iki gerçek
+   ayrışmayı kapatıyor: (a) `decision`'ın önizleme render edildikten SONRA değiştirildiği mutasyon
+   sınıfı (QA-B), (b) modal açıkken `PROCESS.md` etiketinin değişmesi (en azından tespit edilebilir
+   hale geldi). Dosyalar: `src/features/gates/web/ApproveModal.tsx`,
+   `src/features/gates/web/GatesScreen.tsx`, `src/features/gates/web/useGates.ts`,
+   `src/features/gates/server/handlers.ts`. Yeni Türkçe metin `docs/03-ux.md`'ye kod turundan
+   önce eklendi (L8).
+2. **S2 (QA Bulgu 1 — Windows harf duyarsızlığı split-brain).** `src/features/gates/shared/
+   gate-id.ts`'in `OK_FILE_PATTERN`/`DENY_FILE_PATTERN`'i `i` bayrağıyla harfe duyarsız yapıldı;
+   `parseGateFileName`'in döndürdüğü `gateId` kanonik büyük harfe normalize edilir
+   (`g2.ok` → `G2`). **Karar: kabul et ve normalize et** (reddetme) — gerekçe: durum türetme
+   (`fs.existsSync`) zaten harfe duyarsız, ve `.claude/hooks/gate-check.cjs` (dosya sahipliği
+   dışı, değiştirilmedi) da harfe duyarsız `existsSync` kullanıyor; "reddet" seçeneği panel ile
+   hook'u çelişen semantiklere düşürürdü. `isExcludedApprovalsEntry`'ye dokunulmadı.
+3. **S3 (QA Bulgu 4 — etiketsiz kapılarda "ASSETS ASSETS"/"G4-1 G4-1" tekrarı, kalıcı `.ok`'a da
+   sızıyordu).** Yeni paylaşılan saf yardımcı `formatGateTitle(id, label, separator=' — ')` —
+   `label === id` ise id tek başına döner. Dört kullanım yeri güncellendi: `GateRow.tsx` (boşluk
+   ayraç, mevcut biçim korundu), `ApproveModal.tsx` (modal başlığı), `format-approval.ts`'in
+   `buildApprovalBody`/`buildDenialBody` fonksiyonları (kalıcı `.ok`/`.deny.md` içeriği).
+
+**Nasıl doğrulandı**
+
+- **Üç mutasyon da elle uygulandı → KIRMIZI görüldü → geri alındı** (görev tanımının zorunlu
+  kıldığı kanıt):
+  - S1: `handlers.ts`'teki `bodyText !== expectedBody` kontrolü `false && ...` ile devre dışı
+    bırakıldı → `tests/integration/gates-api.test.ts`'in yeni 2 testi KIRMIZI (409 beklenirken
+    200 aldı). Ayrıca `ApproveModal.tsx`'te `onConfirm(decision, preview)` çağrısı
+    `onConfirm(decision + ' [QA gizli ek]', preview)` yapıldı (QA-B'nin birebir tekrarı) →
+    `GatesScreen.test.tsx`'in yeni testi KIRMIZI (`body.decision` typed metinle eşleşmedi).
+  - S2: `OK_FILE_PATTERN`/`DENY_FILE_PATTERN`'den `i` bayrağı kaldırıldı →
+    `list-gates.test.ts`'in 3 yeni testi KIRMIZI (`g2.ok`/`g5.deny.md`/`G4-1.OK` tekrar
+    `unrecognized`'a düştü, split-brain geri geldi).
+  - S3: `formatGateTitle`'ın `label === id` kısayolu kaldırıldı → `format-approval.test.ts`'in
+    2 yeni golden-string testi VE `GatesScreen.test.tsx`'in yeni testi KIRMIZI ("ASSETS — ASSETS"
+    ve "ASSETS ASSETS" geri geldi).
+  - Her mutasyon hemen geri alındı, `git diff` ile kod tabanının değişmediği doğrulandı.
+- **Test sayıları (kendim koşturdum, iki kez — worker-fork kararsızlığı bir kez görüldü, ikinci
+  koşuda temiz):** `npx tsc --noEmit` → 0 hata. `npx eslint .` → 0 uyarı/hata.
+  `npx vitest run` → **1077 passed | 4 skipped, 0 failed** (74 dosya, 1 atlanan). `npm run build`
+  → başarılı. `npx playwright test` (prod build, `npm run build && npm start`) → **36 passed, 0
+  failed** — `gates.spec.ts`'in 8 testi dahil, S1'in yeni `toBe` (tam eşitlik) karşılaştırması da
+  dahil.
+- **Gerçek onay dosyaları değişmedi:** `git status --porcelain docs/approvals/` boş,
+  `git diff --stat -- docs/approvals/` boş, `ls docs/approvals/` tur başı/sonu aynı
+  (`G0.ok G1.ok G2.ok G3.ok G4-1.ok README.md`).
+- **Yetim süreç/port hijyeni:** `npm run e2e` sonrası `Get-NetTCPConnection -LocalPort 7333` →
+  yalnızca `TimeWait` (kapanmış), `LISTENING` yok. `Get-CimInstance Win32_Process` ile taranan
+  `node.exe` süreçleri arasında mission-control'e ait canlı bir tane yok; `npm run dev` hiç
+  çalıştırılmadı (yasak, uyuldu).
+
+**Ek kayıtlar**
+- `docs/blockers.md`'ye yeni madde: `npm run e2e:dev` kırmızısı (QA'nın Bulgu 3'ü) — F-008'e ait
+  OLMADIĞI dört ayrı ölçümle kanıtlanmış proje borcu, `npm run dev`/`dev:server` betiklerine
+  dokunan bir sonraki feature/devops görevine eşiklendi. Bu turda düzeltilmeye ÇALIŞILMADI
+  (kapsam dışı).
+- `docs/03-ux.md:813`'ün dar genişlik ölçüm notu ("iki sekme de tam görünür") QA'nın gerçek
+  ölçtüğü değerlerle (320px'te "Kapılar" 13/59px, dördüncü sekme eklendiği için eski not
+  geçersizdi) güncellendi.
+
+**Sözleşmeden sapmalar**
+- Yok — `docs/qa/F-008-contract.md` §13'te planlanan üç düzeltme birebir uygulandı.
+
+**Kalan risk / QA'ya devredilen açık maddeler**
+- S1'in kapattığı ayrışma sınıfı yalnızca `ApproveModal`/`approve` ucu için çitlendi; `deny` ucu
+  hiç önizleme göstermediği için kapsam dışı bırakıldı (QA Bulgu 2 de yalnızca `ApproveModal`'ı
+  ölçmüştü) — ileride `DenyInlineForm`'a bir önizleme eklenirse aynı çit deseni tekrarlanmalı.
+  ApproveModal'ın başlık ayracı (dash) ile UX mockup'ının boşluk formatı arasındaki (S3 dışı)
+  sapmaya kasıtlı olarak dokunulmadı.
+- S2'nin "kabul et ve normalize et" kararı yalnızca dosya SINIFLANDIRMASINI etkiliyor; dosyayı
+  kanonik büyük harfe yeniden ADLANDIRMIYOR (kullanıcı eylemi dışında dosyaya dokunulmuyor,
+  ADR-005 madde 9 ruhu) — iki farklı harf varyantının AYNI ANDA var olması (ör. hem `G2.ok` hem
+  `g2.OK`) hâlâ tanımsız/nadir bir kenar durum, bu turda ele alınmadı.
+- `npm run e2e:dev` borcu ve `gates-write-permission-live.test.ts`'in canlı doğrulaması (A
+  turundan miras) bu turda da koşturulmadı — QA veya kullanıcı ayrı koşturmalı.
+
+**Sonraki adım**
+- qa-evaluator bu üç düzeltmeyi (S1/S2/S3) mutasyon kanıtlarıyla birlikte yeniden değerlendirsin.

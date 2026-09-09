@@ -292,3 +292,31 @@ GİZLİ İÇ HATA, İSTEMCİYE SIZMAMALI` (tam da bloklayıcının tarif ettiği
 davranışı, gerçek bir yakalanmamış istisna olarak gözlendi). Düzeltme geri konunca aynı test
 **YEŞİL** (500 `write_failed`, ham mesaj sızmıyor, ardından `/api/health` 200 dönüyor — süreç
 yaşıyor). `grep -n "MUTASYON PROBU" src/` boş, `git diff` üzerinde mutasyon izi yok.
+
+## 2026-09-09 — `npm run e2e:dev` kırmızı (proje borcu, F-008'e ait DEĞİL)
+
+**Bulgu (kaynak: `docs/qa/F-008-2026-09-09.md` §4 Bulgu 3):** `npx playwright test -c
+playwright.dev.config.ts` **2/2 koşuda başarısız** — `dev-shell.spec.ts:22`, Vite `/api` proxy'si
+**500** dönüyor çünkü `npm run dev`'in başlattığı `dev:server` (`concurrently` + `tsx watch`)
+**hiç dinlemeye başlamıyor** (`ECONNREFUSED 127.0.0.1:7433`).
+
+**F-008'e ait olmadığının kanıtı (QA'nın dört ayrı ölçümü):**
+1. `npm run dev:server` **tek başına** çalıştırıldığında sorunsuz dinliyor
+   (`Mission Control API 127.0.0.1:7433 adresinde dinliyor.`).
+2. `npx tsx watch src/server/index.ts` **tek başına** de sorunsuz çalışıyor.
+3. F-008'in kendi gates izleyicisi devre dışı bırakıldığında (`service.ts:128`
+   `startWatchingGatesIfPossible(record)` mutasyonu) **yine dinlemiyor** — F-008 kodu sebep değil.
+4. Boş bir `MC_DATA_DIR` ile (hiç proje kaydı yok, dolayısıyla F-008'in hiçbir kodu tetiklenmeden)
+   **yine dinlemiyor**.
+
+Süreç tablosunda `tsx watch` çocuğu **yaşıyor** ama hiçbir portu dinlemiyor — `concurrently` +
+`tsx watch` bileşiminin bu makinede takıldığı bir altyapı sorunu, F-008 öncesine ait.
+
+**Durum:** F-008'i bekletmiyor (QA kararı: KARAR GEÇTİ, bu bulgu F-008'in kararını etkilemiyor).
+`npm run e2e` (prod build, `playwright.config.ts`) **etkilenmiyor** — yalnızca `e2e:dev`
+yapılandırması (dört E2E yapılandırmasından biri) kırmızı.
+
+**Kapatma yolu:** `concurrently`/`tsx watch` sürüm veya yapılandırma incelemesi (ör.
+`tsx watch`'ın Windows'ta dosya izleyici başlatma sırasını `concurrently`'nin `--kill-others`
+davranışıyla çakışması ihtimali) — bu turda araştırılmadı, kapsam dışı.
+**Eşik:** `npm run dev`/`dev:server` betiklerine dokunan bir sonraki feature ya da devops görevi.

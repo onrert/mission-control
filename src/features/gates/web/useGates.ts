@@ -24,7 +24,9 @@ export interface UseGatesResult {
   processDocReadable: boolean
   loadState: GatesLoadState
   retry: () => void
-  approve: (gateId: string, decision: string) => Promise<GateActionOutcome>
+  /** `expectedBody` — S1 (QA Bulgu 2 düzeltmesi): `ApproveModal`'ın gösterdiği önizlemenin
+   *  kendisi; sunucu kendi ürettiğiyle karşılaştırır, uyuşmazsa hiçbir dosyaya dokunmaz. */
+  approve: (gateId: string, decision: string, expectedBody: string) => Promise<GateActionOutcome>
   deny: (gateId: string, reason: string) => Promise<GateActionOutcome>
 }
 
@@ -139,8 +141,8 @@ export function useGates(options: UseGatesOptions): UseGatesResult {
   )
 
   const approve = useCallback(
-    (gateId: string, decision: string) =>
-      runAction(gateId, 'approve', { confirmed: true, decision }),
+    (gateId: string, decision: string, expectedBody: string) =>
+      runAction(gateId, 'approve', { confirmed: true, decision, expectedBody }),
     [runAction]
   )
 

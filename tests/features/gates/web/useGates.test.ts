@@ -125,13 +125,17 @@ describe('useGates — approve/deny', () => {
     const { result } = renderHook(() => useGates({ projectId: 'p1', fetchImpl, writeFetchImpl }))
     await waitFor(() => expect(result.current.loadState).toBe('ready'))
 
-    const outcome = await result.current.approve('G2', 'onaylandı')
+    const outcome = await result.current.approve('G2', 'onaylandı', 'önizleme-metni')
     expect(outcome).toEqual({ kind: 'success', item: fresh })
     expect(writeFetchImpl).toHaveBeenCalledWith(
       '/api/gates/p1/G2/approve',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ confirmed: true, decision: 'onaylandı' }),
+        body: JSON.stringify({
+          confirmed: true,
+          decision: 'onaylandı',
+          expectedBody: 'önizleme-metni',
+        }),
       })
     )
   })
@@ -186,7 +190,7 @@ describe('useGates — approve/deny', () => {
     const { result } = renderHook(() => useGates({ projectId: 'p1', fetchImpl, writeFetchImpl }))
     await waitFor(() => expect(result.current.loadState).toBe('ready'))
 
-    const outcome = await result.current.approve('G2', 'karar')
+    const outcome = await result.current.approve('G2', 'karar', 'karar-onizleme')
     expect(outcome.kind).toBe('error')
     if (outcome.kind === 'error') {
       expect(outcome.message).toContain('altına taşındı ama onay yazılamadı')
@@ -202,7 +206,7 @@ describe('useGates — approve/deny', () => {
     const { result } = renderHook(() => useGates({ projectId: 'p1', fetchImpl, writeFetchImpl }))
     await waitFor(() => expect(result.current.loadState).toBe('ready'))
 
-    const outcome = await result.current.approve('G2', 'karar')
+    const outcome = await result.current.approve('G2', 'karar', 'karar-onizleme')
     expect(outcome).toEqual({ kind: 'error', message: 'Kaydedilemedi, tekrar deneyin.' })
   })
 })

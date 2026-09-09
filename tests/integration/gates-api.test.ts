@@ -7,6 +7,28 @@ import { createServer, type ServerWithHub } from '../../src/server/index'
 import { createTempDataDir, removeTempDataDir } from '../helpers/temp-data-dir'
 import { connectSse } from '../helpers/sse-client'
 import { WRITE_HEADER_NAME, WRITE_HEADER_VALUE } from '../../src/shared/types'
+import { buildApprovalBody } from '../../src/features/gates/shared/format-approval'
+
+// S1 (F-008 sözleşmesi §13, QA Bulgu 2 düzeltmesi) — sunucu `expectedBody`'yi KENDİ ürettiği
+// içerikle karşılaştırır; testler bu yüzden gerçek `buildApprovalBody` çıktısını göndermeli
+// (fixture'larda `docs/PROCESS.md` YOK, bu yüzden etiketler `FALLBACK_LABELS`'tan gelir —
+// `list-gates.ts`'in gömülü yedeği: G1 → 'PRD', G2 → 'Mimari').
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function approveBody(
+  gateId: string,
+  label: string,
+  projectLabel: string,
+  decision: string
+): { confirmed: true; decision: string; expectedBody: string } {
+  return {
+    confirmed: true,
+    decision,
+    expectedBody: buildApprovalBody(gateId, label, projectLabel, todayIso(), decision),
+  }
+}
 
 interface ServerHandle {
   server: ServerWithHub
@@ -175,6 +197,7 @@ describe('POST /api/gates/:project_id/:gate/approve — doğrulama', () => {
     const res = await writeRequest(handle.baseUrl, 'POST', `/api/gates/${projectId}/G99/approve`, {
       confirmed: true,
       decision: 'karar',
+      expectedBody: 'ilgisiz — gate id kontrolü expectedBody karşılaştırmasından ÖNCE çalışır',
     })
     expect(res.status).toBe(400)
   })
@@ -183,17 +206,77 @@ describe('POST /api/gates/:project_id/:gate/approve — doğrulama', () => {
     const res = await writeRequest(handle.baseUrl, 'POST', `/api/gates/hic-yok/G1/approve`, {
       confirmed: true,
       decision: 'karar',
+      expectedBody: 'ilgisiz — proje bulunamadı kontrolü karşılaştırmadan ÖNCE çalışır',
     })
     expect(res.status).toBe(404)
+  })
+
+  it('expectedBody eksik/string değil → 400 invalid_body, dosya yazılmaz (S1)', async () => {
+    const res = await writeRequest(handle.baseUrl, 'POST', `/api/gates/${projectId}/G1/approve`, {
+      confirmed: true,
+      decision: 'karar',
+    })
+    expect(res.status).toBe(400)
+    expect((res.json as { error: { code: string } }).error.code).toBe('invalid_body')
+    expect(fs.existsSync(path.join(projectDir, 'docs/approvals/G1.ok'))).toBe(false)
+  })
+})
+
+describe('POST approve — önizleme ≡ diske yazılan bayt eşitliği (S1, QA Bulgu 2)', () => {
+  it('expectedBody sunucunun üreteceğinden farklıysa 409 conflict, dosya yazılmaz', async () => {
+    const res = await writeRequest(handle.baseUrl, 'POST', `/api/gates/${projectId}/G1/approve`, {
+      confirmed: true,
+      decision: 'gerçek karar',
+      expectedBody: buildApprovalBody('G1', 'PRD', 'fixture', todayIso(), 'BAŞKA BİR KARAR METNİ'),
+    })
+    expect(res.status).toBe(409)
+    const body = res.json as { success: boolean; error: { code: string } }
+    expect(body.success).toBe(false)
+    expect(body.error.code).toBe('conflict')
+    expect(fs.existsSync(path.join(projectDir, 'docs/approvals/G1.ok'))).toBe(false)
+  })
+
+  it(
+    'QA-B sınıfı: decision gönderilmeden hemen önce değiştirilirse (önizlemeyle uyuşmaz), ' +
+      'yazma engellenir',
+    async () => {
+      // `ApproveModal.tsx`'in `onConfirm(decision, preview)` çağrısında `decision`'ın önizleme
+      // render edildikten SONRA bir mutasyonla değiştirildiği senaryonun sunucu tarafı ölçümü:
+      // `expectedBody` (önizleme) ORİJİNAL karar metniyle üretildi, `decision` (gönderilen)
+      // FARKLI — sunucu ikisinin uyuşmadığını görüp reddetmeli.
+      const originalDecision = 'onaylıyorum'
+      const tamperedDecision = originalDecision + ' [QA gizli ek]'
+      const preview = buildApprovalBody('G1', 'PRD', 'fixture', todayIso(), originalDecision)
+      const res = await writeRequest(handle.baseUrl, 'POST', `/api/gates/${projectId}/G1/approve`, {
+        confirmed: true,
+        decision: tamperedDecision,
+        expectedBody: preview,
+      })
+      expect(res.status).toBe(409)
+      expect(fs.existsSync(path.join(projectDir, 'docs/approvals/G1.ok'))).toBe(false)
+    }
+  )
+
+  it('expectedBody sunucununkiyle BİREBİR eşleşirse 200, .ok yazılır (mutlu yol regresyonu)', async () => {
+    const res = await writeRequest(
+      handle.baseUrl,
+      'POST',
+      `/api/gates/${projectId}/G1/approve`,
+      approveBody('G1', 'PRD', 'fixture', 'onaylıyorum')
+    )
+    expect(res.status).toBe(200)
+    expect(fs.existsSync(path.join(projectDir, 'docs/approvals/G1.ok'))).toBe(true)
   })
 })
 
 describe('POST /api/gates/:project_id/:gate/approve — mutlu yol (AC2/AC7)', () => {
   it('geçerli istek → 200, .ok yazılır, içerik PROCESS.md formatında', async () => {
-    const res = await writeRequest(handle.baseUrl, 'POST', `/api/gates/${projectId}/G1/approve`, {
-      confirmed: true,
-      decision: 'G1 onaylandı, ilerleyelim',
-    })
+    const res = await writeRequest(
+      handle.baseUrl,
+      'POST',
+      `/api/gates/${projectId}/G1/approve`,
+      approveBody('G1', 'PRD', 'fixture', 'G1 onaylandı, ilerleyelim')
+    )
     expect(res.status).toBe(200)
     const body = res.json as { success: boolean; data: { id: string; status: string } }
     expect(body.success).toBe(true)
@@ -223,7 +306,7 @@ describe('POST /api/gates/:project_id/:gate/approve — mutlu yol (AC2/AC7)', ()
       handle.baseUrl,
       'POST',
       `/api/gates/${added.item.id}/G1/approve`,
-      { confirmed: true, decision: 'karar' }
+      approveBody('G1', 'PRD', 'izole', 'karar')
     )
     expect(res.status).toBe(200)
 
@@ -286,10 +369,12 @@ describe('POST /api/gates/:project_id/:gate/deny — doğrulama + mutlu yol (AC3
 describe('AC9 — arşivle sonra onayla (sıra + M6 fault injection)', () => {
   it('mutlu yol: önce arşivlenir, sonra onay yazılır, .ok içeriği doğru', async () => {
     writeFile(projectDir, 'docs/approvals/G2.deny.md', 'önceki red')
-    const res = await writeRequest(handle.baseUrl, 'POST', `/api/gates/${projectId}/G2/approve`, {
-      confirmed: true,
-      decision: 'yeniden onaylandı',
-    })
+    const res = await writeRequest(
+      handle.baseUrl,
+      'POST',
+      `/api/gates/${projectId}/G2/approve`,
+      approveBody('G2', 'Mimari', 'fixture', 'yeniden onaylandı')
+    )
     expect(res.status).toBe(200)
     expect(fs.existsSync(path.join(projectDir, 'docs/approvals/G2.deny.md'))).toBe(false)
     expect(fs.existsSync(path.join(projectDir, 'docs/approvals/G2.ok'))).toBe(true)
@@ -320,7 +405,7 @@ describe('AC9 — arşivle sonra onayla (sıra + M6 fault injection)', () => {
           handle.baseUrl,
           'POST',
           `/api/gates/${projectId}/G2/approve`,
-          { confirmed: true, decision: 'yeniden onaylandı' }
+          approveBody('G2', 'Mimari', 'fixture', 'yeniden onaylandı')
         )
         expect(res.status).toBe(500)
         const body = res.json as {
@@ -351,7 +436,7 @@ describe('AC9 — arşivle sonra onayla (sıra + M6 fault injection)', () => {
         handle.baseUrl,
         'POST',
         `/api/gates/${projectId}/G2/approve`,
-        { confirmed: true, decision: 'tekrar deneniyor' }
+        approveBody('G2', 'Mimari', 'fixture', 'tekrar deneniyor')
       )
       expect(retryRes.status).toBe(200)
       expect(fs.existsSync(path.join(projectDir, 'docs/approvals/G2.ok'))).toBe(true)
@@ -368,6 +453,8 @@ describe("AC5 — beklenmeyen hata (dağıtıcının genel sınırı DEĞİL, ha
       const res = await writeRequest(handle.baseUrl, 'POST', `/api/gates/${projectId}/G1/approve`, {
         confirmed: true,
         decision: 'karar',
+        expectedBody:
+          'ilgisiz — projectsService.list() expectedBody karşılaştırmasından ÖNCE fırlar',
       })
       expect(res.status).toBe(500)
       const body = res.json as { success: boolean; error: { code: string; message: string } }

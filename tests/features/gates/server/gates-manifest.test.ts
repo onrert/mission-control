@@ -7,6 +7,24 @@ import { createServer, type ServerWithHub } from '../../../../src/server/index'
 import { createTempDataDir, removeTempDataDir } from '../../../helpers/temp-data-dir'
 import { snapshotDir, type ManifestEntry } from '../../../helpers/manifest'
 import { WRITE_HEADER_NAME, WRITE_HEADER_VALUE } from '../../../../src/shared/types'
+import { buildApprovalBody } from '../../../../src/features/gates/shared/format-approval'
+
+// S1 (F-008 sözleşmesi §13) — sunucu `expectedBody`'yi kendi ürettiğiyle karşılaştırır; bu
+// fixture'da `docs/PROCESS.md` yok, etiketler `list-gates.ts`'in gömülü yedeğinden gelir
+// (G1 → 'PRD', G2 → 'Mimari'), proje etiketi `addProject(..., 'fixture')`'tan.
+function approveBody(gateId: string, label: string, decision: string) {
+  return {
+    confirmed: true,
+    decision,
+    expectedBody: buildApprovalBody(
+      gateId,
+      label,
+      'fixture',
+      new Date().toISOString().slice(0, 10),
+      decision
+    ),
+  }
+}
 
 interface ServerHandle {
   server: ServerWithHub
@@ -112,10 +130,11 @@ describe('gates manifest testi (F-008 sözleşmesi §10.1) — gerçek fs, gerç
     if (!g2DenyBefore) throw new Error('fixture eksik')
 
     // 1) Pending bir kapıyı onayla (G1).
-    const approveRes = await writeRequest(handle.baseUrl, `/api/gates/${projectId}/G1/approve`, {
-      confirmed: true,
-      decision: 'G1 onaylandı',
-    })
+    const approveRes = await writeRequest(
+      handle.baseUrl,
+      `/api/gates/${projectId}/G1/approve`,
+      approveBody('G1', 'PRD', 'G1 onaylandı')
+    )
     expect(approveRes.status).toBe(200)
 
     // 2) Pending bir kapıyı reddet (G3).
@@ -125,10 +144,11 @@ describe('gates manifest testi (F-008 sözleşmesi §10.1) — gerçek fs, gerç
     expect(denyRes.status).toBe(200)
 
     // 3) Daha önce reddedilmiş bir kapıyı onayla (G2) — AC9: arşivle, sonra onayı yaz.
-    const reapproveRes = await writeRequest(handle.baseUrl, `/api/gates/${projectId}/G2/approve`, {
-      confirmed: true,
-      decision: 'G2 yeniden onaylandı',
-    })
+    const reapproveRes = await writeRequest(
+      handle.baseUrl,
+      `/api/gates/${projectId}/G2/approve`,
+      approveBody('G2', 'Mimari', 'G2 yeniden onaylandı')
+    )
     expect(reapproveRes.status).toBe(200)
 
     const after = snapshotDir(projectDir, { includeMtime: true })

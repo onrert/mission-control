@@ -123,9 +123,35 @@ describe('listGates — AC1 durum türetme (F-008 sözleşmesi §3)', () => {
     writeFile(root, 'docs/approvals/PUSH.ok', 'tek kullanımlık')
     writeFile(root, 'docs/approvals/.gitkeep', '')
     writeFile(root, 'docs/approvals/.G1.ok.12345-abcdef.tmp', 'geçici')
-    writeFile(root, 'docs/approvals/g2.ok', 'yanlış yazım')
+    writeFile(root, 'docs/approvals/notlar.txt', 'gerçekten tanınmayan bir dosya')
     const result = listGates(root)
-    expect(result.unrecognized).toEqual(['g2.ok'])
+    expect(result.unrecognized).toEqual(['notlar.txt'])
+  })
+
+  describe('Windows harf duyarsızlığı (S2, QA Bulgu 1 düzeltmesi)', () => {
+    it('yalnızca küçük harfli "g2.ok" varsa: G2 approved sayılır, unrecognized BOŞ kalır (split-brain YOK)', () => {
+      writeFile(root, 'docs/approvals/g2.ok', 'küçük harf')
+      const result = listGates(root)
+      const g2 = result.gates.find((g) => g.id === 'G2')
+      expect(g2?.status).toBe('approved')
+      expect(result.unrecognized).toEqual([])
+    })
+
+    it('yalnızca küçük harfli "g5.deny.md" varsa: G5 denied sayılır, unrecognized BOŞ kalır', () => {
+      writeFile(root, 'docs/approvals/g5.deny.md', 'küçük harf red')
+      const result = listGates(root)
+      const g5 = result.gates.find((g) => g.id === 'G5')
+      expect(g5?.status).toBe('denied')
+      expect(result.unrecognized).toEqual([])
+    })
+
+    it('karışık harfli "G4-1.OK" da G4-1 olarak tanınır (kanonik büyük harfe normalize)', () => {
+      writeFile(root, 'docs/approvals/G4-1.OK', 'karışık harf')
+      const result = listGates(root)
+      const ids = result.gates.map((g) => g.id)
+      expect(ids).toContain('G4-1')
+      expect(result.unrecognized).toEqual([])
+    })
   })
 
   it('tek bir dosyanın fs.statSync başarısız olması yalnızca o satırı etkiler (hata izolasyonu)', () => {

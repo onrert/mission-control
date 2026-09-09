@@ -9,10 +9,11 @@ import { ChatScreen } from '../features/chat/web/ChatScreen'
 import { useChatSession } from '../features/chat/web/useChatSession'
 import { GatesScreen } from '../features/gates/web/GatesScreen'
 import { ThreadScreen } from '../features/thread/web/ThreadScreen'
+import { UsageScreen } from '../features/usage/web/UsageScreen'
 import type { ProjectListItem } from '../shared/types'
 
-type ActiveScreen = 'timeline' | 'settings' | 'kanban' | 'chat' | 'gates' | 'thread'
-type TabScreen = 'timeline' | 'kanban' | 'chat' | 'gates' | 'thread'
+type ActiveScreen = 'timeline' | 'settings' | 'kanban' | 'chat' | 'gates' | 'thread' | 'usage'
+type TabScreen = 'timeline' | 'kanban' | 'chat' | 'gates' | 'thread' | 'usage'
 
 // F-008 (G0 kararı: Kapılar F-009'un önüne geçer) — Kapılar Faz 2'den Faz 1 kabuğuna KOŞULSUZ
 // eklenir (chat'in aksine bir sunucu bayrağına bağlı değil). Sıra `docs/03-ux.md:735` — Sohbet
@@ -28,6 +29,9 @@ function buildTabs(chatEnabled: boolean): Array<{ screen: TabScreen; label: stri
   // F-010 (W9) — Thread, Kapılar emsali gibi bir sunucu bayrağına bağlı değil, koşulsuz eklenir.
   // Sıra `docs/03-ux.md` sekme sırası: "…[Kapılar][Thread][Token]" — Kapılar'dan hemen sonra.
   tabs.push({ screen: 'thread', label: 'Thread' })
+  // F-011 — Token Kullanımı, Thread/Kapılar emsali gibi bir sunucu bayrağına bağlı değil,
+  // koşulsuz eklenir; Faz 2'nin son sekmesi (`docs/03-ux.md` sekme sırası).
+  tabs.push({ screen: 'usage', label: 'Token' })
   return tabs
 }
 
@@ -112,14 +116,20 @@ export default function App() {
   return (
     <div className="flex h-screen flex-col bg-zinc-950 text-zinc-100">
       {/* QA düzeltme turu 1 (BLOKLAYICI B2/T3) — `docs/03-ux.md:48-56` dar-genişlik mockup'ının
-          BİREBİR uyguladığı iki satırlı düzen: <640px (`sm:` altı) başlık+rozet+Ayarlar üstte,
+          BİREBİR uyguladığı iki satırlı düzen: <1024px (`lg:` altı) başlık+rozet+Ayarlar üstte,
           sekme çubuğu ALTTA kendi satırında TAM genişlik alır (title/right-group ile genişlik
           YARIŞMAZ) — önceki tek-satırlık `overflow-x-auto` düzeni QA'nın ölçtüğü gibi 375px'te
           her iki sekmenin de kırpılmış görünür genişliğini SIFIRA indiriyordu (title'ın doğal
-          genişliği tek başına kalan alanı tüketiyordu). `sm:` (≥640px) üzerinde tek satıra
-          döner (`sm:flex-nowrap`, `order-none`), başlık doğal genişliğinde, sekme alanı
-          `flex-1` — geniş ekran görünümü DEĞİŞMEDİ. */}
-      <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-zinc-800 px-4 py-2 sm:h-14 sm:flex-nowrap sm:gap-y-0 sm:py-0">
+          genişliği tek başına kalan alanı tüketiyordu). `lg:` (≥1024px) üzerinde tek satıra
+          döner (`lg:flex-nowrap`, `order-none`), başlık doğal genişliğinde, sekme alanı
+          `flex-1` — geniş ekran görünümü DEĞİŞMEDİ.
+          F-011/D10 — kırılma noktası eskiden `sm:` (640px) idi; altıncı sekme (Token) eklenince
+          640-900px arası ("tek satır ama hâlâ dar") tek-satır stiliyle en az bir sekme 0px'e
+          düşüyordu (QA/CEO ölçtü, `docs/blockers.md` D10). İki satırlı KOMPAKT düzen çok daha
+          geniş bir aralıkta (1024px'e kadar) TAM genişlik satırında kaldığı için 6 sekmeyi de
+          320px'te dahi sığdırabiliyor — kırılma noktası `lg:`'ye taşındı, tek-satır düzenin
+          KENDİSİ değişmedi. */}
+      <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-zinc-800 px-3 py-2 lg:h-14 lg:flex-nowrap lg:gap-y-0 lg:px-4 lg:py-0">
         <span
           data-testid="app-title"
           // Tailwind'in min-width sıfırlama yardımcı sınıfı KASITLI OLARAK class değil, inline
@@ -129,7 +139,7 @@ export default function App() {
           // item'ın içeriğe göre büzülmesine izin verir, `truncate` ile birlikte) elde etmenin
           // cerrahi yolu.
           style={{ minWidth: 0 }}
-          className="order-1 flex-1 truncate font-display tracking-wide text-lg sm:order-none sm:flex-none sm:shrink-0"
+          className="order-1 flex-1 truncate font-display tracking-wide text-lg lg:order-none lg:flex-none lg:shrink-0"
         >
           MISSION CONTROL
         </span>
@@ -138,12 +148,13 @@ export default function App() {
           aria-label="Ekranlar"
           // QA düzeltme turu 1 (X3/Ö2) — beşinci sekme (Thread) eklenince üretim varsayılanında
           // (sohbet açık, 5 sekme) 320/375px'te son sekme(ler) `overflow-x-auto` şeridinin
-          // TAMAMEN dışına düşüyordu (kırpılmış görünür genişlik 0px, QA ölçtü — E2E çiti eskiden
-          // sohbeti kapalı koşan bir yapılandırmayla 4 sekme ölçtüğü için bunu YAKALAYAMIYORDU).
-          // Yalnızca dar genişlikte (`sm:` altı) boşluk/yazı boyutu küçültülür — metin/yapı/geniş
-          // ekran görünümü DEĞİŞMEZ; bu, 5 sekmenin tamamının en azından bir kısmının başlangıç
-          // kaydırma konumunda (scrollLeft=0) görünür kalması için yeterli.
-          className="order-3 flex w-full shrink-0 items-center gap-1.5 overflow-x-auto sm:order-none sm:w-auto sm:flex-1 sm:gap-4"
+          // TAMAMEN dışına düşüyordu (kırpılmış görünür genişlik 0px, QA ölçtü). F-011/D10 —
+          // altıncı sekme (Token) eklenince aynı sınıf 320px'te TEKRAR ortaya çıktı (`gap-1.5`/
+          // `text-xs` 5 sekme için yeterliydi, 6. sekmeyi 66px açıkla dışarıda bırakıyordu,
+          // gerçek Chromium'da ölçüldü). `gap-1`/`text-[11px]` (yalnızca `lg:` altı) + kırılma
+          // noktasının `lg:`'ye taşınması (üstteki not) birlikte 320px'te 6 sekmenin TAMAMINI
+          // (`scrollWidth <= clientWidth`) sığdırıyor — metin/yapı/geniş ekran görünümü DEĞİŞMEZ.
+          className="order-3 flex w-full shrink-0 items-center gap-1 overflow-x-auto lg:order-none lg:w-auto lg:flex-1 lg:gap-4"
         >
           {TABS.map((tab) => {
             const isSelected = selectedTab === tab.screen
@@ -159,8 +170,8 @@ export default function App() {
                 onKeyDown={onTabKeyDown}
                 className={
                   isSelected
-                    ? 'cursor-pointer whitespace-nowrap text-xs font-mono text-amber-400 sm:text-sm'
-                    : 'cursor-pointer whitespace-nowrap text-xs font-mono text-zinc-400 sm:text-sm'
+                    ? 'cursor-pointer whitespace-nowrap text-[11px] font-mono text-amber-400 lg:text-sm'
+                    : 'cursor-pointer whitespace-nowrap text-[11px] font-mono text-zinc-400 lg:text-sm'
                 }
               >
                 {tab.label}
@@ -168,7 +179,7 @@ export default function App() {
             )
           })}
         </div>
-        <div className="order-2 flex shrink-0 items-center gap-4 sm:order-none">
+        <div className="order-2 flex shrink-0 items-center gap-4 lg:order-none">
           <ConnectionBadge status={stream.connectionStatus} variant="shell" />
           <button
             type="button"
@@ -246,6 +257,20 @@ export default function App() {
         >
           <ScreenErrorBoundary>
             <ThreadScreen
+              liveProjectsUpdate={projectsUpdate}
+              onNavigateSettings={() => setActiveScreen('settings')}
+            />
+          </ScreenErrorBoundary>
+        </div>
+        <div
+          id="panel-usage"
+          role="tabpanel"
+          aria-labelledby="tab-usage"
+          hidden={activeScreen !== 'usage'}
+          className="h-full"
+        >
+          <ScreenErrorBoundary>
+            <UsageScreen
               liveProjectsUpdate={projectsUpdate}
               onNavigateSettings={() => setActiveScreen('settings')}
             />

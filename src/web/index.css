@@ -11,6 +11,7 @@
 @source "../features/chat/web";
 @source "../features/gates/web";
 @source "../features/thread/web";
+@source "../features/usage/web";
 
 @theme {
   --font-display: 'Departure Mono', ui-monospace, monospace;

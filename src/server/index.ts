@@ -33,6 +33,7 @@ import {
 } from '../features/thread/server/transcript-reader'
 import { resolveClaudeProjectsRoot } from '../features/thread/server/thread-detail'
 import { handleThreadDetail } from '../features/thread/server/handlers'
+import { handleUsageReport } from '../features/usage/server/handlers'
 import {
   handleChatStatus,
   handleChatHistory,
@@ -451,6 +452,12 @@ export function createServer(
       }
       if (pathname === '/api/thread/detail' && req.method === 'GET') {
         handleThreadDetail(req, res, projectsService, claudeProjectsRoot, transcriptReaderStats)
+        return
+      }
+      // F-011 sözleşmesi §1 — proje filtresi yok, `claudeProjectsRoot` F-010'un zaten çözdüğü
+      // AYNI değerdir (ikinci bir çözümleme İCAT EDİLMEDİ, W1/Y1 emsali).
+      if (pathname === '/api/usage' && req.method === 'GET') {
+        handleUsageReport(res, projectsService, claudeProjectsRoot)
         return
       }
       if (pathname === '/api/gates' && req.method === 'GET') {

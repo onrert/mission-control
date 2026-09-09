@@ -1,7 +1,7 @@
 ---
 type: desen
 updated: 2026-09-09
-sources: [docs/features/F-009-transkript-spike.md, docs/02-architecture.md §9, docs/decisions/ADR-007-transkript-ve-token-veri-kaynagi.md, docs/qa/F-009-contract.md, src/features/thread/server/transcript-reader.ts]
+sources: [docs/features/F-009-transkript-spike.md, docs/02-architecture.md §9, docs/decisions/ADR-007-transkript-ve-token-veri-kaynagi.md, docs/qa/F-009-contract.md, src/features/thread/server/transcript-reader.ts, docs/qa/F-011-contract.md, src/features/usage/server/usage-aggregator.ts]
 ---
 # Claude Code transkript formatı (`~/.claude/projects/**/*.jsonl`) — gözlem + tekrarlanacak kontrol listesi
 
@@ -192,7 +192,40 @@ elle tekrarlanabilir, kod yazmadan yapılır:
 6. **Gizlilik çitini yeniden çalıştır:** `npx vitest run tests/features/thread/
    transcripts-privacy-guard.test.ts` — yeni fixture eklendiyse bu adım zorunludur.
 
+## `subagents/*.meta.json` formatı (F-011 spike, önceki turlarda HİÇ doğrulanmamıştı)
+
+F-009/F-010 yalnızca `.jsonl` transkriptlerini doğruladı; `agent-<id>.meta.json` dosyalarının
+gerçekten var olup olmadığı, formatının, `agentType` alanının gerçekten dolu olup olmadığı
+**hiç ölçülmemişti** (ADR-007'nin kendi örneği — "gözlemlenen içerik" cümlesi — tek bir dosyaya
+dayanıyordu). F-011 kod yazmadan önce bunu ölçtü:
+
+- **130 gerçek `.meta.json` dosyası** bulundu (`~/.claude/projects/C--dev-apps-mission-control/
+  **/subagents/*.meta.json`, 2026-09-09). ✓ DOĞRULANDI (glob + `JSON.parse`, tam tarama).
+- **0 bozuk JSON** — 130/130 başarıyla ayrıştırıldı. ✓ DOĞRULANDI.
+- **Alan kümesi:** `{model, description, toolUseId, spawnDepth, agentType}` — ADR-007'nin
+  örneğindeki `stoppedByUser` bu turda gözlenmedi (muhtemelen yalnızca kullanıcı durdurduğunda
+  eklenen opsiyonel bir alan, ✓ DOĞRULANDI yokluğu, [T] TAHMİN nedeni).
+- **`agentType` dağılımı (130/130 dolu, hiçbiri boş/eksik değil):** `developer` 78,
+  `qa-evaluator` 47, `explorer` 2, `ux` 1, `architect` 2. ✓ DOĞRULANDI.
+- **Her `agent-<id>.jsonl` için TAM OLARAK bir `agent-<id>.meta.json` var** — 130/130 eşleşme
+  (`.jsonl` uzantısını `.meta.json` ile değiştirmek yeterli, ayrı bir eşleştirme mantığı
+  gerekmiyor), yetim (meta'sız jsonl veya jsonl'siz meta) YOK. ✓ DOĞRULANDI.
+- **Ek bulgu (AC'yi DEĞİŞTİRMEZ, yalnızca çapraz-doğrulama):** subagent `.jsonl` satırlarının
+  KENDİSİ de `attributionAgent` alanını taşıyor; gözlenen bir örnekte meta.json'daki `agentType`
+  (`"developer"`) ile BİREBİR aynı değeri taşıyordu. Bu, meta.json okumadan agent türünü elde
+  etmenin ikinci bir yolu olabilir — ama `docs/features/F-011-token-kullanimi.md` AC'si açıkça
+  `subagents/*.meta.json`'u birincil kaynak sayar, bu yüzden F-011 KULLANMADI. ⊢ ÇIKARIM: iki alan
+  muhtemelen aynı üretim noktasından geliyor (harness subagent'ı spawn ederken ikisine de aynı
+  string'i yazıyor), ama bu tek örnekten genellenmedi. [T] TAHMİN: her zaman aynı kalacakları.
+- **Ayrıca gözlendi (F-011'in `dayFromMtime` kararını destekler):** ana oturum `.jsonl` satırları
+  (`type:"assistant"`) hem `timestamp` (ISO 8601) hem `sessionId` alanını %100 oranda taşıyor
+  (22.663/22.663 satır, tam tarama). ✓ DOĞRULANDI. F-011 yine de dosya `mtime`'ını kullandı (satır
+  bazlı zaman damgasını KULLANMADI) çünkü `readTranscript()` yalnızca dosya toplamı döner — satır
+  bazlı ayrıştırma ikinci bir okuma yolu (W1 ihlali) gerektirirdi; gerekçe `docs/qa/
+  F-011-contract.md` §1 madde 3'te.
+
 ## İlgili
 
 `docs/decisions/ADR-007-transkript-ve-token-veri-kaynagi.md`, `docs/qa/F-009-contract.md`,
-`src/features/thread/server/transcript-reader.ts`. İlgili: [[desen/app-factory-hatti]]
+`docs/qa/F-011-contract.md`, `src/features/thread/server/transcript-reader.ts`,
+`src/features/usage/server/usage-aggregator.ts`. İlgili: [[desen/app-factory-hatti]]

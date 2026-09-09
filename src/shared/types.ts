@@ -200,6 +200,66 @@ export interface ThreadDetail {
 }
 
 /**
+ * F-011 sözleşmesi §1 — `transcript-reader.ts`'in (F-009) `TranscriptUsageTotals`'ıyla
+ * YAPISAL OLARAK aynı dört alan. Ayrı tanımlanır çünkü `shared/types.ts` bir feature'ın sunucu
+ * modülünü (`src/features/thread/server/transcript-reader.ts`) import ETMEZ (katman ihlali) —
+ * `ThreadDetail`'in kendi bölüm tiplerini bağımsız tanımlamasıyla AYNI karar.
+ */
+export interface TokenUsageTotals {
+  input_tokens: number
+  output_tokens: number
+  cache_creation_input_tokens: number
+  cache_read_input_tokens: number
+}
+
+/** F-011 sözleşmesi §1 madde 4 — bir oturum içinde tek bir agent'ın (`"ana oturum"` veya
+ *  `subagents/*.meta.json`'daki `agentType`, yoksa `"bilinmiyor"`) token toplamı. */
+export interface UsageAgentTotal {
+  agent: string
+  usage: TokenUsageTotals
+}
+
+/** Tek bir `.jsonl` oturumunun (ana dosya + o dosyanın adını taşıyan `subagents/` alt dizini)
+ *  agent kırılımı. */
+export interface UsageSessionTotal {
+  session_id: string
+  agents: UsageAgentTotal[]
+  usage: TokenUsageTotals
+}
+
+/** F-011 §1 madde 3 — gün, dosyanın kendi `mtime`'ının takvim günüdür (satır-bazlı zaman damgası
+ *  DEĞİL — gerekçe sözleşmede). `YYYY-MM-DD` biçimi. */
+export interface UsageDayTotal {
+  day: string
+  sessions: UsageSessionTotal[]
+  usage: TokenUsageTotals
+}
+
+export interface UsageProjectTotal {
+  project_id: string
+  project_label: string
+  days: UsageDayTotal[]
+  usage: TokenUsageTotals
+}
+
+/**
+ * `GET /api/usage`'ın tel tipi (F-011 sözleşmesi). Proje filtresi YOK — tüm izlenen projeler tek
+ * yanıtta. Hiçbir transkript bulunamayan projeler `projects` dizisinde YER ALMAZ (dürüst boş
+ * durum — uydurma sıfır satır yok).
+ */
+export interface UsageReport {
+  projects: UsageProjectTotal[]
+  usage: TokenUsageTotals
+  lines_ok: number
+  lines_bad: number
+  /** ADR-007 azaltımı — tanınan satır oranı eşiğin altına düşerse `true` (F-011 §1 madde 8). */
+  degraded: boolean
+  /** PRD F6/AC2 — `claudeProjectsRoot`'un kendisi bulunamadı VEYA listelenemedi (EPERM vb.).
+   *  `true` iken `projects` her zaman boştur; istemci "Token verisi okunamadı…" gösterir. */
+  source_unreadable: boolean
+}
+
+/**
  * F-008 sözleşmesi §4 — `docs/approvals/` içeriğinden türetilen tek bir kapının durumu.
  * `error:true` ise `status` yalnızca güvenli bir varsayılandır (`'pending'`) — gerçek durum
  * `fs.statSync` başarısız olduğu için belirlenemedi, istemci "Durum belirlenemedi" gösterir

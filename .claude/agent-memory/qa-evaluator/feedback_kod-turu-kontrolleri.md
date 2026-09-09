@@ -161,3 +161,34 @@ mutasyon planlanmamış kod yollarını, (b) çok katmanlı savunmaların ikinci
    (kaydırılabilir mesafe 2690px). Klavye kullanıcısı her belgenin ilk ~254 pikselini görebiliyor.
    Ölçüm 30 saniye: `[...m.querySelectorAll('*')].filter(e=>e.scrollHeight>e.clientHeight)` ile
    kaydırma bölgelerini say, `tabindex`lerine bak, tuşa bas, `scrollTop`'u tekrar oku.
+
+---
+
+## F-008 turunda eklenen dört teknik
+
+19. **"Kullanicinin ONAYLADIGI" ile "diske YAZILAN" arasina mutasyon at.** Iki adimli onay/
+   onizleme iceren her ekranda sozlesme genelde "onizleme ile yazilan bayt bayt ayni" diyor ve
+   bunu "ayni saf fonksiyonu cagiriyoruz" ile gerekcelendiriyor — ama modalin `onConfirm`'e
+   gercekten ayni degeri gecirdigini hicbir sey olcmuyor. F-008'de `onConfirm(decision)` →
+   `onConfirm(decision + ' [ek]')` mutasyonu **1066/1066 yesil** kaldi; E2E de yakalayamadi
+   cunku `toContain` onek eslesmesi. Ayrica gercek bir ayrisma uretilebiliyor: modal ACIKKEN
+   etiketin/tarihin kaynagini (PROCESS.md) degistir → onizleme eski etiketi, disk yeniyi alir.
+   **Kural:** onizleme metnini tarayicidan oku, sha256'sini al, diskteki dosyanin sha256'siyla
+   **tam esitlik** karsilastir; sonra ayni yolu mutasyonla kir.
+20. **Windows'ta `fs.existsSync` harfe DUYARSIZ; dosya adi regex'i duyarli.** Iki katman ayni
+   dosya hakkinda zit karar verir. F-008'de `g2.ok` ayni ekranda hem "Taninmayan dosyalar"
+   listesinde hem `G2 = Onaylandi (kilitli)` durumunun kaynagiydi ve kapiyi panelden
+   reddedilemez yapti (409). **Olcum 60 saniye:** sandbox `docs/approvals/`'a yalnizca kucuk
+   harfli `g2.ok`/`g5.deny.md` koy, listeyi cek. ADR "yalnizca Windows" diyorsa bu sinifi her
+   dosya-adi-desenli feature'da ara. Siddeti kalibre et: sistemin geri kalani (hook'lar) da
+   `existsSync` kullaniyorsa durum tutarlidir, hatali olan yalnizca siniflandirma mesajidir.
+21. **Yari-basari icin ACL asimetrisi kur (Windows'ta `chmod` ise yaramaz).**
+   `icacls <dir> /deny "<user>:(NP)(WD,AD)"` → dizinde YENI dosya olusturulamaz ama dosyayi
+   dizinden DISARI `rename` etmek calisir. Bu tam olarak "arsivleme oldu, onay yazilamadi"
+   senaryosunu uretir. PowerShell'de `$env:USERNAME:` degisken adi olarak yutulur — `('{0}:(NP)(WD,AD)' -f $env:USERNAME)` kullan. Kaldirma: `/remove:d <user>`.
+   Onay/geri-al arasinda dosyalari geri tasimak icin ONCE ACL'i kaldir (iceri rename de bloklu).
+22. **Kirmizi bir betigin feature'a ait OLMADIGINI kanitla, varsayma.** `npm run e2e:dev`
+   kirmiziydi; suclamadan once dort ayirt edici olcum yaptim: (a) alt komut tek basina calisiyor
+   mu, (b) araci (`tsx watch`) tek basina calisiyor mu, (c) feature'in katkisini (yeni izleyici)
+   mutasyonla devre disi birak — hala kirmizi mi, (d) bos bir veri dizini ile hala kirmizi mi.
+   Dorduncusu de kirmiziysa bulgu proje borcudur, feature'in kararini etkilemez.

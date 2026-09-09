@@ -415,3 +415,23 @@ doğrulandı (developer turu, F-011 sözleşmesi §3 B7).
 ### Ö7 — Ölü `retry` API'si
 `src/features/thread/web/useProjectFeatureList.ts:41-43` — kullanılmayan `retry`; ayrıca D3'te
 bayat bir yorum duruyor. **Eşik:** `src/features/thread/**` dosyasına dokunan bir sonraki feature.
+
+## 2026-09-10 — ⚠ YÜKSEK ÖNCELİK: test takımı sessizce test atlıyor (proje geneli)
+
+**Bulgu (F-011 QA turu):** Üç `vitest` koşusunun **ikisinde** "Worker forks emitted error"
+nedeniyle **10-16 test hiç koşmadan** kaldı — ve süreç yine **çıkış kodu 0** döndü.
+
+**Neden bu kadar ciddi:** Bu, deponun en pahalı hata sınıfının **altyapı seviyesindeki** hâli.
+Bugüne kadar verilen her "`verify` = 0, N test yeşil" raporu, aslında **koşmamış testler**
+içeriyor olabilir. Yeşil bir koşu artık tek başına kanıt sayılamaz.
+
+**Bilinen ve ayrı olan:** `exit code 3221226505` ile **kırmızı** veren worker-fork kararsızlığı
+(`CLAUDE.md`'de kayıtlı, beş kez görüldü). Bu **farklı**: orada koşu kırmızı veriyor ve fark
+ediliyor; burada koşu **yeşil** veriyor ve testler sessizce düşüyor.
+
+**Kapatma yolu (öneri):** koşulan test sayısını **beklenen sayıyla** karşılaştıran bir kontrol —
+`vitest` çıktısındaki toplam, bilinen alt sınırın altındaysa `verify` **kırmızı** versin.
+Alternatif: worker havuzu yapılandırmasını değiştirip hatayı kırmızıya çevirmek.
+
+**Eşik:** F-011 kapandıktan **hemen sonra**, ayrı bir devops/altyapı turu olarak.
+Bu kapanana kadar "testler yeşil" ifadesi **koşulan test sayısıyla birlikte** raporlanmalı.

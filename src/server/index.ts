@@ -21,6 +21,11 @@ import {
   handlePatchFeatureStatus,
   handleFeatureDetail,
 } from '../features/kanban/server/handlers'
+import {
+  handleListGates,
+  handleApproveGate,
+  handleDenyGate,
+} from '../features/gates/server/handlers'
 import { createChatSession } from '../features/chat/server/session'
 import {
   handleChatStatus,
@@ -427,6 +432,38 @@ export function createServer(
         const rawProjectId = rest.slice(0, sepIndex)
         const rawFile = rest.slice(sepIndex + 1)
         handlePatchFeatureStatus(req, res, projectsService, rawProjectId, rawFile)
+        return
+      }
+      if (pathname === '/api/gates' && req.method === 'GET') {
+        handleListGates(req, res, projectsService)
+        return
+      }
+      if (pathname?.startsWith('/api/gates/') && req.method === 'POST') {
+        // `/api/gates/:project_id/:gate/approve|deny` — F-008 sözleşmesi §4. `gate` kendi
+        // içinde `/` taşımaz (`isValidGateId`), bu yüzden basit `split('/')` yeterli.
+        const rest = pathname.slice('/api/gates/'.length)
+        const parts = rest.split('/')
+        const [rawProjectId, rawGate, action] = parts
+        if (
+          parts.length !== 3 ||
+          rawProjectId === '' ||
+          rawGate === '' ||
+          (action !== 'approve' && action !== 'deny')
+        ) {
+          res.writeHead(404, { 'content-type': 'application/json' })
+          res.end(
+            JSON.stringify({
+              success: false,
+              error: { code: 'not_found', message: 'Bulunamadı.' },
+            })
+          )
+          return
+        }
+        if (action === 'approve') {
+          handleApproveGate(req, res, projectsService, hub, rawProjectId!, rawGate!)
+        } else {
+          handleDenyGate(req, res, projectsService, hub, rawProjectId!, rawGate!)
+        }
         return
       }
       if (pathname === '/api/chat/status' && req.method === 'GET') {

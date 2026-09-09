@@ -1,7 +1,7 @@
 ---
 id: F-008
 title: Kapılar paneli (G0–G6 / ASSETS) — onay, red, arşiv akışı
-status: todo
+status: dev
 owner: developer
 deps: [F-006, F-007]
 sprint: 2
@@ -25,3 +25,13 @@ Kaynak: PRD özellik 4; `docs/03-ux.md` ekran 4 + akışlar (d), (e); ADR-001 ka
 
 ## Notlar / kararlar
 - Panelden verilen onay kullanıcının onayı sayılır (G0 kararı); bu yüzden doğrulama adımı zorunludur.
+
+## Kod turu — A bölümü (sunucu, 2026-09-09)
+
+Sunucu tarafı tamamlandı (durum türetme, üç uç, `.ok`/`.deny.md` yazımı, arşivleme + yarı-başarı,
+hata semantiği, SSE yayını). AC kutuları **B turu (arayüz) bitene kadar işaretlenmedi** — her AC
+uçtan uca (UI dahil) doğrulanmadan "bitti" sayılmıyor. Ayrıntı: `docs/progress.md` "F-008 — A
+bölümü (sunucu)" kaydı. B turuna devredilenler: React bileşenleri (`GatesScreen`, `GateRow`,
+`ApproveModal`, `DenyInlineForm`, `useGates`, `ProjectSelect`, `icons`), `App.tsx`/
+`useEventStream.ts` bağlanması, `docs/03-ux.md`'ye ★ işaretli 6 yeni Türkçe metnin eklenmesi,
+kırılan sekme sayacı testlerinin (§10.2 tablosu) güncellenmesi, dar genişlik E2E'si.

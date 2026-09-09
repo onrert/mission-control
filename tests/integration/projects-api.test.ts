@@ -297,7 +297,9 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
     }
     const healthRes = await fetch(`${handle.baseUrl}/api/health`)
     const health = (await healthRes.json()) as { watchers: number }
-    expect(health.watchers).toBe(2)
+    // F-008 sözleşmesi §7: `watchers` artık `docs/features` + `docs/approvals` izleyicilerinin
+    // TOPLAMI (`createFixtureProject` her ikisini de oluşturuyor) — her proje 2 izleyici katar.
+    expect(health.watchers).toBe(4)
   })
 
   // QA düzeltme turu 1 (ÖNEMLİ-1): M7 mutasyonu (`watchers.delete(id)` kaldırılması) önceden
@@ -315,7 +317,8 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
       ids.push(body.data.id)
     }
     const beforeRes = await fetch(`${handle.baseUrl}/api/health`)
-    expect(((await beforeRes.json()) as { watchers: number }).watchers).toBe(2)
+    // F-008 sözleşmesi §7: her proje `docs/features` + `docs/approvals` için 2 izleyici katar.
+    expect(((await beforeRes.json()) as { watchers: number }).watchers).toBe(4)
 
     const removeRes = await fetch(`${handle.baseUrl}/api/projects/${ids[0]}`, {
       method: 'DELETE',
@@ -324,7 +327,7 @@ describe('POST/GET/DELETE /api/projects — entegrasyon (sözleşme §4)', () =>
     expect(removeRes.status).toBe(200)
 
     const afterRes = await fetch(`${handle.baseUrl}/api/health`)
-    expect(((await afterRes.json()) as { watchers: number }).watchers).toBe(1)
+    expect(((await afterRes.json()) as { watchers: number }).watchers).toBe(2)
   })
 
   it('Host/Origin: GET /api/projects de isAllowedHost çitine tabi (QA Bulgu 13b)', async () => {
@@ -413,7 +416,8 @@ describe('AC5: kayıt defteri kalıcı, restart sonrası otomatik yeniden izleme
 
       const healthRes = await fetch(`${second.baseUrl}/api/health`)
       const health = (await healthRes.json()) as { watchers: number }
-      expect(health.watchers).toBe(1)
+      // F-008 sözleşmesi §7: `docs/features` + `docs/approvals` izleyicilerinin toplamı.
+      expect(health.watchers).toBe(2)
 
       const sse = await connectSse(second.port)
       try {
@@ -443,7 +447,8 @@ describe('İzleyici yaşam döngüsünün gerçek kapanışı (sözleşme §7, m
         body: JSON.stringify({ path: project }),
       })
       expect(addRes.status).toBe(201)
-      expect(handle.server.projectsService.getActiveWatcherCount()).toBe(1)
+      // F-008 sözleşmesi §7: `docs/features` + `docs/approvals` izleyicilerinin toplamı.
+      expect(handle.server.projectsService.getActiveWatcherCount()).toBe(2)
 
       await stopServer(handle)
       expect(handle.server.projectsService.getActiveWatcherCount()).toBe(0)

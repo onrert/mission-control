@@ -166,3 +166,33 @@ export interface FeatureDetail {
   contract: FeatureDetailDocument
   qa_reports: FeatureDetailReport[]
 }
+
+/**
+ * F-008 sözleşmesi §4 — `docs/approvals/` içeriğinden türetilen tek bir kapının durumu.
+ * `error:true` ise `status` yalnızca güvenli bir varsayılandır (`'pending'`) — gerçek durum
+ * `fs.statSync` başarısız olduğu için belirlenemedi, istemci "Durum belirlenemedi" gösterir
+ * (§3 "Satır bazlı hata izolasyonu").
+ */
+export type GateStatus = 'pending' | 'approved' | 'denied' | 'conflict'
+
+export interface GateStatusItem {
+  /** `"G2"`, `"ASSETS"`, `"G4-1"` gibi. */
+  id: string
+  label: string
+  status: GateStatus
+  error?: boolean
+  /** `mtime` kaynaklı, `"YYYY-MM-DD"` (§3 — dosya içeriğindeki serbest metin tarih PARSE EDİLMEZ). */
+  ok_date?: string
+  deny_date?: string
+  /** Yalnızca `status === 'conflict'` iken dolu. */
+  newer_side?: 'ok' | 'deny'
+}
+
+/** `GET /api/gates?project_id=…`'in tel tipi (F-008 sözleşmesi §4). */
+export interface GatesListResponse {
+  gates: GateStatusItem[]
+  /** Kapı desenine uymayan ama hariç tutma kümesinde de olmayan dosya/dizin adları (§3). */
+  unrecognized: string[]
+  /** `false` ise `BASE_CATALOG` gömülü yedek etiketlerle gösterilir (§3). */
+  process_doc_readable: boolean
+}

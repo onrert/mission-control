@@ -28,6 +28,7 @@
     "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
     "install-hook": "node scripts/install-hook.mjs",
     "test:chat-live": "vitest run tests/integration/chat-hooks-live.test.ts",
+    "test:gates-live": "vitest run tests/integration/gates-write-permission-live.test.ts",
     "electron:fetch": "node ./node_modules/electron/install.js",
     "electron:start": "npm run build && electron .",
     "electron:package": "npm run build && node scripts/package-electron.mjs"

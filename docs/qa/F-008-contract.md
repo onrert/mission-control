@@ -710,16 +710,18 @@ sonra kod), proje seçilmemiş/hiç proje yokken durum sorusu `docs/03-ux.md:516
 metniyle ("Önce bir proje seçin.") kapandı (hem "hiç proje yok" hem "proje var, seçilmemiş"
 durumları aynı metni kullanır — UX bu ayrımı yapmıyor, F-008 icat etmiyor).
 
-**Geriye kalan tek açık soru:**
+**Geriye kalan tek açık soru — KAPANDI (CEO kararı Q1, kod turu A, 2026-09-09):**
 1. **`docs/approvals` yeni oluşturulursa izleyicinin yeniden taranması.** §7'de not düşüldü: proje
    eklendiğinde `docs/approvals` henüz yoksa izleyici o proje için hiç başlamıyor; dizin sonradan
    (ör. ilk G0 onayında CEO tarafından) oluşturulursa mevcut tasarım bunu yakalamıyor — kullanıcı
    panel yeniden başlatılana/proje yeniden eklenene kadar canlı güncelleme göremez (statik
    `GET /api/gates` her zaman doğru sonucu verir, yalnızca **anlık** SSE bildirimi eksik kalır).
-   Etkisi düşük (nadir sıra: yeni proje + ilk kapı onayı aynı oturumda) ama CEO isterse kapsam
-   içine alınabilir (ör. proje izleyicisi zaten `docs/features` için periyodik yeniden kontrol
-   yapıyorsa aynı desen `docs/approvals` için de eklenir — bu, `service.ts`'in mevcut
-   davranışına bağlı, kod turunda doğrulanmalı).
+   **Karar: yeni bir izleme mekanizması KURULMADI** (Karpathy §2 — F-005'in "proje listesi sinyali
+   → yeniden oku" ve F-013'ün "Yenile" deseni zaten bu sınıf boşluk için yeterli emsal). Kod
+   `startWatchingGatesIfPossible`'ı yalnızca proje kaydı YAŞAM DÖNGÜSÜ olaylarında (açılış +
+   `addProject`) çağırır, periyodik yeniden tarama EKLENMEDİ. Etkisi düşük (nadir sıra: yeni proje
+   + ilk kapı onayı aynı oturumda) kabul edilmiş bir sınır olarak kalıyor — statik `GET /api/gates`
+   her zaman doğrudur, yalnızca **anlık** SSE bildirimi eksik.
 
 **Doğrulayamadıklarım (tur 3, devam eden):**
 - `npm run verify` / `npm run e2e` çıktısı — sözleşme turu, kod yok, koşturmadım.

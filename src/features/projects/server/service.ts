@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createProjectsRegistry, toProjectListItem } from '../../../server/store/projects-registry'
 import { watchProjectFeatures, type ProjectWatcher } from '../../../server/watch/project-watcher'
+import { watchApprovals, type GatesWatcher } from '../../gates/server/gates-watcher'
 import { resolveProjectPath } from './validate-path'
 import type { SseHub } from '../../../server/sse/hub'
 import type { ProjectListItem, ProjectRecord } from '../../../shared/types'
@@ -89,6 +90,9 @@ export function createProjectsService(dataDir: string, hub: SseHub): ProjectsSer
   registry.init()
 
   const watchers = new Map<string, ProjectWatcher>()
+  // F-008 sözleşmesi §7 (Ö3) — `docs/approvals`'a özel, `watchers`'tan AYRI bir map (farklı bir
+  // kaynak dizinini izliyor, karıştırmamak için ayrı isim).
+  const gatesWatchers = new Map<string, GatesWatcher>()
 
   function startWatchingIfPossible(record: ProjectRecord): void {
     if (watchers.has(record.id)) return
@@ -102,9 +106,26 @@ export function createProjectsService(dataDir: string, hub: SseHub): ProjectsSer
     watchers.set(record.id, watcher)
   }
 
+  /**
+   * F-008 sözleşmesi §7 — `docs/approvals` dizini yoksa hiç başlatmaz (yeni proje senaryosu,
+   * dizin sonradan oluşursa şu an için yeniden taranmaz — bilinen sınır, §12).
+   */
+  function startWatchingGatesIfPossible(record: ProjectRecord): void {
+    if (gatesWatchers.has(record.id)) return
+    const approvalsDir = path.join(record.path, 'docs', 'approvals')
+    if (!fs.existsSync(approvalsDir)) return
+    const watcher = watchApprovals(approvalsDir, () => {
+      safelyNotify(`proje kapı değişikliği SSE yayını (${record.id})`, () =>
+        hub.broadcast('gates', { project_id: record.id })
+      )
+    })
+    gatesWatchers.set(record.id, watcher)
+  }
+
   // AC5: açılışta var olan kayıtlar için otomatik yeniden izleme.
   for (const record of registry.list()) {
     startWatchingIfPossible(record)
+    startWatchingGatesIfPossible(record)
   }
 
   function currentList(): ProjectListItem[] {
@@ -144,6 +165,7 @@ export function createProjectsService(dataDir: string, hub: SseHub): ProjectsSer
     // yine de `ok:true` alır (bkz. `safelyNotify` dokümantasyonu).
     safelyNotify('proje eklendi bildirimi (izleme başlatma/SSE yayını)', () => {
       startWatchingIfPossible(added.record)
+      startWatchingGatesIfPossible(added.record)
       hub.broadcast('projects', currentList())
     })
     return { ok: true, item: toProjectListItem(added.record) }
@@ -165,6 +187,11 @@ export function createProjectsService(dataDir: string, hub: SseHub): ProjectsSer
         watcher.stop()
         watchers.delete(id)
       }
+      const gatesWatcher = gatesWatchers.get(id)
+      if (gatesWatcher) {
+        gatesWatcher.stop()
+        gatesWatchers.delete(id)
+      }
       hub.broadcast('projects', currentList())
     })
     return { ok: true, removed: true }
@@ -175,6 +202,10 @@ export function createProjectsService(dataDir: string, hub: SseHub): ProjectsSer
       watcher.stop()
     }
     watchers.clear()
+    for (const gatesWatcher of gatesWatchers.values()) {
+      gatesWatcher.stop()
+    }
+    gatesWatchers.clear()
   }
 
   return {
@@ -182,6 +213,7 @@ export function createProjectsService(dataDir: string, hub: SseHub): ProjectsSer
     addProject,
     removeProject,
     stopAll,
-    getActiveWatcherCount: () => watchers.size,
+    // `/api/health`'in `watchers` alanı tek bir toplam sayı bekliyor, ayrım gerekmiyor (§7).
+    getActiveWatcherCount: () => watchers.size + gatesWatchers.size,
   }
 }

@@ -2544,3 +2544,140 @@ değil). CEO K1-K6 kararlarını verdi, bu turda hepsi kapatıldı.
 **Sonraki adım**
 - qa-evaluator düzeltme turunu değerlendirsin (feature notu `status: qa`, dar kapsamda: yalnızca
   K1-K6 + mutasyon kanıtı; QA'nın GEÇTİ verdiği AC1/AC2/AC5/AC7/AC8/AC9 yeniden açılmasın).
+
+---
+
+## 2026-09-09 — F-008 (Kapılar paneli) kod turu A bölümü (sunucu) tamamlandı
+
+**Ne yapıldı**
+- Sözleşme zaten üç turdan geçmişti (`docs/qa/F-008-contract.md`, 6+11+3 bulgu kapandı, CEO
+  onayı) — bu tur yalnızca **sunucu tarafı kodu** yazdı. Arayüz (React bileşenleri, `App.tsx`,
+  `useEventStream.ts`, `docs/03-ux.md` metin ekleme, kırılan sekme testleri) **B turuna** devredildi
+  (kapsam dışı, dokunulmadı).
+- Yeni: `src/features/gates/shared/gate-id.ts` (`isValidGateId`, `parseGateFileName`,
+  `isExcludedApprovalsEntry` — hem `list-gates.ts` hem `gates-watcher.ts` AYNI hariç tutma kümesini
+  kullanıyor, Ö2), `src/features/gates/shared/format-approval.ts` (`buildApprovalBody`/
+  `buildDenialBody`, saf, `fs` yok — §5 golden string'leriyle birebir), `src/features/gates/server/
+  list-gates.ts` (PROCESS.md §2 tablo ayrıştırma + `docs/approvals/` taraması, salt okunur,
+  `getGateStatus` tek-kapı yardımcısı hem listede hem yazma-sonrası "taze durum" için ortak kaynak),
+  `src/features/gates/server/handlers.ts` (`handleListGates`/`handleApproveGate`/`handleDenyGate`),
+  `src/features/gates/server/gates-watcher.ts` (`docs/approvals`'a özel chokidar sarmalayıcı,
+  `project-watcher.ts`'in kopyası değil).
+- Değişen (mekanik, F-005/F-007 emsali): `src/server/index.ts` (`GET /api/gates`,
+  `POST /api/gates/:project_id/:gate/approve|deny` route'ları), `src/shared/types.ts`
+  (`GateStatus`, `GateStatusItem`, `GatesListResponse`), `src/features/projects/server/service.ts`
+  (`gatesWatchers` map'i — `watchers`'tan AYRI, `startWatchingGatesIfPossible`, yaşam döngüsü
+  entegrasyonu, `getActiveWatcherCount()` artık İKİ map'in toplamını dönüyor), `tests/helpers/
+  manifest.ts` (`snapshotDir(dir, {includeMtime})` — opsiyonel, varsayılan davranış değişmedi).
+- **Q1-Q6 (CEO kararları) uygulandı ve gövdeye yazıldı** (feature notu + bu kayıt): Q1 (yeni
+  izleme mekanizması kurulmadı, `docs/approvals` sonradan oluşursa izleyici o proje için hiç
+  başlamıyor — bilinen sınır, §12 kapatıldı), Q2 (onaylı kapı `deny` ile 409, panel çelişkili durum
+  üretmiyor), Q3 (`confirmed!==true`/boş `decision`/`reason` → dosya yazılmaz, 400), Q4 (yeni yazma
+  yolu yok — yalnızca `archiveDenial`/`writeGateApproval`/`writeGateDenial`, statik tarama
+  `list-gates.ts`/`handlers.ts`'yi otomatik kapsıyor), Q5 (yarı-başarı §6'daki literal metinle
+  dürüstçe raporlanıyor, `data` alanı düşürülmüyor), Q6 (her iki handler'ın TÜM gövdesi —
+  `decodeURIComponent`/`projectsService.list()` DAHİL — tek `try/catch` içinde; kanban'ın
+  `handlePatchFeatureStatus`'unun bu sınırı `list()`'ten SONRA çizen dar kapsamı BİLEREK
+  tekrarlanmadı, bkz. "Bulunan gerçek hata" altında).
+
+**Bulunan gerçek hata (kanban emsalinden sapma, kasıtlı)**
+- Kanban'ın `handlePatchFeatureStatus`'u `projectsService.list()`'i asenkron `req.on('end', ...)`
+  içinde ama kendi `void (async()=>{try{...}})()` sarmalayıcısının **DIŞINDA** çağırıyor — bu çağrı
+  fırlarsa ne dağıtıcının senkron sınırı (`withDispatchErrorBoundary`, zaten asenkron olay
+  içinde olduğu için kapsamıyor) ne de handler'ın kendi `try/catch`'i (henüz girilmemiş) yakalar;
+  istek sonsuza dek yanıtsız kalır/süreç `uncaughtException` riskiyle karşılaşır. Bu, mevcut
+  kanban testlerinde hiç ölçülmemiş bir gap (features-api.test.ts'in eşdeğer testi yalnızca
+  SENKRON `handleFeatureDetail`'i hedefliyor). Gates handler'larında bu ÖNCEDEN düzeltildi: TÜM
+  gövde (decode + validate + `projectsService.list()` + yazma) TEK `try/catch`'in içinde. Kanban'a
+  dokunulmadı (dosya sahipliği dışı) — `docs/blockers.md`'ye bilgi notu yazılmadı çünkü kanban
+  bugün çalışıyor (hiçbir test bunu tetiklemiyor); ileride biri kanban'a dokunursa bu kaydı
+  görsün diye buraya not düşüldü.
+
+**Nasıl doğrulandı**
+- `npm run verify` = **0** (`typecheck` 0, `lint` 0, **1007/1007 test, 71 dosya**, `build` ✓).
+  Vitest worker-fork kararsızlığı (CLAUDE.md'nin kayıtlı dersi) bu turda da 2 kez gözlendi
+  (`exit code 3221226505`, farklı dosyalarda) — her ikisinde de bir sonraki koşuda 1007/1007
+  yeşile döndü, kod regresyonu değil.
+- **Mutasyon kanıtı — uygula → KIRMIZI gözlemle → Edit ile birebir geri al:**
+  1. M1 (`confirmed!==true` kontrolü kaldırıldı) → `gates-api.test.ts` "confirmed eksik/false"
+     testi KIRMIZI (`expected 200 to be 400`).
+  2. M2 (dağıtıcıya `/api/gates/` için `x-mc-write` muafiyeti eklendi) → "x-mc-write eksik"
+     testi KIRMIZI (`expected 200 to be 403`).
+  3. M3 (arşivleme `archiveDenial` yerine doğrudan `fs.unlinkSync(denyPath)`) → **hem**
+     `no-write-gate-bypass.test.ts` (statik, yeni test dosyası eklenmeden) **hem**
+     `gates-manifest.test.ts` (arşiv girdisi hiç oluşmadı) KIRMIZI.
+  4. M4 (`list-gates.ts`'e doğrudan `fs.writeFileSync` eklendi) → `no-write-gate-bypass.test.ts`
+     yeni test dosyası eklenmeden KIRMIZI (mevcut statik taramanın `src/features/gates/**`'i
+     otomatik kapsadığının kanıtı).
+  5. M5 (`handleDenyGate`'te boş-gerekçe kontrolü kaldırıldı) → 3 test birden KIRMIZI
+     (`gates-api.test.ts` boş/uzun reason testleri + `gates-manifest.test.ts` AC3).
+  6. **M6 (AC9 sırası tersine çevrildi — `writeGateApproval` önce, `archiveDenial` yalnızca
+     yazma BAŞARILI olursa sonra çağrılıyor)** → fault-injection testi (yazma başarısız
+     simülasyonu) KIRMIZI verdi: `.deny.md` arşive TAŞINMADI (doğru kodda taşınması gerekirdi).
+     Sözleşmenin tur-3 düzeltmesindeki YÖN doğrulandı (doğru kod YEŞİL, ters-sıra mutant KIRMIZI).
+  7. M8 (yarı-başarı yanıtından `data` alanı kaldırıldı) → aynı fault-injection testi
+     `body.data.status` erişiminde `TypeError` ile KIRMIZI.
+  8. **M9 (her iki handler'dan `hub.broadcast('gates', ...)` çağrısı kaldırıldı)** — İLK
+     yazımda bu mutasyon YANLIŞLIKLA YEŞİL kaldı: aynı proje zaten `docs/approvals`'a sahip
+     olduğu için gerçek `gates-watcher.ts` (dosya sistemi izleyicisi) AYNI SSE olayını kendi
+     başına yayınlıyor, handler'ın kendi broadcast'i silinse bile testi maskeliyordu. Test
+     `docs/approvals` OLMADAN eklenen İZOLE bir projeyle yeniden yazıldı (izleyici hiç
+     başlamıyor, §7) — bu düzeltmeden SONRA mutasyon doğru şekilde KIRMIZI verdi (`waitForFrame`
+     2000ms zaman aşımı). Bu, "testin ölçtüğü şeyi doğrula" dersinin (F-013) bu turda da
+     gerçekleştiği somut bir örnek.
+  9. M11 (`includeMtime`) — ayrı bir kod mutasyonu gerektirmedi: `gates-manifest.test.ts`'in
+     kendi testi `fs.utimesSync` ile mtime-only dokunuş uygulayıp `includeMtime:true`/`false`
+     iki dalı AYNI testte karşılaştırıyor (kapsam zaten YOK/VAR ikiliği, harici mutant gerekmez).
+  Her mutasyondan sonra Edit ile birebir geri alındı; tur sonunda `grep -rn "MUTASYON PROBU"
+  src/ tests/` boş, `git status`/`git diff` mutasyon izi göstermiyor.
+- M10 kod mutasyonu DEĞİL (§11'in kendi notu) — `tests/integration/
+  gates-write-permission-live.test.ts` yazıldı (`describe.skipIf(!process.env.
+  MC_GATES_LIVE_TESTS)`, `chat-hooks-live.test.ts` deseni, `package.json`'a `"test:gates-live"`
+  eklendi). Bu turda **çalıştırılmadı** (kota harcar) — QA veya kullanıcı elle koşturmalı.
+- `tests/integration/projects-api.test.ts`'te 4 test **beklenen şekilde** güncellendi:
+  `getActiveWatcherCount()`/`/api/health.watchers` artık `docs/features` + `docs/approvals`
+  izleyicilerinin TOPLAMI (§7, `createFixtureProject` ikisini de oluşturduğu için her proje 2
+  izleyici katıyor — 1→2, 2→4). Davranış regresyonu değil, §7'nin kasıtlı, dokümante edilmiş
+  sonucu.
+- Süreç/port hijyeni: `tasklist`/`netstat` tarandı, 7333/7334 dinleyen yok (yalnızca `TIME_WAIT`).
+  3 `node.exe` süreci gözlendi (2'si `hayat-mentoru`'nun Next.js sunucusu — port 3000 dinliyor,
+  dokunulmadı; 1'i bağlantısız bir `npm run dev` kalıntısı, bu oturumdan ÖNCE vardı, mission-control
+  portlarını dinlemiyor, bu turun ürünü değil — dokunulmadı).
+
+**Sözleşmeden sapmalar**
+- **`tests/features/gates/server/handlers.test.ts` YAZILMADI** (sözleşme §10.1'de listeli).
+  Gerekçe: bu depoda kanban/projects feature'larının HİÇBİRİNİN ayrı bir "handlers.test.ts" birim
+  testi yok (`tests/features/kanban/server/`, `tests/features/projects/server/` dizinleri
+  kontrol edildi) — validasyon/hata-kodu davranışı her zaman gerçek HTTP sunucusu üzerinden
+  (`features-api.test.ts`/`projects-api.test.ts` emsali) test ediliyor. Aynı yaklaşım
+  `gates-api.test.ts`'e taşındı (gövde doğrulama, `confirmed`/`reason` zorunluluğu, hata kodu
+  eşlemesi, onaylı kapıda `deny`→409 — hepsi orada, gerçek dağıtıcı+handler zinciriyle, sahte
+  req/res mock'lamadan). Kapsanan davranışta kayıp yok; qa-evaluator bu sapmayı onaylamazsa ayrı
+  bir unit-test dosyası eklenebilir.
+
+**Kalan risk / QA'ya devredilen bilinen sınırlamalar**
+- **B turu tamamlanmadan hiçbir AC "bitti" sayılmaz** — bu turun ürettiği sunucu ucu hiçbir
+  UI'dan çağrılmıyor, feature notu kasıtlı olarak hiçbir AC kutusunu işaretlemedi.
+  `docs/03-ux.md`'ye ★ işaretli 6 yeni Türkçe metnin eklenmesi B turunun İLK işi olmalı (M2 kararı).
+- §12 açık soru (Q1 ile kapatıldı): `docs/approvals` bir proje eklendikten SONRA oluşturulursa
+  izleyici o proje için hiç başlamaz — kullanıcı panel yeniden başlatılana/proje yeniden eklenene
+  kadar o projenin kapı değişikliklerinde canlı SSE güncellemesi görmez (statik `GET /api/gates`
+  her zaman doğru sonucu verir, yalnızca anlık bildirim eksik). Etkisi düşük, kabul edilmiş.
+- G4-N kapılarının etiketi kasıtlı olarak kendi id'si (`"G4-1"`) — PROCESS.md'nin `G4 Kilometre
+  taşı` satırından türetilmiyor (sözleşme §3'ün açık kararı, `BASE_CATALOG ∪ {"G4"}` kümesinde
+  `"G4-1"` yok). B turunda UI bu etiketi olduğu gibi göstermeli, "Kilometre taşı" gibi bir metne
+  çevirmeye kalkmamalı.
+- `gates-write-permission-live.test.ts` bu turda hiç çalıştırılmadı (kota) — sandbox deseni
+  `docs/qa/F-008-write-izin-olcumu.md`'nin ölçümünü birebir taklit ediyor ama kendi başına
+  DOĞRULANMADI. QA turunda en az bir kez `MC_GATES_LIVE_TESTS=1 npm run test:gates-live` ile
+  koşulmalı.
+- Kanban'ın `handlePatchFeatureStatus`'undaki (yukarıda "Bulunan gerçek hata") dar `try/catch`
+  kapsamı bu turda DÜZELTİLMEDİ (dosya sahipliği dışı) — bugün hiçbir test onu tetiklemiyor ama
+  gelecekte biri kanban'a dokunursa bu notu görsün.
+
+**Sonraki adım**
+- **B turu (arayüz):** `docs/03-ux.md`'ye 6 yeni Türkçe metin eklensin (ilk iş) → React
+  bileşenleri (`GatesScreen`, `ProjectSelect`, `GateRow`, `ApproveModal`, `DenyInlineForm`,
+  `useGates`, `icons`) → `App.tsx`/`useEventStream.ts` bağlantısı → §10.2 tablosundaki kırılan
+  sekme sayacı testleri (4 dosya) güncellensin → `tests/e2e/gates.spec.ts` (dar genişlik dahil).
+- Sonra qa-evaluator tam feature'ı (A+B) değerlendirsin.

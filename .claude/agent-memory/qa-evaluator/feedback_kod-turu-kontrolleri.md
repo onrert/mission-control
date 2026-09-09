@@ -349,3 +349,14 @@ mutasyon planlanmamış kod yollarını, (b) çok katmanlı savunmaların ikinci
    taramasi da yardim etmez (bu sondalarin cogunda URL literali yok). Ayni sinif salt-okunurluk
    citinde tekrarladi: `fs.writeFileSync` KIRMIZI ama `fs['w'+'riteFileSync']` 1255/1255 YESIL
    (ve gercekten dosya yazdi). Kural: dizge tarayan her cite **dolayli erisim** sondasi at.
+
+**`createRequire` ag/yazma citlerini yener — kara liste yerine BEYAZ liste iste.** F-011 tur 2:
+"yapisal" cit (modul grafigini gezip `net/http/https/dns/tls/child_process/dgram/worker_threads`
+importunu, dinamik `import(`'i ve `fetch(`'i yasaklayan metin taramasi) tur 1'in 8 sondasinin
+8'ini de kapatti, ama `node:module` listede olmadigi icin
+`createRequire(import.meta.url)('node:http').get(...)` gecti — ve yerel bir dinleyiciyle
+**gercekten istek attigi kanitlandi** (318/318 test yesil). `process.binding('tcp_wrap')` de
+gecti (hic import yok). Yeni sonda seti: `createRequire`, `process.binding`, `require(` dizgesi,
+`Function('return imp'+'ort(...)')`, `globalThis['fet'+'ch']`, `eval`. Not: `fetch` ailesini
+CALISMA ZAMANI casusu yakaliyor (iki katman), `require` ailesinde **sifir** katman vardi —
+"kac katman koruyor" diye ailelere ayirarak sor.

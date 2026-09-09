@@ -342,3 +342,24 @@ zaten tarihli bir kopyası var mı diye bak (`diff -q`) — ikinci kez yanlış 
     Ayrica **kapsam disinda birakilan kategoriyi** (CEO brief) ayirt et: AC yalnizca `docs/qa/*`
     diyorsa CEO brief'in geriye gitmesi ihlal degildir — ama bunu belgede (UX doc) yazili
     gormeden "kabul" deme.
+52. **Kullaniciya donuk bir UYARI eklendiginde, o uyarinin GERCEK VERIDE ne siklikta tetiklendigini
+    OLC — "mekanizma calisiyor" yetmez.** F-011 tur 2: "taninan satir orani" uyarisi sandbox'ta
+    dogru calisiyordu (format degisince cikiyor, temiz fixture'da cikmiyor) ama gercek
+    transkriptlerin **%33,8'i** okuyucunun 4 tiplik beyaz listesi disinda (`attachment`,
+    `queue-operation`, …) oldugu icin uyari **her zaman** aciktı. Sonuc: dogru oldugu ucuncu
+    parti araçla kanitlanmis bir rakamin yaninda kalici "veri eksik olabilir" yazisi, ve
+    uyarinin asil amaci olan format-degisimi sinyalinin **olu dogmasi**. Yordam: uyariyi
+    tetikleyen metrigi uretim verisinde **dagilim olarak** dok (tip/oran tablosu), esigin eski
+    metrige gore kalibre edilip metrik degisince yeniden kalibre edilmedigini ara. Bonus kanit:
+    deponun kendi wiki'si o "taninmayan" tipleri **normal** ilan ediyorsa celiski yazilidir.
+53. **Ayni hata sinifinin "hangi SEKLI" kapandigini sor — bir sekil kapanip otekinin acik kalmasi
+    tipik.** F-011 tur 2: okunamayan dosya sayaci `icacls /deny "(RD)"` ile calisiyor
+    (`realpath` gecer, `readFileSync` patlar -> `file_read_failed`), ama tur 1'de kullanilan
+    `"(RA,RD,RX)"` seklinde `fs.realpathSync.native` **guard'in icinde** firlatiyor, best-effort
+    `catch` yutuyor ve kayip yine sessiz kaliyor. Duzeltmeyi kabul etmeden once **tur 1'in
+    birebir ayni tekrar uretme adimini** kostur; benzerini degil.
+54. **Sutun basligi eklemek hizalamayi KANITLAMAZ.** F-011 tur 2: baslik ve satir ayni
+    `grid-cols-[1fr_auto_auto_auto_auto]` sablonunu kullaniyordu ama iki AYRI grid oldugu icin
+    icerik genisligine gore bagimsiz hizalandi: 320px'te baslikta "Proje" 95px, satirlarda ayni
+    hucre **0px**. Basligi olcerken satir hucresini de ayni viewport'ta olc ve **ikisinin
+    genisligini karsilastir**.

@@ -320,3 +320,34 @@ yapılandırması (dört E2E yapılandırmasından biri) kırmızı.
 `tsx watch`'ın Windows'ta dosya izleyici başlatma sırasını `concurrently`'nin `--kill-others`
 davranışıyla çakışması ihtimali) — bu turda araştırılmadı, kapsam dışı.
 **Eşik:** `npm run dev`/`dev:server` betiklerine dokunan bir sonraki feature ya da devops görevi.
+
+## 2026-09-09 — F-008 kapanışından taşınan iki borç
+
+### 1. Kanonik olmayan harfli kapı dosyası yazmayı KALICI 500'e düşürüyor (ÖNEMLİ)
+
+**Bulgu:** `docs/approvals/` içinde `g2.ok` gibi kanonik olmayan harfli bir dosya varsa, yazma
+kapısı kalıcı olarak **500** veriyor (`src/server/write-gate.ts:95-120` — `realpathSync.native`
+kanonik adı döndürüyor ama `OPERATION_PATTERNS` **harfe duyarlı**, eşleşme kopuyor).
+
+**Bu turun ürünü değil:** `git log` son dokunuşu `dc0a02b` (F-007) gösteriyor. **Ama F-008'in S2
+düzeltmesi tek ipucunu kaldırdı** — panel artık `g2.ok`'u "tanınmayan dosya" olarak göstermiyor,
+kanonik `G2` olarak normalize ediyor. Yani kullanıcı neden 500 aldığını anlayamaz.
+
+**Kullanıcıyı nasıl etkiler:** elle (ya da başka bir araçla) küçük harfli bir onay dosyası
+oluşturulmuşsa, o projede **hiçbir kapı yazılamaz** ve sebebi görünmez.
+
+**Eşik:** `write-gate.ts`'e dokunan bir sonraki feature; ya da kullanıcı bu 500'ü yaşarsa **hemen**.
+**Çit:** kanonik olmayan harfli dosya varken yazmanın **başarılı** olduğunu (ya da **anlaşılır**
+bir hata verdiğini) ölçen test + korumayı kaldıran mutasyonun KIRMIZI vermesi.
+
+### 2. `.toUpperCase()` normalizasyon katmanı çitsiz (ÖNEMLİ)
+
+**Bulgu:** QA'nın M4 mutasyonu (`gate-id.ts`'te `.toUpperCase()` kaldırılır) **1077/1077 yeşil**
+kaldı. Mutantta panel aynı kapıyı **iki satırda** gösteriyor (`G2` + `g2`) ama hiçbir test bunu
+yakalamıyor — S2 testleri tam küme eşitliği istemiyor.
+
+**Sınıf:** bu deponun tekrar eden hatası — çit duruyor, yeşil görünüyor, hiçbir şey ölçmüyor.
+S2'nin **iki katmanı** var (desen `i` bayrağı + kimlik normalizasyonu); yalnızca birincisi çitli.
+
+**Eşik:** kapılar ekranına dokunan bir sonraki feature.
+**Çit:** kapı listesinin **tam küme** eşitliğini doğrulayan test (bunlar ve başkası değil).

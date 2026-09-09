@@ -14,7 +14,7 @@
     "dev:web": "vite",
     "build": "vite build",
     "start": "tsx src/server/index.ts",
-    "test": "vitest run",
+    "test": "node scripts/verify-test-run.mjs",
     "test:watch": "vitest",
     "e2e": "playwright test",
     "e2e:dev": "playwright test -c playwright.dev.config.ts",

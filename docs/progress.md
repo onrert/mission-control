@@ -3094,3 +3094,95 @@ mutasyon, puanlar 7/5/6/6). CEO'nun U1-U8 bağlayıcı kararlarının tamamı uy
 
 **Sonraki adım**
 - qa-evaluator F-009'u tekrar değerlendirsin (feature notu `status: qa`).
+
+---
+
+## F-009 düzeltme turu 2 (round 3, 2026-09-09) — gizlilik çitinin YENİDEN TASARIMI: denylist → allowlist
+
+QA turu 2 kararı **KALDI** (`docs/qa/F-009-2026-09-09-tur2.md`): 3 bloklayıcı (Y1/Y2/Y3).
+CEO kararı: denylist yaklaşımını yamalama, YAPISAL olarak allowlist'e çevir (`ADR-013` Ek
+emsali — "allowlist zorunludur, denylist değil"; `CLAUDE.md`: "aynı hata sınıfı dördüncü kez
+tekrarlıyorsa yamayı bırak, yapısal çit koy"). Kod yazmadan önce sözleşme genişletildi:
+`docs/qa/F-009-contract.md` §7.
+
+**Ne yapıldı**
+
+- **V1 (Y1, BLOKLAYICI)** — `tests/features/thread/transcripts-privacy-guard.test.ts` baştan
+  yazıldı. Eski tasarım (regex denylist: yol desenleri, TC-kimlik, secret-prefix, opak-blok,
+  200/500 karakter eşiği, disk-türetilmiş ilgisiz-proje listesi, çift-tırnak segmentasyonu)
+  TAMAMEN kaldırıldı. Yeni tasarım TEK mekanizma: her satır `JSON.parse` denemeden ham metin
+  olarak `/[A-Za-z0-9çÇğĞıİöÖşŞüÜ:._-]+/g` ile token'lara bölünür (JSON yapısal karakterleri
+  `{}[]":,\`/boşluk/`%`/`@` her zaman ayırıcı — anahtar/değer ayrımı YOK, ayrıştırılabilirlikten
+  bağımsız TEK kod yolu). Her token `isApprovedToken` ile kontrol edilir: ya ~57 elemanlı kapalı
+  `ALLOWED_TOKENS` kümesinde (mevcut 5 dondurulmuş fixture'ın gerçekte ürettiği her token, script
+  ile türetilip elle enumere edildi), ya da 7 dar yapısal desenden (sentetik UUID, ISO zaman
+  damgası, semver, sürücü harfi, `:`+kısa sayı/bool/null, `msg_example‹N›`, 1-3 haneli çıplak
+  sayı) birine uyar. **Listede/desende olmayan HER token reddedilir.** Kod yazmadan önce bu
+  tasarım scratchpad script'iyle QA'nın 24 vektörünün 20 temsilcisine karşı simüle edildi —
+  **hepsi reddedildi** (bkz. sözleşme §7.2). Kalıcı testler: 5 gerçek fixture temiz kalmalı +
+  QA'nın P1-P12 (round 1) + N1-N14 (round 2) sondalarının HEPSİ ayrı kalıcı regresyon testi
+  olarak eklendi (toplam 54 test, önceki 23'ten). `.gitattributes` (fixture dizinindeki git
+  kontrol dosyası, sentetik veri DEĞİL) dosya ADIYLA (tek istisna) taramadan hariç tutuldu.
+- **V2 (Y2, BLOKLAYICI) — bağlantı kanıtı** — eski tasarımda beyaz liste yalnızca
+  `value.includes(' ')` koşulunda devreye giriyordu ve TC-kimlik regex'i gibi ÖRTÜŞEN bir başka
+  mekanizma aynı sondayı maskeliyordu (devre dışı bırakılınca 1124/1124 yeşil kalmıştı). Yeni
+  tasarımda ÖRTÜŞEN hiçbir yedek mekanizma YOK — `isApprovedToken` TEK karar noktası. Bunu
+  bizzat mutasyonla kanıtladım: `isApprovedToken` gövdesini `return true` yaptım, çalıştırdım,
+  **35/54 test aynı anda KIRMIZI oldu** (tek izole test değil, kaskad), birebir geri aldım
+  (`git diff` temiz). Ayrıca doğrudan `isApprovedToken`/`tokenize` birim testleri eklendi (7
+  desen kategorisi + temsili reddedilen biçimler).
+- **V3 (Y3, BLOKLAYICI)** — `tests/features/thread/transcript-reader.test.ts`'teki M10/M11 için
+  kaynak-metni-okuyan "kod şekli çiti" (QA'nın reddettiği, yanlış-negatif+yanlış-pozitif veren
+  tasarım) SİLİNDİ. Yerine QA'nın ölçtüğü iki davranış senaryosu, GERÇEK
+  `resolveAllowedTranscriptPath` çağrılarıyla eklendi:
+  - **S1** — kök DIŞINDA + VAR OLMAYAN aday → `reason` KESİNLİKLE `outside-root`.
+  - **S3** — `claudeProjectsRoot`'un KENDİSİ bir junction üzerinden verilir, aday lexical olarak
+    junction içinde ama realpath sonrası kökün tamamen dışında → `reason` KESİNLİKLE
+    `outside-root`.
+  Her ikisi de mutasyonla doğrulandı: M10 satırlarını yoruma aldım → S1 **TEK BAŞINA** KIRMIZI
+  oldu (`not-found` döndü, QA'nın ölçtüğü fark, birebir); geri aldım. M11'i `resolved` yerine
+  `candidatePath` yaptım → S3 **TEK BAŞINA** KIRMIZI oldu (`ok:true` döndü); geri aldım. İkisinde
+  de yalnızca hedef test kırıldı (M6/M6b/kombine testler etkilenmedi) — kaynak dosyası her
+  seferinde `git diff` ile temiz olduğu doğrulandı. M6/M6b düzeltmesi ve M6+M11 birleşik testi
+  (QA'nın kabul ettiği kısım) DOKUNULMADI.
+- **V4** — `docs/wiki/pages/desen/claude-transcript-formati.md`'deki 219/217 tutarsızlığı: her
+  sayının hangi tarama anına ait olduğu not düşüldü (217 = round-1'in erken taraması, 219 =
+  round-2'nin sonraki taraması, 220 = QA'nın round-2 kontrolü ~1 saat sonra — üçü de aynı büyüyen
+  canlı oturumun dürüst enstantaneleri, çelişki değil).
+
+**Nasıl doğrulandı**
+
+- `npx vitest run tests/features/thread/` → **82 passed** (privacy-guard 54, transcript-reader
+  28).
+- Mutasyon kanıtları (uygula → KIRMIZI gözlemle → birebir geri al):
+  - `isApprovedToken` → her zaman `true`: **35/54 test KIRMIZI** (bağlantı kanıtı, V2).
+  - M10 satırları yorumlandı: **S1 tek başına KIRMIZI** (`not-found` ≠ `outside-root`).
+  - M11 `resolved`→`candidatePath`: **S3 tek başına KIRMIZI** (`ok:true` ≠ beklenen ret).
+  - Her mutasyon sonrası `git diff` ile kaynak dosyanın birebir temiz geri döndüğü doğrulandı.
+- `npx vitest run` (tüm depo) → **1162 passed, 4 skipped (76 dosya)**.
+- `npm run verify` (typecheck + lint + test + build) → **0**, tek seferde yeşil.
+- `npm run e2e` → **36 passed (38.5s)**.
+- `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca kalıcı, meşru test
+  adları (`write-gate-manifest.test.ts:124` dahil, dokunulmadı).
+- Yetim süreç: `Get-CimInstance Win32_Process -Filter "Name='node.exe'"` yalnızca ilgisiz
+  `hayat-mentoru` sürecini gösterdi (dokunulmadı); port 7333 `TimeWait` dışında dinleyen süreç
+  yok. `npm run dev` hiç çalıştırılmadı.
+- Çalışma ağacı commit'li.
+
+**Kalan risk / bir sonraki QA turuna notlar**
+
+- Beyaz liste tasarımı, HER tokeni ayrı ayrı değerlendiriyor — tek haneli rakamların ayırıcılarla
+  (boşluk, tire) BÖLÜNEREK yan yana yazılması (ör. `1 2 3 4 5 6 7 8 9 0 1`) teorik olarak her
+  rakamın ayrı ayrı `BARE_NUMBER` desenine uyup kaçabileceği bir sınır durumdur — QA'nın 24
+  vektöründe bu BİÇİM yoktu, bilinçli olarak ele alınmadı (kapsam dışı, aşırı mühendislik riski).
+  Bir sonraki turda bu spesifik biçim test edilirse ayrı bir karar gerekir.
+- `ALLOWED_TOKENS` KASITLI sürtünme yaratıyor: yeni bir fixture yeni bir kelime/JSON anahtarı
+  eklerse bu kümeye bilinçli eklenmesi gerekir — eklenmezse test KIRMIZI verir (istenen davranış).
+- 1-3 haneli çıplak sayı üst sınırı mevcut fixture'ların gözlemlenen en yüksek `usage` değerine
+  (800) göre kalibre edildi; gerçekçi olarak çok daha büyük `usage` sayıları gerektiren bir
+  fixture eklenirse bu sınır bilinçli olarak genişletilmelidir.
+- `createTranscriptReaderStatsTracker().record()` hâlâ tüketicisiz (önceki turdan devreden bilinen
+  sınırlama, F-010/F-011'e devredildi).
+
+**Sonraki adım**
+- qa-evaluator F-009'u tekrar değerlendirsin (feature notu `status: qa`).

@@ -28,8 +28,9 @@ her iddia ✓ DOĞRULANDI (dosya okunarak), ⊢ ÇIKARIM veya [T] TAHMİN olarak
   | `2.1.261` | 1.894 |
   | `2.1.205` | 8 |
 
-  ✓ DOĞRULANDI (219 dosyanın TAMAMI tarandı, içerik hiçbir yere kopyalanmadı — yalnızca alan
-  sayıları). **Baskın değer `2.1.260`** — önceki turun tek iddia ettiği `2.1.261` aslında
+  ✓ DOĞRULANDI (219 dosyanın TAMAMI tarandı — round-2'nin bu turdaki anı, içerik hiçbir yere
+  kopyalanmadı, yalnızca alan sayıları). **Baskın değer `2.1.260`** — önceki turun tek iddia ettiği
+  `2.1.261` aslında
   AZINLIKTA (%4). Ayrıca `2.1.205` — **kurulu CLI sürümünün kendisi** (`claude --version` →
   `2.1.205 (Claude Code)`, aynı gün ✓ DOĞRULANDI) — transkript içinde de 8 satırda geçiyor. Bu,
   önceki turun "transkript sürümü CLI'dan her zaman ayrı bir SDK/harness sürümüdür" ⊢ ÇIKARIM'ını
@@ -39,11 +40,25 @@ her iddia ✓ DOĞRULANDI (dosya okunarak), ⊢ ÇIKARIM veya [T] TAHMİN olarak
   gözlemlenen çoklu değer büyük olasılıkla art arda gelen CLI güncellemelerinin izidir. **Bir
   sonraki doğrulamada yine TAM tarama yap** (tek dosya örneklemesi YETMEZ — bu turun asıl hatası
   buydu), üç değeri de güncelle.
+
+  **Round 3 notu (QA'nın bağımsız kontrolü, ~1 saat sonra):** aynı üç değer kümesi (2.1.260/
+  2.1.261/2.1.205), farklı sayılar — 220 dosya, `2.1.260` 45.887 satır (+393), toplam 47.789
+  (+393). Fark oturumun bu ölçümler arasında da büyümeye devam etmesinden; DEĞER KÜMESİ birebir
+  aynı kaldı. Yukarıdaki "İncelenen kaynak" bölümündeki 217 ile birlikte üç farklı an: 217 (round-1)
+  < 219 (round-2, bu tablo) < 220 (QA, round-2 kontrolü) — tutarlı, çelişkisiz büyüme.
 - **İncelenen kaynak:** `C:\Users\pc\.claude\projects\C--dev-apps-mission-control\` altındaki
   **217 gerçek `.jsonl` dosyası** (ana oturum + `*/subagents/*.jsonl`), yalnızca `type` alanı
   sayıları ve `message.usage` alan adları toplandı (satır içerikleri bu sayfaya veya herhangi bir
   fixture'a **kopyalanmadı** — bkz. `tests/features/thread/transcripts-privacy-guard.test.ts`).
   ✓ DOĞRULANDI.
+  **Sayım anı notu (round 3, QA Y2 bulgusu — "219/217 tutarsızlığı"):** bu 217 sayısı round-1'in
+  (2026-09-09, kod turu) DAHA ERKEN taramasına ait. Aynı gün DAHA SONRA (round-2 düzeltme turu)
+  `version` alanı taraması **219 dosya** buldu (aşağıya bakınız) — dizin canlı bir oturumun
+  transkriptlerini içerdiği için dosya sayısı iki tarama arasında büyüdü. QA'nın kendi bağımsız
+  ölçümü (round-2 raporu, ~1 saat sonra) **220 dosya** buldu. Üçü de ÇELİŞKİ değil — aynı büyüyen
+  dizinin farklı anlardaki dürüst enstantaneleri (217 < 219 < 220, sıralı, tutarlı büyüme).
+  Bir sonraki doğrulamada TEK bir taramayla üretilen sayı kullanılmalı, önceki turların sayısı
+  "yanlış" değil "eski an" olarak okunmalı.
 
 ## Dosya yolu ve kodlama
 

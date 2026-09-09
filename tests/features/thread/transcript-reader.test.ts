@@ -522,38 +522,72 @@ describe('createTranscriptReaderStatsTracker (T5 — /api/health sayaçları)', 
 })
 
 // -------------------------------------------------------------------------------------------
-// QA U3/B4 (M10/M11) — kod ŞEKLİ çiti. `no-write-gate-bypass.test.ts`/`write-gate-manifest.
-// test.ts`'in KANITLANMIŞ deseni (kaynak metnini oku, kritik güvenlik satırının TAM biçimini
-// grep'le): M10 (realpath-ÖNCESİ kapsama kontrolü kaldırıldı) ve M11 (realpath-SONRASI kapsama
-// `resolved` yerine `candidatePath` kullanıyor) davranışsal olarak TESPİT EDİLEMEZ — L2/L3
-// (symlink kontrolleri) her ikisi de sağlamken bu iki katman matematiksel olarak L4 ile
-// ÖRTÜŞÜR (sembolik bağ yoksa `path.relative(root, candidatePath)` ve
-// `path.relative(root, realpathSync(candidatePath))` AYNI sonucu verir) — yani hiçbir black-box
-// senaryo TEK BAŞINA bu ikisini davranışla ayırt edemez (M6/M6b `reason` testleriyle ayırt
-// edilebiliyor, bunlar edilemiyor). QA'nın "69 passed" ölçümü bunu doğruluyor. Kaynağın TAM
-// bu iki satırının şeklini (QA'nın literal mutasyon yöntemiyle birebir) çitlemek tek pratik yol.
+// QA round-2 (KALDI, Y3) — M10/M11 için önceki turdaki kod-ŞEKLİ çiti REDDEDİLDİ. QA ölçtü:
+// (a) gerekçe ("davranışla ayırt edilemez") yanlıştı — S1/S3 senaryoları M10/M11'i davranışla
+//     ayırt ediyor (M6/M6b'nin kesin-`reason` deseninin birer satırlık uygulaması);
+// (b) kod-şekli çitinin kendisi hem YANLIŞ NEGATİF verdi (M10'u `//` ile yorum satırına almak,
+//     metni yerinde bırakarak, 51/51 yeşil kaldı — regex kaynak METNİNİ arıyordu, çalışıp
+//     çalışmadığını değil) hem YANLIŞ POZİTİF verdi (zararsız bir değişken yeniden adlandırması
+//     davranışı DEĞİŞTİRMEDEN kırmızı oldu).
+// Bu yüzden kod-şekli çiti KALDIRILDI, yerine GERÇEK `resolveAllowedTranscriptPath` çağrılarıyla
+// davranış çitleri kondu — `write-gate-manifest.test.ts` emsali burada GEÇERLİ DEĞİL (orada
+// denetlenen derleme/paket çıktısı davranışla erişilemeyen bir yüzey; burada davranış yolu açık).
 // -------------------------------------------------------------------------------------------
-describe('resolveAllowedTranscriptPath — kod şekli çiti (M10/M11 regresyonu)', () => {
-  const source = fs.readFileSync(
-    path.join(
-      __dirname,
-      '..',
-      '..',
-      '..',
-      'src',
-      'features',
-      'thread',
-      'server',
-      'transcript-reader.ts'
-    ),
-    'utf8'
-  )
-
-  it('M10 hedefi — realpath ÖNCESİ (lexical) kapsama kontrolü kaynakta var (relFromRootRaw)', () => {
-    expect(source).toMatch(/relFromRootRaw\.startsWith\(['"]\.\.['"]\)/)
+describe('resolveAllowedTranscriptPath — davranış çitleri (M10/M11 regresyonu, QA S1/S3)', () => {
+  it('S1 hedefi (M10 regresyonu) — kök DIŞINDA + VAR OLMAYAN aday: reason KESİNLİKLE "outside-root" (not-found DEĞİL)', () => {
+    const claudeRoot = mkTempRoot('mc-qa-s1-root-')
+    const allowedProjectPath = 'C:\\dev\\apps\\izlenen-proje-s1'
+    // M10 (realpath-öncesi lexical kapsama kontrolü, relFromRootRaw) kaldırılırsa akış ata-symlink
+    // döngüsüne düşer ve segment'ler '..' ile başladığı için var-olmayan bir ataya çarpıp
+    // 'not-found' döner (QA'nın ölçtüğü fark) — temiz kodda bu kontrol daha erken, 'outside-root'
+    // ile biter.
+    const outsideNonExistent = path.join(
+      os.tmpdir(),
+      `mc-qa-s1-outside-${Date.now()}`,
+      'ghost.jsonl'
+    )
+    try {
+      const result = resolveAllowedTranscriptPath(
+        claudeRoot,
+        [allowedProjectPath],
+        outsideNonExistent
+      )
+      expect(result).toEqual({ ok: false, reason: 'outside-root' })
+    } finally {
+      fs.rmSync(claudeRoot, { recursive: true, force: true })
+    }
   })
 
-  it('M11 hedefi — realpath SONRASI kapsama kontrolü `resolved` üzerinden yapılıyor (candidatePath DEĞİL)', () => {
-    expect(source).toMatch(/path\.relative\(claudeProjectsRoot,\s*resolved\)/)
+  it('S3 hedefi (M11 regresyonu) — kökün KENDİSİ junction üzerinden verilir: reason KESİNLİKLE "outside-root" (ok:true DEĞİL)', () => {
+    const realRoot = mkTempRoot('mc-qa-s3-realroot-')
+    const allowedProjectPath = 'C:\\dev\\apps\\izlenen-proje-s3'
+    const encodedDir = path.join(realRoot, encodeProjectDirName(allowedProjectPath))
+    fs.mkdirSync(encodedDir, { recursive: true })
+    const file = path.join(encodedDir, 'session.jsonl')
+    fs.writeFileSync(file, '{"type":"user"}\n')
+
+    const junctionRoot = path.join(os.tmpdir(), `mc-qa-s3-junction-${Date.now()}`)
+    try {
+      fs.symlinkSync(realRoot, junctionRoot, 'junction')
+      // Aday, junction KÖKÜNÜN içinde (lexical olarak) ama gerçek hedefi (realpath sonrası)
+      // junction kökünün TAMAMEN DIŞINDA (gerçek kök farklı bir mutlak yol). M11 (realpath-sonrası
+      // kapsama `resolved` yerine `candidatePath` ile yapılırsa) bu farkı kaçırır ve `ok:true`
+      // döner (QA'nın ölçtüğü fark) — temiz kod `resolved` üzerinden kontrol ettiği için
+      // 'outside-root' ile reddeder.
+      const candidateViaJunction = path.join(
+        junctionRoot,
+        encodeProjectDirName(allowedProjectPath),
+        'session.jsonl'
+      )
+      const result = resolveAllowedTranscriptPath(
+        junctionRoot,
+        [allowedProjectPath],
+        candidateViaJunction
+      )
+      expect(result).toEqual({ ok: false, reason: 'outside-root' })
+    } finally {
+      fs.rmSync(junctionRoot, { recursive: true, force: true })
+      fs.rmSync(realRoot, { recursive: true, force: true })
+    }
   })
 })

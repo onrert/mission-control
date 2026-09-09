@@ -1,186 +1,160 @@
 import { describe, expect, it } from 'vitest'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 
 /**
  * F-009 T1 (CEO kararı, bağlayıcı) — "elle dikkat ettim" yetmez: `tests/fixtures/transcripts/**`
  * altına eklenen HER dosya bu çitten geçmek zorunda.
  *
- * QA düzeltme turu (U1, BLOKLAYICI) — round-1 çit 12/12 sızdıran sondada yenildi. Kök nedenler ve
- * bu turdaki düzeltme:
- * 1. `listFixtureFiles` yalnızca üst seviye + `.jsonl` tarıyordu → ÖZYİNELEMELİ + UZANTISIZ.
- * 2. `JSON.parse` başarısız olan satırlar atlanıyordu (serbest kanal) → artık HAM METİN, JSON
- *    ayrıştırmasına bakılmaksızın, çift-tırnak arası ("naif split") dizgelere bölünüp taranıyor.
- *    Bu, kesik/bozuk bir satırda bile (P7) gömülü uzun metni yakalar.
- * 3. Yol deseni yalnızca ters-bölülü Windows biçimini görüyordu → POSIX (`/c/Users/…`), ileri
- *    bölü (`C:/Users/…`), ortam değişkeni (`%USERPROFILE%`) ve UNC (`\\SUNUCU\pay`) eklendi.
- * 4. İlgisiz proje listesi elle yazılmış sabit bir listeydi → `~/.claude/projects` dizin adları
- *    taranarak türetiliyor (CLAUDE.md: "çiti feature'a değil yapıya koy"); sabit taban liste de
- *    korunuyor (bu makinede o dizin yoksa/farklıysa çit kör kalmasın diye).
- * 5. Yalnızca DEĞERLER taranıyordu, anahtarlar değil (P8) → naif split anahtar/değer ayrımı
- *    yapmadan çift-tırnak arası HER dizgeyi tarar.
- * 6. 200 karakter eşiği yalnızca TEK bir dizge için kontrol ediliyordu, bir SATIRDAKİ tüm
- *    dizgelerin TOPLAMI için değil → uzun bir metnin küçük parçalara bölünmesiyle (P9) aşılabiliyordu.
- *    Artık hem tekil hem toplam eşik var.
- * 7. Kısa ama tamamen kişisel serbest metin (P1, TC kimlik türü sayı içeren) hiçbir desene
- *    takılmıyordu → 11 haneli TC-kimlik-biçimli sayı deseni + onaylı sözcük dağarcığı (beyaz liste)
- *    eklendi: birden fazla kelimeli HERHANGİ bir serbest metin, sabit bir onaylı sentetik sözcük
- *    kümesinin DIŞINDA bir kelime içeriyorsa çiti tetikler.
- * 8. 80 karakter altı opak blok (P6, base64 sızıntı) kaçıyordu → eşik 40'a düşürüldü (mevcut 5
- *    fixture'daki en uzun tekil dizge 36 karakter — güvenli marj ölçüldü, bkz. altındaki yorum).
+ * QA round 2 (KALDI, Y1/Y2 bloklayıcı) — round-1 çit 12/12, round-2 çit 11/12 yeni vektörde
+ * yenildi (denylist tasarımı iki turda iki kez yenildi). CEO kararı (round 3): tasarımı
+ * DENYLIST'ten ALLOWLIST'e çevir — `docs/decisions/ADR-013-*.md` Ek'teki emsal ("allowlist
+ * zorunludur, denylist değil"), `CLAUDE.md`: "aynı hata sınıfı dördüncü kez tekrarlıyorsa yamayı
+ * bırak, yapısal çit koy". Tam gerekçe: `docs/qa/F-009-contract.md` §7.
+ *
+ * TASARIM (denylist YOK, tek mekanizma):
+ * 1. Her satır, `JSON.parse` denemeden, ham metin olarak `TOKEN_RE` ile token'lara bölünür. JSON
+ *    yapısal karakterleri (`{`,`}`,`"`,`,`,`\`,boşluk,`%`,`@`,`/`) her zaman AYIRICI kabul edilir.
+ *    Bu, satırın ayrıştırılabilir olup olmamasından (bozuk satır, tırnaksız dosya, kaçışlı tırnak
+ *    hizalama kayması) TAMAMEN bağımsız TEK bir kod yoludur — anahtar/değer ayrımı da yoktur.
+ * 2. Her token `isApprovedToken` ile kontrol edilir: ya `ALLOWED_TOKENS` (mevcut 5 dondurulmuş
+ *    fixture'ın gerçekte ürettiği, elle enumere edilmiş kapalı kelime kümesi) içinde, ya da 7 dar
+ *    YAPISAL desenden (sentetik UUID, ISO zaman damgası, semver, sürücü harfi, `:`+kısa
+ *    sayı/bool/null, `msg_example‹N›`, 1-3 haneli çıplak sayı) birine uyar.
+ * 3. **Listede/desende olmayan HER token reddedilir** — sızıntı olup olmadığına bakılmaksızın.
+ *    Yeni bir fixture yeni bir kelime eklerse bu listeye BİLİNÇLİ olarak eklenmesi gerekir
+ *    (sürtünme kasıtlı — eski tasarımın "onaylı sözcük dağarcığı" fikrinin devamı, ama artık
+ *    TEK ve YEGANE mekanizma, kısmi/koşullu değil).
+ *
+ * Neden bu tasarım QA'nın 24 vektörünün hiçbirini geçirmiyor: denylist'in yenilgisi hep aynı
+ * şekildeydi — saldırgan bilinen bir desenden FARKLI bir biçim buluyordu (URL-encode, ROT13,
+ * e-posta, alt çizgi, tırnaksız dosya, kaçışlı tırnak). Beyaz listede bu fark ETMEZ: hangi
+ * biçimde gelirse gelsin, tokenizer'dan çıkan parça listede/desende değilse reddedilir. 1-3 hane
+ * sayı üst sınırı kasıtlı (mevcut fixture'lardaki en yüksek `usage` değeri 800, 3 hane) — 4+
+ * haneli her sayı (telefon, TC kimlik, kredi kartı grupları, IBAN) otomatik reddedilir.
  */
 
 const FIXTURES_DIR = path.join(__dirname, '..', '..', 'fixtures', 'transcripts')
 
-// --- 1) Sabit taban liste (makine bağımsız asgari koruma) ------------------------------------
-const BASELINE_UNRELATED_PROJECT_NEEDLES = [
-  'hayat-mentoru',
-  'video-factory',
-  'growth-factory',
-  'app-factory',
-  'trendpulseai',
-  'video-vault',
-]
+// Fixture dizinindeki tek git kontrol dosyası — fixture İÇERİĞİ değil, taramadan dosya ADIYLA
+// (uzantıyla değil) hariç tutulur. Tek istisna, gerekçeli: `.gitattributes` içeriği bu dosyanın
+// KENDİSİNİ (bayt-bire-bir koruma niyetini) açıklayan Türkçe düzyazı, sentetik transkript verisi
+// değil — beyaz listeye tabi tutulması yalnızca yorum metnini beyaz listeye eklemeyi gerektirirdi,
+// hiçbir gerçek koruma sağlamaz. `.__qa_..._hidden` gibi başka gizli dosyalar bu istisnaya
+// GİRMEZ (yalnızca tam ad eşleşmesi) — QA'nın N12 sondası hâlâ taranır.
+const NON_FIXTURE_FILENAMES = new Set(['.gitattributes'])
 
-// --- 2) `~/.claude/projects` dizin adlarından türetilen dinamik liste -------------------------
-// Yapısal gürültü (sürücü harfi, `Users`, `AppData` gibi dosya sistemi iskeleti) sözcükleri
-// filtrelenir; geri kalan HER token (>=3 karakter, salt sayısal değil) bir "ilgisiz proje"
-// ihtimali olarak eklenir — bu, QA'nın P10 sondasındaki `sandbox`/`workdir`/`sdk` gibi gerçek
-// makinede gözlenen ama hiçbir sabit listede olmayan adları da otomatik yakalar.
-const STRUCTURAL_PATH_STOPWORDS = new Set([
-  'c',
-  'd',
-  'e',
-  'users',
-  'pc',
-  'desktop',
-  'appdata',
-  'local',
-  'temp',
-  'claude',
-  'dev',
-  'apps',
-  'app',
-  'multica',
-  'workspaces',
-  'mission',
-  'control',
-  'resources',
-  'release',
-  'win',
-  'win32',
-  'x64',
-  'program',
-  'files',
-  'onedrive',
-  'documents',
-  'node',
-  'modules',
-])
-
-function deriveUnrelatedProjectNeedlesFromDisk(): string[] {
-  const projectsRoot = path.join(os.homedir(), '.claude', 'projects')
-  let entries: fs.Dirent[]
-  try {
-    entries = fs.readdirSync(projectsRoot, { withFileTypes: true })
-  } catch {
-    return []
-  }
-  const needles = new Set<string>()
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    const tokens = entry.name.toLowerCase().match(/[a-z0-9]+/g) ?? []
-    for (const token of tokens) {
-      if (token.length < 3) continue
-      if (/^[0-9]+$/.test(token)) continue
-      if (STRUCTURAL_PATH_STOPWORDS.has(token)) continue
-      needles.add(token)
-    }
-  }
-  return [...needles]
-}
-
-const UNRELATED_PROJECT_NEEDLES = [
-  ...new Set([...BASELINE_UNRELATED_PROJECT_NEEDLES, ...deriveUnrelatedProjectNeedlesFromDisk()]),
-]
-
-// --- 3) Mutlak kullanıcı yolu — biçimden bağımsız (ham dosya baytları üzerinde çalışır; JSON
-// içindeki `\` kaçışı `\\` olarak yazılır, bu yüzden `\\+` kullanılır). -------------------------
-const WINDOWS_USER_PATH_BACKSLASH = /[A-Za-z]:\\+Users\\+/i
-const WINDOWS_USER_PATH_FORWARDSLASH = /[A-Za-z]:\/+Users\/+/i
-const POSIX_USER_PATH = /\/[A-Za-z]\/Users\//i
-const ENV_VAR_USER_PATH = /%(?:USERPROFILE|APPDATA|LOCALAPPDATA|HOMEPATH|HOMEDRIVE)%/i
-// UNC (`\\SUNUCU\pay`): sürücü harfi + iki nokta ÖNCESİNDE gelmiyorsa (o zaten normal bir
-// Windows yoludur, UNC değil) — negatif lookbehind bunu ayırt eder.
-const UNC_PATH = /(?<![A-Za-z]:)\\{2,}[A-Za-z0-9_.$-]{1,64}\\{1,}/
-
-const PATH_LEAK_PATTERNS: ReadonlyArray<{ label: string; pattern: RegExp }> = [
-  { label: 'mutlak kullanıcı yolu (C:\\Users\\...)', pattern: WINDOWS_USER_PATH_BACKSLASH },
-  {
-    label: 'mutlak kullanıcı yolu (C:/Users/...) — ileri bölü',
-    pattern: WINDOWS_USER_PATH_FORWARDSLASH,
-  },
-  { label: 'mutlak kullanıcı yolu (/c/Users/...) — POSIX/Git Bash', pattern: POSIX_USER_PATH },
-  { label: 'ortam değişkenli kullanıcı yolu (%USERPROFILE% vb.)', pattern: ENV_VAR_USER_PATH },
-  { label: 'UNC ağ yolu (\\\\SUNUCU\\pay)', pattern: UNC_PATH },
-]
-
-// TC kimlik no biçimi: 11 haneli, 0 ile başlamayan sayı (basit ama gerçek bir PII işareti).
-const TC_KIMLIK_PATTERN = /(?<![0-9])[1-9][0-9]{10}(?![0-9])/
-
-// Bilinen API anahtarı/token önekleri.
-const SECRET_PREFIX_PATTERN =
-  /\b(sk-|ghp_|gho_|github_pat_|AKIA|xox[baprs]-|AIza|eyJ[A-Za-z0-9_-]{10,}\.)[A-Za-z0-9_\-.]{10,}/
-
-// Boşluksuz opak blok (base64/hex benzeri). Eşik 40 (eskiden 80 — QA P6: 52 karakterlik base64
-// sızıntı 80 eşiğinin altında kalıp kaçıyordu). Ölçülen güvenlik marjı: mevcut 5 fixture'daki EN
-// UZUN tekil dizge 36 karakter (bkz. geliştirici notu) — 40 eşiği hiçbir mevcut fixture'ı
-// yanlışlıkla tetiklemez, 52 karakterlik sondayı yakalar.
-const LONG_OPAQUE_BLOB_PATTERN = /[A-Za-z0-9+/_=]{40,}/
-
-// Tekil dizge uzunluk eşiği (P7 — kesik satırda gömülü tek bir uzun metin).
-const MAX_FREE_TEXT_CHARS = 200
-// SATIR BAŞINA toplam "dizge-benzeri" içerik eşiği (P9 — 20 parçaya bölünmüş uzun prompt, her
-// parça < 200 ama toplamı çok daha büyük). Ölçülen güvenlik marjı: mevcut 5 fixture'daki EN
-// YÜKSEK satır-başı toplam 413 karakter (naif-split, anahtarlar dahil) — 500 eşiği bunu
-// tetiklemez, P9'un onlarca-parçalı sondasını (toplam binlerce karakter) yakalar.
-const MAX_TOTAL_FREE_TEXT_CHARS_PER_LINE = 500
-
-// Serbest metin (BOŞLUK İÇEREN dizge — tekil kimlik/enum token'ları değil) beyaz listesi.
-// Mevcut 5 fixture'ın ürettiği TÜM çok-kelimeli anonim yer tutucu metinler burada. Yeni bir
-// fixture yeni bir çok-kelimeli serbest metin eklerse, kelimeleri BURAYA bilinçli olarak
-// eklenmelidir — bu sürtünme kasıtlı (P1: kısa ama tamamen kişisel metin, hiçbir yapısal desene
-// takılmadığı için başka türlü yakalanamaz).
-const APPROVED_FREE_TEXT_WORDS = new Set([
-  'ornek',
+// --- Kapalı kelime kümesi: mevcut 5 dondurulmuş fixture'ın (+ kasıtlı bozuk/bilinmeyen şema
+// fixture'ının) GERÇEKTEN ürettiği her token, elle enumere edilmiş (script ile türetilip elle
+// gözden geçirilmiş — bkz. `docs/qa/F-009-contract.md` §7.1). Yeni bir fixture yeni bir kelime
+// eklerse BURAYA bilinçli olarak eklenmelidir.
+const ALLOWED_TOKENS = new Set([
+  'agent-setting',
+  'agentSetting',
+  'anonim',
+  'assistant',
+  'bar', // unknown-schema.jsonl — kasıtlı bilinmeyen şema sondası
+  'bom',
+  'cache_creation_input_tokens',
+  'cache_read_input_tokens',
+  'ceo',
+  'claude-example',
+  'conte', // truncated-last-line.jsonl — kasıtlı kesik son satırın gövdesi ("content" kesilmiş)
+  'content',
+  'crlf',
+  'cwd',
+  'developer',
+  'enqueue',
+  'foo', // unknown-schema.jsonl
+  'future-thing', // unknown-schema.jsonl — kasıtlı bilinmeyen `type` sondası
+  'hookCount',
+  'id',
+  'input_tokens',
+  'isSidechain',
   'istek',
   'istem',
   'istemi',
-  'metni',
-  'metin',
   'kisaltildi',
-  'anonim',
   'kullanici',
+  'last-prompt',
+  'lastPrompt',
+  'leafUuid',
+  'message',
+  'metin',
+  'metni',
+  'mode',
+  'model',
+  'normal',
+  'not-a-number', // unknown-schema.jsonl — kasıtlı yanlış-tip (`input_tokens` string) sondası
+  'operation',
+  'ornek',
+  'ornek-proje', // sentetik `cwd` bileşeni
+  'output_tokens',
+  'parentUuid',
+  'payload', // unknown-schema.jsonl
+  'queue-operation',
+  'role',
+  'sessionId',
+  'stop_hook_summary',
+  'subtype',
+  'system',
+  'text',
+  'timestamp',
+  'type',
+  'usage',
+  'user',
+  'uuid',
+  'version',
+  'workspace', // sentetik `cwd` bileşeni
   'yanit',
-  'bom',
-  'crlf',
 ])
 
-function hasOnlyApprovedWords(value: string): boolean {
-  const words = value.toLowerCase().match(/[a-zçğıöşü]+/gi)
-  if (!words) return true
-  return words.every((w) => APPROVED_FREE_TEXT_WORDS.has(w))
+// --- 7 dar YAPISAL desen. Hepsi kasıtlı dar: sentetik/üretilebilir biçimleri tanır, gerçek
+// kullanıcı verisiyle örtüşme riski en aza indirilmiş.
+/** `00000000-0000-4000-8000-00000000000N` — mevcut fixture'ların tek UUID kalıbı. Rastgele hex
+ * içeren GERÇEK bir UUID bu deseni KARŞILAMAZ (yalnızca son hane değişebilir). */
+const SYNTHETIC_UUID = /^00000000-0000-4000-8000-0{11}[0-9a-fA-F]$/
+const ISO_TIMESTAMP = /^20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+const SEMVER = /^\d{1,3}\.\d{1,3}\.\d{1,3}$/
+const DRIVE_LETTER = /^[A-Za-z]:$/
+const COLON_LITERAL = /^:(?:[0-9]{1,3}|true|false|null)?$/
+const MSG_ID = /^msg_example\d{1,4}$/
+/** 1-3 haneli çıplak sayı. Üst sınır KASITLI: mevcut fixture'lardaki en yüksek `usage` değeri
+ * 800 (3 hane). 4+ haneli her sayı (telefon, TC kimlik, kredi kartı grubu, IBAN parçası)
+ * otomatik reddedilir — yeni bir fixture'ın gerçekten 4+ haneli bir sayıya ihtiyacı olursa bu
+ * sınır bilinçli olarak genişletilmelidir (sürtünme kasıtlı). */
+const BARE_NUMBER = /^[0-9]{1,3}$/
+
+const APPROVED_PATTERNS: readonly RegExp[] = [
+  SYNTHETIC_UUID,
+  ISO_TIMESTAMP,
+  SEMVER,
+  DRIVE_LETTER,
+  COLON_LITERAL,
+  MSG_ID,
+  BARE_NUMBER,
+]
+
+/** JSON yapısal karakterleri (`{}[]":,\`, boşluk, `%`, `@`, `/`) her zaman AYIRICI. */
+const TOKEN_RE = /[A-Za-z0-9çÇğĞıİöÖşŞüÜ:._-]+/g
+
+export function tokenize(rawLine: string): string[] {
+  return rawLine.match(TOKEN_RE) ?? []
 }
 
-/** Dizin ağacını özyinelemeli, UZANTIDAN BAĞIMSIZ numaralandırır (sabit dosya adı listesi YOK). */
+export function isApprovedToken(token: string): boolean {
+  if (ALLOWED_TOKENS.has(token)) return true
+  return APPROVED_PATTERNS.some((pattern) => pattern.test(token))
+}
+
+/** Dizin ağacını özyinelemeli, UZANTIDAN BAĞIMSIZ numaralandırır — `.gitattributes` hariç. */
 function walk(dir: string, out: string[] = []): string[] {
   if (!fs.existsSync(dir)) return out
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name)
     if (entry.isDirectory()) {
       walk(full, out)
-    } else if (entry.isFile()) {
+    } else if (entry.isFile() && !NON_FIXTURE_FILENAMES.has(entry.name)) {
       out.push(full)
     }
   }
@@ -191,70 +165,16 @@ function listFixtureFiles(): string[] {
   return walk(FIXTURES_DIR)
 }
 
-/**
- * Bir satırı çift-tırnak sınırlarına göre "naif" böler: tek sayılı (1., 3., 5., …) parçalar
- * JSON'da bir anahtar YA DA değerin İÇİNDE kabul edilir. Bu, gerçek bir JSON ayrıştırıcısından
- * FARKLI olarak satır BOZUK/KESİK olsa bile (kapanmayan son tırnak) çalışır — son parça yine de
- * "içeride" sayılır (P7'nin tam olarak sızdığı kanal budur). Kaçışlı tırnak (`\"`) içeren
- * fixture'larda hizalama kayabilir — bu turda fixture'ların hiçbirinde kaçışlı tırnak yok.
- */
-function naiveQuotedSegments(rawLine: string): string[] {
-  const segments = rawLine.split('"')
-  const out: string[] = []
-  for (let i = 1; i < segments.length; i += 2) {
-    const seg = segments[i]
-    if (seg !== undefined) out.push(seg)
-  }
-  return out
-}
-
 export function scanFixtureForPrivacyViolations(filePath: string): string[] {
   const violations: string[] = []
   const raw = fs.readFileSync(filePath, 'utf8')
-  const lowerRaw = raw.toLowerCase()
+  const text = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw
 
-  for (const needle of UNRELATED_PROJECT_NEEDLES) {
-    if (lowerRaw.includes(needle)) {
-      violations.push(`ilgisiz proje adı/sözcüğü bulundu: "${needle}"`)
-    }
-  }
-  for (const { label, pattern } of PATH_LEAK_PATTERNS) {
-    if (pattern.test(raw)) {
-      violations.push(`yol sızıntısı deseni bulundu: ${label}`)
-    }
-  }
-  if (TC_KIMLIK_PATTERN.test(raw)) {
-    violations.push('TC kimlik no biçiminde 11 haneli sayı bulundu')
-  }
-
-  for (const rawLine of raw.split(/\r?\n/)) {
-    const line = rawLine.startsWith('\uFEFF') ? rawLine.slice(1) : rawLine
-    if (line.trim() === '') continue
-
-    const segments = naiveQuotedSegments(line)
-    const totalLen = segments.reduce((sum, s) => sum + s.length, 0)
-    if (totalLen > MAX_TOTAL_FREE_TEXT_CHARS_PER_LINE) {
-      violations.push(
-        `satır başına toplam ${MAX_TOTAL_FREE_TEXT_CHARS_PER_LINE} karakterden uzun dizge içeriği (${totalLen} karakter) — parçalanmış prompt şüphesi`
-      )
-    }
-
-    for (const value of segments) {
-      if (SECRET_PREFIX_PATTERN.test(value)) {
-        violations.push(`secret-biçimli dizge bulundu: "${value.slice(0, 12)}…"`)
-      }
-      if (LONG_OPAQUE_BLOB_PATTERN.test(value)) {
-        violations.push(`uzun opak blok bulundu (${value.length} karakter)`)
-      }
-      if (value.length > MAX_FREE_TEXT_CHARS) {
-        violations.push(
-          `${MAX_FREE_TEXT_CHARS} karakterden uzun serbest metin bulundu (${value.length} karakter) — gerçek prompt kopyası şüphesi`
-        )
-      }
-      if (value.includes(' ') && !hasOnlyApprovedWords(value)) {
-        violations.push(
-          `onaylı sözcük dağarcığı dışında serbest metin bulundu: "${value.slice(0, 40)}…"`
-        )
+  for (const rawLine of text.split(/\r?\n/)) {
+    if (rawLine.trim() === '') continue
+    for (const token of tokenize(rawLine)) {
+      if (!isApprovedToken(token)) {
+        violations.push(`onaylı beyaz liste dışında içerik bulundu: "${token.slice(0, 60)}"`)
       }
     }
   }
@@ -277,11 +197,16 @@ function removeProbe(full: string): void {
   }
 }
 
-describe('tests/fixtures/transcripts gizlilik çiti (T1)', () => {
+describe('tests/fixtures/transcripts gizlilik çiti (T1) — beyaz liste tasarımı', () => {
   const files = listFixtureFiles()
 
   it('taranacak en az 5 fixture bulundu (guard kör değil)', () => {
     expect(files.length).toBeGreaterThanOrEqual(5)
+  })
+
+  it('.gitattributes tarama listesine dahil DEĞİL (isimle hariç tutuldu)', () => {
+    expect(files.some((f) => path.basename(f) === '.gitattributes')).toBe(false)
+    expect(fs.existsSync(path.join(FIXTURES_DIR, '.gitattributes'))).toBe(true)
   })
 
   it.each(files.map((file) => ({ file, name: path.relative(FIXTURES_DIR, file) })))(
@@ -291,70 +216,80 @@ describe('tests/fixtures/transcripts gizlilik çiti (T1)', () => {
     }
   )
 
-  it('MUTASYON hedefi (T1a) — mutlak kullanıcı yolu içeren bir satır çiti KIRMIZI yapar', () => {
-    const probe = writeProbe(
-      '__privacy_probe_userpath__.jsonl',
-      '{"type":"user","cwd":"C:\\\\Users\\\\pc\\\\gizli-not"}\n'
-    )
-    try {
-      expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
-    } finally {
-      removeProbe(probe)
-    }
+  // ----------------------------------------------------------------------------------------
+  // isApprovedToken doğrudan birim testleri — her onaylı kategori + temsili reddedilen biçimler.
+  // ----------------------------------------------------------------------------------------
+  describe('isApprovedToken — kategori bazlı doğrudan doğrulama', () => {
+    it.each([
+      ['00000000-0000-4000-8000-000000000001', true, 'sentetik UUID'],
+      ['00000000-0000-4000-8000-00000000000a', true, 'sentetik UUID (hex son hane)'],
+      ['2026-01-01T00:00:00.000Z', true, 'ISO zaman damgası'],
+      ['2.1.261', true, 'semver'],
+      ['C:', true, 'sürücü harfi'],
+      [':0', true, 'colon+sayı'],
+      [':false', true, 'colon+bool'],
+      [':null', true, 'colon+null'],
+      ['msg_example001', true, 'sentetik mesaj kimliği'],
+      ['800', true, '3 haneli sayı (mevcut fixture üst sınırı)'],
+      ['type', true, 'onaylı JSON anahtarı'],
+      ['ornek', true, 'onaylı serbest metin sözcüğü'],
+      ['4242', false, '4 haneli sayı (kredi kartı grubu boyutu) — REDDEDİLMELİ'],
+      ['12345678901', false, '11 haneli sayı (TC kimlik boyutu) — REDDEDİLMELİ'],
+      ['veron.seldon', false, 'e-posta kullanıcı adı parçası — REDDEDİLMELİ'],
+      ['gmail.com', false, 'e-posta alan adı parçası — REDDEDİLMELİ'],
+      ['Users', false, 'gerçek Windows kullanıcı yolu bileşeni — REDDEDİLMELİ'],
+      [
+        'trepx-xhyynavpv-nqv-fblnqv-ir-onaxn-fvsrfv',
+        false,
+        'ROT13/boşluksuz şifreleme — REDDEDİLMELİ',
+      ],
+      ['gercek', false, 'onaysız Türkçe sözcük — REDDEDİLMELİ'],
+      [
+        '00000001-0000-4000-8000-000000000001',
+        false,
+        'sahte-sentetik UUID (ilk grup sıfır değil) — REDDEDİLMELİ',
+      ],
+    ])('%s → onaylı=%s (%s)', (token, expected) => {
+      expect(isApprovedToken(token)).toBe(expected)
+    })
   })
 
-  it('MUTASYON hedefi (T1b) — ilgisiz proje adı içeren bir satır çiti KIRMIZI yapar', () => {
+  // ----------------------------------------------------------------------------------------
+  // MUTASYON hedefi (bağlantı çiti, QA Y2) — TEK mekanizma, yedek yok. Eski tasarımda beyaz
+  // liste yalnızca `value.includes(' ')` koşulunda devreye giriyordu ve TC-kimlik regex'i gibi
+  // ÖRTÜŞEN bir başka denylist parçası aynı sondayı maskeliyordu; devre dışı bırakılınca
+  // 1124/1124 test YEŞİL kalmıştı (bağlantı hiç kanıtlanmamıştı). Yeni tasarımda `isApprovedToken`
+  // TEK karar noktası — ne TC-kimlik regex'i, ne secret-prefix, ne opak-blok, ne yol deseni, ne
+  // ilgisiz-proje listesi gibi ÖRTÜŞEN bir yedek MEVCUT DEĞİL. `isApprovedToken` her zaman `true`
+  // dönecek şekilde bozulursa BU describe bloğundaki ve aşağıdaki "QA sondaları" bloğundaki
+  // testlerin NEREDEYSE TAMAMI (tek bir izole test değil) aynı anda kırmızı olur — bu turda bizzat
+  // uygulanıp ölçüldü (bkz. `docs/qa/F-009-contract.md` §7.3 ve QA raporu).
+  // ----------------------------------------------------------------------------------------
+  it('MUTASYON hedefi (bağlantı) — scanFixtureForPrivacyViolations GERÇEK isApprovedToken üzerinden karar verir', () => {
+    // Gerçek fonksiyonu gerçek bilinen-kötü ve gerçek bilinen-iyi girdilerle sınar; ikisi de
+    // AYNI `isApprovedToken`'ı kullanıyor (kod içinde başka hiçbir dal/örtüşen kontrol yok).
     const probe = writeProbe(
-      '__privacy_probe_project__.jsonl',
-      '{"type":"user","message":{"content":"proje: hayat-mentoru"}}\n'
-    )
-    try {
-      expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
-    } finally {
-      removeProbe(probe)
-    }
-  })
-
-  it('MUTASYON hedefi (T1c) — 200+ karakterlik serbest metin çiti KIRMIZI yapar (opak-blok maskelemez, U2)', () => {
-    // QA B3: eski sonda `'x'.repeat(250)` idi — bu, eşikten BAĞIMSIZ olarak opak-blok desenine
-    // takılıyordu, MAX_FREE_TEXT_CHARS mutasyonunu (200→100000) maskeliyordu. Bu sonda yalnızca
-    // ONAYLI sözcüklerden (boşluklu, "doğal" görünümlü) oluşur — ne opak blok deseni (boşluk var),
-    // ne beyaz liste ihlali (yalnızca onaylı kelimeler) tetiklenir; SADECE uzunluk eşiği tetiklenir.
-    const longApprovedText = 'ornek istem metni anonim kullanici yanit '.repeat(6).trim()
-    expect(longApprovedText.length).toBeGreaterThan(MAX_FREE_TEXT_CHARS)
-    expect(hasOnlyApprovedWords(longApprovedText)).toBe(true)
-    expect(LONG_OPAQUE_BLOB_PATTERN.test(longApprovedText)).toBe(false)
-
-    const probe = writeProbe(
-      '__privacy_probe_freetext__.jsonl',
-      JSON.stringify({ type: 'user', message: { content: longApprovedText } }) + '\n'
+      '__connection_probe__.jsonl',
+      JSON.stringify({ type: 'user', message: { content: 'veron.seldon@gmail.com' } }) + '\n'
     )
     try {
       const violations = scanFixtureForPrivacyViolations(probe)
       expect(violations.length).toBeGreaterThan(0)
-      expect(violations.some((v) => v.includes('serbest metin bulundu'))).toBe(true)
+      expect(isApprovedToken('veron.seldon')).toBe(false)
+      expect(isApprovedToken('type')).toBe(true)
     } finally {
       removeProbe(probe)
     }
   })
 
-  it('MUTASYON hedefi (T1d) — onaylı sözcük dağarcığı mekanizması gerçekten ayırt ediyor', () => {
-    // U7 — eskiden bu test boş bir `RegExp[]`'in hiçbir şey eşleşmediğini doğruluyordu (kendi
-    // kendine referans, hiçbir gerçek kod yolunu ölçmüyordu). Şimdi GERÇEK `hasOnlyApprovedWords`
-    // fonksiyonunu hem onaylı hem onaysız girdiyle çağırıp ayrımı doğruca kanıtlıyor.
-    expect(hasOnlyApprovedWords('ornek istem metni anonim')).toBe(true)
-    expect(hasOnlyApprovedWords('gercek kullanici adi soyadi burada')).toBe(false)
-  })
-
   // ------------------------------------------------------------------------------------------
-  // QA'nın P1-P12 sondaları — kalıcı regresyon testleri (CEO kararı U1). Fixture'lar SENTETİK,
-  // depoda BIRAKILMAZ (yazılır, test biter bitmez silinir — mevcut T1a/T1b deseni).
+  // QA'nın P1-P12 (round 1) + N1-N14 (round 2) sondaları — kalıcı regresyon testleri. Fixture'lar
+  // SENTETİK, depoda BIRAKILMAZ (yazılır, test biter bitmez silinir).
   // ------------------------------------------------------------------------------------------
-  describe('QA round-1 sondaları — 12/12 artık KIRMIZI (kalıcı regresyon)', () => {
+  describe('QA round-1 sondaları (P1-P12) — kalıcı regresyon', () => {
     it('P1 — kısa (< 200 karakter) ama tamamen kişisel metin, TC-kimlik-biçimli sayı içerir', () => {
       const content =
         'gercek ad soyad tc kimlik numaram 12345678901 maas bilgim ve bosanma surecim hakkinda'
-      expect(content.length).toBeLessThan(200)
       const probe = writeProbe(
         '__qa_p1_shortpersonal.jsonl',
         JSON.stringify({ type: 'user', message: { content } }) + '\n'
@@ -427,8 +362,6 @@ describe('tests/fixtures/transcripts gizlilik çiti (T1)', () => {
       const secretish = Buffer.from('sentetik-parola-ve-IBAN-ornek-degeri-987654321').toString(
         'base64'
       )
-      expect(secretish.length).toBeGreaterThanOrEqual(40)
-      expect(secretish.length).toBeLessThan(80)
       const probe = writeProbe(
         '__qa_p6_base64.jsonl',
         JSON.stringify({ type: 'user', message: { content: secretish } }) + '\n'
@@ -441,9 +374,7 @@ describe('tests/fixtures/transcripts gizlilik çiti (T1)', () => {
     })
 
     it('P7 — ayrıştırılamayan (kesik) satırda gömülü 3000+ karakterlik gerçek-görünümlü metin', () => {
-      const longText = 'gercek konusma kopyasi metni '.repeat(120) // > 3000 karakter, onaysız kelimeler
-      expect(longText.length).toBeGreaterThan(3000)
-      // Bilerek kapanmayan tırnak/parantez — JSON.parse BAŞARISIZ olur.
+      const longText = 'gercek konusma kopyasi metni '.repeat(120)
       const brokenLine = `{"type":"user","message":{"content":"${longText}`
       expect(() => JSON.parse(brokenLine)).toThrow()
       const probe = writeProbe('__qa_p7_badline.jsonl', brokenLine + '\n')
@@ -467,37 +398,13 @@ describe('tests/fixtures/transcripts gizlilik çiti (T1)', () => {
       }
     })
 
-    it('P9 — uzun prompt 20 parçaya bölünmüş, her parça < 200 karakter (toplam eşiği yakalar)', () => {
+    it('P9 — uzun prompt 20 parçaya bölünmüş, her parça < 200 karakter', () => {
       const parts = Array.from({ length: 20 }, (_, i) =>
         `gercek prompt parcasi numara ${i} `.repeat(4)
       )
-      expect(parts.every((p) => p.length < 200)).toBe(true)
-      const totalLen = parts.reduce((a, p) => a + p.length, 0)
-      expect(totalLen).toBeGreaterThan(MAX_TOTAL_FREE_TEXT_CHARS_PER_LINE)
       const probe = writeProbe(
         '__qa_p9_split.jsonl',
         JSON.stringify({ type: 'user', message: { content: parts } }) + '\n'
-      )
-      try {
-        const violations = scanFixtureForPrivacyViolations(probe)
-        expect(violations.length).toBeGreaterThan(0)
-        expect(violations.some((v) => v.includes('toplam'))).toBe(true)
-      } finally {
-        removeProbe(probe)
-      }
-    })
-
-    it('P10 — listede olmayan gerçek proje adı/sözcüğü (disk taramasından türetilir)', () => {
-      // Bu makinede `~/.claude/projects` yoksa (ör. temiz bir CI klonu) dinamik türetme boş
-      // döner ve bu test anlamsız hâle gelir — o durumda atlanır (baseline liste zaten P10'un
-      // KENDİ makinesindeki gerçek örneklerini bilemez, bu doğası gereği makineye bağlı bir çit).
-      const dynamic = deriveUnrelatedProjectNeedlesFromDisk()
-      if (dynamic.length === 0) return
-      const needle = dynamic[0] as string
-      const probe = writeProbe(
-        '__qa_p10_unlistedproject.jsonl',
-        JSON.stringify({ type: 'user', message: { content: `proje hakkında not: ${needle}` } }) +
-          '\n'
       )
       try {
         expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
@@ -506,7 +413,21 @@ describe('tests/fixtures/transcripts gizlilik çiti (T1)', () => {
       }
     })
 
-    it('P11 — `.json` uzantılı dosya artık taranıyor (uzantı süzgeci kalktı)', () => {
+    it('P10 — listede olmayan gerçek proje adı/sözcüğü (whitelist tasarımında disk taraması GEREKMEZ)', () => {
+      // Eski tasarım ~/.claude/projects'ten dinamik türetme yapıyordu (makineye bağlı); yeni
+      // tasarımda GEREKSİZ — kapalı kelime kümesinde OLMAYAN her sözcük zaten reddedilir.
+      const probe = writeProbe(
+        '__qa_p10_unlistedproject.jsonl',
+        JSON.stringify({ type: 'user', message: { content: 'proje hakkında not: sandbox' } }) + '\n'
+      )
+      try {
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('P11 — `.json` uzantılı dosya taranıyor (uzantı süzgeci yok)', () => {
       const probe = writeProbe(
         '__qa_p11_leak.json',
         JSON.stringify({ type: 'user', message: { content: 'C:\\Users\\pc\\gizli' } }) + '\n'
@@ -520,7 +441,7 @@ describe('tests/fixtures/transcripts gizlilik çiti (T1)', () => {
       }
     })
 
-    it('P12 — alt dizindeki dosya artık taranıyor (özyinelemeli tarama)', () => {
+    it('P12 — alt dizindeki dosya taranıyor (özyinelemeli tarama)', () => {
       const probe = writeProbe(
         path.join('__qa_sub', 'leak.jsonl'),
         JSON.stringify({ type: 'user', message: { content: 'C:\\Users\\pc\\gizli-alt-dizin' } }) +
@@ -529,6 +450,202 @@ describe('tests/fixtures/transcripts gizlilik çiti (T1)', () => {
       try {
         const files = listFixtureFiles()
         expect(files).toContain(probe)
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+  })
+
+  describe("QA round-2 sondaları (N1-N14) — çiti round-2'de yenen 11 vektör, kalıcı regresyon", () => {
+    it('N1 — URL-kodlanmış Windows yolu', () => {
+      const probe = writeProbe(
+        '__qa_n1_urlenc.jsonl',
+        JSON.stringify({
+          type: 'user',
+          message: { content: 'C%3A%5CUsers%5Cpc%5Cgizli%5Cbanka-sifreleri.txt' },
+        }) + '\n'
+      )
+      try {
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('N2 — uzun-yol öneki, `Users` içermeyen mutlak yol', () => {
+      const probe = writeProbe(
+        '__qa_n2_longpath.jsonl',
+        JSON.stringify({
+          type: 'user',
+          message: { content: '//?/D:/ozel/veron/saglik/rapor.pdf' },
+        }) + '\n'
+      )
+      try {
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('N3 — e-posta adresi', () => {
+      const probe = writeProbe(
+        '__qa_n3_email.jsonl',
+        JSON.stringify({ type: 'user', message: { content: 'veron.seldon@gmail.com' } }) + '\n'
+      )
+      try {
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('N3b — telefon numarası', () => {
+      const probe = writeProbe(
+        '__qa_n3b_phone.jsonl',
+        JSON.stringify({ type: 'user', message: { content: '+90-532-111-22-33' } }) + '\n'
+      )
+      try {
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('N4b — yalnızca onaylı sözcükler + gömülü telefon/kart rakam grupları', () => {
+      const content = 'ornek istem 05321112233 anonim kullanici 4242 4242 4242 4242 yanit metni'
+      const probe = writeProbe(
+        '__qa_n4b_digitsonly.jsonl',
+        JSON.stringify({ type: 'user', message: { content } }) + '\n'
+      )
+      try {
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('N5 — satır sonu kaçışlarıyla (\\n) ayrılmış gerçek metin', () => {
+      const probe = writeProbe(
+        '__qa_n5_splitbyescape.jsonl',
+        JSON.stringify({
+          type: 'user',
+          message: { content: 'gercek\nkullanici\nadi\nsoyadi\nev\nadresi\nkadikoy' },
+        }) + '\n'
+      )
+      try {
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('N6 — ROT13/boşluksuz şifrelenmiş metin', () => {
+      const probe = writeProbe(
+        '__qa_n6_rot13.jsonl',
+        JSON.stringify({
+          type: 'user',
+          message: { content: 'trepx-xhyynavpv-nqv-fblnqv-ir-onaxn-fvsrfv' },
+        }) + '\n'
+      )
+      try {
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('N7 — tırnaksız düz metin dosyası (`.md`), kişisel veri', () => {
+      const probe = writeProbe(
+        '__qa_n7_plaintext.md',
+        'gercek kullanici bilgisi satir1\nsatir2 telefon adres bilgisi\nsatir3 tamamlandi\n'
+      )
+      try {
+        const files = listFixtureFiles()
+        expect(files).toContain(probe)
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('N8 — tek kaçışlı tırnak → eski naif-split hizalama kaymasının hedefi', () => {
+      const probe = writeProbe(
+        '__qa_n8_escapedquote.jsonl',
+        '{"a":"\\"","leak":"gercek kullanici adi soyadi telefonu ve ev adresi burada"}\n'
+      )
+      try {
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('N9 — Türkçe karakterli, alt çizgili, boşluksuz kimlik', () => {
+      const probe = writeProbe(
+        '__qa_n9_turkishunderscored.jsonl',
+        JSON.stringify({
+          type: 'user',
+          message: { content: 'Şükrü_Yılmaz_Kadıköy_İstanbul_doğum_1987' },
+        }) + '\n'
+      )
+      try {
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('N11 — şema dışı alana (`_note`) gömülü metin', () => {
+      const probe = writeProbe(
+        '__qa_n11_unschemedkey.jsonl',
+        JSON.stringify({
+          type: 'user',
+          _note: 'gizli-musteri-listesi-ve-fiyatlandirma-2026',
+        }) + '\n'
+      )
+      try {
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('N12 — gizli dosya (nokta ile başlayan), tırnaksız', () => {
+      const probe = writeProbe(
+        '__qa_n12_hidden',
+        'gercek kullanici kisisel bilgisi gizli dosyada\n'
+      )
+      try {
+        const files = listFixtureFiles()
+        expect(files).toContain(probe)
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('N13 — gerçek satır şekli, çift kaçışlı tırnak (kontrol)', () => {
+      const probe = writeProbe(
+        '__qa_n13_doubleescaped.jsonl',
+        '{"type":"user","message":{"content":"gercek kullanici adi \\\\"soyadi\\\\" burada"}}\n'
+      )
+      try {
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('N14 — gerçek satır şekli, kaçışsız (kontrol)', () => {
+      const probe = writeProbe(
+        '__qa_n14_plain.jsonl',
+        JSON.stringify({
+          type: 'user',
+          message: { content: 'gercek kullanici adi soyadi burada' },
+        }) + '\n'
+      )
+      try {
         expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
       } finally {
         removeProbe(probe)

@@ -479,6 +479,75 @@ bu turda dokunulmadı (kapsam dışı, brief'in kısıtı). Detay: `docs/progres
 
 **Durum:** qa-evaluator değerlendirmesi bekliyor.
 
+**2026-09-10 güncelleme (developer, düzeltme turu) — QA KALDI (5/5/7/7, 2 bloklayıcı + 4 önemli)
+kararı sonrası düzeltildi, tekrar qa-evaluator bekliyor.**
+
+QA (`docs/qa/test-skip-gate-2026-09-10.md`) çiti gerçek bir komutla (`--exclude` ile dosya
+düşürme) yendi: bir dosya (16 test) tamamen düşürülünce `sum==total` iç tutarlılığı bozulmadığı
+için çit **sessiz kaldı** (B1, bloklayıcı); ayrıca `package.json`'ın `test` betiğini
+`"vitest run"`a indirgeyen bir mutasyon **hiçbir testi kırmadı** (B2, bloklayıcı — bu deponun
+hook'ların `.js` uzantısı yüzünden iki feature ölü koşmasıyla aynı sınıf). Dört önemli bulgu daha
+(Ö1 kara liste, Ö2 ANSI yanlış pozitifi, Ö3 hedefli koşuda sahte kırmızı, Ö4 bayat sayılar) ve
+sözleşmenin kendisinin bu boşluğu öngörmediği (§9) tespit edildi.
+
+**Düzeltme (önce sözleşme genişletildi — `docs/qa/test-skip-gate-contract.md` §0/§2b/§2c):**
+- **B1 kapatıldı — DIŞ REFERANS.** `scripts/verify-test-run.mjs` artık `vitest.config.ts`'in
+  `include`/`exclude` desenlerini dosyadan okuyup (basit string-literal ayrıştırıcı, AST değil)
+  diskteki gerçek test dosyalarını numaralandırıyor (`countDeclaredTestFiles`, emsal:
+  `tests/build-css.test.ts`'in `readdirSync` deseni) ve bu sayıyı vitest'in raporladığı
+  `Test Files` toplamıyla karşılaştırıyor; uyuşmazsa **KIRMIZI** — `sum==total` kendi içinde
+  tutarlı olsa bile. Yeni bağımlılık eklenmedi (`fast-glob`/`picomatch` `node_modules`'ta geçişli
+  var ama bildirilmiyor); bu depoda fiilen kullanılan üç glob yapısı (`**`, `*`, `?(x)`) için
+  ~30 satırlık özel bir dönüştürücü yazıldı. Bir dosyanın pozisyonel argümanla kasıtlı
+  çalıştırılması (Ö3, `vitest run tests/foo.test.ts`) bu kontrolden ve alt sınırdan muaf; yalnızca
+  bayrak-tabanlı (`--exclude ...`, pozisyonel hedef yok) daraltmalar kontrol altında kalıyor —
+  B1'in gerçek saldırı yüzeyi tam olarak bu.
+- **B2 kapatıldı — bağlantı çiti.** `tests/verify-test-run.test.ts`'e `package.json`'ı okuyup
+  `scripts.test`'in tam olarak `node scripts/verify-test-run.mjs`'i çağırdığını ve `scripts.
+  verify`'ın `npm run test`'i zincirlediğini doğrulayan bir test eklendi.
+- **Ö1 kapatıldı.** Kara listeye üç yeni imza eklendi (`Worker terminated`,
+  `ERR_IPC_CHANNEL_CLOSED`, `heap out of memory`, her biri kendi birim testiyle çitli) ve
+  bilinmeyen worker/fork/IPC çökme biçimlerini yakalayan genelleştirilmiş bir yedek desen
+  eklendi (kara listeye artık dayanılmıyor); DD1'in disk karşılaştırması birincil savunma.
+- **Ö2 kapatıldı.** Özet satırları ayrıştırılmadan önce ANSI kaçış dizileri temizleniyor
+  (`stripAnsi`); `FORCE_COLOR=1 npm run test` artık sağlıklı bir koşuda **0** dönüyor.
+- **Ö3 kapatıldı.** Pozisyonel argüman verilen çağrılarda (`npm run test -- <dosya>`) hem alt
+  sınır hem disk-karşılaştırması atlanıyor; `npm run test -- tests/verify-test-run.test.ts`
+  artık **0** dönüyor (önceden 500 tabanına takılıp sahte kırmızı veriyordu).
+- **Ö4 kapatıldı.** `scripts/verify-test-run.mjs` ve sözleşmedeki bayat sayılar (1309/85) güncel
+  değerlerle (1327/86, bu turun sonunda test eklenince 1358/86) değiştirildi.
+
+**Mutasyon kanıtı (elle, `git checkout` KULLANILMADI, md5 başlangıç değeriyle birebir eşleşti):**
+disk-karşılaştırması, `package.json` bağlantısı, genelleştirilmiş çökme deseni ve mevcut
+sum/total + literal-imza kontrolleri ayrı ayrı devre dışı bırakılıp ilgili testlerin **tek
+başına KIRMIZI** verdiği, geri alınınca **YEŞİL** olduğu doğrulandı (6 ayrı mutasyon).
+Ayrıca QA'nın GERÇEK komutu (`--exclude <gerçek dosya>`) **kalıcı bir regresyon testi** olarak
+eklendi (`tests/verify-test-run.test.ts` "B1 kalıcı regresyon" — gerçek `vitest`, gerçek suite,
+fixture değil); bu test yazılırken bir **fork bomb** yaşandı (test kendi dosyasını da suite'e
+dahil edip özyinelemeli olarak kendini tekrar tetikledi, 185+ `node.exe` süreci oluştu, elle
+`Stop-Process` ile temizlendi) — düzeltme, spawn edilen gerçek koşuya `tests/verify-test-run.
+test.ts`'in de `--exclude` edilmesini eklemekti; bu artık testin kendi yorumunda açıkça uyarı
+olarak duruyor.
+
+**Doğrulama:** `npm run verify` = 0 (typecheck+lint+test+build), gerçek koşu **85/86 dosya,
+1354 geçti | 4 atlandı (1358)**; `npm run e2e` doğrulanıyor (bu turun sonunda). Bir ara koşuda
+bilinen bağımsız bir Windows temp-dizin yarış durumu (`ENOTEMPTY`, `tests/helpers/
+temp-data-dir.ts`) görüldü, tekrar koşuda kayboldu — `CLAUDE.md`'nin "kırmızı gördüğünde bir kez
+daha koştur" kuralı uygulandı, bu turun kodundan bağımsız.
+
+**Kalan risk (değişmedi):** kök neden (bazen `3221226505` çökmesinin exit 0 ile sonuçlanması)
+hâlâ tekrar üretilemedi/doğrulanamadı — çit bunu her hâlükârda yakalıyor (artık İKİ bağımsız
+mekanizmayla: disk-karşılaştırması + imza taraması) ama NEDEN bazen olduğunu açıklamıyor. Kapsam
+dışı (brief'in kısıtı), ayrı ve düşük öncelikli kalmaya devam ediyor.
+
+**Yeni kalan risk (küçük):** `computeExpectedFileCount`'un string-literal ayrıştırıcısı
+`vitest.config.ts`'in bugünkü düz `include: [...]`/`exclude: [...]` biçimini hedefliyor; dosya
+çok satırlı/karmaşık bir yapıya (ör. fonksiyon çağrısıyla üretilen dizi) dönüştürülürse ayrıştırıcı
+elle güncellenmeli (sözleşme §2c'de belgelendi, kod incelemesinde görünür bir bakım maliyeti,
+sessiz değil).
+
+**Durum:** düzeltmeler tamamlandı, tekrar **qa-evaluator** değerlendirmesi bekliyor.
+
 ## 2026-09-09 — F-011 tur 5 kapanışından taşınan borçlar (bloklayıcı DEĞİL, karar: bu turda düzeltilmedi)
 
 Kaynak: `docs/qa/F-011-2026-09-10-tur5.md` §4/§7. BB1/BB2 (sentinel öz-testi, `process.binding`

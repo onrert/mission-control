@@ -4040,3 +4040,96 @@ yalnızca "vitest 0 test topladı ve başarı saydı" felaket senaryosu için, b
   imkânsız; kök neden açık) — ayrıntı orada.
 
 **Sonraki adım:** qa-evaluator değerlendirsin.
+
+---
+
+## 2026-09-10 — test takımı sessiz atlama çiti, QA KALDI düzeltme turu (2 bloklayıcı + 4 önemli kapatıldı)
+
+**Ne yapıldı**
+- Kaynak: `docs/qa/test-skip-gate-2026-09-10.md` — KARAR: KALDI (5/5/7/7). Önce sözleşme
+  genişletildi (`docs/qa/test-skip-gate-contract.md` §0/§2b/§2c/§3b — QA'nın kendisinin
+  bulduğu sözleşme boşluğu §9 önce kapatıldı, sonra kod yazıldı), sonra kod.
+- **B1 (bloklayıcı) kapatıldı — dış referans, ana savunma.** `scripts/verify-test-run.mjs`
+  artık `vitest.config.ts`'in `include`/`exclude` desenlerini dosyadan okuyup (basit
+  string-literal ayrıştırıcı — `extractArrayLiteral`, AST değil) diskteki `tests/**` altını
+  numaralandırıyor (`countDeclaredTestFiles`, emsal: `tests/build-css.test.ts`'in `readdirSync`
+  deseni) ve bu sayıyı vitest'in raporladığı `Test Files` toplamıyla karşılaştırıyor
+  (`evaluateOutput`'un yeni `expectedFileCount` seçeneği). Uyuşmazsa **KIRMIZI**, `sum==total`
+  kendi içinde tutarlı olsa bile — QA'nın tam yendiği boşluk buydu. Üç fiilen kullanılan glob
+  yapısı (`**`, `*`, `?(x)`) için özel, ~30 satırlık bir dönüştürücü yazıldı (`globToRegExp`);
+  `node_modules`'ta geçişli olarak duran ama `package.json`'da bildirilmeyen `fast-glob`/
+  `picomatch`'e bağımlı olunmadı (brief kısıtı: yeni bağımlılık önce sorulur). Pozisyonel
+  argümanla kasıtlı daraltılmış koşular (Ö3) bu kontrolden muaf (`hasExplicitPositionalFilter`);
+  yalnızca bayrak-tabanlı (`--exclude`, pozisyonel hedef yok) daraltmalar — B1'in gerçek saldırı
+  yüzeyi — kontrol altında kalıyor.
+- **B2 (bloklayıcı) kapatıldı — bağlantı çiti.** `tests/verify-test-run.test.ts`'e `package.json`'ı
+  okuyup `scripts.test`'in tam olarak `node scripts/verify-test-run.mjs`'i çağırdığını ve
+  `scripts.verify`'ın `npm run test`'i zincirlediğini doğrulayan bir test eklendi.
+- **Ö1 kapatıldı.** Kara listeye üç yeni imza (`Worker terminated`, `ERR_IPC_CHANNEL_CLOSED`,
+  `heap out of memory`, her biri kendi birim testiyle çitli) + bilinmeyen worker/fork/IPC çökme
+  biçimlerini yakalayan genelleştirilmiş bir yedek regex (`GENERIC_WORKER_CRASH_RE`) eklendi;
+  kara liste artık **ikincil** erken-uyarı, DD1'in disk karşılaştırması **birincil** savunma.
+- **Ö2 kapatıldı.** `stripAnsi` eklendi, özet satırları ayrıştırılmadan önce ANSI kaçış dizileri
+  temizleniyor. **Ö3 kapatıldı.** Pozisyonel argümanlı çağrılarda alt sınır + disk karşılaştırması
+  atlanıyor. **Ö4 kapatıldı.** Bayat sayılar (1309/85) güncellendi (1327/86, bu turun sonunda
+  1358/86 — 31 yeni test eklendiği için).
+- Yeni fixture'lar: `tests/fixtures/fake-vitest-file-drop.mjs` (QA'nın B1a repro'sunun birebir
+  sayısal şekli), `tests/fixtures/fake-vitest-unknown-crash.mjs` (Ö1 genelleştirme kanıtı).
+  `tests/verify-test-run.test.ts` 17 testten **48 teste** çıktı.
+- `scripts/verify-test-run.d.mts` (elle yazılan tip bildirimi) yeni export'larla güncellendi;
+  bu olmadan `tsc --noEmit` başarısız oluyordu.
+
+**Nasıl doğrulandı**
+- **6 mutasyon, hepsi elle uygulanıp elle geri alındı** (`git checkout` KULLANILMADI, her
+  seferinde md5 başlangıç değeriyle birebir eşleşti):
+  1. Disk-karşılaştırması (`typeof expectedFileCount === 'number'` dalı `false &&` ile
+     kapatıldı) → 3 test (birim + iki uçtan-uca) **KIRMIZI**; geri alınca YEŞİL.
+  2. `package.json`'ın `test` betiği `"vitest run"` yapıldı → B2 testi **KIRMIZI**; geri alınca
+     YEŞİL (md5 `fecaa86ad6cd6d614c8454848653c78b` ile birebir eşleşti — QA'nın da doğruladığı
+     baseline).
+  3. Genelleştirilmiş çökme deseni (`GENERIC_WORKER_CRASH_RE`) `false &&` ile kapatıldı →
+     2 test **KIRMIZI**; geri alınca YEŞİL.
+  4. `'Worker terminated'` literal imzası listeden silindi → o testin kendi assert'i
+     **KIRMIZI** (fonksiyon farklı bir literale/generic'e düştü ama beklenen tam string değil);
+     geri alınca YEŞİL — listenin kendisinin çitli olduğu kanıtlandı.
+  5-6. Mevcut `sum!==total` kontrolü aynı yöntemle kapatılıp doğrulandı (önceki turdan miras,
+     yeni koda karşı yeniden koşuldu).
+- **QA'nın GERÇEK komutu, kalıcı regresyon testi olarak eklendi** (fixture değil): gate script
+  gerçek `vitest`'e karşı `--exclude tests/scripts/install-hook.test.ts` ile çalıştırılıyor,
+  disk 86 dosya beklerken vitest 84/85 raporluyor → **KIRMIZI**. **Bu testi yazarken gerçek bir
+  fork bomb yaşandı**: ilk halinde gate'in spawn ettiği gerçek suite kendi test dosyasını
+  (`tests/verify-test-run.test.ts`) da içeriyordu, o da aynı testi tekrar tetikleyip yeni bir
+  suite daha başlatıyordu — üstel büyüme, **185+ `node.exe` süreci** oluştu, `Stop-Process`
+  (PowerShell, `mission-control` eşleşen tüm süreçler) ile temizlendi. Düzeltme: spawn edilen
+  komuta `--exclude tests/verify-test-run.test.ts` da eklendi; testin kendi yorumunda kalıcı
+  uyarı bırakıldı. Sonrasında izole (~14s) ve tam dosya (~15s) koşularında process sayısı
+  0'a döndüğü doğrulandı.
+- **Ö2/Ö3 gerçek komutla manuel doğrulandı:** `FORCE_COLOR=1 npm run test` sağlıklı koşuda
+  **exit 0** (85/86, 1354/1358 — daha önce ANSI yüzünden "özet satırı bulunamadı" ile kırmızı
+  verirdi); `npm run test -- tests/verify-test-run.test.ts` **exit 0**, 48/48 (daha önce
+  500 tabanına takılıp kırmızı verirdi).
+- `npm run typecheck` = 0, `npm run lint` = 0.
+- `npm run verify`: ilk koşuda bağımsız bir Windows temp-dizin yarış durumu (`ENOTEMPTY`,
+  `tests/helpers/temp-data-dir.ts`, bu turun kodundan bağımsız, CLAUDE.md'de kayıtlı sınıf)
+  ile kırmızı; ikinci koşuda **exit 0**, `Test Files 85 passed | 1 skipped (86)`,
+  `Tests 1354 passed | 4 skipped (1358)`, build başarılı (CLAUDE.md "kırmızı gördüğünde bir
+  kez daha koştur" kuralı uygulandı).
+- `npm run e2e` = exit 0, **55/55 geçti** (43.5s).
+- `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca önceden var olan
+  meşru test adları (`write-gate-manifest.test.ts:124` dahil, dokunulmadı) + bu turun kendi
+  `// MUTATION TARGET:` yorumu (önceden vardı). Yeni iz bırakılmadı.
+- Yetim süreç: her heavy koşudan sonra `Get-CimInstance Win32_Process` ile `mission-control`
+  ve `hayat-mentoru` eşleşen süreç sayısı ayrı ayrı 0 olarak doğrulandı.
+
+**Kalan risk / kapanmayan**
+- Kök neden (bazen `3221226505` çökmesinin exit 0 ile sonuçlanması) hâlâ tekrar üretilemedi —
+  bu turda da hedeflenmedi (kapsam dışı, brief kısıtı). Çit artık **iki bağımsız birincil
+  mekanizmayla** (sum/total + disk-karşılaştırması) her hâlükârda yakalıyor.
+- `computeExpectedFileCount`'un string-literal ayrıştırıcısı `vitest.config.ts`'in bugünkü düz
+  `include: [...]`/`exclude: [...]` biçimini hedefliyor; dosya çok satırlı/fonksiyon-üretimli bir
+  yapıya dönüşürse ayrıştırıcı elle güncellenmeli (sözleşme §2c'de belgelendi — kod
+  incelemesinde görünür bir bakım maliyeti, sessiz değil).
+- `docs/blockers.md`'deki asıl madde güncellendi, hâlâ **qa-evaluator** değerlendirmesi bekliyor
+  (developer kendi işini "geçti" ilan edemez).
+
+**Sonraki adım:** qa-evaluator yeniden değerlendirsin.

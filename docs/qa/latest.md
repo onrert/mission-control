@@ -6,392 +6,324 @@ feature: F-009
 title: Spike — transkript format doğrulama + dayanıklı okuyucu + fixture'lar
 reviewer: qa-evaluator
 date: 2026-09-09
-round: 1 (kod turu QA)
+round: 2 (dar kapsamlı düzeltme turu)
 ---
 
-# F-009 QA raporu — transkript spike
+# F-009 QA tur 2 — düzeltme turu denetimi
 
-Kaynaklar: `docs/features/F-009-transkript-spike.md` (7 AC), `docs/qa/F-009-contract.md` (T1-T6),
-`docs/wiki/pages/desen/claude-transcript-formati.md`, `docs/02-architecture.md` §9, ADR-007,
-`CLAUDE.md` "Öğrenilen kurallar".
+Kapsam: 1. turun bulguları (U1-U7) + brief'in üç ek kontrolü. 1. turda GEÇTİ verilen alanlar
+(fixture anonimliği, `bom-crlf`'in CRLF'liği, 13/13 yol kaçışı reddi, okuyucunun 10 düşmanca
+girdide fırlatmaması, format/`usage` iddiaları) yeniden ölçülmedi.
+
+Düzeltme commit'leri: `68aa13d` (U1/U2), `aec57ab` (U3/U4/U7), `97b9e15` (U5/U6), `188d6cb`.
 
 ## Özet
 
-Okuyucunun kendisi (asla-fırlatmama + en küçük yetki yol çiti) **sağlam**: 8 düşmanca girdi,
-izin reddi (ACL), dizin, derin JSON, 12 MB tek satır ve 13 yol kaçış denemesi altında tek bir
-istisna yok, tek bir kaçış yok. `bom-crlf` fixture'ı **gerçekten** CRLF+BOM taşıyor (diskte,
-git blob'unda ve temiz klonda).
+Düzeltmelerin büyük kısmı gerçek: **1. turun 12 sondasının 12'si de artık KIRMIZI**, U2 mutasyonu
+kırmızı ve maskesiz, U4 iki katmanda birden çitli, U5'in sayıları örneklenerek doğrulandı,
+U6 script'i gerçekten koşuyor. Ama üç şey tutmadı:
 
-Ama bu feature'ın **asıl riski sızıntı**, ve o riski taşıyan tek yapısal savunma —
-`transcripts-privacy-guard.test.ts` — **yenildi**: yazdığım 12 sızdıran fixture'ın **12'si de**
-çitten yeşil geçti. Ayrıca wiki sayfasının `✓ DOĞRULANDI` işaretli sürüm iddiası **yanlış**;
-sayfanın tek işi olan "bir sonraki güncellemede yeniden doğrula" temeli hatalı bir taban değere
-dayanıyor.
+1. Gizlilik çiti **yeniden yenildi** — 12 yeni vektörün 11'i geçti. Kök neden yapısal: serbest
+   metin taraması yalnızca **çift tırnak içindeki** ve **boşluk içeren** dizgelere uygulanıyor.
+2. Çitin **en yük taşıyan yeni katmanı** (onaylı-sözcük beyaz listesi) hiç çitli değil: tarayıcıdan
+   tamamen çıkarıldığında **1124 testin tamamı yeşil** kaldı.
+3. U3'ün kaynak-şekli çiti hem **yanlış negatif** hem **yanlış pozitif** veriyor, ve konulma
+   gerekçesi ("davranışla ayırt edilemez") iki ayrı ölçümle **çürütüldü**.
 
 ---
 
-## B1 — BLOKLAYICI: gizlilik çiti yenildi (12/12 sızdıran fixture yeşil geçti)
+## Y1 — BLOKLAYICI: gizlilik çiti yeni vektörlerle yeniden yenildi (11/12 geçti)
 
-**Kabul kriteri:** F-009 AC "Fixture'lar anonimleştirilir … yapısal çit:
+**Kabul kriteri:** AC "Fixture'lar anonimleştirilir … yapısal çit:
 `tests/features/thread/transcripts-privacy-guard.test.ts`" · sözleşme T1.
 
-**Tekrar üretme:**
-1. `tests/fixtures/transcripts/` altına aşağıdaki 10 sonda dosyasını yaz (hepsi sentetik ama
-   "gerçek sızıntı" biçiminde).
-2. `npx vitest run tests/features/thread/transcripts-privacy-guard.test.ts`
+**Tekrar üretme:** sondaları `tests/fixtures/transcripts/` altına yaz →
+`npx vitest run tests/features/thread/transcripts-privacy-guard.test.ts --reporter=verbose` →
+dosyanın kendi "hiçbir gizlilik ihlali içermiyor" satırına bak (✓ = sızdı, × = yakalandı).
 
-**Beklenen:** çit her birini yakalar, KIRMIZI.
-**Gerçek:** `Tests 20 passed (20)` — 10 sondanın **10'u da** ayrı ayrı "hiçbir gizlilik ihlali
-içermiyor" diye yeşil raporlandı (verbose çıktıda `__qa_p1…p10.jsonl … ✓`).
+### Önce iyi haber — 1. turun 12 sondası (P1-P12) artık **12/12 KIRMIZI**
+
+`__qa_p1_shortpersonal` · `p2_bashpath` · `p3_envvar` · `p4_unc` · `p5_fwdslash` · `p6_base64` ·
+`p7_badline` · `p8_key` · `p9_split` · `p10_unlistedproject` · `p11_leak.json` ·
+`__qa_sub/leak.jsonl` → hepsi FAIL (= yakalandı). Özyinelemeli + uzantısız tarama, ham metin
+taraması, genişletilmiş yol desenleri ve disk-türetilmiş liste **çalışıyor**.
+
+### Kötü haber — yeni vektörler
 
 | # | Sonda | İçerik sınıfı | Sonuç |
 |---|---|---|---|
-| P1 | `__qa_p1_shortpersonal` | 96 karakterlik tamamen kişisel Türkçe prompt (TC kimlik + maaş + boşanma) | **GEÇTİ** |
-| P2 | `__qa_p2_bashpath` | `/c/Users/pc/Documents/vergi-beyani-2025.pdf` (Git Bash biçimi) | **GEÇTİ** |
-| P3 | `__qa_p3_envvar` | `%USERPROFILE%\Desktop\ozel-notlar\banka.txt` | **GEÇTİ** |
-| P4 | `__qa_p4_unc` | `\\FILESRV01\pc-yedek\saglik-raporu.docx` (UNC) | **GEÇTİ** |
-| P5 | `__qa_p5_fwdslash` | `C:/Users/pc/Desktop/gizli` (ileri bölü) | **GEÇTİ** |
-| P6 | `__qa_p6_base64` | base64 gömülü parola/IBAN (52 karakter, 80 eşiğinin altında) | **GEÇTİ** |
-| P7 | `__qa_p7_badline` | **ayrıştırılamayan** son satırda 3000 karakterlik "gerçek konuşma kopyası" | **GEÇTİ** |
-| P8 | `__qa_p8_key` | uzun metin JSON **anahtarı** olarak (değer değil) | **GEÇTİ** |
-| P9 | `__qa_p9_split` | uzun prompt 20 parçaya bölünmüş (her parça < 200 karakter) | **GEÇTİ** |
-| P10 | `__qa_p10_unlistedproject` | listede olmayan gerçek proje adları (`sandbox`, `workdir`, `sdk`) | **GEÇTİ** |
+| N1 | `C%3A%5CUsers%5Cpc%5Cgizli%5Cbanka-sifreleri.txt` | URL-kodlanmış Windows yolu | **GEÇTİ** |
+| N2 | `//?/D:/ozel/veron/saglik/rapor.pdf` | uzun-yol öneki, `Users` içermeyen mutlak yol | **GEÇTİ** |
+| N3 | `veron.seldon@gmail.com` | **e-posta** | **GEÇTİ** |
+| N3b | `+90-532-111-22-33` | **telefon** | **GEÇTİ** |
+| N4 | onaylı sözcükler + `kart 4242 4242…` | rakam + onaysız kelime | yakalandı (× ) |
+| N4b | `ornek istem 05321112233 anonim kullanici 4242 4242 4242 4242 yanit metni` | **yalnızca onaylı sözcükler + gömülü rakamlar** | **GEÇTİ** |
+| N5 | `gercek\nkullanici\nadi\nsoyadi\nev\nadresi\nkadikoy…` | satır sonu kaçışlarıyla ayrılmış gerçek metin | **GEÇTİ** |
+| N6 | `trepx-xhyynavpv-nqv-fblnqv-ir-onaxn-fvsrfv` | ROT13/boşluksuz şifreleme | **GEÇTİ** |
+| N7 | `__qa_n7_plaintext.md` — düz metin, tırnaksız, 3 satır kişisel veri | **tırnaksız dosya** | **GEÇTİ** |
+| N8 | `{"a":"\"","leak":"gercek kullanici adi soyadi telefonu ve ev adresi burada"}` | **tek kaçışlı tırnak → hizalama kayması** | **GEÇTİ** |
+| N9 | `Şükrü_Yılmaz_Kadıköy_İstanbul_doğum_1987` | Türkçe karakterli, boşluksuz kimlik | **GEÇTİ** |
+| N11 | `"_note":"gizli-musteri-listesi-ve-fiyatlandirma-2026"` | şema dışı alana gömülü metin | **GEÇTİ** |
+| N12 | `.__qa_n12_hidden` — gizli dosya, tırnaksız | gizli dosya | **GEÇTİ** |
+| N13 | gerçek satır şekli, **çift** kaçışlı tırnak | kontrol | yakalandı (×) |
+| N14 | gerçek satır şekli, kaçışsız | kontrol | yakalandı (×) |
 
-Ek iki kaçış (ayrı koşu, aynı sonuç):
+**Üç yapısal kök neden (dosya:satır):**
 
-| # | Sonda | Sonuç |
-|---|---|---|
-| P11 | `__qa_leak.json` — `C:\Users\pc\gizli` + 500 karakter, uzantı `.json` | **TARANMADI** (10 passed, dosya sayıya bile girmedi) |
-| P12 | `__qa_sub/leak.jsonl` — aynı içerik, **alt dizinde** | **TARANMADI** |
+1. `transcripts-privacy-guard.test.ts:254` — `if (value.includes(' ') && !hasOnlyApprovedWords(value))`.
+   Beyaz liste **yalnızca boşluk içeren** dizgeye uygulanıyor. Boşluksuz her dizge (e-posta,
+   telefon, `\n` kaçışlarıyla ayrılmış kelimeler, `snake_case`, tireli/noktalı metin, ROT13)
+   serbest kanal: 200 karakter altındaysa ve opak-blok sınıfını (`[A-Za-z0-9+/_=]{40,}`) tek bir
+   `-` / `.` / `@` ile kırıyorsa hiçbir desene takılmaz.
+2. `transcripts-privacy-guard.test.ts:198-213` (`naiveQuotedSegments` + kullanımı) — serbest metin
+   kontrollerinin **tamamı** yalnızca çift tırnak arasındaki parçalara uygulanıyor. Tarama artık
+   uzantıdan bağımsız olduğu için dizine giren **her tırnaksız dosya** (`.md`, `.txt`, `.gitignore`,
+   nokta ile başlayan dosyalar) yalnızca yol/TC/proje-adı regex'lerinden geçiyor; uzunluk, opak
+   blok ve beyaz liste katmanlarının **hiçbiri** çalışmıyor (N7, N12). Uzantı süzgecinin
+   kaldırılması bu dosyaları taramaya **soktu**, ama taramanın asıl gövdesi onlara uygulanmıyor —
+   sonuç yanlış güven.
+3. `transcripts-privacy-guard.test.ts:191-196` — "naif split"in tek/çift indeks hizalaması
+   **kaçışlı tırnakla kayıyor**. Testin kendi yorumu bunu kabul ediyor ("bu turda fixture'ların
+   hiçbirinde kaçışlı tırnak yok") ama bu, kabul edilebilir bir varsayım değil: sızıntının **asıl
+   yolu** gerçek bir transkript satırını yapıştırmaktır ve gerçek satırlar kaçışlı tırnak doludur.
+   Ölçüm (`~/.claude/projects/C--dev-apps-mission-control`, 220 dosya, 51 933 satır, yalnızca
+   sayım): **15 042 satırda en az bir `\"`**, **282 satırda TEK sayıda `\"`**. Tek sayılı olan her
+   satırda ilk kaçıştan sonraki **tüm** içerik çift indekse düşer ve hiç taranmaz (N8 birebir bunu
+   gösteriyor); çift sayılı satırlarda ise kaçışlı tırnak **çiftleri arasındaki** metin taranmaz.
 
-**Kök nedenler (dosya:satır):**
-- `transcripts-privacy-guard.test.ts:59` — `listFixtureFiles` yalnızca **üst seviye** ve yalnızca
-  `.jsonl`. `readdirSync` kullanmak tek başına "yapısal çit" yapmıyor: `.json`/`.txt`/`.md` ve
-  alt dizinler kapsam dışı (P11/P12).
-- `transcripts-privacy-guard.test.ts:83` — `JSON.parse` başarısız olursa satır `continue` ile
-  **atlanıyor**. Secret / uzun-opak / 200-karakter kontrollerinin **tamamı** yalnızca ayrıştırılmış
-  JSON üzerinde çalışıyor. Yani fixture setinin **tanım gereği bozuk satır içeren** üyesi
-  (`truncated-last-line.jsonl`) sınıfı, gerçek prompt taşımak için serbest bir kanal (P7).
-  Bu, `CLAUDE.md`'deki "testin yorumu ile taradığı şey çelişebiliyor" dersinin birebir tekrarı.
-- `transcripts-privacy-guard.test.ts:28` — `WINDOWS_USER_PATH_PATTERN = /[A-Za-z]:\\+Users\\+/i`
-  yalnızca ters bölülü Windows biçimini görüyor; POSIX (`/c/Users/…`), ileri bölü (`C:/Users/…`),
-  ortam değişkeni (`%USERPROFILE%`) ve UNC biçimleri kapsam dışı (P2/P3/P4/P5).
-- `transcripts-privacy-guard.test.ts:22-33` — ilgisiz proje adları **elle yazılmış 6'lık sabit
-  liste**. Makinede `~/.claude/projects` altında 16 dizin var; listede olmayan gerçek proje adları
-  serbest (P10). `CLAUDE.md`: "çiti feature'a değil yapıya koy" — liste diskten türetilmeli.
-- `collectStringLeaves` (`:44-56`) yalnızca **değerleri** topluyor, anahtarları değil (P8);
-  ve dizi elemanlarını tek tek ölçtüğü için 200 karakter eşiği parçalayarak aşılabiliyor (P9).
+**Neden bloklayıcı:** aynı taramada **638 satır e-posta biçimli dizge** içeriyor (gerçek
+transkriptlerde kullanıcı e-postası rutin olarak geçiyor). Yani "bir fixture'a yanlışlıkla gerçek
+içerik girdi" senaryosunun en olası somut biçimlerinden biri — e-posta/telefon — çitten **sessizce**
+geçiyor. AC'nin "elle dikkat ettim yetmez" gerekçesi hâlâ karşılanmıyor. Bugün depoda sızan veri
+**yok** (5 fixture + `.gitattributes` temiz), bloklayıcılık gelecekteki fixture'lar için.
 
-**Neden bloklayıcı:** mevcut beş fixture'ı satır satır okudum, **gerçekten anonim** (aşağıya bkz.),
-yani bugün sızan bir veri yok. Bloklayıcılık şuradan: bu çit AC'nin "elle dikkat ettim yetmez"
-gerekçesiyle konmuş **tek** savunma ve F-010/F-011 bu dizine yeni fixture ekleyecek. En olası
-gerçek sızıntı yolu — "gerçek bir transkriptin kesik kuyruğunu yeni fixture olarak kopyalamak" —
-çitten %100 geçiyor. Yanlış güven, çitsizlikten kötüdür.
-
-**Öneri (ucuz ve yeterli):** (a) `listFixtureFiles` tüm dosyaları özyinelemeli numaralandırsın,
-uzantı süzgeci kalksın; (b) secret/opak/uzunluk kontrolleri **ham satır metnine** de uygulansın
-(ayrıştırma başarısızsa satır atlanmasın); (c) yol deseni POSIX/ileri-bölü/`%USERPROFILE%`/UNC
-biçimlerini kapsasın; (d) ilgisiz proje listesi `~/.claude/projects` taranarak türetilsin
-(izin verilen proje çıkarılarak). (e) tercihen kara liste yerine beyaz liste: fixture'larda
-serbest metin yalnızca sabit bir sentetik sözcük dağarcığından gelebilsin.
-
----
-
-## B2 — BLOKLAYICI: wiki sayfasının `✓ DOĞRULANDI` sürüm iddiası yanlış
-
-**Kabul kriteri:** AC "Doğrulanan format `docs/wiki/pages/desen/claude-transcript-formati.md`
-sayfasına yazılır (…tekrarlanacak kontrol listesiyle)" · sözleşme T6.
-
-**İddia** (`claude-transcript-formati.md:17-19`):
-"Transkriptlerin kendi `version` alanı: **2.1.261** — CLI binary sürümünden farklı.
-✓ DOĞRULANDI (**217 dosyanın tamamında aynı değer gözlendi**)."
-
-**Tekrar üretme:**
-```
-find ~/.claude/projects/C--dev-apps-mission-control -name '*.jsonl' -print0 \
-  | xargs -0 grep -oh '"version":"[^"]*"' | sort | uniq -c
-```
-**Beklenen:** tek değer, `2.1.261`.
-**Gerçek (2026-09-09, 218 dosya, toplam alan yazımı):**
-
-| `version` | satır | dosya |
-|---|---:|---:|
-| `2.1.260` | 45 358 | çoğunluk |
-| `2.1.261` | 1 894 | 94 |
-| `2.1.205` | 8 | 1 |
-
-Üç ayrı değer var; **baskın değer sayfada hiç geçmeyen `2.1.260`** (%96). Dahası `2.1.205` — yani
-**kurulu CLI sürümünün kendisi** — transkriptlerin içinde de geçiyor; bu, sayfanın "transkript
-sürümü CLI'dan ayrı bir SDK/harness sürümü olmalı" ⊢ ÇIKARIM'ını doğrudan zayıflatıyor.
-
-**Neden bloklayıcı:** bu feature'ın teslimatı kod değil, **doğrulanmış format belgesi**.
-Sayfanın tek işlevi bir sonraki Claude Code güncellemesinden sonra karşılaştırma tabanı olmak
-(kontrol listesi madde 1-2 tam olarak bunu söylüyor). Taban değer yanlışsa kontrol listesi de
-yanlış alarm/yanlış sessizlik üretir. Ayrıca `✓ DOĞRULANDI` işareti sayfanın güvenilirlik
-mekanizmasının kendisi — yanlış bir iddiaya konmuş olması diğer ✓'ların ağırlığını düşürüyor
-(sözleşme "217 dosya tarandı" derken `version` alanının hiç toplanmadığı, tek bir dosyanın ilk
-satırından okunduğu anlaşılıyor).
-
-**Not:** aynı taramada sayfanın **doğru** çıkan iddiaları: 13 `type` değerinin listesi birebir
-tutuyor; `summary` gerçekten hiç gözlenmiyor; dört `usage` alanı `assistant` satırlarının
-**%100'ünde** mevcut (20 961/20 961); ek alanlar (`iterations`, `cache_creation`,
-`output_tokens_details`, `speed`, `service_tier`, `inference_geo`, `server_tool_use`) da
-sayfadaki listeyle uyuşuyor; gerçek dosyalarda **0 bozuk satır** var.
+**Ucuz düzeltme önerisi:** (a) beyaz liste kontrolünden `value.includes(' ')` koşulunu kaldır —
+her dizgeyi kelimelere ayır, onaysız kelime VEYA `[0-9]{6,}` VEYA `@` görünce tetikle;
+(b) serbest metin kontrollerini tırnak parçalarına ek olarak **ham satırın tamamına** da uygula
+(tırnaksız dosyalar ve hizalama kayması aynı anda kapanır); (c) e-posta/telefon için iki desen ekle.
+Not: (b) uygulanınca mevcut 5 fixture'ın ham satırları da taranır — eşiklerin yeniden kalibre
+edilmesi gerekir (bu turda ölçülen satır-başı toplam en yüksek değer 413 karakter).
 
 ---
 
-## B3 — ÖNEMLİ: 200 karakterlik serbest metin eşiğinin hiçbir testi yok (maskelenmiş)
+## Y2 — BLOKLAYICI: beyaz liste katmanı hiç çitli değil (mutasyon 1124/1124 YEŞİL)
 
-**Mutasyon M1c:** `transcripts-privacy-guard.test.ts:39` → `MAX_FREE_TEXT_CHARS = 100000`.
-**Beklenen:** T1c ("200+ karakterlik serbest metin çiti KIRMIZI yapar") kırmızı.
-**Gerçek:** `Tests 69 passed (69)` — **yeşil**.
+**Mutasyon:** `transcripts-privacy-guard.test.ts:254` →
+`if (false && value.includes(' ') && !hasOnlyApprovedWords(value)) {`
+(çitin **tek** kısa-kişisel-metin savunması devre dışı).
 
-**Maskeleyen yan etki:** T1c'nin sondası `'x'.repeat(250)` yazıyor; bu dizge eşikten bağımsız
-olarak `LONG_OPAQUE_BLOB_PATTERN` (`[A-Za-z0-9+/_=]{80,}`) ile eşleşiyor, dolayısıyla test
-"ihlal bulundu" diye geçiyor ama **ölçtüğünü sandığı eşiği hiç ölçmüyor**. F-008'in "mutasyon
-maskelenebilir" dersinin birebir tekrarı. Sonda metni boşluk içeren gerçekçi bir cümle olsaydı
-maskeleme kalkardı.
+**Beklenen:** en az bir test KIRMIZI.
+**Gerçek:** `npx vitest run` (tüm depo) → **`Tests 1124 passed | 4 skipped`**.
+
+Neden kaçıyor: P1 sondası kişisel metnin yanında **TC-kimlik biçimli sayı** taşıyor, bu yüzden TC
+deseni tarafından yakalanıyor; beyaz liste devre dışı olsa da test yeşil kalıyor. T1d
+(`:342-347`) `hasOnlyApprovedWords`'ü **doğrudan** çağırıyor — yardımcının kendisini kanıtlıyor
+ama tarayıcının onu **kullandığını** kanıtlamıyor. Bu, 1. turun U7/B6 bulgusunun (kendi kendine
+referans veren test) bir kademe yukarı taşınmış hâli: fonksiyon gerçek, bağlantı çitsiz.
+`CLAUDE.md`: "savunma derinliğini katman başına bir mutasyonla sına".
+
+**Düzeltme:** beyaz listeyi tetikleyen, başka **hiçbir** desene takılmayan bir sonda ekle
+(ör. `'gercek kullanici adi soyadi ve ev adresi burada yaziyor'` — TC yok, yol yok, < 200 karakter,
+opak blok yok) ve `scanFixtureForPrivacyViolations` üzerinden koştur.
 
 ---
 
-## B4 — ÖNEMLİ: yol çitinin dört savunma katmanının **hiçbirinin** kendi testi yok
+## Y3 — BLOKLAYICI (U3 kararım: **kabul edilemez sapma**)
 
-`resolveAllowedTranscriptPath` dört katmanlı. Katman katman mutasyon (her biri tek başına):
+Developer M10/M11 için davranış çiti yerine kaynak-şekli çiti koydu
+(`transcript-reader.test.ts:536-559`), gerekçe: *"L2/L3 sağlamken bu iki katman matematiksel
+olarak L4 ile örtüşür … hiçbir black-box senaryo TEK BAŞINA bu ikisini davranışla ayırt edemez"*.
 
-| Mutasyon | Kaldırılan katman | dosya:satır | Sonuç |
+### (a) Gerekçe yanlış — iki katman da davranışla ayırt edilebiliyor
+
+Ölçüm: gerçek `resolveAllowedTranscriptPath`, geçici hermetik kök, `tsx` ile doğrudan çağrı.
+
+| Senaryo | Temiz kod | M10 uygulanmış | M11 uygulanmış |
 |---|---|---|---|
-| M6 | ata dizin symlink kontrolü | `transcript-reader.ts:267` | **69/69 YEŞİL** |
-| M6b | hedef dosya symlink kontrolü | `transcript-reader.ts:271` | **69/69 YEŞİL** |
-| M10 | realpath **öncesi** kapsama kontrolü | `transcript-reader.ts:259-262` | **69/69 YEŞİL** |
-| M11 | realpath **sonrası** kapsama kontrolü (`resolved` → `candidatePath`) | `transcript-reader.ts:274-277` | **69/69 YEŞİL** |
+| S1 — kök **dışında**, **var olmayan** dosya | `outside-root` | **`not-found`** | `outside-root` |
+| S2 — kök dışında, var olan dosya | `outside-root` | `outside-root` | `outside-root` |
+| S3 — kökün kendisi **junction** üzerinden veriliyor | `outside-root` | `outside-root` | **`ok:true`** |
+| S4 — izinli proje içinde junction → kök dışı (1. turun kaçışı) | `symlink` | `symlink` | `symlink` |
+| S5 — proje dizininin kendisi junction | `symlink` | `symlink` | `symlink` |
 
-Geliştiricinin junction testi (`transcript-reader.test.ts:322`) yalnızca `{ok:false}` iddia ediyor;
-`reason` alanına bakmadığı için bir katman düşünce diğerinin farklı bir `reason` ile reddetmesi
-testi yeşil bırakıyor.
+S1 ve S3, M6/M6b için **zaten kullanılan** yöntemin (kesin `reason` iddiası) birer satırlık
+uygulamasıdır. Yani davranış çiti mümkündü; kaynak-şekli çitine gerek yoktu. Ayrıca M10
+kaldırıldığında guard, kökün **dışındaki** yollarda `existsSync`/`lstatSync` çağırmaya başlıyor —
+gözlemlenebilir bir yan etki.
 
-**Ürün kodu doğru** (temiz kodda junction → `{"ok":false,"reason":"symlink"}`), eksik olan çit.
-Ama iki katman **birlikte** düşünce gerçek kaçış oluyor: M6+M11 uygulandığında izin verilen proje
-dizini içindeki bir junction, kökün **tamamen dışındaki** bir dosyayı okuttu
-(`{"ok":true,"targetPath":"…\qa-outside-…\gizli.jsonl"}`, `OKUNDU lines_ok=1`). Bu birleşik hâlde
-geliştiricinin testi kırmızı verdi (1 failed) — yani ancak iki katman aynı anda bozulursa yakalanıyor.
-`CLAUDE.md`: "iki katmanlı kontrolde her katmanı ayrı ayrı kaldır."
+### (b) Kaynak-şekli çiti hem yanlış negatif hem yanlış pozitif veriyor
 
----
+| Mutasyon | Koruma | Kaynak-şekli çiti |
+|---|---|---|
+| M10-**yorum satırı** (`if` bloğunun 3 satırı `// M10 ` ile yorumlandı, metin yerinde) | **KALKTI** (S1 → `not-found`) | **YEŞİL — 51/51** ✗ |
+| M10-**silme** (aynı 3 satır silindi) | kalktı | KIRMIZI ✓ |
+| M11-**doğrudan** (`resolved` → `candidatePath`) | kalktı | KIRMIZI ✓ |
+| M11-**tuzak satırlı** (`relFromRootCanonical` adıyla eski satır korunur, kontrol `candidatePath` ile yapılır) | **KALKTI** (S3 → `ok:true`) | **YEŞİL — 51/51** ✗ |
+| Eşdeğer yeniden yazım (`relFromRootRaw` → `rawRelativeFromRoot`, davranış aynı) | **yerinde** | **KIRMIZI** ✗ (yanlış pozitif) |
 
-## B5 — ÖNEMLİ: kuyruk okuma yolu sessizce her şeyi kaybediyor, `degraded` yalan söylüyor
+Yani çit, QA'nın 1. turda kullandığı **yorum satırına alma** mutasyon biçimini hiç görmüyor;
+buna karşılık zararsız bir yeniden adlandırmayı bloklayıcı sanıyor. Bir güvenlik çitinin en kötü
+kombinasyonu budur: koruduğunu sandığın şeyi korumaz, korumadığı şey için gürültü üretir.
+`write-gate-manifest.test.ts` emsali burada geçerli değil — orada denetlenen şey **derleme/paket
+çıktısı**dır, davranışla erişilemeyen bir yüzeydir; burada davranış yolu açıktı ve ölçüldü.
 
-`transcript-reader.ts:96-97` — dosya `maxBytesBeforeTail`'i aşıyor ve son `tailBytes` içinde hiç
-`\n` yoksa fonksiyon `''` dönüyor.
+### (c) 1. turun M6+M11 birleşik kaçışı — **kapalı** ✓
 
-**Tekrar üretme:** `readTranscript(f, { maxBytesBeforeTail: 100, tailBytes: 64 })`, dosya =
-bir geçerli satır + 4096 baytlık newline'sız kuyruk.
-**Beklenen:** veri kaybı dürüstçe bildirilsin.
-**Gerçek:**
-```
-{"lines_ok":0,"lines_bad":0,"unknown_type_lines":0,"degraded":false,"file_read_failed":false}
-```
-Yani **dosyanın tamamı kayboldu** ama sonuç "sağlıklı, hiçbir sorun yok" diyor. Sözleşme T5
-"`degraded` dürüst" diyor; bu yol dürüst değil. Gerçek 64 MB+ dosya bu makinede gözlenmedi
-(wiki de bunu [T] TAHMİN olarak işaretliyor), bu yüzden bloklayıcı değil — ama F-011 token
-toplamını buradan okuyacak ve sıfırı "sıfır token" sanacak.
+Kendi repro'mu tekrarladım (S4): izin verilen proje dizini içine junction, kök dışı gerçek dosya →
+temiz kodda **`{"ok":false,"reason":"symlink"}`**. M6 ve M6b mutasyonları artık **tek başlarına**
+KIRMIZI veriyor (1. turda ikisi de 69/69 yeşildi). Bu kısım gerçekten düzeldi.
 
----
-
-## B6 — ÖNEMLİ: dört "MUTASYON hedefi" testi kendi kendine referans veriyor, hiçbir şey ölçmüyor
-
-- `transcript-reader.test.ts:343` (T4): `const alwaysAllowed = () => ({ok:true,…});
-  expect(alwaysAllowed()).toMatchObject({ok:true})` — kendi tanımladığı sabiti doğruluyor.
-- `transcript-reader.test.ts:411` (T5): `expect(real.degraded).toBe(true)` ardından
-  `expect(real.degraded).not.toBe(false)` — aynı iddianın tekrarı.
-- `transcripts-privacy-guard.test.ts:159` (T1d): boş bir `RegExp[]` dizisinin hiçbir şey
-  eşleştirmediğini doğruluyor (`[].some(...)` → `false`).
-- `transcript-reader.test.ts:212` (T3) kısmen anlamlı (case-sensitive eşleştiricinin kaçırdığını
-  gösteriyor) ama yine üretim kodunu mutasyonlamıyor.
-
-Yalnızca T2 (`:124`) gerçek bir şey kanıtlıyor (`JSON.parse` o satırda gerçekten fırlatıyor).
-Bu dört test, 35 thread testinin 4'ü; sayıyı şişiriyor ve "mutasyonla doğrulandı" izlenimi veriyor.
-Gerçek mutasyonlar (aşağıdaki tablo) zaten ayrı koşulmalı ve rapora yazılmalı — teste gömülmemeli.
+**Kararım:** M6/M6b düzeltmesi kabul; M10/M11'in kaynak-şekli çiti **kabul edilemez** — davranış
+çiti mümkün olduğu ölçüldüğü için ve mevcut çit en olası mutasyon biçimini kaçırdığı için.
 
 ---
 
-## B7 — DÜŞÜK: wiki kontrol listesinin 3. adımındaki script hiçbir şey yapmıyor
+## U2 — DOĞRULANDI ✓ (eşik mutasyonu artık KIRMIZI ve maskesiz)
 
-`claude-transcript-formati.md:123` — verilen tek satırlık Python
-(`… for d in [json.loads(l)] if True] if False else None`) koşullu ifadenin `if False` dalında
-olduğu için **hiç çalışmıyor**, `None` değerlendiriyor ve hiçbir çıktı üretmiyor. Hemen altındaki
-"Pratikte: … repoya dahil edilmedi" notu bunu kabul ediyor. Sayfanın en kritik tekrarlanabilirlik
-adımı, çalışmayan bir kod bloğuyla süsleniyor; ya gerçekten çalışan bir satır konmalı ya da blok
-tamamen kaldırılıp yalnızca tarif bırakılmalı.
+**Mutasyon:** `MAX_FREE_TEXT_CHARS = 200` → `100000`.
+**Sonuç:** `Tests 1 failed | 22 passed` — **KIRMIZI** ✓ (1. turda 69/69 yeşildi).
 
----
+Sondanın doğru deseni tetiklediğini ayrıca kanıtladım (brief'in istediği kontrol): geçici bir test
+dosyasından **gerçek** `scanFixtureForPrivacyViolations` çağrıldı, 245 karakterlik onaylı-sözcük
+metniyle:
 
-## B8 — DÜŞÜK (kabul edilebilir, not düşülerek): `record()` hiçbir üretim kodu tarafından çağrılmıyor
+- temiz kod → `["200 karakterden uzun serbest metin bulundu (245 karakter) — gerçek prompt kopyası şüphesi"]`
+  — **tek** ihlal, yalnızca uzunluk deseni. Opak-blok maskelemesi (1. turun B3'ü) gitmiş.
+- mutasyonlu kod → `VIOLATIONS []` — koruma gerçekten kalkıyor, yani test gerçek bir şey ölçüyor.
 
-`grep -rn "\.record(" src/ electron/ scripts/` → yalnızca iki **yorum** satırı
-(`transcript-reader.ts:326`, `src/server/index.ts:335`). Canlı ölçüm:
-`npm run build && npm start` → `GET /api/health` → `"transcript_reader":{"files_seen":0,
-"lines_ok":0,"lines_bad":0}` (HTTP 200).
+Tek not (bloklayıcı değil): mutasyonda ilk kırılan satır testin **ön koşulu**
+(`expect(longApprovedText.length).toBeGreaterThan(MAX_FREE_TEXT_CHARS)`, `:324`), davranış
+iddiası değil. Davranış iddiası da kırmızı olurdu (yukarıdaki `[]` ölçümü), ama eşik büyütülürse
+bakımcı testin ön koşulunu "düzeltip" sondayı uzatma yoluna sapabilir. Geçici test dosyası silindi.
 
-**Kararım: bu bir bloklayıcı değil, hatta "yeşil ama ölçmeyen" sınıfına da girmiyor.** Ayrım
-şurada: o sınıf bir testin **ölçtüğünü iddia edip ölçmemesi**. Burada hiçbir şey ölçüldüğünü iddia
-etmiyor — sözleşme (§1 "Kapsam dışı", §6), kod yorumu ve `health.test.ts:175`'in
-`toEqual({0,0,0})` iddiası üçü birden "henüz hiç okuma yok" diyor; `files_seen: 0` da "hiç
-okunmadı"yı "sorun yok"tan zaten ayırıyor. Yine de tüketicisi olmayan ~25 satır üretim kodu
-Karpathy §2'ye ("ileride lazım olur kodu yok") aykırı; F-010 bunu bağlamazsa health alanı
-kaldırılmalı. Bu turda kabul.
+## U4 — DOĞRULANDI ✓ (iki katmanda birden çitli)
 
----
+`transcript-reader.ts:200` `degraded: linesBad > 0 || dataLostNoLineBoundary`. Testi
+(`transcript-reader.test.ts:174-192`) benim 1. turdaki repro'mun birebir aynısı (bir geçerli satır
++ 4096 baytlık newline'sız kuyruk, `maxBytesBeforeTail:100, tailBytes:64`) ve `lines_ok:0`,
+`lines_bad:0`, `file_read_failed:false`, `degraded:true` dördünü birden iddia ediyor.
 
-## Doğrulanan iddialar (GEÇTİ tarafı)
-
-### `bom-crlf` fixture'ı gerçekten CRLF mi — **EVET**
-
-| Ölçüm | Sonuç |
+| Mutasyon | Sonuç |
 |---|---|
-| Diskte `0d0a` sayısı | **3** (BOM `efbbbf` de mevcut, ilk 3 bayt) |
-| `git show HEAD:…bom-crlf.jsonl` blob'unda `0d0a` | **3** |
-| **Temiz klonda** (`git clone --no-hardlinks .`) `0d0a` | **3** |
-| `valid.jsonl` (kontrol) `0d0a` | **0** — fixture gerçekten ayırt edici |
-| `git check-attr -a` | `text: unset`, `eol: lf` |
+| M-B: `degraded: linesBad > 0` (bayrak `degraded`'dan çıkarıldı) | **1 failed** ✓ KIRMIZI |
+| M-B2: `readRelevantText`'te `dataLostNoLineBoundary: true` → `false` (düzeltmeyi kaynağında geri sarar) | **1 failed** ✓ KIRMIZI |
 
-`eol: lf` hâlâ görünüyor ama `text` **unset** olduğu için etkisiz — üç ölçüm de bunu ampirik
-olarak doğruluyor. `tests/fixtures/transcripts/.gitattributes` (`* -text`) düzeltmesi çalışıyor;
-fixture ölçtüğünü ölçüyor.
+İki farklı katmanda da kırmızı → düzeltme komşu bir yolu değil, kendisini koruyor.
 
-### Okuyucu asla fırlatmıyor — **EVET** (10/10)
+## U5 — DOĞRULANDI ✓ (sayılar örneklenerek değil, tam taramayla)
 
-`yarım UTF-8` · `\0` baytları · 12 MB tek satır (newline yok) · 200 000 seviye iç içe JSON ·
-dosya yerine **dizin** (`EISDIR` → `file_read_failed:true`) · var olmayan yol · kuyruk yolu ·
-`icacls /deny (RD,RA)` ile **okuma izni kapalı dosya** · okuma izni kapalı **dizin** ·
-bozuk/uzun/`NUL`/`CON` aday yolları guard'a verme. Hiçbirinde istisna yok; hepsinde anlamlı
-sonuç nesnesi döndü.
+Wiki iddiası (2026-09-09, düzeltme turu): 219 dosya / 47.396 `version` satırı; `2.1.260` 45.494,
+`2.1.261` 1.894, `2.1.205` 8.
 
-**Mutasyon M2** (satır bazlı `try/catch` kaldırıldı) → **2 failed** ✓ KIRMIZI.
-**Mutasyon M7** (dosya düzeyi `try/catch` kaldırıldı) → **1 failed** ✓ KIRMIZI.
-Guard yolunda `lstatSync`/`realpathSync` çağrıları `try/catch` dışında ama izin reddi altında
-bile fırlatmadı (Windows'ta `lstat`/`realpath` DACL okuma izni gerektirmiyor) — bu turda bulgu değil.
+Bağımsız ölçümüm (aynı gün, ~1 saat sonra, `~/.claude/projects/C--dev-apps-mission-control`,
+yalnızca sayım — hiçbir içerik kopyalanmadı):
 
-### Yol çiti — 13 kaçış denemesinin 13'ü reddedildi
+| `version` | benim satır sayım | wiki | fark |
+|---|---:|---:|---|
+| `2.1.260` | 45 887 | 45 494 | +393 (bu oturum yazmaya devam ediyor) |
+| `2.1.261` | 1 894 | 1 894 | **0** |
+| `2.1.205` | 8 | 8 | **0** |
+| toplam | 47 789 | 47 396 | +393 |
+| dosya | 220 | 219 | +1 (bu QA oturumunun kendi transkripti) |
 
-| Deneme | Sonuç |
-|---|---|
-| izin verilen proje dosyası (kontrol) | `ok:true` |
-| izin verilmeyen proje dosyası | `not-allowed` |
-| `…/C--dev-allowed/../C--dev-secret-other/x.jsonl` | `not-allowed` |
-| `…/C--dev-allowed/../../outside/x.jsonl` | `outside-root` |
-| büyük harfli izinli dizin (`C--DEV-ALLOWED`) | `ok:true` (harf duyarsız — doğru) |
-| küçük harfli izinsiz dizin | `not-allowed` |
-| `\\?\` uzun yol öneki (izinli ve izinsiz) | `outside-root` (ikisi de) |
-| sondaki nokta (`x.jsonl.`) | `not-found` |
-| ADS akışı (`x.jsonl:$DATA`) | `not-found` |
-| karışık bölü (`root/C--dev-secret/x.jsonl`) | `not-allowed` |
-| junction, izinli ada sahip, izinsiz hedefe | `symlink` |
-| junction adı **izin listesine eklenmiş** hâlde | `symlink` |
-| 8.3 kısa ad | bu birimde 8.3 üretimi kapalı (`dir /x` kısa ad döndürmüyor) — denenemedi |
+Değer **kümesi** birebir aynı (üç değer, başka yok); fark yalnızca canlı oturumun büyümesi. Kanıt
+etiketleri dürüst: `✓ DOĞRULANDI` yalnızca gerçekten sayılan şeylere konmuş, `2.1.205 = CLI
+sürümü` gözlemi doğru, önceki turun yanlış ⊢ ÇIKARIM'ı açıkça çürütülmüş ve yerine "her satır
+kendi sürecinin sürümünü yazar" çıkarımı ⊢ ile işaretlenmiş. Kontrol amaçlı tüm ağacı da taradım
+(414 dosya, 5 farklı `version` değeri) — sayfa kapsamını **bu projenin dizini** olarak açıkça
+sınırladığı için bu bir çelişki değil.
 
-Dosya symlink'i `mklink` ile kurulamadı (yönetici/geliştirici modu gerekiyor) — junction ile
-eşdeğer yol sınandı.
+**DÜŞÜK not:** sayfa aynı bölümde bir yerde "219 dosya", iki satır altında "217 gerçek `.jsonl`
+dosyası ✓ DOĞRULANDI" diyor (ikincisi dev turunun eski tip taramasından kalma). Gerçek sayı
+ölçüm anına göre 219/220. Sayının yanına tarih/kapsam notu düşülmeli.
 
-**Gerçek makinede kanıt (sözleşmenin T4 iddiası):**
-- `readAllowedTranscript(~/.claude/projects, ['C:\dev\apps\mission-control'], <gerçek ilgisiz
-  projenin gerçek .jsonl'ı>)` → **`RED not-allowed`** ✓
-- aynı çağrı izin verilen projenin gerçek dosyasıyla → `OKUNDU lines_ok=38 bad=0 unk=27` ✓
-- **Mutasyon M3** (izin listesi kontrolü kaldırıldı) → **3 failed** ✓ KIRMIZI.
-- **Mutasyon M8** (`readAllowedTranscript` guard'ı atlıyor) → **1 failed** ✓ KIRMIZI.
+## U6 — DOĞRULANDI ✓ (script gerçekten koşuyor, çıktı eşleşiyor)
 
-### Fixture'lar gerçekten anonim mi — **EVET**
+Sayfadaki Python bloğunu **birebir kopyalayıp** kendim koşturdum (tek eklemem dosya/bozuk satır
+sayacı):
 
-Beş fixture'ın tamamını satır satır okudum. Tüm UUID'ler `00000000-0000-4000-8000-00000000000N`
-kalıbında sentetik; `cwd` değerleri `C:\workspace\ornek-proje` (gerçek kullanıcı yolu değil);
-metinler "ornek kullanici istemi (anonim)" gibi açıkça yer tutucu; model adı `claude-example`,
-mesaj kimlikleri `msg_example001`. Gerçek prompt kalıntısı **yok**. F-009 commit'inin
-(`7249351`) eklediği satırlarda geçen `C:\Users` / `hayat-mentoru` / `video-factory` dizgelerinin
-altısı da **çitin kendi desen listesinde veya yorumlarda** — fixture verisinde değil.
+```
+files 220 bad 0
+assistant 21214 · attachment 13753 · user 12476 · queue-operation 1080 · agent-setting 652 ·
+last-prompt 638 · atis-latch 636 · bridge-session 451 · system 365 · custom-title 346 ·
+mode 337 · permission-mode 2 · file-history-snapshot 2
+```
 
-### Format iddiaları (örnekleme değil, tam tarama)
+Sayfadaki çıktı (`assistant 21123`, `attachment 13701`, … `file-history-snapshot 2`) ile **tip
+kümesi birebir aynı** (13 tip), sayılar oturum büyüdüğü için birkaç yüz fazla. `if False` ölü dalı
+gitmiş; blok kopyala-yapıştır çalışıyor. **0 bozuk satır** iddiası da doğrulandı.
 
-218 dosya, toplam-sayı taraması (içerik hiçbir yere kopyalanmadı): 13 `type` değeri sayfadaki
-tabloyla birebir aynı; `summary` **hiç yok**; dört `usage` alanı `assistant` satırlarının
-20 961/20 961'inde mevcut; ek `usage` anahtarları sayfadaki listeyle uyuşuyor; **0 bozuk satır**;
-boyut aralığı 97 bayt – 9.78 MB (sayfa "97 bayt – 9.3 MB" diyor, oturum sürerken büyümüş, sapma
-değil). Tek yanlış iddia B2'deki sürüm satırı.
+## U7 — BÜYÜK ÖLÇÜDE DOĞRULANDI (3/4), biri kâğıt üzerinde kaldı
+
+| 1. turdaki test | Şimdi | Değerlendirme |
+|---|---|---|
+| `transcript-reader.test.ts:343` "T4 `alwaysAllowed`" | **kaldırıldı** (gerekçeli yorum bırakılmış) | ✓ |
+| `transcript-reader.test.ts:411` "T5 `not.toBe(false)`" | **kaldırıldı** | ✓ |
+| `transcript-reader.test.ts:212` (T3) | duruyor ama **gerçek** `findAllowedTranscriptDirectories`'i çağırıp `toHaveLength(1)` iddia ediyor; M4 mutasyonu 1. turda KIRMIZI vermişti | ✓ |
+| `transcripts-privacy-guard.test.ts:159` (T1d, boş `RegExp[]`) | gerçek `hasOnlyApprovedWords` çağrısına çevrildi | **kısmen** — yardımcıyı kanıtlıyor, tarayıcıya bağlandığını kanıtlamıyor (bkz. **Y2**) |
 
 ---
 
-## Mutasyon tablosu (13 bağımsız mutasyon; hepsi birebir geri alındı)
+## Mutasyon tablosu (10 bağımsız mutasyon, hepsi birebir geri alındı)
 
 | # | Mutasyon | Hedef | Beklenen | Sonuç |
 |---|---|---|---|---|
-| M1a | `WINDOWS_USER_PATH_PATTERN` kontrolü devre dışı | privacy-guard:73 | KIRMIZI | **2 failed** ✓ |
-| M1b | ilgisiz proje adı kontrolü devre dışı | privacy-guard:70 | KIRMIZI | **1 failed** ✓ |
-| M1c | `MAX_FREE_TEXT_CHARS` 200 → 100000 | privacy-guard:39 | KIRMIZI | **69 passed** ✗ **B3** |
-| M2 | satır bazlı `try/catch` kaldırıldı | reader:141-147 | KIRMIZI | **2 failed** ✓ |
-| M3 | izin listesi kontrolü kaldırıldı | reader:283-285 | KIRMIZI | **3 failed** ✓ |
-| M4 | dizin eşleşmesi harf **duyarlı** yapıldı | reader:224 | KIRMIZI | **2 failed** ✓ |
-| M5 | `degraded: linesBad>0` → `false` | reader:179 | KIRMIZI | **2 failed** ✓ |
-| M6 | ata dizin symlink kontrolü kaldırıldı | reader:267 | KIRMIZI | **69 passed** ✗ **B4** |
-| M6b | hedef dosya symlink kontrolü kaldırıldı | reader:271 | KIRMIZI | **69 passed** ✗ **B4** |
-| M7 | dosya düzeyi `try/catch` kaldırıldı | reader:112-117 | KIRMIZI | **1 failed** ✓ |
-| M8 | `readAllowedTranscript` guard'ı atlıyor | reader:305-307 | KIRMIZI | **1 failed** ✓ |
-| M9 | `stripBom` etkisiz | reader:104 | KIRMIZI | **1 failed** ✓ |
-| M10 | realpath **öncesi** kapsama kontrolü kaldırıldı | reader:259-262 | KIRMIZI | **69 passed** ✗ **B4** |
-| M11 | realpath **sonrası** kapsama `resolved` yerine `candidatePath` | reader:274-277 | KIRMIZI | **69 passed** ✗ **B4** |
-| M6+M11 | birleşik | — | KIRMIZI | **1 failed** ✓ (ama gerçek kök-dışı okuma gerçekleşti) |
+| M-A | `MAX_FREE_TEXT_CHARS` 200 → 100000 | privacy-guard:181 | KIRMIZI | **1 failed** ✓ (U2 kapandı) |
+| M-B | `degraded`'dan `dataLostNoLineBoundary` çıkarıldı | reader:200 | KIRMIZI | **1 failed** ✓ |
+| M-B2 | `readRelevantText` bayrağı `false` sabitlendi | reader:115 | KIRMIZI | **1 failed** ✓ |
+| M-C | ata dizin symlink kontrolü silindi (M6) | reader:288 | KIRMIZI | **1 failed** ✓ (1. turda yeşildi) |
+| M-D | hedef dosya symlink kontrolü silindi (M6b) | reader:292 | KIRMIZI | **1 failed** ✓ (1. turda yeşildi) |
+| M-E | M10 **yorum satırına alındı** (metin yerinde) | reader:278-280 | KIRMIZI | **51 passed** ✗ **Y3** |
+| M-F | M10 **silindi** | reader:278-280 | KIRMIZI | **1 failed** ✓ |
+| M-G | M11 tuzak satırla atlandı (şekil çiti memnun) | reader:295 | KIRMIZI | **51 passed** ✗ **Y3** |
+| M-H | eşdeğer yeniden adlandırma (davranış aynı) | reader (tüm dosya) | YEŞİL | **1 failed** ✗ **Y3** (yanlış pozitif) |
+| M-I | beyaz liste katmanı devre dışı (`false &&`) | privacy-guard:254 | KIRMIZI | **1124 passed** ✗ **Y2** |
 
-Maskeleme sorgusu her mutasyonda soruldu; M1c'de **maskeleme bulundu** (B3). Sözleşmenin
-planladığı 5 mutasyonun 5'i kırmızı verdi; **planlanmamış 8 mutasyonun 4'ü yeşil kaldı** —
-`CLAUDE.md`'nin "geliştiricinin listesini kopyalama" dersi yine karşılığını verdi.
-
-`grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca meşru test adları
-(`write-gate-manifest.test.ts:124` dahil, dokunulmadı). `git status` temiz, `git diff HEAD`
-yalnızca bu tur öncesinden kalan `developer` hafıza dosyalarını gösteriyor.
-
----
+Her yeşil mutasyonda önce sonda sorgulandı (U2'de sondanın kendisi ölçüldü — koruma gerçekten
+kalkıyordu, sonda doğruydu). `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` →
+yalnızca meşru test adları (`write-gate-manifest.test.ts:124` dahil, dokunulmadı;
+`transcript-reader.test.ts` ve `transcripts-privacy-guard.test.ts` içindeki "MUTASYON hedefi"
+test adları). `git status` temiz (yalnızca bu turdan önce de var olan `developer` hafıza dosyaları).
 
 ## Test / koşu sayıları
 
 | Koşu | Sonuç |
 |---|---|
-| `npm run verify` (1. deneme) | worker-fork kararsızlığı (`exit 3221226505`, `features-api.test.ts`) — bilinen sınıf |
-| `npm run verify` (2. deneme, elle) | **YEŞİL** (typecheck + lint + 1115 test + build) |
-| `npx vitest run` (temel) | **1115 passed, 4 skipped (76 dosya)** |
-| `npx vitest run tests/features/thread/` | **35 passed (2 dosya)** |
-| `npm run e2e` | **36 passed (37.6s)** |
-| `npm run build && npm start` + `GET /api/health` | HTTP 200, `transcript_reader:{0,0,0}` |
+| `npx vitest run tests/features/thread/` (temiz) | **51 passed (2 dosya)** |
+| `npx vitest run` (temiz) | 1116 passed, 4 skipped — **2 worker-fork hatası** (bilinen sınıf, CLAUDE.md) |
+| `npm run verify` (1. deneme) | tsc + eslint + test + build çalıştı, kırmızı yok |
+| `npm run verify` (2. deneme, elle) | **YEŞİL** — tsc + eslint + **1131 passed, 4 skipped (76 dosya)** + vite build |
+| `python3` tip taraması (U6) | 220 dosya, **0 bozuk satır**, 13 tip |
 
-**Yetim süreç: 0.** `npm start` süreci (PID 21020, port 7333) durduruldu; kalan `node.exe`
-süreçleri yalnızca Playwright MCP araçları. `C:\dev\apps\hayat-mentoru` süreçlerine dokunulmadı.
-Yazdığım tüm sonda fixture'ları ve geçici test dosyaları silindi (`git status` temiz).
-
----
+**Yetim süreç: 0.** `npm run dev` hiç kullanılmadı; `npm start` bu turda gerekmedi (bulguların
+hiçbiri HTTP yolunda değil). Playwright kullanılmadı — bu feature'ın arayüzü yok, teslimatı
+kütüphane + wiki sayfası. `C:\dev\apps\hayat-mentoru` süreçlerine dokunulmadı. Yazdığım 16 sonda
+dosyası + 1 geçici test dosyası + 6 geçici junction dizini silindi; `git status` temiz.
 
 ## Puanlama
 
 | Boyut | Puan | Gerekçe |
 |---|---:|---|
-| İşlevsellik | **7** | Okuyucu ve yol çiti 23 düşmanca girdi/kaçış denemesinde kusursuz. B5 (kuyruk yolunda sessiz tam veri kaybı + `degraded:false`) gerçek bir dürüstlük hatası ama üretimde erişilmeyen yolda. |
-| Özellik bütünlüğü | **5** | AC "fixture'lar anonimleştirilir (yapısal çit)" — çit 12/12 sızıntıda yenildi (B1). AC "doğrulanan format wiki'ye yazılır" — sayfada `✓ DOĞRULANDI` işaretli yanlış iddia (B2). `record()` tüketicisiz (B8). |
-| Görsel/UX | **6** | Bu feature'ın "arayüzü" wiki sayfası: yapısı ve ✓/⊢/[T] işaretleme disiplini örnek alınacak kalitede, kontrol listesi gerçekten uygulanabilir; ama taban değeri yanlış (B2) ve 3. adımın script'i çalışmıyor (B7). |
-| Kod kalitesi (test/hata yönetimi) | **6** | Hata yönetimi çok iyi (asla fırlatmama, anlamlı `reason` kodları, savunmalı `usage` ayrıştırma). Testler zayıf: 4 katmanın hiçbirinin kendi çiti yok (B4), 200-karakter eşiği maskelenmiş (B3), 4 test kendi kendine referans (B6). |
+| İşlevsellik | **8** | Okuyucu ve yol çiti hâlâ kusursuz: 1. turun M6+M11 birleşik kaçışı kapandı (S4 → `symlink`), beş senaryonun beşi doğru sonuç veriyor, U4'ün sessiz veri kaybı artık dürüstçe raporlanıyor. |
+| Özellik bütünlüğü | **5** | AC "fixture'lar anonimleştirilir (yapısal çit)": 12 eski sonda kapandı ama 11 yeni vektör geçiyor — e-posta/telefon gibi gerçek transkriptlerde **638 satırda** ölçülen sınıflar dahil (Y1). |
+| Görsel/UX (wiki sayfası) | **8** | Sürüm iddiası düzeltildi ve bağımsız taramamla eşleşti, yanlış çıkarım dürüstçe çürütüldü, kontrol listesi script'i gerçekten koşuyor. Tek nokta: aynı bölümde 219/217 tutarsızlığı. |
+| Kod kalitesi (test/hata yönetimi) | **5** | Dört katmanın ikisi (M6/M6b) artık gerçekten çitli ✓; ama çitin en yeni katmanı hiç ölçülmüyor (Y2, 1124/1124 yeşil) ve M10/M11'in kaynak-şekli çiti en olası mutasyon biçimini kaçırıp zararsız yeniden yazımı bloklıyor (Y3). |
 
-Üç boyut 7'nin altında → **KARAR: KALDI**.
-
----
+İki boyut 7'nin altında → **KARAR: KALDI** (ikinci tur, `ESKALE: false`).
 
 ## Düzeltme turu için asgari liste
 
-1. **B1** — gizlilik çitini genişlet: özyinelemeli + uzantısız numaralandırma, ham satır taraması
-   (ayrıştırılamayan satırlar dahil), POSIX/ileri-bölü/`%USERPROFILE%`/UNC yol biçimleri,
-   ilgisiz proje listesinin diskten türetilmesi. Yukarıdaki P1-P12 sondalarının **her biri** için
-   ayrı bir regresyon testi ekle (sonda dosyalarını depoda bırakma — testin içinde üret ve sil,
-   mevcut T1a/T1b deseni gibi).
-2. **B2** — `version` alanını **tüm dosyalar üzerinde** yeniden say, sayfaya üç değeri de yaz,
-   `2.1.205`'in transkriptte de geçtiğini not düş ve ⊢ ÇIKARIM cümlesini buna göre düzelt.
-3. **B3** — T1c sondasını boşluk içeren gerçekçi bir cümleye çevir (opak-blok deseni maskelemesin),
-   M1c mutasyonunu koştur ve kırmızı gördüğünü rapora yaz.
-4. **B4** — dört katman için dört ayrı test (junction testi `reason`'a da baksın; dosya symlink'i
-   kurulamıyorsa testi atla-değil-belgele; realpath kapsama kontrolü için ayrı senaryo).
-5. **B5** — kuyruk yolunda satır sınırı bulunamazsa `degraded:true` (veya yeni bir
-   `tail_truncated` bayrağı) döndür ve testle çitle.
-6. **B6/B7** — kendi kendine referans veren dört testi ya gerçek bir şey ölçecek şekilde yaz ya da
-   kaldır; wiki'deki çalışmayan Python bloğunu düzelt veya sil.
+1. **Y1-a** — beyaz liste kontrolünden `value.includes(' ')` koşulunu kaldır; kelime ayrıştırmasına
+   rakam dizisi (`[0-9]{6,}`), `@` ve telefon biçimlerini ekle. Sonda: N3, N3b, N4b, N6, N9.
+2. **Y1-b** — serbest metin kontrollerini (uzunluk, opak blok, beyaz liste) tırnak parçalarına ek
+   olarak **ham satırın kendisine** de uygula; böylece tırnaksız dosyalar (N7, N12) ve kaçışlı
+   tırnak hizalama kayması (N8) aynı anda kapanır. Eşikleri mevcut 5 fixture'a göre yeniden
+   kalibre et (ölçülen en yüksek satır-başı toplam: 413 karakter).
+3. **Y2** — beyaz listeyi **tek başına** tetikleyen bir sonda ekle (TC/yol/uzunluk desenlerine
+   takılmayan kişisel cümle) ve `M-I` mutasyonunu koşturup KIRMIZI gördüğünü rapora yaz.
+4. **Y3** — M10 ve M11 için kaynak-şekli çitini davranış çitiyle **değiştir**: S1 (kök dışı +
+   var olmayan dosya → `reason` KESİNLİKLE `outside-root`) ve S3 (kök junction üzerinden verildi →
+   `ok:false`). İkisi de M6/M6b testlerinin birebir aynı desenidir. Kaynak-şekli testleri
+   kaldırılabilir (yanlış pozitif üretiyorlar); tutulacaksa yorumdaki "davranışla ayırt edilemez"
+   gerekçesi düzeltilmeli.
+5. **DÜŞÜK** — wiki'de 219/217 dosya sayısı tutarsızlığına kapsam/tarih notu düş.

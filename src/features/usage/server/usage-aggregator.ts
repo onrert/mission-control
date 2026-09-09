@@ -44,6 +44,12 @@ const UNKNOWN_AGENT_LABEL = 'bilinmiyor'
  * seçildi: 2026-09-09 taramasında (22.663 `assistant` satırı) bozuk satır HİÇ gözlenmedi — eşik
  * yalnızca gerçek bir bozulmada tetiklenecek şekilde gevşek bırakıldı (yorum kararı, F-011
  * sözleşmesi §1 madde 8).
+ *
+ * F-011 QA düzeltme turu (Z4/Ö1, BLOKLAYICI değil ama önemli) — bu eşik artık "ayrıştırılabilen"
+ * (`lines_ok`) değil **"TANINAN"** (`lines_ok - unknown_type_lines`) oranına uygulanır. QA'nın
+ * ölçtüğü senaryo: transkript formatı değişip TÜM satırlar `unknown_type_lines`'a düşse bile
+ * (`lines_bad` sıfır kalır — satırlar hâlâ geçerli JSON) eski hesap `degraded:false` diyordu ve
+ * ekran sessizce "Toplam: 0 token" gösteriyordu (ADR-007'nin tam olarak önlemeye çalıştığı risk).
  */
 const RECOGNIZED_RATIO_WARNING_THRESHOLD = 0.99
 
@@ -98,8 +104,14 @@ interface FileUsageRecord {
   usage: TokenUsageTotals
   lines_ok: number
   lines_bad: number
+  unknown_type_lines: number
+  truncated: boolean
 }
 
+/** F-011 QA düzeltme turu (Z4) — bir dosyanın işlenme sonucu: ya bir kayıt üretti, ya da
+ *  GERÇEKTEN okunamadı (Ö2 — `file_read_failed:true`, guard'dan geçtikten SONRA). Guard reddi
+ *  (`access.ok===false`) VE stat yarış durumu (Y8'in kendi kabul ettiği TOCTOU) bu sayaca dahil
+ *  DEĞİL — ikisi de "gerçek bir okuma hatası" değil, best-effort atlama olarak kalır. */
 function appendRecordIfReadable(
   records: FileUsageRecord[],
   claudeProjectsRoot: string,
@@ -107,20 +119,21 @@ function appendRecordIfReadable(
   filePath: string,
   sessionId: string,
   agent: string
-): void {
+): { unreadable: boolean } {
   let mtimeMs: number
   try {
     mtimeMs = fs.statSync(filePath).mtimeMs
   } catch {
-    return // listelendi ama stat başarısız (yarış durumu) — best-effort atla
+    return { unreadable: false } // listelendi ama stat başarısız (yarış durumu) — best-effort atla
   }
   let access: ReturnType<typeof readAllowedTranscript>
   try {
     access = readAllowedTranscript(claudeProjectsRoot, [projectPath], filePath)
   } catch {
-    return
+    return { unreadable: false }
   }
-  if (!access.ok || access.result.file_read_failed) return
+  if (!access.ok) return { unreadable: false }
+  if (access.result.file_read_failed) return { unreadable: true } // Ö2 — gerçek okuma hatası
   records.push({
     day: dayFromMtime(mtimeMs),
     sessionId,
@@ -128,27 +141,39 @@ function appendRecordIfReadable(
     usage: access.result.usage,
     lines_ok: access.result.lines_ok,
     lines_bad: access.result.lines_bad,
+    unknown_type_lines: access.result.unknown_type_lines,
+    truncated: access.result.truncated,
   })
+  return { unreadable: false }
+}
+
+interface CollectFileRecordsResult {
+  records: FileUsageRecord[]
+  unreadableFileCount: number
 }
 
 /** Tek bir izlenen projenin TÜM (ana oturum + subagent) dosyalarını best-effort tarar. */
-function collectFileRecords(claudeProjectsRoot: string, projectPath: string): FileUsageRecord[] {
+function collectFileRecords(
+  claudeProjectsRoot: string,
+  projectPath: string
+): CollectFileRecordsResult {
   const records: FileUsageRecord[] = []
+  let unreadableFileCount = 0
 
   let dirs: string[]
   try {
     dirs = findAllowedTranscriptDirectories(claudeProjectsRoot, [projectPath])
   } catch {
-    return records
+    return { records, unreadableFileCount }
   }
-  if (dirs.length === 0) return records
+  if (dirs.length === 0) return { records, unreadableFileCount }
   const dir = dirs[0]!
 
   let entries: fs.Dirent[]
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true })
   } catch {
-    return records
+    return { records, unreadableFileCount }
   }
 
   // Ana oturum dosyaları: doğrudan proje dizininde `<session-uuid>.jsonl`.
@@ -156,7 +181,7 @@ function collectFileRecords(claudeProjectsRoot: string, projectPath: string): Fi
     if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue
     const full = path.join(dir, entry.name)
     const sessionId = entry.name.slice(0, -'.jsonl'.length)
-    appendRecordIfReadable(
+    const outcome = appendRecordIfReadable(
       records,
       claudeProjectsRoot,
       projectPath,
@@ -164,6 +189,7 @@ function collectFileRecords(claudeProjectsRoot: string, projectPath: string): Fi
       sessionId,
       MAIN_SESSION_AGENT_LABEL
     )
+    if (outcome.unreadable) unreadableFileCount += 1
   }
 
   // Subagent dosyaları: `<session-uuid>/subagents/agent-<id>.jsonl` + kardeş `.meta.json`.
@@ -182,11 +208,19 @@ function collectFileRecords(claudeProjectsRoot: string, projectPath: string): Fi
       if (!subEntry.isFile() || !subEntry.name.endsWith('.jsonl')) continue
       const full = path.join(subagentsDir, subEntry.name)
       const agent = readMetaAgentType(full)
-      appendRecordIfReadable(records, claudeProjectsRoot, projectPath, full, entry.name, agent)
+      const outcome = appendRecordIfReadable(
+        records,
+        claudeProjectsRoot,
+        projectPath,
+        full,
+        entry.name,
+        agent
+      )
+      if (outcome.unreadable) unreadableFileCount += 1
     }
   }
 
-  return records
+  return { records, unreadableFileCount }
 }
 
 /** Kök dizinin en azından listelenip yeniden okunabildiğini tek seferde doğrular. Y8 — "bulunamadı"
@@ -212,10 +246,17 @@ export function computeUsageReport(
   let grandUsage = emptyUsage()
   let linesOk = 0
   let linesBad = 0
+  let unknownTypeLines = 0
+  let unreadableFileCount = 0
+  let truncatedFileCount = 0
 
   if (!sourceUnreadable) {
     for (const project of projects) {
-      const records = collectFileRecords(claudeProjectsRoot, project.path)
+      const { records, unreadableFileCount: projectUnreadableCount } = collectFileRecords(
+        claudeProjectsRoot,
+        project.path
+      )
+      unreadableFileCount += projectUnreadableCount
       if (records.length === 0) continue
 
       let projectUsage = emptyUsage()
@@ -225,6 +266,8 @@ export function computeUsageReport(
       for (const rec of records) {
         linesOk += rec.lines_ok
         linesBad += rec.lines_bad
+        unknownTypeLines += rec.unknown_type_lines
+        if (rec.truncated) truncatedFileCount += 1
         projectUsage = addUsage(projectUsage, rec.usage)
         grandUsage = addUsage(grandUsage, rec.usage)
 
@@ -270,15 +313,28 @@ export function computeUsageReport(
     }
   }
 
-  const totalRecognizable = linesOk + linesBad
-  const degraded =
-    totalRecognizable > 0 && linesOk / totalRecognizable < RECOGNIZED_RATIO_WARNING_THRESHOLD
+  // F-011 QA düzeltme turu (Z4/Ö1) — "ayrıştırılabilen" değil "TANINAN" oran: bozuk JSON
+  // (`linesBad`) VE geçerli JSON ama tanınmayan `type` (`unknownTypeLines`) İKİSİ de "tanınmadı"
+  // sayılır. Format tamamen değişip TÜM satırlar tanınmaz hâle gelirse (`linesBad=0`,
+  // `unknownTypeLines=totalLines`) oran 0 olur → `degraded:true` (eskiden sessizce `false` kalıyordu).
+  const totalLines = linesOk + linesBad
+  const unrecognizedLines = linesBad + unknownTypeLines
+  const recognitionDegraded =
+    totalLines > 0 &&
+    (totalLines - unrecognizedLines) / totalLines < RECOGNIZED_RATIO_WARNING_THRESHOLD
+  // Z4/Ö2 (okunamayan dosya) VE Z4/Ö3 (32 MB kuyruk kırpması) de birer sessiz veri kaybı
+  // sınıfıdır — ikisi de tek başına `degraded:true`'yu tetikler (sessiz kısmi başarı yok,
+  // `CLAUDE.md`'nin en pahalı hata sınıfı).
+  const degraded = recognitionDegraded || unreadableFileCount > 0 || truncatedFileCount > 0
 
   return {
     projects: projectTotals,
     usage: grandUsage,
     lines_ok: linesOk,
     lines_bad: linesBad,
+    unknown_type_lines: unknownTypeLines,
+    unreadable_file_count: unreadableFileCount,
+    truncated_file_count: truncatedFileCount,
     degraded,
     source_unreadable: sourceUnreadable,
   }

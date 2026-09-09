@@ -252,7 +252,20 @@ export interface UsageReport {
   usage: TokenUsageTotals
   lines_ok: number
   lines_bad: number
-  /** ADR-007 azaltımı — tanınan satır oranı eşiğin altına düşerse `true` (F-011 §1 madde 8). */
+  /** F-011 QA düzeltme turu (Z4/Ö1) — geçerli JSON ama tanınmayan `type` taşıyan satır sayısı
+   *  (`lines_ok`'a dahildir, ayrı bir alt küme). `degraded` artık bunu da hesaba katar — bir
+   *  transkript formatı değişimi TÜM satırları tanınmaz yapabilir, `lines_bad` sıfır kalsa bile. */
+  unknown_type_lines: number
+  /** F-011 QA düzeltme turu (Z4/Ö2) — guard'dan geçtikten SONRA gerçekten okunamayan (EPERM/…)
+   *  dosya sayısı. `>0` iken bu dosyaların token verisi toplama dahil DEĞİLDİR (sessiz kısmi
+   *  başarı yok — `degraded:true` VE istemcide görünür uyarı). */
+  unreadable_file_count: number
+  /** F-011 QA düzeltme turu (Z4/Ö3) — 64 MB eşiğini aşıp yalnızca son 32 MB'ı okunan dosya sayısı
+   *  (satır sınırı bulunmuş olsa bile, dosyanın BAŞI sessizce kaybolmuştur). `>0` iken
+   *  `degraded:true` VE istemcide görünür uyarı. */
+  truncated_file_count: number
+  /** ADR-007 azaltımı — tanınan satır oranı eşiğin altına düşerse VEYA `unreadable_file_count`/
+   *  `truncated_file_count` sıfırdan büyükse `true` (F-011 §1 madde 8, QA düzeltme turu Z4). */
   degraded: boolean
   /** PRD F6/AC2 — `claudeProjectsRoot`'un kendisi bulunamadı VEYA listelenemedi (EPERM vb.).
    *  `true` iken `projects` her zaman boştur; istemci "Token verisi okunamadı…" gösterir. */

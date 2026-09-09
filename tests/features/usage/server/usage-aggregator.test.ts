@@ -392,6 +392,78 @@ describe('computeUsageReport — AC7/B6: 64 MB+ dosyada 32 MB kuyruk okuma davra
     // Zehir (999999) sayılsaydı toplam 1.000.004 olurdu — kuyruk kırpması gerçekten devralındı.
     expect(report.usage.input_tokens).toBe(5)
     expect(report.usage.output_tokens).toBe(2)
+    // F-011 QA düzeltme turu (Z4/Ö3) — kırpma SESSİZ değil: `truncated_file_count` > 0 ve
+    // `degraded:true` (eskiden satır sınırı bulunduğu için ikisi de sessizce `false`/`0` kalıyordu,
+    // QA gerçek 70 MB'lık bir dosyada verinin %54,4'ünün sessizce düştüğünü ölçtü).
+    expect(report.truncated_file_count).toBe(1)
+    expect(report.degraded).toBe(true)
+  })
+})
+
+describe('computeUsageReport — Z4/Ö1: format değişimi (tüm satırlar tanınmaz) sessizce 0 gösterMEZ', () => {
+  it('tüm satırlar tanınmayan bir type taşırsa (ör. format yeniden adlandırılmış) lines_bad=0 olsa bile degraded:true olur, unknown_type_lines dolu döner', () => {
+    const claudeRoot = tempDir()
+    const project = tempDir()
+    const encoded = encodeProjectDirName(project)
+    const projDir = path.join(claudeRoot, encoded)
+    // "assistant" → "assistant_message" (gerçek bir format yeniden adlandırma senaryosunun
+    // simülasyonu, QA'nın canlı sandbox'ta bizzat ürettiği senaryo).
+    const lines = Array.from({ length: 8 }, () =>
+      JSON.stringify({ type: 'assistant_message', message: { usage: { input_tokens: 1 } } })
+    ).join('\n')
+    writeWithMtime(path.join(projDir, 'sess-1.jsonl'), `${lines}\n`, '2026-09-04T00:00:00Z')
+
+    const report = computeUsageReport(claudeRoot, [{ id: 'p1', label: 'p', path: project }])
+    expect(report.lines_ok).toBe(8)
+    expect(report.lines_bad).toBe(0)
+    expect(report.unknown_type_lines).toBe(8)
+    expect(report.degraded).toBe(true)
+    expect(report.usage).toEqual({
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+    })
+  })
+})
+
+describe('computeUsageReport — Z4/Ö2: guard sonrası GERÇEKTEN okunamayan dosya sessizce düşmez', () => {
+  it("bir dosyanın fs.readFileSync'i FIRLARSA (ör. EPERM, guard geçtikten sonra) unreadable_file_count artar, degraded:true olur, yalnızca o dosya toplamdan düşer", () => {
+    const claudeRoot = tempDir()
+    const project = tempDir()
+    const encoded = encodeProjectDirName(project)
+    const projDir = path.join(claudeRoot, encoded)
+    const badFile = path.join(projDir, 'sess-bad.jsonl')
+    const goodFile = path.join(projDir, 'sess-good.jsonl')
+    writeWithMtime(
+      badFile,
+      `${assistantLine({ input_tokens: 111, output_tokens: 111 })}\n`,
+      '2026-09-04T00:00:00Z'
+    )
+    writeWithMtime(
+      goodFile,
+      `${assistantLine({ input_tokens: 1, output_tokens: 1 })}\n`,
+      '2026-09-04T00:00:00Z'
+    )
+
+    const originalReadFileSync = fs.readFileSync.bind(fs)
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((
+      p: Parameters<typeof fs.readFileSync>[0],
+      opts?: Parameters<typeof fs.readFileSync>[1]
+    ) => {
+      if (p === badFile) {
+        const err = new Error('EPERM: yapay') as NodeJS.ErrnoException
+        err.code = 'EPERM'
+        throw err
+      }
+      return (originalReadFileSync as (...args: unknown[]) => unknown)(p, opts)
+    }) as typeof fs.readFileSync)
+
+    const report = computeUsageReport(claudeRoot, [{ id: 'p1', label: 'p', path: project }])
+    expect(report.unreadable_file_count).toBe(1)
+    expect(report.degraded).toBe(true)
+    // yalnızca `goodFile` sayılır — `badFile` toplamdan sessizce düşmez, sayaca yansır.
+    expect(report.usage.input_tokens).toBe(1)
   })
 })
 

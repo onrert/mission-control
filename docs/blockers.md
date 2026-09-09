@@ -587,3 +587,31 @@ koruma sessizce ölür.
 
 **Kapatma:** ~6+6 satır, tek turda. **Eşik:** F-011'e ya da `tests/features/usage/**`'a dokunan
 bir sonraki iş; ya da Faz 3 başlamadan önce (CEO önerisi: hemen, çünkü sınıf kanıtlanmış).
+
+## 2026-09-10 — Test kapısı: sessiz atlama maddesi KAPANDI, iki sertleştirme borcu açıldı
+
+**Kapanan:** *"test takımı sessizce test atlıyor"* (2026-09-10, yüksek öncelik) — **QA GEÇTİ**.
+Kapı artık vitest'in çıkış koduna güvenmiyor; **diskteki test dosyalarını numaralandırıp**
+koşulanlarla karşılaştırıyor (emsal: `build-css.test.ts`, `e2e-config-guard`). 1. turun iki
+kaçış komutu (16 test ve %52 kayıp, ikisi de eskiden EXIT=0) artık **KIRMIZI**.
+Bağlantı katmanı da çitli: `package.json`'ın betiğini bozmak **KIRMIZI** veriyor.
+**Canlı kanıt:** QA turunda gerçek bir `3221226505` çökmesi oldu ve kapı **üç sinyaliyle** yakaladı.
+⚠ **Kök neden hâlâ tekrar üretilemedi** (çökme + sessiz exit 0). 18 ham koşuda her çökme doğru
+şekilde exit 1 verdi. Kapı çıkış koduna hiç güvenmediği için kalan risk teorik.
+
+### Yeni borç Ö5 — bayrak muafiyeti çok geniş ve SESSİZ (DÜŞÜK)
+`FLAGS_WITH_VALUE` yalnızca dört bayrak tanıyor; `-t`/`--dir`/`--shard`/`--pool`/`--retry`/
+`--outputFile` **muafiyet alıyor ve muafiyette hiçbir şey basılmıyor**.
+QA ölçtü: `--maxWorkers 4 --exclude "tests/features/**" --exclude "tests/integration/**"`
+→ **673/1358 test, EXIT=0, sessiz** (aynı komut `--maxWorkers` olmadan KIRMIZI).
+**Neden bloklayıcı değil:** varsayılan yol ve `verify`/CI yolu kapalı; bayrak sızdırma B2 çitine
+takılıyor; delik **elle iki bayrak yazmayı** gerektiriyor.
+**Kapatma:** bilinmeyen bayrakta muafiyet verme (fail-closed) **ve** muafiyet verildiğinde
+görünür bir uyarı bas — sessiz muafiyet, sessiz kayıptır.
+
+### Yeni borç Ö6 — env kill-switch'leri sessiz (DÜŞÜK)
+`MC_TEST_RUN_CMD` / `MC_EXPECTED_TEST_FILE_COUNT` kapıyı sessizce devre dışı bırakabiliyor.
+**Kapatma:** kullanıldıklarında görünür uyarı.
+
+**Ortak eşik:** `scripts/verify-test-run.mjs`'e dokunan bir sonraki iş; ya da CI'da bayraklı
+koşu ihtiyacı doğarsa **hemen**.

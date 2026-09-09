@@ -56,3 +56,28 @@ madde 19.
 **Why:** Kapsam daraltarak geçirmek kadar, imkânsız bir bütünlük standardı dayatıp sonsuz tur
 açmak da hatadır; ADR'nin yazılı kabul sınırı + ölçülmüş ikinci savunma hattı bu iki hatanın
 arasındaki tek savunulabilir çizgidir.
+
+6. **Kaynak-şekli (statik metin) çitini iki mutasyon BİÇİMİYLE birden sına: SİLME ve YORUMA ALMA.**
+   F-009 tur 2'de M10 için konulan `expect(source).toMatch(/relFromRootRaw.startsWith/)` çiti,
+   satırlar silinince KIRMIZI verdi ama aynı satırlar yorum işaretine alınınca (metin dosyada
+   duruyor, koruma tamamen yok) 51/51 YEŞİL kaldı. Üçüncü biçim daha da ucuz: regex'i memnun eden
+   bir TUZAK satır bırakıp gerçek kontrolü değiştirmek (M11) — yine yeşil, ve ölçülen davranış
+   değişti. Dördüncüsü ters yönde: zararsız bir yeniden adlandırma çiti KIRMIZI yapıyor
+   (yanlış pozitif). Kural: metin tabanlı her çitte dört ölçümü de koştur (sil / yoruma al /
+   tuzak satır / eşdeğer yeniden yazım) ve tabloyu rapora koy.
+7. **"Davranışla ayırt edilemez, o yüzden statik çit koydum" gerekçesini ÇÜRÜTMEYE çalış — genelde
+   çürür.** F-009'da iki kapsama kontrolü için iddia edilmişti; iki senaryo bir dakikada ayırt etti:
+   (a) kökün DIŞINDA ve VAR OLMAYAN aday → temiz kod 'outside-root', mutant 'not-found' (ön kontrol
+   kalkınca akış dosya-varlığı kontrolüne düşüyor); (b) kökün kendisi bir bağlantı/junction
+   üzerinden veriliyor → temiz kod 'outside-root', mutant ok:true. Yöntem: redde GEREKÇE kodu
+   (reason) döndüren bir guard'da kesin-reason testleri zaten varsa aynı tekniği KALAN katmanlara
+   uygula; her yol guard'ında "var olmayan yol" ve "kökün kendisi bağlantı üzerinden" varyantlarını
+   dene.
+8. **Metin tarayan gizlilik/sızıntı çitlerinde taramanın KAPSAMINI kelime kelime oku.** F-009 çiti
+   yalnızca (i) çift tırnak arasındaki parçaları tarıyor ve (ii) beyaz liste kontrolünü yalnızca
+   BOŞLUK İÇEREN dizgelere uyguluyordu. Sonuç üç serbest kanal: tırnaksız dosyalar (md/txt/nokta
+   ile başlayanlar) tüm serbest-metin katmanından muaf; boşluksuz her dizge (e-posta, telefon,
+   alt çizgili ad, satır sonu kaçışıyla ayrılmış kelimeler, ROT13) muaf; kaçışlı tırnak tek/çift
+   parça hizalamasını kaydırıp içeriği görünmez yapıyor. Şiddeti GERÇEK veri kümesinde bu
+   biçimlerin sıklığını sayarak kalibre et (F-009: 638 satırda e-posta biçimi, 282 satırda tek
+   sayıda kaçışlı tırnak) — "teorik açık" ile "haftada bir gerçekleşecek açık" farkı budur.

@@ -1,301 +1,267 @@
-KARAR: KALDI
-ESKALE: true
+KARAR: GEÇTİ
+ESKALE: false
 
 ---
 feature: F-011
 title: Token kullanımı ekranı (proje / gün / oturum / agent grupları)
 reviewer: qa-evaluator
-date: 2026-09-10
-round: kapanış denetimi (tur 3 — dar kapsam, yalnızca AA1-AA4)
-verdict: KALDI
+date: 2026-09-09
+round: nihai kapanış kontrolü (tur 7 — yalnızca CC1/CC2)
+verdict: GEÇTİ
 ---
 
-# F-011 QA raporu — kapanış denetimi (tur 3)
+# F-011 QA raporu — tur 7 (nihai kapanış: CC1, CC2)
 
-**Puanlar:** İşlevsellik **8/10** · Özellik bütünlüğü **8/10** · Görsel/UX **8/10** ·
-Kod kalitesi **6/10** (ağ çiti kendi yazılı garantisini vermiyor) → biri < 7, karar **KALDI**.
+**Puanlar:** İşlevsellik **9/10** · Özellik bütünlüğü **9/10** · Görsel/UX **8/10** ·
+Kod kalitesi **7/10** → hepsi ≥ 7, karar **GEÇTİ**.
 
-**Tek cümlelik özet:** AA2, AA3 ve AA4 **üçü de gerçekten kapandı** (canlı ölçümle ve çift yönlü
-mutasyonla doğrulandı); **AA1 kapanmadı** — beyaz liste çiti, gizlenmemiş, sıradan bir TypeScript
-deseniyle (`export { get } from 'node:http'`) yenildi ve ürün kodunun gerçek
-`computeUsageReport`'undan **canlı bir HTTP isteği** çıkarken **tüm test paketi (1295/1299) yeşil
-kaldı**.
+**Tek cümlelik özet:** Tur 6'nın bloklayıcısı (CC1 — modül-yükleme-zamanlı yakalanmış
+`process.binding` referansı) gerçekten kapandı: **birebir aynı sondayı** tekrarladım, artık
+**KIRMIZI**; sıra bağımlılığını da kendim ölçtüm (precapture import'u ürün import'unun altına
+alınınca **aynı sızıntı 54/54 YEŞİL**'e dönüyor ve dinleyiciye 26 gerçek TCP + 22 HTTP isteği
+teslim ediliyor) — yani düzeltme kozmetik değil, taşıyıcı. CC2 (`restore()` ile sessiz öldürme)
+de kapandı: tur 6'da 54/54 yeşil kalan `calls.length = 0` mutasyonu artık KIRMIZI. Denediğim
+dört sessiz-öldürme yolunun dördü de KIRMIZI verdi. **Precapture modülü yerindeyken pratik canlı
+sızıntı bulamadım.**
 
-Ortam: Windows 11 · Node v24.15.0 · `npm run build && npx tsx src/server/index.ts`
-(`MC_PORT=4599` gerçek veri, `MC_PORT=4601` sandbox) · Chromium (Playwright MCP) ·
-`npm run dev` KULLANILMADI · `git push` yapılmadı · `git checkout` ile hiçbir mutasyon geri
-alınmadı (hepsi elle `.bak` kopyasından, md5 doğrulamalı).
+Ortam: Windows 11 · Node v24.15.0 · `npm run dev` **kullanılmadı** · `git push` yapılmadı ·
+`git checkout` **kullanılmadı** (her mutasyon scratchpad `bak/` kopyasından elle geri yazıldı,
+md5 doğrulandı) · `--no-file-parallelism` **kullanılmadı**.
 
 ---
 
 ## 0. Karar tablosu
 
-| # | İddia | Sonuç |
-|---|---|---|
-| AA1 | Ağ çiti beyaz listeye çevrildi; "onaylı listede olmayan HER içe aktarım REDDEDİLİR" | ✘ **YENİLDİ — PRATİK, CANLI sızıntı kanıtlandı** (X1) |
-| AA2 | Okunamayan dosya sayılıyor, arayüzde görünüyor | ✔ **DOĞRULANDI** (gerçek `icacls`, üç ACL şekli, iki yönlü mutasyon KIRMIZI) |
-| AA3 | Yanlış alarm gitti, gerçek sinyal duruyor | ✔ **DOĞRULANDI** (gerçek veride uyarı YOK, format değişiminde VAR, üç eşik mutasyonu KIRMIZI) |
-| AA4 | 320px'te proje sütunu okunur ve hizalı | ✔ **DOĞRULANDI** (280/320/375/480px'te 72px, hizasızlık 1px, iki mutasyon KIRMIZI) |
-| Testler | `verify` 1292/1296, `e2e` 55 | ✔ **DOĞRULANDI** (üçüncü koşuda birebir; ilk iki koşu ortam kararsızlığı) |
-
----
-
-## 1. BLOKLAYICI B1 (AA1) — beyaz liste `export … from` ile yenildi, sızıntı CANLI kanıtlandı
-
-### 1.1 2. turun 14 sondasının 14'ü artık KIRMIZI
-
-Beyaz listeye geçiş gerçek bir ilerleme: 2. turun çiti yenen iki vektörü dahil **hepsi** kapandı.
-
-| Sonda | 2. tur | 3. tur |
-|---|---|---|
-| P1 `fetch('http://…')` … P8 yakalanmış `http.request` | 8/8 KIRMIZI | **8/8 KIRMIZI** |
-| **N1** `createRequire(import.meta.url)('node:http')` | YEŞİL ✘ | **KIRMIZI** ✔ (iki katman: `node:module` + metinsel) |
-| **N2** `process.binding('tcp_wrap')` | YEŞİL ✘ | **KIRMIZI** ✔ |
-| N3 `Function('return imp'+'ort(…)')` · N4 `globalThis['fet'+'ch']` · N5 `eval` · N6 | KIRMIZI | **KIRMIZI** |
-
-Yeni denenen 7 vektörden 3'ü de kapalı: `import(\`node:h\`+\`ttp\`)` (**KIRMIZI**),
-`globalThis.process.binding` (**KIRMIZI**), unicode kaçışlı modül adı
-(`import qaU from '\u006eode:http'` → **KIRMIZI**, beyaz listenin varsayılan-RET davranışı
-sayesinde). Beyaz listeyi gevşeten mutasyon da tutuyor (§5, M1).
-
-### 1.2 X1 — `export … from` taramanın KÖR NOKTASI (bloklayıcı)
-
-Statik tarayıcı yalnızca `import … from '<spec>'` ve `import '<spec>'` desenlerini görüyor
-(`network-capability-guard.test.ts:96-103`). **`export … from '<spec>'` hiçbir desende yok** —
-oysa bu ifade de modülü yükler ve yeteneği aktarır.
-
-**Tekrar üretme (2 adım, gizleme/obfuscation YOK):**
-
-```ts
-// 1) src/features/usage/server/qa-x1-reexport.ts   (dosyada `import` kelimesi HİÇ geçmiyor)
-export { get as qaGet } from 'node:http'
-
-// 2) src/features/usage/server/usage-aggregator.ts (tepe + computeUsageReport'un ilk satırı)
-import { qaGet } from './qa-x1-reexport'
-qaGet({ host: '127.0.0.1', port: 45907, path: '/QA-X1-CANLI-SIZINTI', agent: false }, …)
-```
-
-| Ölçüm | Sonuç |
+| Brief'in sorusu | Sonuç |
 |---|---|
-| `npx vitest run tests/features/usage` | **53/53 YEŞİL** (statik çit + çalışma zamanı katmanı, ikisi de) |
-| `npx vitest run` (tam paket) | **1295 passed \| 4 skipped (1299)**, exit 0 |
-| Yerel dinleyiciye gelen istek (`tsx`, gerçek `computeUsageReport`) | **`GET /QA-X1-CANLI-SIZINTI` → 200** |
-| Tam test paketi koşarken dinleyiciye gelen istek sayısı | **30** (paket yine yeşil) |
-
-Yani sızıntı **teorik bir bit taşıma değil**: ürün kodunun gerçek giriş noktası çalıştığında
-gerçek bir TCP bağlantısı kuruldu, HTTP isteği gitti, 200 yanıtı alındı ve bunu **hiçbir test**
-görmedi. Kanıt (`tsx` çıktısı): `rapor uretildi degraded= false` + `SONDA yanit 200`;
-dinleyici günlüğü `2026-09-09T16:34:48.508Z GET /QA-X1-CANLI-SIZINTI`.
-
-**Neden bloklayıcı (ve neden "önemsiz" değil):**
-1. Çitin kendi yazılı garantisi yanlış: dosyanın tepesinde "onaylı listede olmayan HER içe
-   aktarım, 'yasaklı' olarak işaretlenmiş olsun ya da olmasın, **REDDEDİLİR**" yazıyor. Bu ifade
-   `export … from` için doğru değil. AC4 ("hiçbir ağ isteği atılmaz") için kurulan tek statik
-   yapı, kendi belgelediği güvenceyi vermiyor.
-2. Vektör **kasıt sınıfı değil, kaza sınıfı**: `export { x } from '<modül>'` bir barrel/yeniden
-   dışa aktarım dosyasının en sıradan yazımıdır; `process['bind'+'ing']` gibi bilinçli bir kaçış
-   değildir. Bir sonraki feature'da bu dosyalara bir yardımcı eklenirse çit sessizce delinir.
-3. **İkinci katman da yakalamıyor.** Çalışma zamanı katmanı (`usage-aggregator.test.ts:372`)
-   yalnızca **kendi rastgele portuna** gelen isteği görebiliyor; gerçek bir sızıntı başka bir
-   adrese gider. X1'i tam olarak bu yüzden 53/53 yeşilken canlı çalıştırabildim. "İki katman"
-   iddiası pratikte tek katmandır.
-
-**Muhtemel dosya:satır:** `tests/features/usage/server/network-capability-guard.test.ts:96`
-(`STATIC_IMPORT_RE` — `export … from` kapsanmıyor), `:100` (`BARE_SIDE_EFFECT_IMPORT_RE`),
-`:118-171` (`scanModuleGraph` — yeniden dışa aktarımlar ne ihlal sayılıyor ne de grafiğe
-ekleniyor).
-
-**Kapatmak için gereken minimum:** tarayıcı `export\s+(?:\*|\{[^}]*\})\s+from\s*'<spec>'` (ve
-`export * as X from …`) biçimlerini de aynı beyaz listeye tabi tutsun; yerel yeniden dışa
-aktarımlar grafiğe **eklensin**. Çit: X1 kalıcı negatif kontrol olarak test dosyasına girsin.
-
-### 1.3 Yenilen ama pratikliği SINIRLI iki vektör (bloklayıcı değil, not)
-
-Dürüst ayrım (2. turun N1'i gibi "canlı kanıtlı" değiller):
-
-| Sonda | Çit | Pratik yetenek | Not |
-|---|---|---|---|
-| Y3 `globalThis['proc'+'ess']['bind'+'ing']('tcp_wrap')` | YEŞİL ✘ | **VAR** — `{TCP, TCPConnectWrap, constants}` döndü (ham soket) | Metinsel desen bölünmüş erişimi görmüyor; ham soketle HTTP kurmak gerekir |
-| Y5 `globalThis['Fun'+'ction']('return imp'+'ort("node:http")')()` | YEŞİL ✘ (statik) | **VAR — canlı 200 alındı** (`tsx`, üretim çalışma zamanı) | Ama vitest (vite-node) altında `A dynamic import callback was not specified` ile **patlıyor** → test koşusu kırmızı olur. Yani üretimde çalışan, testte çalışmayan bir vektör |
-| Y6 `fs` üzerinden UNC/WebDAV (`\\127.0.0.1@port\DavWWWRoot\…`) | YEŞİL ✘ | **YOK (bu makinede)** — `UNKNOWN` hata, dinleyiciye istek gelmedi | İzinli `fs`'in teorik ağ yüzeyi; kanıtlanamadı, iddia edilmiyor |
-| Y7 `globalThis['req'+'uire'](…)` | YEŞİL | **YOK** — ESM'de `require` tanımsız | Çit tetiklenmedi çünkü **hiçbir şey olmadı**; "geçti" saymıyorum |
-
-Bu satırlar kararı **tek başına** değiştirmezdi. Kararı değiştiren X1'dir: gizlenmemiş, kazayla
-yazılabilir ve **canlı kanıtlı**.
+| CC1 — tur 6'nın yakalanmış-referans sondası precapture yerindeyken KIRMIZI mı? | ✔ **KIRMIZI** (§1.1) |
+| CC1 — sıra bağımlılığı gerçek mi (import sonraya alınınca yeşile dönüyor mu)? | ✔ **TEYİT** — 54/54 yeşil + 26 canlı bağlantı (§1.2) |
+| CC1 — precapture'dan ÖNCE yakalama gerektiren varyant var mı? | ⚠ **Ürün yüzeyinde YOK** — yalnızca vitest `setupFiles`/çalıştırıcı katmanında düşünülebilir; **kabul edilmiş sınır** (§4) |
+| CC2 — `restore()` içinde `calls.length = 0` artık KIRMIZI mı? | ✔ **KIRMIZI** (§2.1) |
+| CC2 — başka sessiz öldürme yolu (anlık görüntüyü boşaltma / assert sırası / örnek değiştirme) | ✔ **Üçü de KIRMIZI** (§2.2) |
+| Pozitif kontrol ile ana test aynı **fabrikaya** bağlı mı? | ✔ **EVET** — fabrika mutasyonu pozitif kontrolü kırıyor (§2.3) |
+| **Pratik canlı sızıntı (precapture yerindeyken)** | ✔ **YOK** → bloklayıcı yok |
+| Yanlış pozitif | ✔ **YOK** — sonda kaldırılınca 54/54, dinleyiciye **0** istek (§3) |
+| Test sayısı | ✔ `verify` **1305 passed \| 4 skipped (1309)** ×2 koşu · `e2e` **55 passed** (§3) |
+| Sonda/mutasyon kalıntısı, `git status` | ✔ **Temiz** (§5) |
 
 ---
 
-## 2. AA2 — okunamayan dosya artık sayılıyor ✔ DOĞRULANDI
+## 1. CC1 — yakalanmış `process.binding` referansı
 
-Sandbox (`%TEMP%\mcqa3`, yalnızca sentetik veri): 1 ana oturum (150 token) + 1 subagent
-(10 token) = 160 token.
+### 1.1 Tur 6'nın sondası birebir tekrarlandı → **KIRMIZI ✔**
 
-| Senaryo | toplam | `unreadable_file_count` | `degraded` | Arayüz |
-|---|---|---|---|---|
-| temiz | 160 | 0 | false | uyarı yok |
-| **`icacls /deny "(RA,RD,RX)"`** (2. turun repro'su) | 10 | **1** | **true** | **⚠ görünür** |
-| `icacls /deny "(RD)"` tek başına | 10 | **1** | **true** | ⚠ görünür |
-| ACL kaldırıldı | 160 | 0 | false | uyarı yok (yanlış pozitif yok) |
+Tur 6 §1.3'ün vektörünün aynısı ürün koduna (`src/features/usage/server/usage-aggregator.ts`)
+kondu — hiçbir test dosyası değiştirilmeden:
 
-Arayüz metni (canlı, `MC_PORT=4601`, ekran görüntüsü `.playwright-mcp/qa-f011-t3-aa2-uyari.png`):
-`⚠ 1 dosya okunamadı (izin/erişim hatası) — bu dosyaların token verisi toplamda YOK.`
-"Toplam: 10 token" ile birlikte gösteriliyor — sessiz kısmi başarı **yok**.
-
-Yarış durumu ayrımı korunuyor: `isPersistentAccessError` yalnızca EPERM/EACCES/EBUSY'yi sayıyor
-(`usage-aggregator.ts:128-134`); ENOENT (listelendikten sonra silinen dosya) sayılmıyor. Bunu
-**her iki yönde** mutasyonladım (§5, M2a/M2b) — ikisi de KIRMIZI. Ayrıca çit yalnızca mock
-değil: `usage-aggregator.test.ts:665` **gerçek `icacls /deny "(RA,RD,RX)"`** koşturuyor
-(`skipIf(platform!=='win32')`), yani 2. turun bulduğu ACL şekli kalıcı olarak çitlendi.
-
----
-
-## 3. AA3 — yanlış alarm gitti, gerçek sinyal duruyor ✔ DOĞRULANDI (kalibrasyon notuyla)
-
-### 3.1 Gerçek veri: uyarı ÇIKMIYOR (2. turun B2'si kapandı)
-
-`GET /api/usage` (gerçek `~/.claude/projects`, izlenen tek proje `mission-control`):
+1. **Modül gövdesinde** (fonksiyon içinde değil) referans yakalanıyor:
+   `const qaBindingCaptured7 = qaProc7.binding.bind(qaProc7)`
+2. `computeUsageReport`'un ilk satırından çağrılan `qaLeak7()`, yakalanmış referansla
+   `tcp_wrap` + `stream_wrap` alıp ham `TCP` handle kuruyor ve `127.0.0.1:45922`'ye tam bir HTTP
+   istek satırı yazıyor. Hata **yutuluyor** (`catch {}`) — fırlatmaya dayalı tespiti kırmak için.
 
 ```
-lines_ok 58.977 · lines_bad 0 · unknown_type_lines 19.891 → tanınan oran %66,27
-degraded: false · unreadable 0 · truncated 0
+npx tsc --noEmit                                          → exit 0
+npx eslint src/features/usage/server/usage-aggregator.ts  → exit 0
+npx vitest run tests/features/usage/server
+  × GERÇEK computeUsageReport … HİÇBİRİ çağrılmaz (birincil davranış katmanı)
+    AssertionError: expected [ 'process.binding', …(23) ] to deeply equal []
+  Tests  1 failed | 53 passed (54)
 ```
 
-Tarayıcıda (1280px) uyarı kutusu **hiç yok**, yalnızca `Toplam: 2.809.621.179 token` ve 5 satır.
-2. turda bu uyarı kalıcı olarak açıktı.
+Kırılan iddia **`expect(qaPreCalls).toEqual([])`** (`usage-aggregator.test.ts:501`) — yani tam
+olarak CC1 için eklenen katman yakalıyor; `capturedCalls` (sentinel) bu biçimi hâlâ göremiyor,
+beklendiği gibi. Aynı koşuda dinleyiciye 26 gerçek bağlantı + 26 istek gitti (aynı dosyadaki
+sentinel'siz testler de ürün kodunu çağırıyor) — **ama çit KIRMIZI**, yani CI durur, sızıntı
+görünür olur. Tur 6'daki durum bunun tersiydi (tam takım yeşil).
 
-### 3.2 Format değişiminde: uyarı ÇIKIYOR
+### 1.2 Sıra bağımlılığı **kendim doğruladım** → **TEYİT ✔**
 
-Sandbox'ta `"type":"assistant"`→`assistant_message`, `"type":"user"`→`user_message`:
-`Toplam: 0 token` **+** `⚠ Toplam 3 satırdan 3 tanesi tanınmadı — veri eksik olabilir.`
-Azaltımın kapatması gereken risk gerçekten kapalı.
-
-### 3.3 Eşik kalibrasyonu TEK veri noktasına dayanmıyor mu? — kendi taramam
-
-Developer'ın bildirdiği sınırlamayı bağımsız olarak ölçtüm: `~/.claude/projects` altındaki
-**16 proje dizini, 110.354 ayrıştırılabilir satır** (yalnızca sayısal özet üretildi, hiçbir
-transkript içeriği kaydedilmedi):
+Sonda yerinde kalırken **tek** değişiklik yaptım: `import { qaPreCalls } from
+'./network-precapture-sentinel'` satırını ürün import'unun (`computeUsageReport`) **altına**
+taşıdım (test dosyası satır 4 → satır 16):
 
 ```
-GENEL: taninan %66,17   bozuk JSON %0,0000   (developer'ın %66,2 tabanı DOĞRULANDI)
-tip dağılımı: assistant 41,4 · attachment 26,0 · user 24,2 · queue-operation 1,7 · … · system 0,6
+npx vitest run tests/features/usage/server → Tests  54 passed (54)        ← TAMAMEN YEŞİL
+dinleyici (127.0.0.1:45922): 26 RAW-TCP-CONNECT + 22 RAW-DATA
+  "GET /CANLI-TUR7-CC1-yakalanmis-binding HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
 ```
 
-**Proje bazında** (küçükten büyüğe): 14,6 · 16,7 · 16,7 · 24 · 24 · 25 · 33,1 · **59,7** · 66,3 ·
-67,8 · 68,6 · 71,5 · 72,8 %. Eşiğin (%50) altındaki yedi dizinin tamamı **24-284 satırlık** QA
-sandbox'ları / spike dizinleri; **gerçek geliştirme projelerinin hepsi %59,7 ve üzerinde**
-(en düşük: `video-factory` %59,7 — eşiğe **9,7 puan** marj).
+Developer'ın iddiası (**"aynı leak + precapture importu üründen sonraya alınınca 54/54 YEŞİL"**)
+**birebir doğrulandı**. Bu, düzeltmenin ESM değerlendirme sırasına dayandığının ve gerçekten yük
+taşıdığının kanıtı. Test dosyası ardından `bak/` kopyasından geri yazıldı (md5
+`82f9e6a27e215f2aaab1b8c72cf17e90`, başlangıç değeri).
 
-**Dosya bazında** (≥100 satırlık 279 dosya): p5 **%49,1** · p50 %73,3 · p95 %80,6;
-dosyaların **%6,1'i** (17/279) %50'nin altında. Yani **tek başına** bir-iki oturumluk yeni bir
-proje izlenmeye başlandığında geçici bir yanlış alarm ihtimali var (~%6).
-
-**Sonuç:** taban temsili (dört ayrı gerçek projede %59,7-%72,8), eşik ne çok gevşek ne çok sıkı:
-`assistant` (%41,4) veya `user` (%24,2) tipinin yeniden adlandırılması oranı sırasıyla %24,8 ve
-%42'ye düşürür — ikisi de eşiği tetikler, yani **asıl risk (token verisinin sessizce sıfırlanması)
-yakalanıyor**. Kalan risk küçük ve **geçici** bir yanlış alarm; kararı değiştirmiyor. **NOT
-(bloklayıcı değil):** proje sayısı arttıkça uyarı tüm izlenen projelerin TOPLAMI üzerinden
-hesaplandığı için tek bir küçük/atipik proje toplamı aşağı çekebilir; ileride oranın **proje
-başına** değerlendirilmesi daha dayanıklı olur.
+> **⚠ Borç (bloklayıcı DEĞİL, §5'te kayıt):** bu sıra yalnızca bir **yorumla** korunuyor.
+> `usage-aggregator.test.ts`'in ilk import'unun `network-precapture-sentinel` olduğunu **hiçbir
+> test iddia etmiyor**. Yukarıdaki ölçüm, sıranın bozulmasının maliyetinin tam bir sessiz koruma
+> kaybı olduğunu gösteriyor. CLAUDE.md'nin kendi kuralı burada birebir geçerli: *"aynı bulgu bir
+> sonraki feature'da yine çıkacaksa çiti feature'a değil yapıya koy."* Ucuz çit: kaynak-şekli
+> testi — dosyanın ilk `import` satırının bu modül olduğunu doğrula.
 
 ---
 
-## 4. AA4 — 320px'te proje sütunu ✔ DOĞRULANDI
+## 2. CC2 — sessiz öldürme
 
-Kendi kırpılmış-görünür-genişlik ölçümüm (gerçek Chromium, gerçek veri, 5 satır;
-`min(el.right,kap.right) − max(el.left,kap.left)`):
+### 2.1 `restore()` içinde `calls.length = 0` → **KIRMIZI ✔** (tur 6'da YEŞİL'di)
 
-| Genişlik | Başlık "Proje" | Satırlardaki proje hücresi | Başlık/satır sol kenar farkı | Kök yatay taşma |
-|---|---|---|---|---|
-| 280px | **72 px** | **72, 72, 72, 72, 72 px** | 1 px | 0 |
-| **320px** | **72 px** | **72, 72, 72, 72, 72 px** | 1 px | 0 |
-| 375px | **72 px** | **72 px ×5** | 1 px | 0 |
-| 480px | **72 px** | **72 px ×5** | 1 px | 0 |
+Tur 6 §2.4'ün M9'u birebir tekrarlandı, tur 6'daki eşlikçisiyle (çağrı anında arama yapan,
+hatası yutulan `process.binding` sızıntısı) birlikte:
 
-2. turda 320px'te satırlar **0 px**'ti. Artık `minmax(4.5rem,1fr)` tabanı sayesinde sütun asla
-çökmüyor; başlık ve satırlar aynı `USAGE_GRID_COLS` şablonunu ve aynı kaydırma kabını paylaşıyor.
-1 px'lik sapma satırdaki `<details>` kenarlığından geliyor (görsel olarak hizalı).
-Kap içinde yatay kaydırma var (`scrollWidth 465 > clientWidth 296`) ve **kök belge taşmıyor**
-(320=320) — F-010'un "gizli yatay kaydırma" sınıfı tekrarlamıyor.
-Ekran görüntüsü: `.playwright-mcp/qa-f011-t3-320-proje-sutunu-72px.png` (metin `mission-…`
-kısaltılmış ama sütun okunur ve kaydırılabilir).
+```
+restore: () => { for (const r of restores) r(); calls.length = 0 }   ← QA-TUR7-M9
+npx tsc --noEmit → 0
+AssertionError: expected [ 'process.binding' ] to deeply equal []
+Tests  1 failed | 53 passed (54)
+```
+
+Tur 6'da bu kombinasyon **54/54 yeşil** kalıyordu. Anlık görüntünün `restore()`'dan önce
+alınması iddiayı `restore()` davranışından gerçekten bağımsızlaştırmış.
+
+### 2.2 Üç ek sessiz-öldürme denemesi → **üçü de KIRMIZI ✔**
+
+| # | Mutasyon (test kodu) | Sonuç |
+|---|---|---|
+| M10 | Anlık görüntüyü boşalt: `capturedCalls = sentinel.calls.slice(0, 0)` | **KIRMIZI** — `qaPreCalls` katmanı yakaladı (`…(21)`) |
+| M11 | Assert sırasını değiştir: anlık görüntüyü `restore()`'dan **sonra** al (düzeltmeyi geri sar) | **KIRMIZI** — `restore()` artık `calls`'a dokunmadığı için iz kalıyor |
+| M12 | Sentinel **örneğini** değiştir: assert taze bir `installNetworkCapabilitySentinel().calls`'a baksın | **KIRMIZI** — `qaPreCalls` katmanı yakaladı |
+
+Önemli yapısal gözlem: ana negatif iddia artık **iki bağımsız, farklı kapsamlı kayıt** üzerinde
+duruyor — örnek-kapsamlı `capturedCalls` (sentinel) ve **modül kapsamlı, hiç temizlenmeyen**
+`qaPreCalls` (precapture). Birini susturan mutasyon diğerine yakalanıyor; sessizce öldürmek için
+artık **iki ayrı dosyada eşzamanlı** mutasyon gerekiyor.
+
+### 2.3 Pozitif kontrol ile ana test aynı **fabrikaya** bağlı ✔
+
+İkisi ayrı **örnek** kullanıyor (`installNetworkCapabilitySentinel()` her testte bir kez
+çağrılıyor), ama aynı **fabrikayı** paylaşıyorlar — anlamlı bağ budur ve ölçtüm:
+
+```
+patch(processObj, 'binding', 'process.binding')  satırı SİLİNDİ   ← QA-TUR7-M13
+FAIL  … › sentinelin öz-testi: kasıtlı net.connect/http.get/WebSocket/process.binding/fetch …
+Tests  1 failed | 53 passed (54)
+```
+
+Mekanizmayı bozan mutasyon pozitif kontrolü kırıyor. (Tur 6'da doğrulanan `patch()` no-op
+mutasyonu da aynı sınıf; tekrarlamadım.)
+
+### 2.4 ÖNEMLİ (bloklayıcı DEĞİL) — **precapture katmanının pozitif kontrolü yok**
+
+Sentinel'in bir öz-testi var (tur 5 B1'in ürünü); `network-precapture-sentinel.ts`'in **yok**.
+İki mutasyon bunu gösteriyor — her ikisinde de §1.1'in yakalanmış-referans sızıntısı yerinde:
+
+| # | Mutasyon (`network-precapture-sentinel.ts`) | Sonuç |
+|---|---|---|
+| P1 | Sarmalayıcı **kayıt etmesin** (`qaPreCalls.push(...)` satırı silindi) | **54/54 YEŞİL** + dinleyiciye **26 gerçek bağlantı + 26 istek** |
+| P2 | Sarmalama hiç yapılmasın (`for … of []`) | **54/54 YEŞİL** + **26 gerçek bağlantı + 26 istek** |
+
+`tsc` her iki durumda 0. Yani katmanın **kendi mekanizması hiçbir test tarafından
+kanıtlanmıyor**: yarın bir refactor (anahtar listesi değişimi, `process.binding`'in yazılamaz
+hâle gelmesi, dosyanın yanlışlıkla boşaltılması) bu kapıyı **sessizce** öldürürse takım yeşil
+kalır. Bu, CLAUDE.md'nin *"sessizce ölmüş kapı"* sınıfıdır ve tur 5'te sentinel için tam olarak
+aynı gerekçeyle bloklayıcı sayılmıştı.
+
+**Neden bu turda bloklayıcı saymıyorum:** brief'in kararlaştırdığı ölçüt **"precapture modülü
+yerindeyken çıkan pratik canlı sızıntı"**; P1/P2 modülün kendisini mutasyona uğratıyor, yani
+modül **yerinde değil**. Ürün kodu tek başına bu sonucu üretemiyor (§1.1 KIRMIZI). Bu yüzden
+**borç** olarak kaydediyorum, karar değiştirmiyorum — ama yumuşatmıyorum da: ~6 satırlık bir
+pozitif kontrol (sarmalayıcıyı kasten tetikleyip `qaPreCalls`'ın dolduğunu iddia et) bu
+boşluğu kapatır ve §1.2'nin import-sırası çitiyle birlikte tek turda yapılmalı.
 
 ---
 
-## 5. Mutasyon tablosu (7 bağımsız mutasyon + 22 ağ sondası)
-
-| # | Mutasyon | Dosya | Sonuç |
-|---|---|---|---|
-| M1 | **AA1 beyaz liste gevşetildi** (`{'fs','path'}` → `+'http','net'`) | `network-capability-guard.test.ts:50` | **KIRMIZI** (4 test) |
-| M2a | **AA2 eski `catch`'e dönüş** (`unreadable: isPersistentAccessError(e)` → `false`) | `usage-aggregator.ts:161` | **KIRMIZI** (2: mock + GERÇEK icacls testi) |
-| M2b | AA2 aşırı sayma (`→ true`, yarış durumu da sayılır) | `usage-aggregator.ts:161` | **KIRMIZI** (1: ENOENT regresyon çiti) |
-| M3a | **AA3 eşik gevşetildi** (`0.5 → 0.01`) | `usage-aggregator.ts:76` | **KIRMIZI** (1) |
-| M3b | AA3 eski davranışa dönüş (`0.5 → 0.99`, kalıcı yanlış alarm) | `usage-aggregator.ts:76` | **KIRMIZI** (1) |
-| M3c | AA3 bozuk-JSON eşiği gevşetildi (`0.01 → 0.9`) | `usage-aggregator.ts:75` | **KIRMIZI** (1) |
-| M4a | **AA4 eski şablona dönüş** (`1fr_auto_auto_auto_auto`) | `UsageScreen.tsx:36` | **KIRMIZI** (E2E: "kırpılmış görünür genişlik 0 OLMAMALI") |
-| M4b | AA4 yalnızca `minmax` tabanı kaldırıldı (`1fr_5rem…`) | `UsageScreen.tsx:36` | **KIRMIZI** (aynı E2E) |
-| P1-P8, N1-N6 | 2. turun 14 ağ sondası | `usage-aggregator.ts` | **14/14 KIRMIZI** ✔ |
-| Y1, Y2, Y4 | yeni ağ sondaları (şablon `import()`, `globalThis.process.binding`, unicode kaçış) | `usage-aggregator.ts` | **KIRMIZI** ✔ |
-| **X1** | **`export { get } from 'node:http'` + yerel import** | yeni `qa-x1-reexport.ts` + `usage-aggregator.ts` | **YEŞİL ✘ — canlı sızıntı** |
-| Y3, Y5, Y6, Y7 | bölünmüş `process.binding` · bölünmüş `Function` · `fs`+UNC · `globalThis.require` | `usage-aggregator.ts` | YEŞİL (pratiklik §1.3'te ayrıştırıldı) |
-
-Geri alma: `git checkout` **kullanılmadı**; her mutasyon scratchpad'teki `.bak` kopyasından elle
-geri yazıldı, üç dosyanın da md5'i başlangıç değerine döndü
-(`usage-aggregator.ts 5908d3fb…`, `UsageScreen.tsx 529bbbc5…`,
-`network-capability-guard.test.ts a3dd7441…`), geçici `qa-x1-reexport.ts` silindi.
-
-`grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → **22 eşleşmenin tamamı meşru
-test adı/yorumu**, `src/` altında **sıfır** eşleşme; `write-gate-manifest.test.ts:124` dahil
-hiçbirine dokunulmadı. `git status`: yalnızca developer'ın kendi commit'siz hafıza dosyaları
-(bu turdan önce de oradaydı).
-
----
-
-## 6. Koşulan test sayısı
+## 3. Koşulan test sayısı ve yanlış pozitif
 
 | Koşu | Sonuç |
 |---|---|
-| `npm run verify` #1 | ✘ vitest **worker fork çökmesi** (`exit code 3221226505`, `events-api.test.ts`) → 83 dosya, **1288 passed \| 4 skipped** |
-| `npm run verify` #2 | ✘ `history-log.test.ts` `afterEach` **ENOTEMPTY** (geçici dizin silinemedi) + ikinci worker çökmesi (`adr-013-write-header.test.ts`) → **1286 passed** |
-| **`npx vitest run` #3** | ✔ **exit 0** · Test Files **84 passed \| 1 skipped (85)** · Tests **1292 passed \| 4 skipped (1296)** |
-| `npm run typecheck` / `lint` / `build` | ✔ exit 0 (üçü de) |
-| **`npx playwright test`** | ✔ **55 passed** (43,3 s) |
+| `npm run verify` #1 (temiz ağaç, tur başı) | ✔ exit 0 · Test Files **84 passed \| 1 skipped (85)** · **Tests 1305 passed \| 4 skipped (1309)** |
+| `npm run verify` #2 (temiz ağaç, tüm mutasyonlar geri alındıktan sonra) | ✔ exit 0 · **Tests 1305 passed \| 4 skipped (1309)** |
+| `npm run e2e` | ✔ **55 passed** (46,2 s), tek koşu, flake yok |
+| `npx vitest run tests/features/usage/server` (sonda **kaldırılmış**, temiz) | ✔ **54 passed (54)** · dinleyiciye **0** istek → **yanlış pozitif YOK** |
 
-İddia edilen **1292/1296** ve **55** birebir doğrulandı. `--no-file-parallelism` **kullanılmadı**
-(gizleme yok). Kırmızılar F-011 koduna ait değil: biri `CLAUDE.md`'de belgeli worker-fork
-kararsızlığı (beşinci gözlem), diğeri chat özelliğinin geçici dizin temizliğinde Windows dosya
-kilidi. Yine de **iki koşudan ikisi de kırmızıydı** — üçüncü koşuda yeşil; bu gürültü oranı
-kendi başına bir borçtur (bkz. `docs/blockers.md`).
+İddia edilen **1305/1309** ve **e2e 55** birebir doğrulandı; düşük değil. Bu turda
+`docs/blockers.md`'nin "test takımı sessizce test atlıyor" borcu (worker-fork) **hiç
+görülmedi** — 8 vitest koşusunun hepsi beklenen dosya/test sayısını raporladı.
 
----
-
-## 7. Kanıt dosyaları
-
-- `.playwright-mcp/qa-f011-t3-320-proje-sutunu-72px.png` — 320px, proje sütunu 72px, başlık hizalı (AA4 ✔)
-- `.playwright-mcp/qa-f011-t3-aa2-uyari.png` — gerçek `icacls /deny "(RA,RD,RX)"`, arayüzde izin uyarısı (AA2 ✔)
-- Ölçüm betikleri depoya **girmedi** (scratchpad): `probe3.cjs`, `probes3-list.cjs`,
-  `probe-x1.cjs`, `x1-live.cjs`, `listener.cjs`, `cap2.mts`, `aa2.mts`, `aa3-scan.cjs`.
-
-⛔ Depoya hiçbir gerçek transkript içeriği bırakılmadı; AA3 taraması yalnızca sayısal özet üretti.
-Sandbox `%TEMP%\mcqa3` **depo dışındadır** ve yalnızca sentetik veri içerir (silme komutu
-`block-dangerous` hook'una takıldığı için onay istemeden silinmedi).
-
-**Süreçler:** açtığım iki sunucu (4599, 4601) ve tüm sonda süreçleri kapatıldı; portlar boş.
-Kalan `node.exe`: 2 adet Playwright MCP (araç altyapısı) + 3 adet `C:\dev\apps\hayat-mentoru`
-(`next dev`) — **dokunulmadı**. Bu turdan **yetim süreç: 0**.
-
-**Kapsam dışı gözlem (bulgu açılmadı):** 1280px'te Token sekmesine geçerken konsolda 3 adet React
-`Encountered two children with the same key` hatası var; anahtar biçimi `m:<uuid>:text` — F-012
-sohbet ekranına ait, F-011 ile ilgisiz.
+`grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → **22 eşleşme, `src/` altında 0**;
+hepsi meşru test adı/yorumu. `tests/server/write-gate-manifest.test.ts:124` **dokunulmadı**
+(`git diff -- src tests` boş). Sonda kalıntısı taraması
+(`QA-TUR7|qaLeak7|qaLeak8|CANLI-TUR7|qaProc7|qaProc8`) → **0 eşleşme.**
 
 ---
 
-## 8. KALDI'yı kaldırmak için gereken minimum (tek madde)
+## 4. Kabul edilmiş mimari sınır (süreç-içi monkey-patch'in doğal tavanı)
 
-1. **B1/AA1** — statik tarayıcı `export … from '<spec>'` (ve `export * as X from …`) biçimlerini
-   de beyaz listeye tabi tutsun, yerel yeniden dışa aktarımları modül grafiğine **eklesin**.
-   Çit: X1 (`export { get } from 'node:http'` içeren geçici dosya) kalıcı negatif kontrol olarak
-   `network-capability-guard.test.ts`'e girsin; ayrıca çalışma zamanı katmanının **yalnızca kendi
-   portunu** görebildiği, yani ikinci bir katman sayılamayacağı yorumda dürüstçe yazılsın.
-2. (Bloklayıcı değil, borç) `process['bind'+'ing']` gibi bölünmüş erişimler metinsel taramanın
-   yapısal sınırıdır; kara-liste kalıntısı olan bu metin taramasının kapsamı belgelensin.
-3. (Bloklayıcı değil, borç) AA3 oranı ileride **proje başına** değerlendirilsin (§3.3).
+Bu bölüm bir bulgu değil, **bilinçli olarak kabul edilmiş bir sınırın** dürüst kaydıdır.
+
+Süreç-içi bir monkey-patch, ilkesel olarak, **yamadan daha erken** yakalanmış bir referansla her
+zaman yenilebilir. Bu matematiksel bir gerçektir, bir kusur değil: yama ne kadar erken kurulursa
+kurulsun, o noktadan **önce** değerlendirilen herhangi bir kod orijinal referansı saklayabilir.
+Bu depoda kapatılan şey, o "önce"nin **erişilebilir** kısmıdır:
+
+- `network-precapture-sentinel.ts`, `usage-aggregator.test.ts`'in **ilk import'u**dur ve ESM
+  değerlendirme sırası gereği **her ürün modülünden önce** çalışır. Ölçtüm: ürün modülünün
+  gövdesinde alınan referans artık **yamalı** sürümü yakalıyor (§1.1 KIRMIZI), sıra bozulunca
+  koruma tamamen kayboluyor (§1.2).
+- Dolayısıyla **ürün kodu yüzeyinde** precapture'dan önce çalışan bir nokta **kalmadı**: test
+  dosyasının 4. satırından önce yalnızca yorumlar var, ve `vitest.config.ts`'in tek `setupFiles`
+  girdisi (`tests/setup/chat-disabled-by-default.ts`) `src/` altından **hiçbir şey import
+  etmiyor** (okudum). Precapture'dan önce referans yakalayabilecek tek yer artık çalıştırıcının
+  kendi katmanıdır (vitest setup dosyası, Node yükleyici kancası, `--import` bayrağı) — bunlar
+  **ürün kodu değil**, ve oraya kod koyabilen bir aktör zaten test altyapısının tamamını
+  değiştirebilir.
+- Bu yüzden bu turda **precapture'dan önce yakalama gerektiren bir varyant aramadım/saymadım**:
+  brief'in kuralı gereği bu **kabul edilmiş mimari sınırdır, bloklayıcı değildir**.
+
+**Tam koruma** ancak süreç/işletim sistemi düzeyinde izolasyonla (ağ erişimi olmayan bir kum
+havuzunda test koşturma, güvenlik duvarı kuralı, kapsayıcı) sağlanır. Yerel, tek kullanıcılı bir
+araç için bu orantısızdır. Bugünkü savunma derinliği — (1) AST tabanlı statik modül grafiği
+taraması, (2) çağrı anı davranış sentinel'i + öz-testi, (3) modül-yükleme-zamanlı precapture —
+bu ürün için **yeterlidir**.
+
+---
+
+## 5. Taşınan borçlar (bloklayıcı değil)
+
+Tur 5'ten taşınan iki borç (`network-capability-guard.test.ts` metinsel katmanının yanlış
+pozitifleri; M5 giriş uzantı listesi) `docs/blockers.md`'de **eşikleriyle** duruyor — durumları
+değişmedi. Bu turda **iki yeni borç** eklenmeli:
+
+1. **Precapture katmanının pozitif kontrolü yok** (§2.4). P1/P2 mutasyonları 54/54 yeşil bırakıp
+   26 canlı istek sızdırıyor. **Eşik:** `network-precapture-sentinel.ts`'e dokunan bir sonraki
+   tur, ya da `usage/server` ağ çitine yeni bir katman eklendiğinde — hangisi önce gelirse.
+   **Düzeltme yönü:** ~6 satır: sarmalayıcıyı kasten tetikle (`(process as unknown as
+   {binding:(n:string)=>unknown}).binding('tcp_wrap')`) ve `qaPreCalls`'ın dolduğunu iddia et.
+2. **Import sırası yapısal çitle korunmuyor** (§1.2). Sıra bozulursa koruma **sessizce** ölür;
+   ölçtüm. **Eşik:** aynı tur. **Düzeltme yönü:** kaynak-şekli testi — `usage-aggregator.test.ts`
+   içindeki **ilk** `import` satırının `./network-precapture-sentinel` olduğunu doğrula
+   (yorumları atlayarak).
+
+Bu ikisi tek turda, tek dosyada kapanır; ikisi de bugünkü davranışı değiştirmez, yalnızca
+yarınki sessiz ölümü engeller.
+
+---
+
+## 6. Kanıt ve temizlik
+
+- **Ölçüm betikleri depoya girmedi** (scratchpad `…/scratchpad/tur7/`): `listener7.cjs`,
+  `apply7.cjs`, `apply8.cjs`, `snippet-cc1.ts.txt`, `snippet-cc2.ts.txt`, koşu günlükleri
+  (`verify1.txt`, `verify2.txt`, `e2e1.txt`, `probe_cc1.txt`, `probe_cc1_order.txt`,
+  `probe_cc2_M9.txt`, `probe_M10/M11/M12/M13.txt`, `probe_P1/P2.txt`, `clean.txt`) ve dinleyici
+  günlüğü `hits7.txt` (**204 gerçek TCP bağlantısı + 200 HTTP isteğinin** tam dökümü, segment
+  segment ayrılmış).
+- Her mutasyon `bak/` kopyasından **elle** geri yazıldı; **`git checkout` kullanılmadı**.
+  `git diff --stat -- src tests` → **boş**.
+- `git status`: bu turdan **önce** de orada olan commit'siz dosyalar (agent hafıza dosyaları,
+  `docs/qa/latest.md`, tur 4/5/6 raporları). Benim eklediğim tek dosya bu rapor.
+- **Yetim süreç: 0.** Dinleyici (PID 10868) elle sonlandırıldı, `45922`'de LISTEN yok. Kalan
+  `node.exe`: yalnızca 2 Playwright MCP süreci (oturum aracı). `C:\dev\apps\hayat-mentoru`
+  süreçlerine **dokunulmadı**.
+
+---
+
+## 7. Karar
+
+**GEÇTİ.** CC1 ve CC2 kapalı; precapture modülü yerindeyken **pratik canlı sızıntı yok** (gerçek
+istek çıkan tek senaryoda çit KIRMIZI veriyor). Yanlış pozitif yok, test sayısı iddia edileni
+tutuyor (1305/1309 + e2e 55). Feature notu `status: done`.

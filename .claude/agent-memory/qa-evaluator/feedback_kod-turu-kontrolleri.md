@@ -385,3 +385,96 @@ CALISMA ZAMANI casusu yakaliyor (iki katman), `require` ailesinde **sifir** katm
    Ayrica esik/oran kalibrasyonu iddialarini **tek projeden degil TUM projelerden** olc:
    F-011'de %66,2 tabani dogrulandi ama proje bazinda dagilim %14,6-%72,8, dosya bazinda p5=%49,1
    idi — "temsil edici mi" sorusu ancak dagilimla cevaplanir.
+
+---
+
+## F-011 tur 4'te eklenen iki teknik (AST tabanli import citi)
+
+42. **Ayristirma tabanli bir import citinde asil kor nokta AST degil ÇÖZÜCÜdür: "cozemedigim
+   specifier'i atla" = fail-open.** F-011 tur 4: cit gercek TypeScript AST'ine gecince
+   `export … from` ailesi kapandi, ama `resolveRelativeImport` yalnizca `.ts/.tsx/index.*`
+   deniyor ve cozemezse `continue` ediyordu. `'./x.js'` (NodeNext aliskanligi; `tsc` Bundler
+   modunda, eslint'te, vite/tsx'te DORDU DE kabul eder) yazmak yeterliydi: alt dizindeki bir
+   dosya ya da kardes `.mts`/`.cts` dosya taramadan dustu, urun kodunun gercek giris
+   noktasindan **canli HTTP istegi** cikti ve `npm run verify` **tamamen yesil** kaldi
+   (1301/1305, test kosarken dinleyiciye 29 istek). **En keskin sonda:** MEVCUT gercek bir
+   import'a yalnizca `.js` uzantisi ekle — tum alt grafik sessizce taramadan duser (kontrol:
+   uzantisiz hâli KIRMIZI, `.js`'li hâli 23/23 YESIL). Uzanti/cozucu sondasini her statik
+   grafik citinde kostur: `.js/.mjs/.cjs` eslemesi, `.mts/.cts` kardes dosya, alt dizin,
+   ve giris numaralandirmasinin uzanti filtresi (`endsWith('.ts')` `.mts`/`.cts`'i ALMAZ).
+43. **"Korluk assert'i" (`filesScanned.length > 1`) yapisal olarak tetiklenemez olabilir.**
+   Giris dosyalarinin kendisi zaten sayiliyorsa (F-011'de dizinde 2 `.ts` var), gecisli takip
+   TAMAMEN cokse bile assert gecer. Sayiya degil **beklenen dosya KUMESINE** bagli assert iste
+   (ör. `transcript-reader.ts` taranan kumede olmali). Ayrica metinsel katman sondalarini
+   **TypeScript'te gercekten yazilabilir bicimde** dene: `process.binding(` deseni
+   `(process as any).binding(` ile bozulur — citin kendi fixture'i tipsiz duz bicimi kullaniyorsa
+   urun kodunda hic eslesmeyecek bir deseni test ediyordur.
+
+---
+
+## F-011 tur 5'te eklenen üç teknik (DAVRANIŞ tabanlı çit / sentinel)
+
+44. **Bir "çalışma zamanı sentinel'i" (API'leri monkey-patch edip ihlali kaydeden katman) iki
+   soruyla denetlenir: (a) kendi POZİTİF kontrolü var mı, (b) hangi sınıfın TEK savunması.**
+   F-011 tur 5: sentinel `net`/`tls`/`http`/`https`/`dgram`/`dns`/`fetch` modül nesnelerini
+   kuşatıyordu ve gerçekten güçlüydü (modül-üstü yakalanmış `globalThis.fetch`, destructuring,
+   `new WebSocket(...)` — hepsi `net.connect`'e düştüğü için KIRMIZI). Ama `calls` dizisi tek bir
+   negatif iddiada kullanılıyordu (`expect(calls).toEqual([])`) — **pozitif kontrol yoktu**:
+   `patch()` gövdesini no-op yapmak 52/52 **YEŞİL** bıraktı, assert'i `Array.isArray`'e çevirmek
+   de. Öldürücü kanıt: mutasyon + ürün koduna sıradan `new WebSocket('ws://…')` → `npm run verify`
+   **tamamen yeşil (1303/1307)** ve dinleyiciye **106 gerçek istek**. `import`'suz global ağ
+   API'leri yalnızca sentinel tarafından görüldüğü için bu, "kapı sessizce ölür" sınıfıdır.
+   **Kural:** monkey-patch tabanlı her çite "çiti kasten tetikle ve yakaladığını gör" testi iste.
+45. **Metinsel bir deseni denetlerken deseni değil, DESENİN EŞLEŞEBİLDİĞİ BİÇİMİN DERLENİP
+   DERLENMEDİĞİNİ ölç.** `/process\s*\.\s*binding\s*\(/` çiti üç tur boyunca "borç" sayıldı;
+   tur 5'te düz biçimi ürün koduna yazdım: **`error TS2339: Property 'binding' does not exist on
+   type 'Process'`** — yani desenin yakalayabildiği tek biçim bu depoda **hiç derlenmiyor**, çitin
+   o kanaldaki katkısı yapısal olarak SIFIR ve kalıcı negatif kontrol fixture'ı (tipsiz düz metin)
+   var olamayacak bir şekli test ediyor. Yazılabilir biçim (`process as unknown as {binding:…}`,
+   `any`'siz, lint-temiz) `verify`'ı tamamen yeşil bırakırken `tcp_wrap` + `TCPConnectWrap` +
+   `stream_wrap.WriteWrap` ile **29 gerçek TCP bağlantısı + tam HTTP istek satırı** gönderdi.
+   Bkz. teknik 43 — bu onun kanıtlanmış hâli. Düzeltmesi de tek satır: deseni bırak, davranışı
+   kuşat (`patch(process, 'binding')`).
+46. **Yanlış pozitifi TEK biçimde değil, geliştiricinin GERÇEKTEN yazacağı dört biçimde ölç.**
+   F-011'in ham metin taraması, ürün dosyasına eklenen tek bir **yorum** satırıyla kırmızı verdi:
+   `// Bu dosya fetch() cagrisi yapmaz.` · `// Burada require() kullanilmaz.` ·
+   `/** Function() ile kod uretilmez. */` · `const s = 'dinamik import( kullanma'`. Yani dosyanın
+   **kendi güvenlik garantisini yorumda anlatmak** çiti düşürüyor. Fail-closed olduğu için
+   bloklayıcı değil ama "güvenlik ihlali" mesajıyla CI kıran kalıcı yanlış alarm = kapının
+   ciddiye alınmaması. AST katmanının aynı muafiyetleri (yorum/dizge) doğru yaptığını kontrol
+   grubu olarak göster — fark, hangi katmanın düzeltilmesi gerektiğini doğrudan verir.
+47. **Monkey-patch sentinel'i ONARILDIKTAN sonra "ONCE YAKALA" (pre-capture) sondasiyla tekrar
+   yen — ama once hangi yeteneklerin gercekten savunmasiz oldugunu daralt.** F-011 tur 6'da
+   sentinel `process.binding`/`dlopen`'i kusatacak sekilde duzeltildi ve dogrudan sonda KIRMIZI
+   verdi. Referansi **urun modulu degerlendirilirken** (modul govdesinde, `.bind()` ile) yakalayip
+   fonksiyon icinde kullanan bicim ise 111 gercek TCP+HTTP istegi sizdirdi, `tsc` 0 / `eslint` 0 /
+   **1305/1309 test yesil** iken. Sebep: sentinel testin ICINDE, yani urun `import`'undan SONRA
+   kuruluyor. **Ama bu her API icin gecerli degil** — sizinti icin iki sart birlikte gerekiyor:
+   (a) yetenege `import` olmadan erisilebilmesi, (b) yakalanan referansin yamali bir bogaza
+   (`net.connect`) DUSMEMESI. Olctum: yakalanmis `globalThis.WebSocket` KIRMIZI (undici cagri
+   aninda `net.connect`'i arar), yakalanmis `net`/`http` zaten AST katmaninda duser; yalnizca
+   `process.*` ailesi ikisini birden saglar. **Kural:** "her monkey-patch pre-capture ile yenilir,
+   demek ki teorik" deme — once matrisi cikar; nokta atisi bir acik ise PRATIK bulgudur.
+   Duzeltme de nokta atisi: kayit-eden (firlatmayan) sarmalayiciyi urun modulunden ONCE
+   degerlendirilen ayri bir modulde kur, test dosyasinin ILK import'u o olsun. Bunu QA olarak
+   gecici dosyayla **kanitla** (sonda KIRMIZI, sondasiz 54/54 yesil), sonra sil — "oneri" degil
+   "olculmus duzeltme" ver.
+48. **Pozitif kontrol mekanizmayi kanitlar, MEKANIZMA-IDDIA BAGINI kanitlamaz.** F-011'in yeni
+   oz-testi 5/5 etiketle saglamdi (her `patch(...)` satirini tek tek kaldirdim, hepsi KIRMIZI —
+   kendine referans yok). Yine de tek satirlik bir mutasyon ana negatif iddiayi sessizce
+   oldurdu: `restore()` icine `calls.length = 0`. Cunku pozitif kontrol assert'ini `restore()`'dan
+   ONCE, ana test ise SONRA yapiyor. **Sor:** pozitif kontrol ile korunan assert ayni `calls`
+   durumunu ayni ANDA mi okuyor? Degilse aralarindaki bosluga mutasyon at.
+49. **Sira-bagimli bir duzeltmeyi (ESM ilk-import precapture) IKI YONDE olc, ve o siranin
+   YAPISAL citi var mi diye sor.** F-011 tur 7: yakalanmis-referans sondasi precapture
+   yerindeyken KIRMIZI, ama tek degisiklikle (precapture import'unu urun import'unun ALTINA al)
+   ayni sizinti **54/54 YESIL** + 26 gercek TCP istegi. Duzeltmenin tasiyici oldugunu ancak bu
+   ikinci yon kanitlar. Ardindan: sirayi koruyan sey **yalnizca bir yorum** mu? Oyleyse borc yaz
+   (kaynak-sekli testi: dosyanin ilk `import` satiri su modul olmali).
+50. **Her YENI savunma katmanina kendi pozitif kontrolunu sor — katman MODULUNU mutasyona ugrat.**
+   Sentinel'in oz-testi vardi, precapture'in yoktu: `qaPreCalls.push(...)` satirini silmek ya da
+   sarmalama dongusunu bosaltmak 54/54 YESIL birakip 26 canli istek sizdiriyor. Katman "bugun
+   calisiyor" ama mekanizmasi kanitlanmamis = yarin sessizce olur. Bunu bloklayici saymadan once
+   brief'in bloklayici tanimina bak (F-011 tur 7'de tanim "modul YERINDEYKEN pratik canli
+   sizinti" idi; modulu mutasyona ugratmak "yerinde" degildir → borc, karar degil) — ama
+   yumusatmadan, esik+duzeltme yonuyle yaz.

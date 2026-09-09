@@ -230,19 +230,27 @@ test.describe('Dar genişlik (320/375/480px) — kırpılmış görünür geniş
   }
 })
 
-test.describe('Dar genişlik, üretim sekme kümesi (5 sekme, sohbet açık) — hiçbir sekme 0px değil (X3/Ö2)', () => {
+test.describe('Dar genişlik, üretim sekme kümesi (6 sekme, sohbet açık) — hiçbir sekme 0px değil (X3/Ö2, F-011/D10)', () => {
   for (const width of [320, 375, 480]) {
-    test(`${width}px'te tüm sekmeler (Zaman Çizelgesi/Kanban/Sohbet/Kapılar/Thread) kırpılmadan erişilebilir`, async ({
+    test(`${width}px'te tüm sekmeler (Zaman Çizelgesi/Kanban/Sohbet/Kapılar/Thread/Token) kırpılmadan erişilebilir`, async ({
       page,
     }) => {
       await mockChatEnabled(page)
       await page.setViewportSize({ width, height: 700 })
       await page.goto('/')
 
-      // Üretim varsayılanı gerçekten 5 sekme mi (sahte durum doğru alındı mı) — önce doğrula.
-      await expect(page.locator('header [role="tab"]')).toHaveCount(5)
+      // Üretim varsayılanı gerçekten 6 sekme mi (sahte durum doğru alındı mı, F-011 Token
+      // sekmesi eklendi) — önce doğrula.
+      await expect(page.locator('header [role="tab"]')).toHaveCount(6)
 
-      const tabIds = ['tab-timeline', 'tab-kanban', 'tab-chat', 'tab-gates', 'tab-thread']
+      const tabIds = [
+        'tab-timeline',
+        'tab-kanban',
+        'tab-chat',
+        'tab-gates',
+        'tab-thread',
+        'tab-usage',
+      ]
       for (const id of tabIds) {
         const width_ = await clippedVisibleWidth(page, `#${id}`)
         expect(width_, `#${id} kırpılmış görünür genişliği 0 olmamalı`).toBeGreaterThan(0)

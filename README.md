@@ -90,6 +90,33 @@ Uygulama Departure Mono ve IBM Plex ailesi fontlarını `src/web/fonts/` altınd
 IBM Plex Sans da SIL Open Font License 1.1 ile lisanslıdır. Lisans metinleri
 `src/web/fonts/LICENSE-DepartureMono.txt` ve `src/web/fonts/LICENSE-IBMPlex.txt` içindedir.
 
+## Token Kullanımı ekranı — `ccusage` ile elle çapraz kontrol
+
+Panelin "Token" sekmesi kendi minimal okuyucusuyla (`~/.claude/projects/**/*.jsonl`) proje/gün/
+oturum/agent bazında token toplamı gösterir (ADR-007 karar 3). Bu, resmî/belgeli bir format
+değildir; rakamların makul olduğunu elle doğrulamak isterseniz [`ryoppippi/ccusage`][ccusage]
+aracını (bağımsız, üçüncü parti) kurulum gerektirmeden çalıştırabilirsiniz:
+
+```sh
+npx ccusage@latest daily
+```
+
+Karşılaştırma adımları:
+
+1. Panelde "Token" sekmesini açın, "Grupla: Gün" seçin, ilgilendiğiniz günün giriş/çıkış token
+   toplamını not edin.
+2. Yukarıdaki komutu çalıştırın, aynı takvim gününe ait `Input`/`Output` sütunlarını okuyun.
+3. Rakamlar **birebir eşleşmeyebilir** — panel günü dosyanın son değiştirilme zamanına
+   (`mtime`) göre ayırır, gece yarısını aşan bir oturumun tamamını tek güne yazar; `ccusage`
+   kendi zaman damgası mantığını kullanır. Büyük bir sapma (ör. %10+) varsa panelin "veri eksik
+   olabilir" uyarısını kontrol edin (bkz. `docs/03-ux.md` ekran 6) — bu, ayrıştırılamayan satır
+   oranının yüksek olduğunu gösterir.
+
+`ccusage` panelin bir bağımlılığı **değildir**; panel onsuz da tam çalışır, yalnızca isteğe
+bağlı bir doğrulama aracıdır (ADR-007).
+
+[ccusage]: https://github.com/ryoppippi/ccusage
+
 ## Sorun giderme
 
 Windows'ta `Ctrl+C` sonrası port tutulu kalırsa:

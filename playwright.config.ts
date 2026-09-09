@@ -18,6 +18,7 @@ export default defineConfig({
     'kanban.spec.ts',
     'gates.spec.ts',
     'thread.spec.ts',
+    'usage.spec.ts',
   ],
   // Tüm spec dosyaları TEK paylaşılan `webServer`/`MC_DATA_DIR`/proje kaydını kullanıyor
   // (yukarıdaki yorum). `kanban.spec.ts` gerçek `POST/DELETE /api/projects` çağrıları yapan

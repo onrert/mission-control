@@ -1,7 +1,7 @@
 ---
 id: F-008
 title: Kapılar paneli (G0–G6 / ASSETS) — onay, red, arşiv akışı
-status: dev
+status: qa
 owner: developer
 deps: [F-006, F-007]
 sprint: 2
@@ -11,14 +11,14 @@ Faz 2'nin ilk işi (kullanıcı kararı: F-009'dan önce). Seçili projenin kap�
 Kaynak: PRD özellik 4; `docs/03-ux.md` ekran 4 + akışlar (d), (e); ADR-001 karar 7, ADR-005.
 
 ## Kabul kriterleri
-- [ ] G0–G6 ve ASSETS durumu `docs/approvals/` içeriğinden doğru türetilir: onaylandı / reddedildi / bekliyor (PRD F4/AC1).
-- [ ] "Onayla" önce doğrulama adımı açar ve dosyaya yazılacak özeti gösterir; ikinci onaydan sonra `docs/approvals/<G>.ok` yazılır. İptal edilirse hiçbir dosya oluşmaz (PRD F4/AC7).
-- [ ] `.ok` içeriği PROCESS.md §2 formatındadır: tarih + onaylanan özet + kullanıcının kararı (PRD F4/AC2).
-- [ ] "Reddet" zorunlu gerekçe metni ister; gerekçe girilmeden dosya yazılmaz. Gerekçe `.deny.md` içine olduğu gibi geçer (PRD F4/AC3, AC8).
-- [ ] Daha önce reddedilmiş bir kapı onaylanırsa `.deny.md` silinmez; `docs/approvals/archive/<G>-<zaman>.deny.md` yoluna taşınır, sonra `.ok` yazılır (PRD F4/AC9).
-- [ ] Aynı kapıda hem `.ok` hem `.deny.md` bulunursa "çelişkili durum" işaretlenir, hangisinin daha yeni olduğu gösterilir, hiçbir dosya otomatik silinmez (PRD F4/AC4).
-- [ ] Yazma hatasında buton durumu geri alınır, okunabilir hata gösterilir, panel çökmez (PRD F4/AC5).
-- [ ] Tüm yazmalar F-006 yazma kapısından geçer (PRD F4/AC6).
+- [x] G0–G6 ve ASSETS durumu `docs/approvals/` içeriğinden doğru türetilir: onaylandı / reddedildi / bekliyor (PRD F4/AC1).
+- [x] "Onayla" önce doğrulama adımı açar ve dosyaya yazılacak özeti gösterir; ikinci onaydan sonra `docs/approvals/<G>.ok` yazılır. İptal edilirse hiçbir dosya oluşmaz (PRD F4/AC7).
+- [x] `.ok` içeriği PROCESS.md §2 formatındadır: tarih + onaylanan özet + kullanıcının kararı (PRD F4/AC2).
+- [x] "Reddet" zorunlu gerekçe metni ister; gerekçe girilmeden dosya yazılmaz. Gerekçe `.deny.md` içine olduğu gibi geçer (PRD F4/AC3, AC8).
+- [x] Daha önce reddedilmiş bir kapı onaylanırsa `.deny.md` silinmez; `docs/approvals/archive/<G>-<zaman>.deny.md` yoluna taşınır, sonra `.ok` yazılır (PRD F4/AC9).
+- [x] Aynı kapıda hem `.ok` hem `.deny.md` bulunursa "çelişkili durum" işaretlenir, hangisinin daha yeni olduğu gösterilir, hiçbir dosya otomatik silinmez (PRD F4/AC4).
+- [x] Yazma hatasında buton durumu geri alınır, okunabilir hata gösterilir, panel çökmez (PRD F4/AC5).
+- [x] Tüm yazmalar F-006 yazma kapısından geçer (PRD F4/AC6).
 
 ## Dosya sahipliği (bu feature yalnızca şu dosyalara dokunur)
 `src/features/gates/**`, ilgili testler.
@@ -35,3 +35,17 @@ bölümü (sunucu)" kaydı. B turuna devredilenler: React bileşenleri (`GatesSc
 `ApproveModal`, `DenyInlineForm`, `useGates`, `ProjectSelect`, `icons`), `App.tsx`/
 `useEventStream.ts` bağlanması, `docs/03-ux.md`'ye ★ işaretli 6 yeni Türkçe metnin eklenmesi,
 kırılan sekme sayacı testlerinin (§10.2 tablosu) güncellenmesi, dar genişlik E2E'si.
+
+## Kod turu — B bölümü (arayüz, 2026-09-09)
+
+Arayüz tamamlandı: Kapılar ekranı + sekmesi (Faz 1 kabuğuna koşulsuz eklendi), dört durumlu
+aksiyon sütunu, iki adımlı onay modalı, satır içi red formu, `[Detay]` genişleyen çelişki satırı,
+SSE `gates` kanalı ile canlı güncelleme. Ayrıntı: `docs/progress.md` "F-008 — B bölümü (arayüz)"
+kaydı. Tüm AC'ler artık uçtan uca (sunucu + UI, gerçek tarayıcı E2E dahil) doğrulandı — bu yüzden
+yukarıdaki kutular işaretlendi. `status: qa` — GEÇTİ/KALDI kararı qa-evaluator'a ait.
+
+CEO'nun ek yetkisiyle (`docs/blockers.md` 2026-09-09) bu turda kapsam dışı ama dosya sahipliği
+genişletmesiyle düzeltilen bir madde: `src/features/kanban/server/handlers.ts`
+`handlePatchFeatureStatus`'un `projectsService.list()` çağrısı asenkron IIFE'nin dışındaydı
+(sunucuyu üç kez öldüren hata sınıfı) — düzeltildi ve mutasyonla kanıtlandı, `docs/blockers.md`
+maddesi kapatıldı.

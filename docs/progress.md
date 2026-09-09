@@ -2681,3 +2681,111 @@ değil). CEO K1-K6 kararlarını verdi, bu turda hepsi kapatıldı.
   `useGates`, `icons`) → `App.tsx`/`useEventStream.ts` bağlantısı → §10.2 tablosundaki kırılan
   sekme sayacı testleri (4 dosya) güncellensin → `tests/e2e/gates.spec.ts` (dar genişlik dahil).
 - Sonra qa-evaluator tam feature'ı (A+B) değerlendirsin.
+
+---
+
+## 2026-09-09 — F-008 (Kapılar paneli) kod turu B bölümü (arayüz) tamamlandı
+
+**Ne yapıldı**
+- **Önce belge, sonra kod (M2 kararı):** `docs/03-ux.md`'ye ★ işaretli 6 yeni Türkçe metin
+  eklendi ("Türkçe metin sözlüğü" altına yeni "Kapılar ekranı metinleri (F-008)" bloğu) — kod bu
+  metinleri birebir kullanıyor.
+- Yeni: `src/features/gates/web/{icons,ProjectSelect,useGates,GateRow,ApproveModal,
+  DenyInlineForm,GatesScreen}.tsx`. `useGates` `useFeatures`'ın yükleme/`gatesSignal`-tetikli
+  yeniden yükleme desenini tekrarlıyor; `approve`/`deny` **iyimser değil** (kanban'ın aksine) —
+  iki adımlı onay zaten kullanıcıyı yavaşlattığı için sunucu yanıtı beklenip state ona göre
+  güncelleniyor, hata durumunda (AC5) hiçbir yerel state DEĞİŞMEDİĞİ için rollback gerekmiyor;
+  modal/form kendi `decision`/`reason` metnini koruyor. `GateRow` dört durumun HER BİRİNDE FARKLI
+  buton kümesi çiziyor (§4 birebir): `pending` → [Onayla][Reddet], `approved` → `(kilitli)`
+  (Reddet YOK — B6), `denied` → yalnızca [Onayla], `conflict` → yalnızca [Detay] (satıra
+  tıklanınca VEYA butona tıklanınca genişleyen salt-okunur alt satır, `expanded` `GateRow`'un
+  KENDİ state'inde — ayrı modal bileşeni eklenmedi, Karpathy §2). `ApproveModal` önizlemeyi
+  `buildApprovalBody`'yi (§5, `fs` yok) DOĞRUDAN çağırarak üretiyor — sunucunun yazacağı içerikle
+  bayt bayt aynı, ikinci bir `/preview` ucu yok.
+- Değişen: `src/web/App.tsx` (`buildTabs` artık Kapılar'ı **koşulsuz** ekliyor — Sohbet varsa
+  ondan sonra, yoksa Kanban'dan sonra; dördüncü `tabpanel`), `src/web/lib/useEventStream.ts`
+  (`onGates` — `onFeatures` ile birebir), `src/web/index.css` (`@source "../features/gates/web"`),
+  `tests/build-css.test.ts` (gates-özel 3 sınıf bloğu: `text-fuchsia-400`/`max-w-lg`/
+  `border-collapse`), `playwright.config.ts` (`testMatch` += `gates.spec.ts`).
+- §10.2'nin kırılan 4 test dosyası güncellendi: `tests/web/App.chat-tab.test.tsx` (2→3, 3→4),
+  `tests/web/App.interaction.test.tsx` (chat kapalı `End` → artık `gatesTab`; chat açık senaryo
+  3→4 sekme, `End` → `gatesTab`, test adı güncellendi), `tests/web/App.test.tsx` (satır 48
+  `toHaveLength(3)`; "Faz 2 ekranları hiç görünmez" testi **kapalı-küme çitine** çevrildi: üç
+  bilinen etiketin varlığı + `toHaveLength(3)` BİRLİKTE — R1, gelecekte kazara eklenen 4. sekmeyi
+  de yakalar), `tests/e2e/shell.spec.ts` (`clickableCount` 3→4, `tabRoleCount` 2→3, "Kapılar"
+  artık `toContain`).
+- **R5 (CEO'nun ek yetkisi, `docs/blockers.md` 2026-09-09):** kanban'ın
+  `handlePatchFeatureStatus`'undaki `projectsService.list()` çağrısı asenkron IIFE'nin dışındaydı
+  (CLAUDE.md'de kayıtlı, sunucuyu üç kez öldüren hata sınıfı — dağıtıcının senkron sınırı
+  kapsamıyor, handler'ın kendi try/catch'i henüz girilmemiş). `src/features/kanban/server/
+  handlers.ts`'te proje arama IIFE'nin İÇİNE taşındı (gates'in Q6 deseniyle birebir). Yeni
+  regresyon testi `tests/integration/features-api.test.ts` "MUTASYON hedefi (R5)". `docs/
+  blockers.md`'deki madde kapatıldı.
+
+**Nasıl doğrulandı**
+- `npm run verify` (typecheck + lint + **1066/1070 test, 73 dosya + 1 atlanan** + build) = **0**.
+  (Atlanan dosya: kota harcayan canlı testler, `describe.skipIf` ile normal koşunun dışında —
+  A turundan miras, bu turda değişmedi.)
+- `npm run e2e` = **0 (36/36)** — 4 mevcut spec dosyası (`shell`/`timeline`/`settings`/`kanban`)
+  + yeni `gates.spec.ts` (8 test). Hiçbiri kırılmadı.
+- **`npm run e2e:dev` ve chat E2E'si (`playwright.chat.config.ts`) bu turda ÇALIŞTIRILMADI** —
+  ikisi de bu feature'ın dosya sahipliği/kapsamı dışında, statik olarak (`grep`) hiçbir sekme
+  sayısı/index varsayımı taşımadıkları doğrulandı (`tests/e2e/chat.spec.ts`, `tests/e2e/
+  dev-shell.spec.ts` içinde `role.*tab`/`Kapılar`/`tabs[` eşleşmesi YOK). `playwright.dev.
+  config.ts`'in `webServer.command`'ı `npm run dev` olduğu için (bu turun kısıtı gereği elle
+  çalıştırılmadı) bu ikisi QA'nın kendi turunda koşturması gereken bilinen bir açık madde.
+- **Mutasyon kanıtı (R5) — uygula → KIRMIZI gözlemle → geri al:** `projectsService.list()`
+  çağrısı geçici olarak tekrar IIFE dışına taşındı, yalnızca yeni test izole çalıştırıldı → gerçek
+  bir **yakalanmamış istisna** (`Uncaught Exception: ÇOK GİZLİ İÇ HATA...`) + `Test timed out in
+  5000ms` (istek hiç yanıtlanmadı) — tam da bloklayıcının tarif ettiği davranış. Düzeltme geri
+  konunca aynı test **YEŞİL** (500 `write_failed`, ham mesaj sızmıyor, `/api/health` 200 —
+  süreç yaşıyor). `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` yalnızca meşru
+  test adlarını gösteriyor (mutasyon izi yok).
+- **jsdom testleri (30 yeni: 18 `GatesScreen.test.tsx` + 12 `useGates.test.ts`)** dört durumun
+  hepsini (rozet/buton kümesi), `[Detay]` genişlemesini, AC7'yi (İptal → sıfır POST çağrısı, hem
+  onay hem red için), AC5'i (yazma hatasında modal/form KAPANMAZ, metin KORUNUR, buton tekrar
+  aktif), Ö11'i (karar/gerekçe boşken buton devre dışı), B6'yı (409 conflict → form açık kalır,
+  taze `approved` durumu ana hücrede yansır) kapsıyor.
+- **Gerçek tarayıcı E2E (`gates.spec.ts`, 8 test):** onay modalı iptal → gerçek disk DEĞİŞMEDİ
+  (`docs/approvals/` boş kaldı), onay yazma → gerçek `.ok` dosyası PROCESS.md formatında (golden
+  string kontrolü), red → gerçek `.deny.md` + gerekçe olduğu gibi, çelişkili durum → `[Detay]`
+  genişleyip her iki tarih + sabit notu gösteriyor, canlı güncelleme → **UI'dan DEĞİL** doğrudan
+  `fs.writeFileSync` ile dışarıdan yazılan bir `.ok` dosyası, hiçbir manuel yenileme olmadan
+  `gates-watcher.ts` → SSE `gates` kanalı → `useGates`'in `gatesSignal` yeniden yüklemesi
+  zinciriyle ekranda "(kilitli)" olarak belirdi (§7'nin uçtan uca kanıtı). Dar genişlik
+  (320/375/480px): sekme çubuğu **kırpılmış görünür genişlikle** (`toBeVisible()` DEĞİL, F-007
+  dersi) ölçüldü; kapı tablosunun 4. sütunu (Aksiyon) 320px'te yatay kaydırma GEREKTİREBİLİYOR
+  (kanban tahtasıyla aynı, bilinçli kabul edilen desen) — bu yüzden o buton için "kırpılmadan
+  görünür" yerine gerçek bir Playwright `.click()`'in (otomatik kaydırma dahil) modalı
+  açabildiği doğrulandı (kaydırılabilir ama ULAŞILABİLİR, F-007'nin "asla ulaşılamaz" sınıfından
+  farklı).
+- Süreç/port hijyeni: `npm run e2e` sonrası `tasklist`/`netstat` tarandı — 5 `node.exe` süreci
+  gözlendi, TAMAMI `hayat-mentoru` projesine ait (komut satırlarıyla doğrulandı, `next dev`/
+  `next start -p 3211`), mission-control'e ait yetim süreç YOK; 7333/7334'te yalnızca
+  `TIME_WAIT` (kapanmış) kayıt var, `LISTENING` yok.
+
+**Sözleşmeden sapmalar**
+- `tests/features/gates/web/useGates.test.ts`, kanban'ın `useFeatures.test.ts` emsalinde hook
+  seviyesinde veri-katmanı davranışını (yükleme/sinyal/approve/deny outcome'ları) test ediyor;
+  AC7 "iptal → sıfır fetch" ve Ö11 "buton devre dışı" testleri ise `GatesScreen.test.tsx`'e
+  yazıldı (kararı/gerekçe metni ve `disabled` state'i `ApproveModal`/`DenyInlineForm`'un KENDİ
+  state'i, hook'ta değil — sözleşmenin dosya-bazlı planı bu iç mimari ayrımı öngörmemişti).
+  Kapsanan davranışta kayıp yok; qa-evaluator bu sapmayı onaylamazsa testler yeniden dağıtılabilir.
+
+**Kalan risk / QA'ya devredilen açık maddeler**
+- `npm run e2e:dev` ve chat E2E'si bu turda koşturulmadı (yukarıya bakınız) — QA veya kullanıcı
+  koşturmalı.
+- `gates-write-permission-live.test.ts` (A turundan miras) hâlâ hiç çalıştırılmadı — QA en az bir
+  kez `MC_GATES_LIVE_TESTS=1 npm run test:gates-live` ile koşturmalı.
+- §12'deki bilinen sınır (proje eklendikten SONRA `docs/approvals` oluşturulursa izleyici o proje
+  için hiç başlamaz) A turundan değişmeden duruyor — düşük etkili, kabul edilmiş.
+- Dar genişlikte (320px) kapı tablosunun Aksiyon sütunu yatay kaydırma gerektirebiliyor (yukarıya
+  bakınız) — kanban tahtasıyla aynı, bilinçli kabul edilen desen; qa-evaluator bunu ayrı bir bulgu
+  olarak değerlendirmek isteyebilir.
+- Onaylı kapı için "yeniden onayla" API düzeyinde engellenmiyor (ADR-005 madde 9, §4) ama UI'dan
+  hiç açılmıyor (kilitli satırda buton yok) — A turunun bilinen, kasıtlı sınırı, bu turda
+  değişmedi.
+
+**Sonraki adım**
+- qa-evaluator tam feature'ı (A+B) değerlendirsin (feature notu `status: qa`).
+- Sıradaki feature: F-009 (transkript spike) — Faz 2 sırası kullanıcı kararıyla F-008 → F-009.

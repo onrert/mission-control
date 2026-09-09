@@ -360,3 +360,28 @@ gecti (hic import yok). Yeni sonda seti: `createRequire`, `process.binding`, `re
 `Function('return imp'+'ort(...)')`, `globalThis['fet'+'ch']`, `eval`. Not: `fetch` ailesini
 CALISMA ZAMANI casusu yakaliyor (iki katman), `require` ailesinde **sifir** katman vardi —
 "kac katman koruyor" diye ailelere ayirarak sor.
+
+---
+
+## F-011 tur 3'te eklenen iki teknik (BEYAZ LISTE citinin kor noktasi)
+
+40. **Bir "import beyaz listesi" citini `export … from` ile yen — tarayicilar neredeyse her zaman
+   yalnizca `import` kelimesini ariyor.** F-011 tur 3: cit `import … from '<spec>'` ve
+   `import '<spec>'` desenlerini beyaz listeye tabi tutuyordu; **`export { get } from 'node:http'`
+   hicbir desende yoktu.** Iki satirlik, GIZLENMEMIS, sıradan TypeScript (barrel dosyasi yazimi)
+   ile `usage/server` grafiğine gercek bir HTTP istemcisi girdi: 53/53 ve tam pakette
+   **1295/1299 yesil** kalirken urun kodunun gercek giris noktasindan yerel dinleyiciye
+   **GET → 200** gitti (tam paket kosarken 30 istek). Kaza sinifi, kasit sinifi degil — bu yuzden
+   dogrudan bloklayici. Ayni aileden diger sondalar: `export * from`, `export * as X from`,
+   ve `resolveRelativeImport`'un COZEMEDIGI yerel yol (`./x.js`) — cozulemeyen import
+   **sessizce atlaniyor**, ihlal sayilmiyor.
+41. **"Calisma zamani katmani" diye sunulan canli-dinleyici testi TEK KATMAN degildir: yalnizca
+   KENDI rastgele portuna gelen istegi gorur.** Gercek bir sizinti baska bir adrese gider. Bu
+   yuzden "statik cit delinse bile ikinci katman yakalar" gerekcesini kabul etme; sondayi
+   dinleyicinin portuna DEGIL, bagimsiz bir porta yonelt — cit hala yesilse iddia curutulmustur.
+   Bonus ayrim: bir vektor uretimde (tsx/ESM) calisip vitest'te (vite-node) patlayabilir
+   (`Function('return imp'+'ort(...)')` → "A dynamic import callback was not specified") — bu
+   durumda cit degil ORTAM yakaliyordur; raporda ayir.
+   Ayrica esik/oran kalibrasyonu iddialarini **tek projeden degil TUM projelerden** olc:
+   F-011'de %66,2 tabani dogrulandi ama proje bazinda dagilim %14,6-%72,8, dosya bazinda p5=%49,1
+   idi — "temsil edici mi" sorusu ancak dagilimla cevaplanir.

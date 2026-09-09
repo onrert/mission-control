@@ -1,7 +1,7 @@
 ---
 id: F-011
 title: Token kullanımı ekranı (proje / gün / oturum / agent grupları)
-status: fix
+status: qa
 owner: developer
 deps: [F-009]
 sprint: 2
@@ -24,3 +24,6 @@ Kaynak: PRD özellik 6; `docs/03-ux.md` ekran 6; ADR-007 karar 3.
 
 ## Notlar / kararlar
 - G0.ok'taki "hazır kaynak öncelikli" daralmasından bilinçli sapma; G2'de kullanıcı onayladı.
+- QA düzeltme turu 2 (`docs/qa/F-011-2026-09-10-tur2.md`, KALDI → AA1-AA4 + nit düzeltildi,
+  `docs/qa/F-011-contract.md` §5). Bu turda CEO kararıyla dosya sahipliği geçici olarak
+  `docs/03-ux.md` ve `src/web/App.tsx`'e (asgari dokunuş) genişletildi.

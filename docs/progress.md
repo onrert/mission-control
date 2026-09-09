@@ -3589,3 +3589,88 @@ ve eski "degraded uyarısına bak" yönlendirmesinin neden yanlış olduğu aç�
 
 **Sonraki adım**
 - qa-evaluator F-011'in Z1-Z7 düzeltme turunu değerlendirsin.
+
+---
+
+## F-011 — QA düzeltme turu 2 (AA1-AA4 + nit)
+
+QA kararı **KALDI** (`docs/qa/F-011-2026-09-10-tur2.md`) → 3 bloklayıcı (AA1/AA2/AA3) + 1 yarım
+(AA4) + 1 nit düzeltildi. Sözleşme addendumu: `docs/qa/F-011-contract.md` §5.
+
+**Ne yapıldı**
+
+- **AA1 (ağ çiti, kara liste → beyaz liste):** `tests/features/usage/server/
+  network-capability-guard.test.ts` artık `src/features/usage/server/**`'in yalnızca `fs`/`path`
+  import edebileceğini kanıtlıyor — onaylı listede olmayan HER şey reddedilir (ADR-013 emsali).
+  Ayrıca `createRequire(`/`require(`/`process.binding(`/`eval(`/`Function(` metinsel olarak
+  (import ifadesinden BAĞIMSIZ) taranıyor — QA'nın N1 (`createRequire(...)('node:http').get(…)`,
+  gerçekten canlı istek atmıştı) ve N2 (`process.binding('tcp_wrap')`, hiç import içermiyordu)
+  sondaları artık kalıcı `it()` testleri. Çalışma zamanı katmanı: `usage-aggregator.test.ts`'e
+  GERÇEK bir yerel `http.createServer` dinleyicisi açıp gerçek `computeUsageReport`'u çalıştıran,
+  mock KULLANMAYAN yeni bir test eklendi (istek gelirse KIRMIZI verir).
+- **AA2 (okunamayan dosya sessiz kaybı):** `usage-aggregator.ts`'teki guard-çağrısı `catch`'i artık
+  hata kodunu inceliyor — `EPERM`/`EACCES`/`EBUSY` (kalıcı erişim reddi, ör. Windows `icacls /deny`)
+  `unreadable_file_count`'u artırıp `degraded:true` yapıyor; diğer hatalar (ör. `ENOENT` yarış
+  durumu) eskisi gibi sessizce atlanıyor. `fs.statSync`'in KENDİ `catch`'i (ayrı, Y8 emsali)
+  DEĞİŞMEDİ.
+- **AA3 ("veri eksik olabilir" her zaman açık):** eşik ikiye ayrıldı — bozuk JSON oranı (`%1`,
+  yalnızca `lines_bad`) ve "tanınan tip" oranı (yalnızca `lines_ok` içinde, gerçek verideki ~%66,2
+  tabanın belirgin altına, `%50`'ye kalibre edildi). `docs/03-ux.md` §6 (ekran 6) önce güncellendi,
+  sonra kod. `transcript-reader.ts`'e (F-009/F-010'un dosyası, bu feature'ın sahipliği DIŞINDA)
+  dokunulmadı — recognized-tip kümesi genişletilmedi, yalnızca eşik/formül `usage-aggregator.ts`
+  içinde kalibre edildi.
+- **AA4 (320px'te proje sütunu 0px):** `UsageScreen.tsx`'te başlık ve satır grid'leri artık AYNI
+  SABİT genişlikli şablonu (`minmax(4.5rem,1fr)_5rem_5rem_5rem_6rem`) kullanıyor (eskiden ikisi de
+  `1fr_auto_auto_auto_auto` yazıyordu ama BAĞIMSIZ grid'lerdi, `auto` sütunlar içeriğe göre
+  hesaplandığı için satırlarda proje 0px'e çöküyordu). İkisi de aynı `overflow-x-auto` kaydırma
+  kabı içinde — dar ekranda kırpma/gizleme yerine yatay kaydırma devreye giriyor, proje sütunu her
+  zaman en az 72px görünür.
+- **Nit:** `App.tsx`'teki bayat `gap-1` yorumu gerçek sınıfla (`gap-0.5`) eşitlendi.
+- M1b (dedup anahtarının `requestId`'ye düşürülmesi) QA'nın **eşdeğer mutant** kararı kabul edildi,
+  sözleşmeye not düşüldü, ek çit eklenmedi.
+
+**Nasıl doğrulandı**
+
+- Her düzeltme AYRI AYRI mutasyonla kanıtlandı: değişiklik geri alındı (elle, `git checkout`
+  KULLANILMADI — Read+Write ile scratchpad'teki `.bak` kopyasından), test(ler) KIRMIZI görüldü,
+  sonra elle geri yazıldı, hash (`md5sum`) ile orijinalle birebir eşleştiği doğrulandı:
+  - AA1: beyaz liste `['fs','path']` → `['fs','path','http','module']` gevşetildi → **5 test
+    KIRMIZI** (N1, transitif-yasak-modül, beyaz-liste-dışı-modül testleri).
+  - AA2: guard `catch`'i eski haline (`catch { return {unreadable:false} }`) döndürüldü → yeni
+    **2 test KIRMIZI** (mock EPERM + gerçek `icacls` testi).
+  - AA3: `RECOGNIZED_TYPE_RATIO_WARNING_THRESHOLD` `0.5` → `0.99` yapıldı → gerçek-dağılım testi
+    **KIRMIZI**.
+  - AA4: `USAGE_GRID_COLS` eski şablona (`1fr_auto_auto_auto_auto`) döndürüldü → yeni E2E testi
+    **KIRMIZI**, QA'nın ölçtüğü **0px** aynen tekrar üretildi.
+- `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/` → yalnızca önceki turlardan kalan
+  meşru test adları, kaynakta kalıntı yok.
+- `npm run verify`: typecheck 0, lint 0, **test: 84 dosya geçti + 1 skip (85), 1292 test geçti +
+  4 skip (1296)** — bu turdan önceki 1281'den **+11 yeni test** (AA1: 5 statik + 1 çalışma zamanı;
+  AA2: 3; AA3: 2), build başarılı. Tek koşuda temiz — worker-fork kararsızlığı bu turda GÖRÜLMEDİ
+  (ikinci bir koşuya gerek kalmadı,
+  yine de bilinen risk not düşülüyor).
+- `npm run e2e`: **55/55 geçti (44,8s)** — 54 eski + 1 yeni (AA4, 320px hizalama).
+- Yetim süreç: oturum sonunda `Get-CimInstance Win32_Process` yalnızca `hayat-mentoru`'ya ait 3
+  `node.exe` gösterdi (CLAUDE.md'nin bilinen, DOKUNULMAYAN süreçleri) — mission-control'e ait
+  yetim süreç YOK. `npm run dev` bu turda hiç çalıştırılmadı (`npm run build && npm start`/
+  `npx playwright test` kullanıldı).
+
+**Kalan risk / bir sonraki QA turuna notlar**
+
+- AA3'ün `%50` eşiği tek bir gerçek veri noktasına (bu makinenin ~%66,2 taban oranı) kalibre
+  edildi — farklı bir makinede/oturum profilinde (ör. çok az subagent kullanımı) taban oran daha
+  yüksek (~%85-90) çıkabilir, bu durumda `%50` eşiği hâlâ güvenli ama gelecekte taban oranın
+  düşebileceği (ör. yeni bir "normal" satır tipi eklenirse) bir senaryo yeniden ölçülmeli.
+- AA1'in beyaz listesi yalnızca BUGÜNKÜ ürün kodunun (`fs`/`path`) ihtiyacını kapsıyor — gelecekte
+  `usage/server/**`'e meşru bir yeni bağımlılık eklenirse (ör. bir JSON şema kütüphanesi) bu test
+  dosyasının `ALLOWED_BARE_MODULES` listesinin de GÜNCELLENMESİ gerekecek; güncellenmezse test
+  KIRMIZI verir (bu bilinçli bir sürtünme, sessiz genişleme değil).
+- AA4'ün sabit `rem` genişlikleri (`5rem`/`6rem`) QA'nın gerçek verisine göre kalibre edildi
+  (`2.748.688.768` gibi çok büyük TOPLAM rakamlar `usage-grand-total`'da ayrı gösteriliyor, satır
+  başına giriş/çıkış genelde çok daha küçük) — aşırı uç bir günlük toplam (ör. tek bir projede tek
+  günde 100M+ token) `truncate` ile kırpılabilir, veri kaybı YOK (yalnızca görsel kırpma).
+- Z1-Z7'nin (1. tur) kalan riskleri (contract §6: `mtime` bazlı gün türetme, `agentType` sabit
+  listeyle kısıtlanmıyor) değişmedi.
+
+**Sonraki adım**
+- qa-evaluator F-011'in düzeltme turu 2'sini (AA1-AA4 + nit) değerlendirsin.

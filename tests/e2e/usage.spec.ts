@@ -124,6 +124,90 @@ test.describe('D10 kapatma (Y6) — 320-767px arası (sm: ÜSTÜ dahil), üretim
   })
 })
 
+/** F-011 QA düzeltme turu 2 (AA4, BLOKLAYICI) — QA'nın 320px'te ölçtüğü "proje sütunu 0px" bulgusu
+ *  (`docs/qa/F-011-2026-09-10-tur2.md` §5). Gerçek bir satır (uzun proje adı + büyük sayılar +
+ *  dağılım çubuğu — QA'nın `docs/03-ux.md` mockup'ındaki gerçekçi değerler) `/api/usage`'ı
+ *  sahteleştirerek üretilir; `clippedVisibleWidth` (yukarıda) kaydırma kabındaki kırpılmış görünür
+ *  genişliği ölçer (F-007 dersi — `toBeVisible()` kaydırma kabında yalan söyler). */
+function usageFixtureBody() {
+  const usage = {
+    input_tokens: 340210,
+    output_tokens: 88004,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+  }
+  return {
+    success: true,
+    data: {
+      projects: [
+        {
+          project_id: 'p1',
+          project_label: 'mission-control-uzun-proje-adi',
+          usage,
+          days: [
+            {
+              day: '2026-09-04',
+              usage,
+              sessions: [
+                {
+                  session_id: 'sess-0510aaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+                  agents: [{ agent: 'ana oturum', usage }],
+                  usage,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      usage,
+      lines_ok: 100,
+      lines_bad: 0,
+      unknown_type_lines: 0,
+      unreadable_file_count: 0,
+      truncated_file_count: 0,
+      degraded: false,
+      source_unreadable: false,
+    },
+  }
+}
+
+test.describe('AA4 (F-011 QA düzeltme turu 2) — 320px’te proje sütunu okunur ve başlıkla hizalı', () => {
+  test('320px’te proje hücresinin kırpılmış görünür genişliği > 0 ve başlığın proje sütunuyla pikselce hizalı', async ({
+    page,
+  }) => {
+    await page.route('**/api/usage', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(usageFixtureBody()),
+      })
+    })
+    await page.setViewportSize({ width: 320, height: 700 })
+    await page.goto('/')
+    const responsePromise = page.waitForResponse((res) => res.url().includes('/api/usage'))
+    await page.getByRole('tab', { name: 'Token' }).click()
+    await responsePromise
+    await expect(page.locator('[data-testid="usage-row"]').first()).toBeVisible()
+
+    const projectRowWidth = await clippedVisibleWidth(page, '[data-testid="usage-row-project"]')
+    expect(
+      projectRowWidth,
+      '320px’te proje hücresinin kırpılmış görünür genişliği 0 OLMAMALI (QA B4 regresyon çiti)'
+    ).toBeGreaterThan(0)
+
+    // Hizalama: başlığın "Proje" hücresi ile satırın proje hücresi AYNI sol/sağ sınırları
+    // paylaşmalı (± birkaç piksel — kenarlık/alt piksel yuvarlaması payı).
+    const [headerBox, rowBox] = await Promise.all([
+      page.locator('[data-testid="usage-table-header"] > span').first().boundingBox(),
+      page.locator('[data-testid="usage-row-project"]').first().boundingBox(),
+    ])
+    expect(headerBox).not.toBeNull()
+    expect(rowBox).not.toBeNull()
+    expect(Math.abs(headerBox!.x - rowBox!.x)).toBeLessThanOrEqual(2)
+    expect(Math.abs(headerBox!.width - rowBox!.width)).toBeLessThanOrEqual(2)
+  })
+})
+
 test('Token sekmesi açılır, /api/usage 200 döner (500 değil), kaynak izlenen proje yoksa "okunamadı" DEĞİL boş durum gösterir', async ({
   page,
 }) => {

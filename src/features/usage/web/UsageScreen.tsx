@@ -17,6 +17,24 @@ type GroupMode = 'proje' | 'gun'
 
 const SKELETON_ROW_COUNT = 4
 
+/**
+ * F-011 QA düzeltme turu 2 (AA4, BLOKLAYICI) — başlık (`usage-table-header`) ve her satırın
+ * (`usage-row` → `<summary>`) grid'i eskiden AYNI `grid-cols-[1fr_auto_auto_auto_auto]` metnini
+ * kullanıyordu ama iki AYRI, BİRBİRİNDEN BAĞIMSIZ grid konteynerdi — `auto` sütun genişlikleri
+ * HER konteynerin KENDİ içeriğine göre hesaplanır. Başlıkta "Gün/Giriş/Çıkış/Dağılım" kısa
+ * etiketler dar `auto` sütunlar üretiyordu (proje 1fr'ye 320px'te 95px kalıyordu); satırlarda
+ * gerçek veri (tarih, büyük sayılar, dağılım çubuğu) çok daha geniş `auto` sütunlar üretiyordu —
+ * proje sütunu 320px'te TAMAMEN (0px) çöküyordu (QA ölçtü).
+ *
+ * Düzeltme: `auto` yerine SABİT (`rem`) genişlikler — artık sütun genişliği içerikten değil
+ * şablonun kendisinden geldiği için başlık ve satırlar HER ZAMAN birebir hizalı (aynı literal
+ * şablon + aynı genişlikteki kaydırma kabı). Proje sütunu `minmax(4.5rem,1fr)` ile en az 72px
+ * garanti eder — asla 0px'e çökemez. Toplam sabit genişlik dar ekranlarda konteyneri aşarsa
+ * (320px) `usage-table-scroll` kabı (`overflow-x-auto`) devreye girer — kırpma/gizleme YOK,
+ * kaydırma var (F-005 emsali).
+ */
+const USAGE_GRID_COLS = 'grid-cols-[minmax(4.5rem,1fr)_5rem_5rem_5rem_6rem]'
+
 function totalTokens(usage: TokenUsageTotals): number {
   return (
     usage.input_tokens +
@@ -191,75 +209,80 @@ export function UsageScreen({
             </div>
           )}
 
-          {/* F-011 QA düzeltme turu (Z6) — `docs/03-ux.md` ekran 6 mockup'ıyla birebir sütun
-              başlıkları (eskiden hiç yoktu, kullanıcı sayıların ne olduğunu tahmin etmek zorunda
-              kalıyordu). Grid şablonu satırlarla (`usage-row`) BİREBİR aynı olmalı. */}
-          <div
-            data-testid="usage-table-header"
-            aria-hidden="true"
-            className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 px-2 text-[11px] uppercase tracking-wide text-zinc-500"
-          >
-            <span>Proje</span>
-            <span>Gün</span>
-            <span>Giriş</span>
-            <span>Çıkış</span>
-            <span>Dağılım</span>
-          </div>
+          {/* F-011 QA düzeltme turu 2 (AA4) — başlık ve satırlar artık AYNI SABİT genişlikli
+              `USAGE_GRID_COLS` şablonunu, AYNI kaydırma kabı (`overflow-x-auto`) içinde paylaşır.
+              Genişlik içerikten değil şablondan geldiği için ikisi HER ZAMAN pikselce hizalı;
+              toplam genişlik dar ekranı (320px) aşarsa kırpma/gizleme değil yatay kaydırma
+              devreye girer — proje sütunu (`minmax(4.5rem,1fr)`) asla 0px'e çökmez. */}
+          <div data-testid="usage-table-scroll" className="overflow-x-auto">
+            {/* `docs/03-ux.md` ekran 6 mockup'ıyla birebir sütun başlıkları (Z6 — eskiden hiç
+                yoktu, kullanıcı sayıların ne olduğunu tahmin etmek zorunda kalıyordu). */}
+            <div
+              data-testid="usage-table-header"
+              aria-hidden="true"
+              className={`grid ${USAGE_GRID_COLS} gap-3 px-2 pb-1 text-[11px] uppercase tracking-wide text-zinc-500`}
+            >
+              <span>Proje</span>
+              <span>Gün</span>
+              <span>Giriş</span>
+              <span>Çıkış</span>
+              <span>Dağılım</span>
+            </div>
 
-          <div data-testid="usage-rows" className="flex flex-col gap-2">
-            {rows.map((row) => {
-              const share = grandTotal > 0 ? (totalTokens(row.dayUsage) / grandTotal) * 100 : 0
-              const barWidth = Math.max(0, Math.min(100, share))
-              return (
-                <details
-                  key={row.key}
-                  data-testid="usage-row"
-                  className="rounded-md border border-zinc-800 bg-zinc-900/40"
-                >
-                  {/* Z6 — proje sütunu (1fr) TÜM esnek alanı alır; gün/giriş/çıkış/dağılım
-                      (auto) içeriklerine göre boyutlanır. Eskiden gün de `1fr` idi ve 320px'te
-                      proje sütunuyla alanı paylaşırken tamamen boşalıyordu (QA ölçtü). */}
-                  <summary className="grid cursor-pointer grid-cols-[1fr_auto_auto_auto_auto] items-center gap-3 px-2 py-1.5 text-xs text-zinc-300">
-                    <span data-testid="usage-row-project" className="truncate font-semibold">
-                      {row.project_label}
-                    </span>
-                    <span data-testid="usage-row-day" className="font-mono">
-                      {row.day}
-                    </span>
-                    <span data-testid="usage-row-input" className="font-mono">
-                      {formatNumber(row.dayUsage.input_tokens)}
-                    </span>
-                    <span data-testid="usage-row-output" className="font-mono">
-                      {formatNumber(row.dayUsage.output_tokens)}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-16 overflow-hidden rounded bg-zinc-800">
-                        <span
-                          className="block h-full bg-amber-600"
-                          style={{ width: `${barWidth}%` }}
-                        />
+            <div data-testid="usage-rows" className="flex flex-col gap-2">
+              {rows.map((row) => {
+                const share = grandTotal > 0 ? (totalTokens(row.dayUsage) / grandTotal) * 100 : 0
+                const barWidth = Math.max(0, Math.min(100, share))
+                return (
+                  <details
+                    key={row.key}
+                    data-testid="usage-row"
+                    className="rounded-md border border-zinc-800 bg-zinc-900/40"
+                  >
+                    <summary
+                      className={`grid cursor-pointer ${USAGE_GRID_COLS} items-center gap-3 px-2 py-1.5 text-xs text-zinc-300`}
+                    >
+                      <span data-testid="usage-row-project" className="truncate font-semibold">
+                        {row.project_label}
                       </span>
-                      <span className="font-mono">{share.toFixed(0)}%</span>
-                    </span>
-                  </summary>
-                  <div className="flex flex-col gap-1 border-t border-zinc-800 px-3 py-2 text-xs text-zinc-400">
-                    {row.sessions.flatMap((session) =>
-                      session.agents.map((agentTotal) => (
-                        <div
-                          key={`${session.session_id}-${agentTotal.agent}`}
-                          data-testid="usage-session-agent-row"
-                          className="font-mono"
-                        >
-                          Oturum {session.session_id.slice(0, 8)} · {agentTotal.agent}: giriş{' '}
-                          {formatNumber(agentTotal.usage.input_tokens)}, çıkış{' '}
-                          {formatNumber(agentTotal.usage.output_tokens)}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </details>
-              )
-            })}
+                      <span data-testid="usage-row-day" className="truncate font-mono">
+                        {row.day}
+                      </span>
+                      <span data-testid="usage-row-input" className="truncate font-mono">
+                        {formatNumber(row.dayUsage.input_tokens)}
+                      </span>
+                      <span data-testid="usage-row-output" className="truncate font-mono">
+                        {formatNumber(row.dayUsage.output_tokens)}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="h-2 w-16 overflow-hidden rounded bg-zinc-800">
+                          <span
+                            className="block h-full bg-amber-600"
+                            style={{ width: `${barWidth}%` }}
+                          />
+                        </span>
+                        <span className="font-mono">{share.toFixed(0)}%</span>
+                      </span>
+                    </summary>
+                    <div className="flex flex-col gap-1 border-t border-zinc-800 px-3 py-2 text-xs text-zinc-400">
+                      {row.sessions.flatMap((session) =>
+                        session.agents.map((agentTotal) => (
+                          <div
+                            key={`${session.session_id}-${agentTotal.agent}`}
+                            data-testid="usage-session-agent-row"
+                            className="font-mono"
+                          >
+                            Oturum {session.session_id.slice(0, 8)} · {agentTotal.agent}: giriş{' '}
+                            {formatNumber(agentTotal.usage.input_tokens)}, çıkış{' '}
+                            {formatNumber(agentTotal.usage.output_tokens)}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </details>
+                )
+              })}
+            </div>
           </div>
         </>
       )}

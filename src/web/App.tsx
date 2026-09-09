@@ -157,7 +157,7 @@ export default function App() {
           // TAMAMEN dışına düşüyordu (kırpılmış görünür genişlik 0px, QA ölçtü). F-011/D10 —
           // altıncı sekme (Token) eklenince aynı sınıf 320px'te TEKRAR ortaya çıktı (`gap-1.5`/
           // `text-xs` 5 sekme için yeterliydi, 6. sekmeyi 66px açıkla dışarıda bırakıyordu,
-          // gerçek Chromium'da ölçüldü). `gap-1`/`text-[11px]` (yalnızca `lg:` altı) + kırılma
+          // gerçek Chromium'da ölçüldü). `gap-0.5`/`text-[11px]` (yalnızca `lg:` altı) + kırılma
           // noktasının `lg:`'ye taşınması (üstteki not) birlikte 320px'te 6 sekmenin TAMAMINI
           // (`scrollWidth <= clientWidth`) sığdırıyor — metin/yapı/geniş ekran görünümü DEĞİŞMEZ.
           className="order-3 flex w-full shrink-0 items-center gap-0.5 overflow-x-auto lg:order-none lg:w-auto lg:flex-1 lg:gap-4"

@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import fs from 'node:fs'
 import http from 'node:http'
 import https from 'node:https'
+import os from 'node:os'
 import path from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { computeUsageReport } from '../../../../src/features/usage/server/usage-aggregator'
 import { encodeProjectDirName } from '../../../../src/features/thread/server/transcript-reader'
 import { createTempDataDir, removeTempDataDir } from '../../../helpers/temp-data-dir'
@@ -358,6 +360,50 @@ describe('computeUsageReport — Y3: ağ isteği yok', () => {
     expect(httpSpy).not.toHaveBeenCalled()
     expect(httpsSpy).not.toHaveBeenCalled()
   })
+
+  // F-011 QA düzeltme turu 2 (AA1, çalışma zamanı katmanı) — yukarıdaki test yalnızca `fetch`/
+  // `http.request`/`https.request`'in KENDİ referanslarını casusluyor; QA'nın N1 sondası
+  // (`createRequire`) TAM OLARAK bu casusları atlayıp GERÇEK bir yerel dinleyiciye istek attı.
+  // Bu test mock KULLANMAZ — gerçek bir `http.createServer` dinleyicisi açar, ürün kodunun
+  // GERÇEK `computeUsageReport`'unu çalıştırır ve dinleyicinin HİÇBİR istek almadığını doğrular.
+  // Statik çit (`network-capability-guard.test.ts`) bir boşluk bıraksa bile bu katman canlı bir
+  // sızıntıyı yakalar — `network-capability-guard.test.ts`'teki N1/N2 kalıcı sondalarının
+  // çalışma-zamanı eşleniği.
+  it('gerçek bir yerel TCP dinleyicisi çalışırken computeUsageReport çalıştırılır — dinleyici HİÇBİR istek almaz (AA1, mock değil, canlı kontrol)', async () => {
+    const claudeRoot = tempDir()
+    const project = tempDir()
+    const encoded = encodeProjectDirName(project)
+    const projDir = path.join(claudeRoot, encoded)
+    writeWithMtime(
+      path.join(projDir, 'sess-1.jsonl'),
+      `${assistantLine({ input_tokens: 7, output_tokens: 3 })}\n`,
+      '2026-09-04T00:00:00Z'
+    )
+    writeWithMtime(
+      path.join(projDir, 'sess-1', 'subagents', 'agent-a.jsonl'),
+      `${assistantLine({ input_tokens: 1, output_tokens: 1 })}\n`,
+      '2026-09-04T00:00:00Z'
+    )
+
+    const receivedUrls: string[] = []
+    const server = http.createServer((req, res) => {
+      receivedUrls.push(req.url ?? '')
+      res.writeHead(200)
+      res.end('AA1-CANLI-SIZINTI')
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+
+    try {
+      const report = computeUsageReport(claudeRoot, [{ id: 'p1', label: 'p', path: project }])
+      // `computeUsageReport` kendisi senkron — olası gizli bir ASENKRON ağ çağrısının event
+      // loop'a kuyruklanmış olma ihtimaline karşı bir tık beklenir.
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(report.usage.input_tokens).toBe(8)
+      expect(receivedUrls).toEqual([])
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
 })
 
 describe('computeUsageReport — AC7/B6: 64 MB+ dosyada 32 MB kuyruk okuma davranışı devralınır', () => {
@@ -427,6 +473,67 @@ describe('computeUsageReport — Z4/Ö1: format değişimi (tüm satırlar tanı
   })
 })
 
+// F-011 QA düzeltme turu 2 (AA3, BLOKLAYICI) — QA gerçek üretim verisinde (57.795 satır) ölçtü:
+// normal transkriptlerin %33,8'i reader'ın "tanınan" kümesinin (user/assistant/system/summary)
+// DIŞINDA ama BİLİNEN VE NORMAL tiplerdir (`attachment`, `queue-operation`, …,
+// `docs/wiki/pages/desen/claude-transcript-formati.md`) — eski %99 eşiği bu yüzden gerçek veride
+// HER ZAMAN tetikleniyordu (doğruluğu kanıtlanmış bir rakamın yanında kalıcı yanlış alarm).
+describe('computeUsageReport — AA3 (F-011 QA düzeltme turu 2): gerçek tip dağılımı yanlış alarm ÜRETMEZ', () => {
+  it('gerçek üretim dağılımını taşıyan bir dosyada (assistant %41 + user %24 + system %1 tanınan, %34 bilinen-normal-ama-tanınmayan diğer tipler) degraded:false kalır', () => {
+    const claudeRoot = tempDir()
+    const project = tempDir()
+    const encoded = encodeProjectDirName(project)
+    const projDir = path.join(claudeRoot, encoded)
+    // Oranlar QA'nın gerçek taramasıyla (assistant 41,2% / user 24,3% / system 0,7% / diğer 33,8%)
+    // tutarlı, 100 satıra ölçeklenmiş bir temsilci karışım — hangi "diğer" tipin kullanıldığı
+    // usage-aggregator için önemsiz (`unknown_type_lines` hepsini aynı sayar), tek bir temsilci
+    // tip (`attachment`) yeterli.
+    const assistantLines = Array.from({ length: 41 }, () =>
+      assistantLine({ input_tokens: 1, output_tokens: 1 })
+    ).join('\n')
+    const userLines = Array.from({ length: 24 }, () =>
+      JSON.stringify({ type: 'user', message: { role: 'user', content: 'x' } })
+    ).join('\n')
+    const systemLine = JSON.stringify({ type: 'system', subtype: 'stop_hook_summary' })
+    const otherLines = Array.from({ length: 34 }, () =>
+      JSON.stringify({ type: 'attachment' })
+    ).join('\n')
+    const content = `${assistantLines}\n${userLines}\n${systemLine}\n${otherLines}\n`
+    writeWithMtime(path.join(projDir, 'sess-1.jsonl'), content, '2026-09-04T00:00:00Z')
+
+    const report = computeUsageReport(claudeRoot, [{ id: 'p1', label: 'p', path: project }])
+    expect(report.lines_ok).toBe(100)
+    expect(report.lines_bad).toBe(0)
+    expect(report.unknown_type_lines).toBe(34)
+    expect(report.usage.input_tokens).toBe(41)
+    // AA3'ün asıl iddiası: gerçek dağılım YANLIŞ ALARM üretmez.
+    expect(report.degraded).toBe(false)
+  })
+
+  it('%50 eşiğinin AŞIRI gevşek OLMADIĞININ kanıtı: tanınan oran tam sınırın altına (< %50) düşerse hâlâ degraded:true olur', () => {
+    const claudeRoot = tempDir()
+    const project = tempDir()
+    const encoded = encodeProjectDirName(project)
+    const projDir = path.join(claudeRoot, encoded)
+    // 100 satır: yalnızca 40 tanınan (assistant), 60 tanınmayan → oran 0,40 < 0,5 eşiği.
+    const assistantLines = Array.from({ length: 40 }, () =>
+      assistantLine({ input_tokens: 1 })
+    ).join('\n')
+    const otherLines = Array.from({ length: 60 }, () =>
+      JSON.stringify({ type: 'attachment' })
+    ).join('\n')
+    writeWithMtime(
+      path.join(projDir, 'sess-1.jsonl'),
+      `${assistantLines}\n${otherLines}\n`,
+      '2026-09-04T00:00:00Z'
+    )
+
+    const report = computeUsageReport(claudeRoot, [{ id: 'p1', label: 'p', path: project }])
+    expect(report.unknown_type_lines).toBe(60)
+    expect(report.degraded).toBe(true)
+  })
+})
+
 describe('computeUsageReport — Z4/Ö2: guard sonrası GERÇEKTEN okunamayan dosya sessizce düşmez', () => {
   it("bir dosyanın fs.readFileSync'i FIRLARSA (ör. EPERM, guard geçtikten sonra) unreadable_file_count artar, degraded:true olur, yalnızca o dosya toplamdan düşer", () => {
     const claudeRoot = tempDir()
@@ -465,6 +572,117 @@ describe('computeUsageReport — Z4/Ö2: guard sonrası GERÇEKTEN okunamayan do
     // yalnızca `goodFile` sayılır — `badFile` toplamdan sessizce düşmez, sayaca yansır.
     expect(report.usage.input_tokens).toBe(1)
   })
+})
+
+// F-011 QA düzeltme turu 2 (AA2, BLOKLAYICI) — 1. turun Ö2 düzeltmesi yalnızca `readFileSync`'in
+// fırlamasını kapsıyordu; QA gerçek `icacls /deny "(RA,RD,RX)"` ile guard'ın KENDİSİNİN
+// (`resolveAllowedTranscriptPath`'in sarılmamış `fs.realpathSync.native`'i) EPERM fırlattığını,
+// bunun ise usage-aggregator'ın best-effort `catch`'i tarafından sessizce yutulduğunu (175→10
+// token, %94 kayıp, uyarı YOK) kanıtladı. Bu blok o iki katmanı (mock + gerçek ACL) ayrı ayrı
+// kanıtlar ve "yarış durumu hâlâ sessiz kalıyor mu" regresyon çitini korur.
+describe('computeUsageReport — AA2 (F-011 QA düzeltme turu 2): guard katmanının KALICI erişim reddi artık sessizce yutulmuyor', () => {
+  it("guard'ın fs.realpathSync.native çağrısı EPERM fırlatırsa (QA'nın gerçek icacls repro'sunun kod-yolu eşdeğeri) unreadable_file_count artar, degraded:true olur, yalnızca o dosya toplamdan düşer", () => {
+    const claudeRoot = tempDir()
+    const project = tempDir()
+    const encoded = encodeProjectDirName(project)
+    const projDir = path.join(claudeRoot, encoded)
+    const deniedFile = path.join(projDir, 'sess-denied.jsonl')
+    const goodFile = path.join(projDir, 'sess-good.jsonl')
+    writeWithMtime(
+      deniedFile,
+      `${assistantLine({ input_tokens: 999, output_tokens: 999 })}\n`,
+      '2026-09-04T00:00:00Z'
+    )
+    writeWithMtime(
+      goodFile,
+      `${assistantLine({ input_tokens: 1, output_tokens: 1 })}\n`,
+      '2026-09-04T00:00:00Z'
+    )
+
+    const originalRealpathNative = fs.realpathSync.native
+    vi.spyOn(fs.realpathSync, 'native').mockImplementation(((p: fs.PathLike) => {
+      if (path.resolve(p.toString()) === path.resolve(deniedFile)) {
+        const err = new Error('EPERM: yapay (guard realpath)') as NodeJS.ErrnoException
+        err.code = 'EPERM'
+        throw err
+      }
+      return originalRealpathNative(p as fs.PathOrFileDescriptor as fs.PathLike)
+    }) as typeof fs.realpathSync.native)
+
+    const report = computeUsageReport(claudeRoot, [{ id: 'p1', label: 'p', path: project }])
+    expect(report.unreadable_file_count).toBe(1)
+    expect(report.degraded).toBe(true)
+    // yalnızca `deniedFile` toplamdan düşer — `goodFile` sessizce kaybolmaz (sessiz kısmi kayıp yok).
+    expect(report.usage.input_tokens).toBe(1)
+    expect(report.usage.output_tokens).toBe(1)
+  })
+
+  it("guard katmanında GERÇEK bir yarış durumu (lstatSync ENOENT — dosya listelendikten SONRA silindi) hâlâ sessizce atlanır, sayılmaz (regresyon çiti — EPERM/EACCES/EBUSY dışındaki hatalar 'gerçek erişim reddi' SAYILMAMALI)", () => {
+    const claudeRoot = tempDir()
+    const project = tempDir()
+    const encoded = encodeProjectDirName(project)
+    const projDir = path.join(claudeRoot, encoded)
+    const raceFile = path.join(projDir, 'sess-race.jsonl')
+    const goodFile = path.join(projDir, 'sess-good.jsonl')
+    writeWithMtime(
+      raceFile,
+      `${assistantLine({ input_tokens: 999, output_tokens: 999 })}\n`,
+      '2026-09-04T00:00:00Z'
+    )
+    writeWithMtime(
+      goodFile,
+      `${assistantLine({ input_tokens: 1, output_tokens: 1 })}\n`,
+      '2026-09-04T00:00:00Z'
+    )
+
+    const originalLstatSync = fs.lstatSync.bind(fs)
+    vi.spyOn(fs, 'lstatSync').mockImplementation(((
+      p: Parameters<typeof fs.lstatSync>[0],
+      opts?: Parameters<typeof fs.lstatSync>[1]
+    ) => {
+      if (path.resolve(p.toString()) === path.resolve(raceFile)) {
+        const err = new Error('ENOENT: yapay (yarış durumu)') as NodeJS.ErrnoException
+        err.code = 'ENOENT'
+        throw err
+      }
+      return (originalLstatSync as (...args: unknown[]) => unknown)(p, opts)
+    }) as typeof fs.lstatSync)
+
+    const report = computeUsageReport(claudeRoot, [{ id: 'p1', label: 'p', path: project }])
+    // yarış durumu unreadable_file_count'a SAYILMAZ — yalnızca goodFile sayılır, degraded bu
+    // yüzden false kalır (goodFile'ın kendisi bozuk değil).
+    expect(report.unreadable_file_count).toBe(0)
+    expect(report.degraded).toBe(false)
+    expect(report.usage.input_tokens).toBe(1)
+  })
+
+  it.skipIf(process.platform !== 'win32')(
+    'GERÇEK Windows ACL reddiyle (icacls /deny "(RA,RD,RX)") birebir tekrar üretilir — QA\'nın sandbox repro\'sunun aynısı, mock değil',
+    () => {
+      const claudeRoot = tempDir()
+      const project = tempDir()
+      const encoded = encodeProjectDirName(project)
+      const projDir = path.join(claudeRoot, encoded)
+      const deniedFile = path.join(projDir, 'sess-real-denied.jsonl')
+      writeWithMtime(
+        deniedFile,
+        `${assistantLine({ input_tokens: 150, output_tokens: 0 })}\n`,
+        '2026-09-04T00:00:00Z'
+      )
+
+      const username = os.userInfo().username
+      execFileSync('icacls', [deniedFile, '/deny', `${username}:(RA,RD,RX)`], { stdio: 'pipe' })
+      try {
+        const report = computeUsageReport(claudeRoot, [{ id: 'p1', label: 'p', path: project }])
+        expect(report.unreadable_file_count).toBe(1)
+        expect(report.degraded).toBe(true)
+        expect(report.usage.input_tokens).toBe(0)
+      } finally {
+        // ACL'i geri al — aksi halde `afterEach`'in `removeTempDataDir`'i dosyayı silemeyebilir.
+        execFileSync('icacls', [deniedFile, '/reset'], { stdio: 'pipe' })
+      }
+    }
+  )
 })
 
 describe('computeUsageReport — boş/izlenmeyen durumlar', () => {

@@ -40,18 +40,28 @@ const UNKNOWN_AGENT_LABEL = 'bilinmiyor'
 /**
  * ADR-007 "oran düşerse UI uyarısı gösterir" azaltımı — burada Thread'in (F-010) PER-DOSYA
  * `degraded` bayrağının aksine bir YÜZDE eşiği kullanılır, çünkü tek bir ekranda YÜZLERCE dosya
- * toplanır; tek bir bozuk satır her seferinde uyarı göstermek gürültü üretir. %99 muhafazakâr
- * seçildi: 2026-09-09 taramasında (22.663 `assistant` satırı) bozuk satır HİÇ gözlenmedi — eşik
- * yalnızca gerçek bir bozulmada tetiklenecek şekilde gevşek bırakıldı (yorum kararı, F-011
- * sözleşmesi §1 madde 8).
+ * toplanır; tek bir bozuk satır her seferinde uyarı göstermek gürültü üretir.
  *
- * F-011 QA düzeltme turu (Z4/Ö1, BLOKLAYICI değil ama önemli) — bu eşik artık "ayrıştırılabilen"
- * (`lines_ok`) değil **"TANINAN"** (`lines_ok - unknown_type_lines`) oranına uygulanır. QA'nın
- * ölçtüğü senaryo: transkript formatı değişip TÜM satırlar `unknown_type_lines`'a düşse bile
- * (`lines_bad` sıfır kalır — satırlar hâlâ geçerli JSON) eski hesap `degraded:false` diyordu ve
- * ekran sessizce "Toplam: 0 token" gösteriyordu (ADR-007'nin tam olarak önlemeye çalıştığı risk).
+ * Bu, İKİ BAĞIMSIZ sinyaldir (F-011 QA düzeltme turu 2, AA3, BLOKLAYICI — önceki tur ikisini TEK
+ * bir eşikte birleştirmişti ve gerçek veride HER ZAMAN tetikleniyordu):
+ *
+ * 1. **Bozuk JSON oranı** (`lines_bad`) — `readTranscript` bir satırı ayrıştıramadı. Gerçek veride
+ *    HİÇ gözlenmedi (2026-09-09 taraması, 22.663 satır); eşik yalnızca GERÇEK bir bozulmada
+ *    tetiklenecek kadar sıkı bırakıldı (%1).
+ * 2. **"Tanınan" tip oranı** (`unknown_type_lines`) — reader'ın "tanınan" kümesi (`user`/
+ *    `assistant`/`system`/`summary`, `transcript-reader.ts`) yalnızca USAGE ÇIKARIMI için
+ *    yeterlidir; TÜM geçerli/normal satır tiplerini KAPSAMAZ. QA'nın gerçek veri taramasında
+ *    (`docs/wiki/pages/desen/claude-transcript-formati.md`) normal transkriptlerin **%33,8'i**
+ *    reader'ın tanımadığı ama **bilinen ve normal** tiplerdir (`attachment`, `queue-operation`,
+ *    `agent-setting`, …) — eski %99 eşiği bu YÜZDEN gerçek veride HER ZAMAN tetikleniyordu (oran
+ *    ~%66,2, hiçbir zaman %99'a ulaşmıyor). Bu ekran `transcript-reader.ts`'in "tanınan" kümesini
+ *    GENİŞLETEMEZ (o dosya bu feature'ın sahipliği dışında, F-009/F-010'a ait) ve satır-tip
+ *    dökümünü tekrar okuyamaz (W1/Y1 — ikinci bir satır-ayrıştırıcı yasak). Bu yüzden eşik, gerçek
+ *    taban oranın (~%66,2) BELİRGİN ALTINA, ama TAM format değişiminin (oran → 0, Z4/Ö1 testi)
+ *    ÜSTÜNE kalibre edildi — normal veri geçer, gerçek bir format kayması hâlâ yakalanır.
  */
-const RECOGNIZED_RATIO_WARNING_THRESHOLD = 0.99
+const PARSE_FAILURE_WARNING_THRESHOLD = 0.01
+const RECOGNIZED_TYPE_RATIO_WARNING_THRESHOLD = 0.5
 
 function emptyUsage(): TokenUsageTotals {
   return {
@@ -108,10 +118,27 @@ interface FileUsageRecord {
   truncated: boolean
 }
 
+/**
+ * F-011 QA düzeltme turu 2 (AA2, BLOKLAYICI) — `resolveAllowedTranscriptPath`'in (guard,
+ * `transcript-reader.ts`) SARILMAMIŞ `fs.existsSync`/`fs.lstatSync`/`fs.realpathSync.native`
+ * çağrıları gerçek bir erişim reddinde (Windows `icacls /deny "(RA,RD,RX)"` gibi) EPERM/EACCES/
+ * EBUSY fırlatır. Bu KALICI bir erişim hatasıdır — dosyanın kendisi listelenirken görüldü, guard
+ * onu OKUYAMADI, "bulunamadı" (`not-allowed`/`not-found` guard reddi) veya yarış durumu
+ * (ör. dosya listelendikten SONRA silindi → ENOENT) DEĞİL. QA'nın ölçtüğü hata: eskiden bu üç kod
+ * da diğer TÜM exception'larla (yarış durumu dahil) aynı `catch`'e düşüp sessizce
+ * `{ unreadable: false }` dönüyordu — %94'e varan token kaybı hiçbir sayaca yansımıyordu.
+ */
+function isPersistentAccessError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const code = (error as NodeJS.ErrnoException).code
+  return code === 'EPERM' || code === 'EACCES' || code === 'EBUSY'
+}
+
 /** F-011 QA düzeltme turu (Z4) — bir dosyanın işlenme sonucu: ya bir kayıt üretti, ya da
- *  GERÇEKTEN okunamadı (Ö2 — `file_read_failed:true`, guard'dan geçtikten SONRA). Guard reddi
- *  (`access.ok===false`) VE stat yarış durumu (Y8'in kendi kabul ettiği TOCTOU) bu sayaca dahil
- *  DEĞİL — ikisi de "gerçek bir okuma hatası" değil, best-effort atlama olarak kalır. */
+ *  GERÇEKTEN okunamadı (Ö2 — `file_read_failed:true`, guard'dan geçtikten SONRA, VEYA AA2 —
+ *  guard'ın kendisi kalıcı bir erişim hatasıyla fırladı). Guard reddi (`access.ok===false`) VE
+ *  gerçek bir yarış durumu (stat/lstat ENOENT — Y8'in kabul ettiği TOCTOU) bu sayaca dahil DEĞİL —
+ *  ikisi de "gerçek bir okuma hatası" değil, best-effort atlama olarak kalır. */
 function appendRecordIfReadable(
   records: FileUsageRecord[],
   claudeProjectsRoot: string,
@@ -129,8 +156,10 @@ function appendRecordIfReadable(
   let access: ReturnType<typeof readAllowedTranscript>
   try {
     access = readAllowedTranscript(claudeProjectsRoot, [projectPath], filePath)
-  } catch {
-    return { unreadable: false }
+  } catch (error) {
+    // AA2 — kalıcı erişim reddi (EPERM/EACCES/EBUSY) artık sayılır; gerçek yarış durumu
+    // (ör. ENOENT) eskisi gibi sessizce atlanır.
+    return { unreadable: isPersistentAccessError(error) }
   }
   if (!access.ok) return { unreadable: false }
   if (access.result.file_read_failed) return { unreadable: true } // Ö2 — gerçek okuma hatası
@@ -313,19 +342,22 @@ export function computeUsageReport(
     }
   }
 
-  // F-011 QA düzeltme turu (Z4/Ö1) — "ayrıştırılabilen" değil "TANINAN" oran: bozuk JSON
-  // (`linesBad`) VE geçerli JSON ama tanınmayan `type` (`unknownTypeLines`) İKİSİ de "tanınmadı"
-  // sayılır. Format tamamen değişip TÜM satırlar tanınmaz hâle gelirse (`linesBad=0`,
-  // `unknownTypeLines=totalLines`) oran 0 olur → `degraded:true` (eskiden sessizce `false` kalıyordu).
+  // AA3 (F-011 QA düzeltme turu 2) — iki BAĞIMSIZ sinyal, iki AYRI eşik (yukarıdaki sabitlerin
+  // yorumuna bakınız). (1) bozuk JSON — TEK bir bozuk satır bile önemlidir (%1 eşiği, Y5 emsali,
+  // yalnızca `linesBad` kullanır, `unknownTypeLines` KARIŞTIRILMAZ). (2) "tanınan" tip oranı —
+  // yalnızca GEÇERLİ JSON satırları arasında (`linesOk`) hesaplanır, gerçek verideki normal ~%34
+  // "diğer tip" tabanını (ADR-007/wiki) yanlış alarma çevirmeyecek şekilde kalibre edilmiştir.
   const totalLines = linesOk + linesBad
-  const unrecognizedLines = linesBad + unknownTypeLines
+  const parseFailureDegraded =
+    totalLines > 0 && linesBad / totalLines > PARSE_FAILURE_WARNING_THRESHOLD
+  const recognizedTypeRatio = linesOk > 0 ? (linesOk - unknownTypeLines) / linesOk : 1
   const recognitionDegraded =
-    totalLines > 0 &&
-    (totalLines - unrecognizedLines) / totalLines < RECOGNIZED_RATIO_WARNING_THRESHOLD
+    linesOk > 0 && recognizedTypeRatio < RECOGNIZED_TYPE_RATIO_WARNING_THRESHOLD
   // Z4/Ö2 (okunamayan dosya) VE Z4/Ö3 (32 MB kuyruk kırpması) de birer sessiz veri kaybı
   // sınıfıdır — ikisi de tek başına `degraded:true`'yu tetikler (sessiz kısmi başarı yok,
   // `CLAUDE.md`'nin en pahalı hata sınıfı).
-  const degraded = recognitionDegraded || unreadableFileCount > 0 || truncatedFileCount > 0
+  const degraded =
+    parseFailureDegraded || recognitionDegraded || unreadableFileCount > 0 || truncatedFileCount > 0
 
   return {
     projects: projectTotals,

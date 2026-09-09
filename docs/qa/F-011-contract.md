@@ -247,7 +247,23 @@ bir hesaplama hatasını YAKALAMAZ, yalnızca tanınmayan/okunamayan satır oran
 
 ---
 
-## 4. Riskler / açık kararlar
+## 5. Düzeltme turu 2 (`docs/qa/F-011-2026-09-10-tur2.md`, KALDI → bu turun düzeltmeleri)
+
+CEO kararları AA1-AA4 (+ nit). Ne yapılacağı ve nasıl doğrulanacağı:
+
+| # | Ne yapılacak | Nasıl doğrulanacak |
+|---|---|---|
+| AA1 | Ağ çiti KARA LİSTEDEN BEYAZ LİSTEYE geçirilir (`network-capability-guard.test.ts`): `src/features/usage/server/**` yalnızca `fs`/`path` (bare veya `node:` önekli) import edebilir; `createRequire(`/`require(`/`process.binding(`/`eval(`/`Function(` metinsel olarak (import'tan bağımsız) yasaklanır. Ayrıca `usage-aggregator.test.ts`'e GERÇEK bir yerel `http.createServer` dinleyicisi + gerçek `computeUsageReport` çağrısıyla çalışma-zamanı negatif kontrolü eklenir. | Birim: N1 (`createRequire(...)('node:http').get(...)`) ve N2 (`process.binding('tcp_wrap')`) kalıcı `it()` sondaları + beyaz listeyi gevşetme mutasyonu (5 test KIRMIZI, elle doğrulandı) + gerçek dinleyici testi. |
+| AA2 | `usage-aggregator.ts`'teki guard-çağrısı `catch`'i EPERM/EACCES/EBUSY'yi (kalıcı erişim reddi) diğer tüm hatalardan (yarış durumu, ör. ENOENT) ayırır; yalnızca ilki `unreadable_file_count`'u artırır. `fs.statSync`'in KENDİ `catch`'i (Y8'in kabul ettiği TOCTOU) DEĞİŞMEDEN kalır. | Birim: `fs.realpathSync.native` EPERM mock'u (mutasyonla KIRMIZI doğrulandı) + gerçek `icacls /deny "(RA,RD,RX)"` testi (`it.skipIf(win32 değilse)`) + ENOENT-yarış-durumu regresyon testi (sayılmamalı). |
+| AA3 | "Tanınan" oranı İKİ bağımsız eşiğe ayrılır: bozuk JSON oranı (`%1`, yalnızca `lines_bad`) ve "tanınan tip" oranı (yalnızca `lines_ok` içinde, gerçek verideki ~%66,2 tabanın belirgin altına — `%50` — kalibre edilmiş, `unknown_type_lines` kullanır). `docs/03-ux.md` §6 önce güncellendi. | Birim: gerçek dağılımı taşıyan fixture (`degraded:false`) + tam format-değişimi fixture'ı (`degraded:true`, zaten vardı) + eşiğin gevşek olmadığını kanıtlayan sınır testi + eşik gevşetme mutasyonu (KIRMIZI, elle doğrulandı). |
+| AA4 | `UsageScreen.tsx`'te başlık ve satır grid'leri artık AYNI SABİT genişlikli (`minmax(4.5rem,1fr)_5rem_5rem_5rem_6rem`) şablonu, AYNI `overflow-x-auto` kaydırma kabı içinde paylaşır — genişlik içerikten değil şablondan geldiği için ikisi HER ZAMAN pikselce hizalı, proje sütunu asla 0px'e çökmez. | E2E: 320px'te gerçekçi bir satırla (`usage-row-project` kırpılmış görünür genişliği > 0, başlıkla `boundingBox` karşılaştırması ±2px) + eski şablona geri alma mutasyonu (KIRMIZI, elle doğrulandı, QA'nın ölçtüğü 0px aynen tekrar üretildi). |
+| nit | `App.tsx`'teki bayat `gap-1` yorumu `gap-0.5` (gerçek sınıf) olarak düzeltildi. | Görsel inceleme (davranış değişmedi). |
+
+M1b (dedup anahtarının yalnızca `requestId`'ye düşürülmesi) QA tarafından **eşdeğer mutant** ilan
+edildi (23.929 satırda `message.id`↔`requestId` 1:1, 0 çakışma) — ek çit GEREKMİYOR, bu tur
+kapsamında dokunulmadı.
+
+## 6. Riskler / açık kararlar (önceki turdan devam)
 
 - Gün türetmenin dosya `mtime`'ına dayanması (yukarıda §1 madde 3) — gece yarısını aşan oturumlar
   tek güne yazılır. Kabul edilebilir sapma, wiki'ye not düşülecek.

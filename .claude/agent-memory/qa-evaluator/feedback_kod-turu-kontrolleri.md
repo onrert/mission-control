@@ -311,3 +311,41 @@ mutasyon planlanmamış kod yollarını, (b) çok katmanlı savunmaların ikinci
     bir döküm betiği (`prev > cur` işaretle) bu sınıfı anında verir. Ayrıca aynı dökümde
     "kaç bölüm birbirinden ayırt edilemiyor" sorusunu sor: F-012'de dokuz "QA kararı"nın beşi
     başlık+damga dışında hiçbir ayırt edici bilgi taşımıyordu (dosya adı gösterilmiyor).
+
+
+---
+
+## F-011 turunda eklenen dört teknik (RAKAM GOSTEREN ekran)
+
+36. **Rakam gosteren bir ekranda "bagimsiz yeniden uygulama" YETMEZ — ucuncu bir kaynak sart.**
+   F-011'de kendi bagimsiz toplayicimi yazdim ve panelle **birebir** ayni sayiyi buldum
+   (4.831.555.797, `lines_ok` dahil). Bu, "dogru" demek DEGILDI: ikimiz de ayni yanlis varsayimi
+   paylasiyorduk. Blocker ancak **veri sekline** bakinca cikti — Claude Code tek bir asistan
+   yanitini **icerik blogu basina bir `type:"assistant"` satiri** olarak yaziyor ve **her satir
+   ayni tam `message.usage` nesnesini** tasiyor (ayni `message.id`+`requestId`). Panel her satiri
+   toplayinca +%101 sisiyor. **Recete:** (a) benzersiz kimlik alanlarini (id/requestId/uuid)
+   grupla ve grup buyuklugu dagilimini dok (`{1:297, 2:81, 3:244}` gibi bir dagilim aninda ele
+   verir), (b) mukerrerlerin token PAYINI hesapla, (c) **bagimsiz bir ucuncu parti araci** kostur
+   (`npx ccusage@latest session --json`) ve oturum kimliklerini eslestir. En keskin sinyal:
+   panelin TEK proje icin verdigi gunluk sayi, ccusage'in TUM makine icin verdigi sayiyi asiyordu.
+37. **"Taninan satir orani" ile "ayristirilabilen satir orani" ayni sey degil — hangisini
+   olctugune bak.** ADR/AC "taninan satir orani dusunce uyar" diyorsa uyari `unknown_type_lines`
+   uzerine kurulmali; F-011 `lines_ok`(=`JSON.parse` basarili) uzerine kurmustu ve okuyucunun
+   hesapladigi `unknown_type_lines` rapora **hic tasinmiyordu**. Kanit 60 saniye:
+   `sed -i 's/"type":"assistant"/"type":"assistant_message"/g'` ile formati yeniden adlandir →
+   panel **"Toplam: 0 token"**, `degraded:false`, uyari YOK. Azaltimin kapatmasi gereken riskin
+   tam olarak kendisi.
+38. **Best-effort "atla ve devam et" dallarinin her birine kullanici sinyali sor.** F-011'de
+   uc ayri sessiz kayip vardi: (a) `file_read_failed` dosya sessizce atlaniyor — gercek
+   `icacls /deny` ile toplam 140→30 dustu (%79 kayip), `degraded:false`; (b) 64 MB ustu dosyada
+   32 MB kuyruk kirpmasi hicbir bayrak yukseltmiyor — 70 MB'lik fixture ile %54,4 sessizce
+   dustu; (c) tanınmayan tip. Teknik: `return`/`continue` ile biten her `catch` dalini say ve
+   her biri icin "kullanici bunu nasil ogrenir" diye sor.
+39. **Ag citini API AILESI bazinda yen, tek tek fonksiyon bazinda degil.** `fetch`/
+   `http.request`/`https.request` uzerine casus koyan cit 8 sondadan 6'sindan gecti:
+   `http.get` (spy `request` OZELLIGINI degistirir, `get` modul-ici referansi cagirir),
+   `net.connect`, `dns.lookup`, `execFileSync('curl')`, `import('node:https').request`,
+   ve **modul yuklenirken yakalanmis** `const r = http.request`. Statik `http(s)://` literal
+   taramasi da yardim etmez (bu sondalarin cogunda URL literali yok). Ayni sinif salt-okunurluk
+   citinde tekrarladi: `fs.writeFileSync` KIRMIZI ama `fs['w'+'riteFileSync']` 1255/1255 YESIL
+   (ve gercekten dosya yazdi). Kural: dizge tarayan her cite **dolayli erisim** sondasi at.

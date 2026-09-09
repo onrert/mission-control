@@ -45,6 +45,16 @@ export interface TranscriptReadResult {
   degraded: boolean
   /** Dosyanın kendisi hiç açılamadıysa (ENOENT/EPERM/…) true; diğer tüm sayaçlar 0 kalır. */
   file_read_failed: boolean
+  /**
+   * F-011 QA düzeltme turu (Z4/Ö3) — dosya `DEFAULT_MAX_BYTES_BEFORE_TAIL`'i AŞTIĞI için yalnızca
+   * kuyruk okunduysa `true` (satır sınırı bulunsa da bulunmasa da — `dataLostNoLineBoundary`
+   * yalnızca "kuyruğun TAMAMI da kayboldu" alt durumunu işaretler, bu alan "dosyanın BAŞI kesildi"
+   * genel durumunu işaretler). Önceki davranış: normal kırpmada (satır sınırı bulunduğunda)
+   * `degraded` hep `false` kalıyordu — QA 70 MB'lık gerçek bir dosyada verinin %54,4'ünün sessizce
+   * düştüğünü ölçtü, hiçbir sinyal yoktu. Bu alan `degraded`'i DEĞİŞTİRMEZ (F-010/Thread'in mevcut
+   * per-dosya rozeti bozulmasın diye) — yalnızca F-011'in toplam raporuna taşınır.
+   */
+  truncated: boolean
   usage: TranscriptUsageTotals
 }
 
@@ -65,6 +75,7 @@ function emptyResult(filePath: string, fileReadFailed: boolean): TranscriptReadR
     unknown_type_lines: 0,
     degraded: fileReadFailed,
     file_read_failed: fileReadFailed,
+    truncated: false,
     usage: emptyUsage(),
   }
 }
@@ -98,6 +109,10 @@ interface RelevantTextResult {
    * bu veri kaybını dürüstçe bildirmesi için taşınır (T5 — sessiz kısmi/tam başarısızlık yok).
    */
   dataLostNoLineBoundary: boolean
+  /** F-011 QA düzeltme turu (Z4/Ö3) — dosya eşiği aştığı için kuyruk kırpması UYGULANDI mı
+   *  (satır sınırı bulunsa da, `dataLostNoLineBoundary:false` kalsa da) — dosyanın BAŞININ
+   *  sessizce düştüğünü işaretler. */
+  truncated: boolean
 }
 
 function readRelevantText(
@@ -107,13 +122,17 @@ function readRelevantText(
 ): RelevantTextResult {
   const buffer = fs.readFileSync(filePath)
   if (buffer.length <= maxBytesBeforeTail) {
-    return { text: buffer.toString('utf8'), dataLostNoLineBoundary: false }
+    return { text: buffer.toString('utf8'), dataLostNoLineBoundary: false, truncated: false }
   }
   const start = Math.max(0, buffer.length - tailBytes)
   const tail = buffer.subarray(start)
   const newlineIndex = tail.indexOf(0x0a)
-  if (newlineIndex === -1) return { text: '', dataLostNoLineBoundary: true }
-  return { text: tail.subarray(newlineIndex + 1).toString('utf8'), dataLostNoLineBoundary: false }
+  if (newlineIndex === -1) return { text: '', dataLostNoLineBoundary: true, truncated: true }
+  return {
+    text: tail.subarray(newlineIndex + 1).toString('utf8'),
+    dataLostNoLineBoundary: false,
+    truncated: true,
+  }
 }
 
 function stripBom(text: string): string {
@@ -134,10 +153,12 @@ export function readTranscript(
 
   let text: string
   let dataLostNoLineBoundary = false
+  let truncated = false
   try {
     const relevant = readRelevantText(filePath, maxBytesBeforeTail, tailBytes)
     text = relevant.text
     dataLostNoLineBoundary = relevant.dataLostNoLineBoundary
+    truncated = relevant.truncated
   } catch {
     return emptyResult(filePath, true)
   }
@@ -149,6 +170,18 @@ export function readTranscript(
   let linesBad = 0
   let unknownTypeLines = 0
   const usage = emptyUsage()
+  // F-011 QA düzeltme turu (Z1, BLOKLAYICI B1) — Claude Code tek bir asistan yanıtını BİRDEN
+  // FAZLA `type:"assistant"` satırı olarak yazar (her içerik bloğu — text/thinking/tool_use —
+  // kendi satırı), ve HER satır aynı, TAM `message.usage` nesnesini taşır (aynı `message.id`,
+  // aynı üst-seviye `requestId`). Bu okuyucu her satırın `usage`'ını topladığı için tek bir gerçek
+  // API çağrısı 2-3 kez sayılıyordu (QA ölçtü: gerçek veride +%101,3 şişme,
+  // `docs/wiki/pages/desen/claude-transcript-formati.md`). Aynı `message.id`+`requestId` çiftini
+  // taşıyan satırlardan yalnızca İLKİ sayılır. İkisinden biri eksik/boş ise (eski/bilinmeyen
+  // biçim) satır ASLA başka bir satırla tekilleştirilmez — güvenli varsayılan HER ZAMAN SAYMAKTIR
+  // (az sayma değil, az riskli olan fazla sayma yönünde hataya düşmemek için — ama aynı anahtar
+  // ikinci kez görülünce artık "fazla sayma" riskinden kaçınmak öncelikli, çünkü QA'nın ölçtüğü
+  // gerçek hata zaten bu yöndeydi).
+  const seenResponseKeys = new Set<string>()
 
   for (const rawLine of rawLines) {
     // CRLF: sondaki `\r`'ı at. Boş satır (dosya sonu `\n` veya tamamen boş dosya): sessizce atla,
@@ -178,11 +211,26 @@ export function readTranscript(
 
     if (type === 'assistant') {
       const message = record.message
+      const messageId =
+        message !== null && typeof message === 'object'
+          ? (message as Record<string, unknown>).id
+          : undefined
+      const requestId = record.requestId
+      const responseKey =
+        typeof messageId === 'string' &&
+        messageId !== '' &&
+        typeof requestId === 'string' &&
+        requestId !== ''
+          ? `${messageId} ${requestId}`
+          : undefined
+      const alreadyCounted = responseKey !== undefined && seenResponseKeys.has(responseKey)
+      if (responseKey !== undefined) seenResponseKeys.add(responseKey)
+
       const rawUsage =
         message !== null && typeof message === 'object'
           ? (message as Record<string, unknown>).usage
           : undefined
-      if (rawUsage !== null && typeof rawUsage === 'object') {
+      if (rawUsage !== null && typeof rawUsage === 'object' && !alreadyCounted) {
         const u = rawUsage as Record<string, unknown>
         usage.input_tokens += toFiniteNumber(u.input_tokens)
         usage.output_tokens += toFiniteNumber(u.output_tokens)
@@ -199,6 +247,7 @@ export function readTranscript(
     unknown_type_lines: unknownTypeLines,
     degraded: linesBad > 0 || dataLostNoLineBoundary,
     file_read_failed: false,
+    truncated,
     usage,
   }
 }

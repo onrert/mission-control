@@ -125,6 +125,36 @@ yeterli olur.
 `user.message.content` **string YA DA dizi** olabilir (araç sonucu döndürülürken) — ✓ DOĞRULANDI.
 Okuyucu şu an `user` tipini yalnızca "tanınan" sayar, içeriğini ayrıştırmaz (F-010'un işi).
 
+## Tek bir yanıt BİRDEN FAZLA `assistant` satırına yazılır, `usage` TEKRARLANIR (F-011 QA düzeltme turu, 2026-09-10)
+
+**BLOKLAYICI bulgu (QA, `docs/qa/F-011-2026-09-10.md` B1):** Claude Code tek bir asistan yanıtını
+(tek bir API çağrısı) **birden çok** `type:"assistant"` satırı olarak yazar — yanıtın her içerik
+bloğu (`text`, `thinking`, `tool_use`) kendi satırını alır — ve **her satır aynı, TAM
+`message.usage` nesnesini taşır**. Aynı yanıta ait satırlar aynı `message.id` (satırın
+`message.id` alanı) VE aynı üst-seviye `requestId` alanını (satırın kendisinde, `message` nesnesi
+DIŞINDA) paylaşır. ✓ DOĞRULANDI — gerçek bir dosyada (`0510715b-…jsonl`) ardışık iki satırın
+`topKeys`'i: `apiBlockIndex, cwd, entrypoint, gitBranch, isSidechain, message, parentUuid,
+requestId, sessionId, timestamp, type, userType, uuid, version` — `requestId` KÖK seviyede,
+`message.id` `message` nesnesinin içinde. `apiBlockIndex` alanı da gözlendi (blok sırasını
+işaretliyor olabilir, F-011 bunu KULLANMADI — `message.id`+`requestId` çifti yeterli).
+
+**Etki:** Okuyucu (`readTranscript`) her satırın `usage`'ını koşulsuz topladığı için tek bir API
+çağrısı 2-3 kez sayılıyordu. QA'nın tam taramasında: 23.178 `assistant` satırı yalnızca 11.935
+gerçek API çağrısına karşılık geliyordu (11.243 satır mükerrer, toplamın %50,32'si mükerrerlerden
+geliyordu) → panelin token toplamı gerçek değerin **+%101,3** fazlasıydı (bağımsız üçüncü parti
+araç `ccusage session`'ın verdiği toplamla karşılaştırıldı, %0,19 fark — `ccusage` panelin ÖNCEKİ
+hatalı toplamını değil, DÜZELTİLMİŞ toplamı doğruladı).
+
+**Düzeltme (Z1):** `readTranscript` artık aynı `message.id`+`requestId` çiftini taşıyan
+satırlardan yalnızca İLKİNİN `usage`'ını sayar (`transcript-reader.ts`, dondurulmuş fixture
+`tests/fixtures/transcripts/duplicate-usage.jsonl`). İkisinden biri eksik/boş olan (eski/bilinmeyen
+biçim) satırlar ASLA başka bir satırla tekilleştirilmez — güvenli varsayılan her zaman saymaktır,
+yalnızca KESİN bir eşleşme bulununca ikinci ve sonraki satırlar atlanır.
+
+**Bir sonraki doğrulamada:** yeni bir gerçek dosyada bu grup büyüklüğü dağılımını (`1 satır`,
+`2 satır`, `3 satır`, …) tekrar ölç, `apiBlockIndex`'in gerçekten blok sırasıyla birebir örtüştüğünü
+doğrula (bu turda ÇIKARIM, tam doğrulanmadı).
+
 ## Dayanıklılık gözlemleri
 
 - Gerçek dosya boyutları 97 bayt ile **9.3 MB** arasında değişiyor (bu oturumun kendi

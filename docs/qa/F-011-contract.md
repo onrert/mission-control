@@ -163,6 +163,90 @@ V| B4 | ADR-007 azaltımı: oran düşünce uyarı | Birim: `lines_bad` fixture'
 | B7 | D10: 6 sekmeyle 320-767px arası hiçbir sekme 0px değil | E2E: `usage.spec.ts`, `mockChatEnabled` ile üretim 6-sekme kümesi, genişlik listesi `[320,375,480,640,700,767]`. Mutasyon: dar-genişlik CSS override'ı (`sm:` sınıfları) geri alınır → en az bir genişlikte test KIRMIZI. |
 | B8 | AC-6/Y10: README çapraz kontrol | Elle okunabilirlik — otomatik test yok (dokümantasyon), README'de komut örneği gerçekten çalışır şekilde yazılır (`npx ccusage@latest` gibi resmi paket adı doğrulanır). |
 
+## 5. QA düzeltme turu (2026-09-10, KALDI → düzeltme) — sözleşme eki
+
+Kaynak: `docs/qa/F-011-2026-09-10.md` (KALDI, 1 bloklayıcı + ağ/salt-okunurluk çiti yenildi + 3
+sessiz veri kaybı). CEO kararları Z1-Z7. Bu ek yalnızca QA'nın bulgularını kapatır — onaylanmış
+bölümler (§1-§4) yeniden açılmaz.
+
+**Z1 (BLOKLAYICI) — mükerrer `usage` toplama:** `transcript-reader.ts`'in `readTranscript`'i artık
+aynı `message.id`+`requestId` çiftini taşıyan `assistant` satırlarından yalnızca ilkini sayar
+(dosya-içi `Set`, per-`readTranscript`-çağrısı ömürlü). Gerekçeli minimal dokunuş: F-009/F-010 bu
+dosyaya bağımlı, ama hata kaynağı burada (`transcript-reader.ts:179-192` QA referansı). Çit: yeni,
+dondurulmuş fixture `tests/fixtures/transcripts/duplicate-usage.jsonl` (mevcut 5 fixture
+DEĞİŞMEDİ) + gerçek mutasyonla KIRMIZI görüldü (dedup kontrolü kaldırıldı → 210/110 fark tam
+ölçüldü, sonra dosya `.bak` ile bit-bit aynı şekilde geri yüklendi). Bağımsız doğrulama: gerçek
+makinede `npm run build && npm start` ile panel açılıp `ccusage session --json` ile proje
+oturumlarının toplamı karşılaştırıldı (bkz. §6 "Manuel doğrulama" — bu bölüm koddan SONRA
+dolduruldu, ölçüm sırası: kod → build → canlı karşılaştırma).
+
+**Z2 — ağ çiti yapısal hale getirildi:** `tests/features/usage/server/network-capability-guard.test.ts`
+— `src/features/usage/server/**` giriş dosyalarından (handlers.ts, usage-aggregator.ts) başlayıp
+YERELİ (`./`, `../`) import zincirini takip ederek TAM modül grafiğini kurar; grafikteki HİÇBİR
+dosya `net/http/https/dns/tls/child_process/dgram/worker_threads` modülünü ÇALIŞMA ZAMANINDA
+import edemez (`import type` erimiş sayılır, muaf), bare/`globalThis.` `fetch(` çağıramaz, dinamik
+`import()` kullanamaz. Kapsam bilinçli olarak **sunucu tarafı** (`usage/server/**`) ile sınırlı —
+istemci `useUsageReport.ts`'in kendi `/api/usage` backend'ine `fetch` atması AC4/Y3'ün kastettiği
+"harici ağ isteği" değildir (aynı-origin, kendi backend'i); bu ayrım burada açıkça belgelenir.
+QA'nın 8 sondasının hepsi artık import-seviyesinde kapanıyor (http/net/dns/child_process importu
+zaten yasak; dinamik import ve yakalanmış referans da böylece anlamsızlaşıyor). 5 kalıcı
+negatif-kontrol testi guard'ın körlüğünü önler.
+
+**Z3 — salt-okunurluk manifest testi:** `tests/features/usage/server/usage-read-only-manifest.test.ts`
+— Thread emsali (`thread-read-only-manifest.test.ts`) birebir desende: `computeUsageReport`
+çağrılarından ÖNCE hem proje hem `claudeRoot` dizininin `snapshotDir` anlık görüntüsü alınır,
+çağrılardan SONRA tekrar alınıp TAM EŞİTLİK aranır — çağrı ADI değil SONUÇ denetlenir, bu yüzden
+`fs['w'+'riteFileSync']` gibi dolaylı yazma da yakalanır. "MUTASYON emsali" testi guard'ın
+gerçekten hassas olduğunu kanıtlar.
+
+**Z4 — üç sessiz veri kaybı artık `degraded:true` + görünür uyarı:**
+1. **Ö1 (format değişimi):** `TranscriptReadResult.unknown_type_lines` artık `UsageReport`'a
+   taşınıyor; `degraded` eşiği "ayrıştırılabilen" değil "TANINAN" oran üzerinden hesaplanıyor
+   (`(lines_ok+lines_bad-lines_bad-unknown_type_lines)/(lines_ok+lines_bad) < 0.99`, sadeleştirilmiş
+   hâli: `(tanınan)/(toplam) < eşik`). Format tamamen yeniden adlandırılırsa (`lines_bad=0`,
+   `unknown_type_lines=toplam`) oran 0 olur → `degraded:true`.
+2. **Ö2 (okunamayan dosya):** `usage-aggregator.ts` artık `file_read_failed:true` dönen her dosyayı
+   `unreadable_file_count`'a sayıyor (stat-race atlaması — Y8'in KENDİ testi — bu sayaca dahil
+   DEĞİL, o hâlâ sessiz best-effort atlama, gerekçe: gerçek bir okuma hatası değil TOCTOU yarışı).
+   `unreadable_file_count > 0` → `degraded:true`.
+3. **Ö3 (32 MB kırpma):** `transcript-reader.ts`'e eklenen `truncated` alanı (satır sınırı
+   bulunsa da) artık `usage-aggregator.ts`'te `truncated_file_count`'a toplanıyor.
+   `truncated_file_count > 0` → `degraded:true`.
+
+Metinler önce `docs/03-ux.md` ekran 6'ya yazıldı (aşağıda), sonra `UsageScreen.tsx`'e uygulandı —
+uyarı kutusu (`usage-degraded-warning`) artık üç bağımsız satır render edebilir (hangi sayaç sıfırdan
+büyükse o satır görünür); geri uyumluluk için eski testler (yalnızca `lines_bad` senaryosu)
+DEĞİŞMEDEN geçmeye devam eder. Üç senaryo `usage-aggregator.test.ts`'te ayrı ayrı çitlendi.
+
+**Z5 — dar genişlik:** `App.tsx`'in sekme çubuğu grid/gap'i 320px'te 21px taşmayı gidermek için
+daraltıldı (gerçek Chromium ölçümüyle doğrulandı, `usage.spec.ts`/`thread.spec.ts` eşiği `>0`'dan
+anlamlı bir asgari genişliğe çıkarıldı). 280px de ölçüldü ve E2E'ye eklendi. Yanlış "320px'te
+hepsi sığıyor" yorumu düzeltildi.
+
+**Z6 — sütun başlıkları:** `UsageScreen.tsx`'e `docs/03-ux.md` ekran 6 mockup'ıyla birebir
+(`Proje | Gün | Giriş | Çıkış | Dağılım`) bir başlık satırı eklendi; 320px'te proje sütununun
+boşalmaması için grid şablonu `1fr_1fr_auto_auto_auto` → `1fr_auto_auto_auto_auto` yapıldı (gün
+sütunu içeriğine göre boyutlanır, proje kalan TÜM esnek alanı alır).
+
+**Z7 — README AC6:** çapraz kontrol yordamı oturum-kimliği eşleştirmesine (QA'nın kullandığı,
+kanıtlanmış yönteme) çevrildi; kapsam farkı (ccusage TÜM makine vs panel TEK proje) açıkça
+yazıldı; "%10+ sapmada degraded uyarısına bak" yönlendirmesi kaldırıldı (degraded çift-sayım gibi
+bir hesaplama hatasını YAKALAMAZ, yalnızca tanınmayan/okunamayan satır oranını yansıtır).
+
+### Doğrulama planı (bu turun ekstra B-maddeleri)
+
+| # | Davranış | Doğrulama |
+|---|---|---|
+| ZB1 | Z1 dedup | Birim: yeni fixture + mutasyon (gerçek kod mutasyonu, KIRMIZI görüldü, geri alındı) + manuel `ccusage session` çapraz kontrolü |
+| ZB2 | Z2 yapısal ağ çiti | Birim: modül grafiği taraması + 5 kalıcı negatif-kontrol (import/fetch/dinamik import) |
+| ZB3 | Z3 salt-okunurluk | Birim: before/after `snapshotDir` tam eşitlik + "MUTASYON emsali" testi |
+| ZB4 | Z4 üç veri kaybı | Birim: format-değişimi / `file_read_failed` / `truncated` senaryoları ayrı ayrı `degraded:true` + sayaç > 0 |
+| ZB5 | Z5 dar genişlik | E2E: `clippedVisibleWidth` ile 280/320/375/480/640/700/767px, anlamlı asgari eşik |
+| ZB6 | Z6 başlıklar | Web birim: başlık satırı DOM'da; E2E: 320px'te proje sütunu boş DEĞİL |
+| ZB7 | Z7 README | Elle okunabilirlik (dokümantasyon, otomatik test yok) |
+
+---
+
 ## 4. Riskler / açık kararlar
 
 - Gün türetmenin dosya `mtime`'ına dayanması (yukarıda §1 madde 3) — gece yarısını aşan oturumlar

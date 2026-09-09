@@ -193,6 +193,101 @@ describe('64 MB üstü dosyalarda yalnızca kuyruk okunur (ADR-007 §9.4)', () =
   })
 })
 
+// -------------------------------------------------------------------------------------------
+// F-011 QA düzeltme turu (Z1, BLOKLAYICI B1) — tek bir asistan yanıtı BİRDEN FAZLA
+// `type:"assistant"` satırı olarak yazılıyor (her içerik bloğu kendi satırı), HER satır aynı
+// `message.usage`'ı taşıyor (aynı `message.id`+`requestId`). Önceki davranış her satırı ayrı ayrı
+// sayıyordu → gerçek veride +%101,3 şişme (`docs/qa/F-011-2026-09-10.md`). Yeni, DONDURULMUŞ bir
+// fixture eklendi (mevcut 5 fixture DEĞİŞTİRİLMEDİ — CLAUDE.md: "yeni bir fixture ekle, mevcutları
+// değiştirme").
+// -------------------------------------------------------------------------------------------
+describe('readTranscript — aynı message.id+requestId taşıyan çok bloklu yanıt tekilleştirilir (Z1)', () => {
+  it('duplicate-usage.jsonl — 2 satır aynı yanıtın parçası (yalnızca 1 kez sayılır), 1 farklı yanıt + 2 anahtarsız satır ayrı sayılır', () => {
+    const result = readTranscript(fixture('duplicate-usage.jsonl'))
+    expect(result.lines_ok).toBe(5)
+    expect(result.lines_bad).toBe(0)
+    expect(result.file_read_failed).toBe(false)
+    // ELLE HESAPLANAN: (msg_dup_1 BİR KEZ: 100/20/5/9) + (msg_dup_2: 7/3/0/0) +
+    // (anahtarsız satır 1: 1/1/0/0) + (anahtarsız satır 2: 2/2/0/0) = 110/26/5/9.
+    expect(result.usage).toEqual({
+      input_tokens: 110,
+      output_tokens: 26,
+      cache_creation_input_tokens: 5,
+      cache_read_input_tokens: 9,
+    })
+  })
+
+  it('MUTASYON hedefi (Z1) — tekilleştirme kaldırılıp satır bazlı koşulsuz toplama yapılsaydı toplam BUNDAN FARKLI (yanlış) çıkardı', () => {
+    // Üretim kodu DEĞİŞTİRİLMEDEN: aynı fixture'ı, tekilleştirme YAPMADAN (eski, bozuk davranışı
+    // taklit ederek) elle topluyoruz — gerçek `readTranscript` bu naif toplamdan FARKLI (ve doğru)
+    // bir sonuç vermeli. Tekilleştirme kaldırılırsa `readTranscript`'in sonucu bu naif toplamla
+    // AYNI olur ve bu test KIRMIZI verir.
+    const raw = fs.readFileSync(fixture('duplicate-usage.jsonl'), 'utf8')
+    const naiveInputTotal = raw
+      .split('\n')
+      .filter((l) => l.trim() !== '')
+      .reduce((sum, line) => {
+        const obj = JSON.parse(line) as {
+          type: string
+          message?: { usage?: { input_tokens?: number } }
+        }
+        if (obj.type !== 'assistant') return sum
+        return sum + (obj.message?.usage?.input_tokens ?? 0)
+      }, 0)
+    expect(naiveInputTotal).toBe(210) // eski (tekilleştirmesiz) davranışın vereceği YANLIŞ toplam
+
+    const result = readTranscript(fixture('duplicate-usage.jsonl'))
+    expect(result.usage.input_tokens).toBe(110)
+    expect(result.usage.input_tokens).not.toBe(naiveInputTotal)
+  })
+})
+
+// -------------------------------------------------------------------------------------------
+// F-011 QA düzeltme turu (Z4/Ö3) — 64 MB+ kuyruk kırpması UYGULANDIĞINDA (satır sınırı bulunsa
+// da) `truncated:true` — önceki davranış bu durumda hiçbir sinyal vermiyordu (QA: 70 MB'lık gerçek
+// bir dosyada verinin %54,4'ü sessizce düştü, `degraded:false` kalıyordu).
+// -------------------------------------------------------------------------------------------
+describe('readTranscript — truncated bayrağı (Z4/Ö3)', () => {
+  it('dosya eşiği aşmazsa truncated:false', () => {
+    const result = readTranscript(fixture('valid.jsonl'))
+    expect(result.truncated).toBe(false)
+  })
+
+  it('dosya eşiği aşıp satır sınırı BULUNURSA truncated:true (degraded false kalsa bile)', () => {
+    const dir = mkTempRoot('mc-transcript-truncated-')
+    try {
+      const file = path.join(dir, 'big.jsonl')
+      const early = JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: 999 } } })
+      const kept = JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: 5 } } })
+      const padding = 'x'.repeat(200)
+      const content = early + '\n' + padding + '\n' + kept + '\n'
+      fs.writeFileSync(file, content, 'utf8')
+
+      const result = readTranscript(file, { maxBytesBeforeTail: 10, tailBytes: 100 })
+      expect(result.truncated).toBe(true)
+      expect(result.degraded).toBe(false) // satır sınırı bulundu — Y8/T5 semantiği değişmedi
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('dosya eşiği aşıp satır sınırı HİÇ bulunamazsa truncated:true VE degraded:true', () => {
+    const dir = mkTempRoot('mc-transcript-truncated-loss-')
+    try {
+      const file = path.join(dir, 'no-boundary.jsonl')
+      const validLine = JSON.stringify({ type: 'user' })
+      const newlineLessTail = 'y'.repeat(4096)
+      fs.writeFileSync(file, validLine + '\n' + newlineLessTail, 'utf8')
+
+      const result = readTranscript(file, { maxBytesBeforeTail: 100, tailBytes: 64 })
+      expect(result.truncated).toBe(true)
+      expect(result.degraded).toBe(true)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('encodeProjectDirName (ADR-007 §9.1 kodlaması)', () => {
   it('sürücü iki noktası ve ayraçlar "-" olur', () => {
     expect(encodeProjectDirName('C:\\dev\\apps\\mission-control')).toBe(

@@ -1,0 +1,5 @@
+{"type":"assistant","message":{"id":"msg_dup_1","usage":{"input_tokens":100,"output_tokens":20,"cache_creation_input_tokens":5,"cache_read_input_tokens":9}},"requestId":"req_dup_1"}
+{"type":"assistant","message":{"id":"msg_dup_1","usage":{"input_tokens":100,"output_tokens":20,"cache_creation_input_tokens":5,"cache_read_input_tokens":9}},"requestId":"req_dup_1"}
+{"type":"assistant","message":{"id":"msg_dup_2","usage":{"input_tokens":7,"output_tokens":3,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},"requestId":"req_dup_2"}
+{"type":"assistant","message":{"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+{"type":"assistant","message":{"usage":{"input_tokens":2,"output_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}

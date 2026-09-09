@@ -84,6 +84,8 @@ const ALLOWED_TOKENS = new Set([
   'metni',
   'mode',
   'model',
+  'msg_dup_1', // duplicate-usage.jsonl — F-011 QA düzeltme turu (Z1), sentetik tekrarlı mesaj kimliği
+  'msg_dup_2', // duplicate-usage.jsonl — sentetik farklı mesaj kimliği
   'normal',
   'not-a-number', // unknown-schema.jsonl — kasıtlı yanlış-tip (`input_tokens` string) sondası
   'operation',
@@ -93,6 +95,9 @@ const ALLOWED_TOKENS = new Set([
   'parentUuid',
   'payload', // unknown-schema.jsonl
   'queue-operation',
+  'req_dup_1', // duplicate-usage.jsonl — sentetik tekrarlı requestId
+  'req_dup_2', // duplicate-usage.jsonl — sentetik farklı requestId
+  'requestId', // duplicate-usage.jsonl — F-011 QA düzeltme turu (Z1), gerçek üst-seviye alan adı
   'role',
   'sessionId',
   'stop_hook_summary',

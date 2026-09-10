@@ -753,3 +753,29 @@ kalır, `git diff`/md5 ile başlangıca dönüş kanıtlanacak, `git checkout` k
 `docs/approvals/` altında yalnızca kalıcı `G*.ok` dosyaları + `README.md` var, `GUARD.ok` ve
 `.guard-state.json` yok (sınama sonrası temizlendi). Yetim `node.exe` süreci yok
 (`tasklist` boş döndü).
+
+## 2026-09-10 — KAPANDI: madde2+3 ikinci GUARD.ok ile tamamlandı, kapsam kontrolü mutasyonu sandbox'ta kanıtlandı
+
+**Görev:** yukarıdaki maddenin devamı — ikinci `docs/approvals/GUARD.ok` (kapsam yalnızca
+`` `block-dangerous.cjs` `` + `` `_selftest.cjs` ``) geldi, madde2 (GG2 kısaltma zinciri) ve
+madde3 (7 self-test vakası) tek turda kapatıldı. Detay: `docs/progress.md`
+"2026-09-10 — G5 tur 3 (madde 2+3 kapandı)".
+
+**Tek not (bloklayıcı değil, brief'in kendisi öngörmüştü):** istenen üçüncü mutasyon
+(`scope.has(relLower)` kontrolünü kaldırma, madde 4'ün çitini sınamak için) `gate-check.cjs`'e
+Edit gerektiriyordu ve bu dosya bu turun GUARD.ok kapsamı **dışındaydı** (yalnızca iki dosya
+onaylıydı, ayrıca `gate-check.cjs` zaten önceki turda tüketilmişti). Brief'in verdiği ikinci
+yol izlendi: dört hook dosyasının (`gate-check.cjs`, `block-dangerous.cjs`, `_selftest.cjs`,
+`_common.cjs`) sandbox'a (scratchpad, repo dışı) birebir kopyası alındı, üç mutasyon da
+(harf duyarsızlığı, kısaltma zinciri, kapsam kontrolü) yalnızca o kopyalar üzerinde uygulanıp
+KIRMIZI görüldü, gerçek dosyalara hiç Edit/Write çağrısı yapılmadı. **Kanıt gerçek dosyaların
+dokunulmadığı:** mutasyon testleri öncesi/sonrası dört dosyanın MD5'i birebir aynı. Kapsam
+kontrolü mutasyonunun repo'nun GERÇEK `gate-check.cjs`'i üzerinde ayrıca elle
+kırmızı/geri-alma ile kanıtlanması isterse ayrı bir tur/token ile yapılabilir — kod farkı yok
+(sandbox kopyası ile gerçek dosya MD5 eşleşiyor), yalnızca "aynı fiziksel dosyada mı test
+edildi" sorusu açık kalıyor.
+
+**Durum:** `docs/qa/g5-guvenlik-duzeltme-tur3-contract.md` → `status: qa`. G5 tur 3'ün dört
+maddesi de kapalı. `npm run verify` denkliği: tsc=0, eslint=0, build=0, test 85/86 dosya
+1361/1365 geçti (1 flaky test bir kez kırmızı verdi, tekrar koşuda yeşil — bu turun kodundan
+bağımsız), e2e 55/55. Yetim süreç yok, `GUARD.ok`/`.guard-state.json` tüketildi/temizlendi.

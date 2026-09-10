@@ -4,6 +4,7 @@ gate: G5
 date: 2026-09-10
 tur: 3 (GUARD.ok mekanizmasının kendisi + GG1/GG2 kapanışı)
 kaynak: kullanıcı kararı (2026-09-10, "kapsamı genişlet, kusuru düzelt") — docs/approvals/GUARD.ok (dört madde)
+status: qa
 ---
 
 # Sözleşme — G5 tur 3: GUARD.ok tek-kullanımlık kusuru + GG1/GG2 kapanışı

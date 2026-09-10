@@ -4352,3 +4352,89 @@ bir düzeltme 4+ ayrı onay istiyordu) kapının kendisini işlevsizleştiriyord
 yazılınca developer madde2+3'ü tek turda tamamlar (GG2 regex + 7 vaka + 3 mutasyon kanıtı +
 tam `_selftest.cjs`/`tsc`/`eslint`/`build`/`test`/`e2e` koşusu) → qa-evaluator son kez
 doğrulasın.
+
+---
+
+## 2026-09-10 — G5 tur 3 (madde 2+3 kapandı): GG2 kısaltma zinciri + 7 self-test vakası, GUARD.ok tüketildi
+
+**Kaynak:** ikinci `docs/approvals/GUARD.ok` (kapsam yalnızca `` `block-dangerous.cjs` `` ve
+`` `_selftest.cjs` ``, kullanıcı: "kapsamı genişlet, kusuru düzelt"). Sözleşme:
+`docs/qa/g5-guvenlik-duzeltme-tur3-contract.md` (aynı sözleşme, madde 2+3 bölümü).
+
+**Ne yapıldı**
+- **Madde 2 — KAPANDI.** `block-dangerous.cjs`'teki `danger` regex'inin `ri` (PowerShell
+  `Remove-Item` kısaltması) dalı `\bri\b[^\n]*-r(ecurse)?\b` → iç içe opsiyonel gruplarla
+  `\bri\b[^\n]*-r(e(c(u(r(s(e)?)?)?)?)?)?\b` oldu. Artık `-r`, `-re`, `-rec`, `-recu`,
+  `-recur`, `-recurs`, `-recurse`'ün TÜMÜ engelleniyor (nested-optional yapı, harf sırası
+  bozulmadan kısmi yazımı yakalıyor); `ri build` (bayraksız), `ri -Force`, `ri -Recreate` gibi
+  zararsız kullanımlar etkilenmiyor (regex tam "recurse" harf dizisini adım adım takip ettiği
+  için "Recreate" gibi farklı bir kelimede boundary koşulu hiçbir uzunlukta sağlanamıyor).
+  Regex'e harf duyarsızlık bayrağı EKLENMEDİ (zaten var olan tek `/i` tüm alternatiflere
+  uygulanıyor) — `-f`/`-F` karışmasına yol açan sınıfla karıştırılmadı.
+- **Madde 3 — KAPANDI.** `_selftest.cjs`'e GUARD.ok'ta listeli 7 vaka eklendi: (a) tamamen
+  büyük harfli hook yolu GUARD.ok yokken engellenir, (b) karışık harfli hook yolu engellenir,
+  (c) tek dosyalık sentetik kapsam harf varyantıyla istek dahil geçer VE tüketilir, (d)
+  `.claude/agent-memory/**` da `agents/**` gibi serbest ve GUARD.ok'u boşa harcamaz, (e)
+  kapsam dışı yol geçerli (sentetik) GUARD.ok varken bile reddedilir + token harcanmaz, (f)
+  iki dosyalık sentetik kapsam: ilk yazma geçer+token kalır, ikinci yazma geçer+token tükenir,
+  (g) kısaltma zincirinin altı ara adımı (mevcut iki uçla birlikte yedi) + üç yanlış-pozitif
+  kontrolü. (c)/(e)/(f) için `write(GUARD_OK)`'un düz metin yazan hâli yerine backtick ile
+  dosya adı anan `writeGuardScope(names)` eklendi (madde 4'ün kapsam çıkarımıyla uyumlu); iki
+  ESKİ test (`HOOK_FILE`/`SETTINGS_FILE` ile GUARD.ok tüketimi) de aynı sebeple
+  `writeGuardScope` kullanacak şekilde güncellendi — güncellenmeselerdi artık YENİ (zaten
+  canlı) kapsam mantığı yüzünden boş kapsamla fail-closed'a düşüp YANLIŞLIKLA KIRMIZI
+  verirlerdi.
+- Her iki değişiklik TEK Write çağrısıyla (`_selftest.cjs`) uygulandı; ikinci token
+  `block-dangerous.cjs` Edit'i ile birlikte bu Write'ta tüketildi (kapsamın iki dosyası da
+  görülünce otomatik tüketim, madde 4'ün tasarımı).
+
+**Nasıl doğrulandı**
+- `node .claude/hooks/_selftest.cjs` → **49/49 OK, "TUM TESTLER GECTI"** (35 block-dangerous +
+  11 gate-check + 3 sentetik kapsam vakası).
+- **Üç mutasyon, üçü de KIRMIZI** — ikisi (`isGuarded` `/i` kaldırma, GG2 zincirini eski hâline
+  döndürme) `gate-check.cjs`/`block-dangerous.cjs`'i doğrudan hedefliyordu; **kapsam kontrolü
+  mutasyonu** (`scope.has(relLower)` bloğunu kaldırma) `gate-check.cjs`'e dokunmayı
+  gerektiriyordu ve bu dosya bu turda **kapsam dışıydı** (GUARD.ok yalnızca iki dosyayı
+  kapsıyordu, ayrıca ilk edit'te zaten tüketilmişti). Brief'in izin verdiği ikinci yol
+  izlendi: **üç mutasyon da gerçek repo dosyalarına HİÇ dokunulmadan, `.claude/hooks/*.cjs`
+  dosyalarının sandbox'taki (scratchpad, repo dışı) birebir kopyaları üzerinde** uygulandı ve
+  ölçüldü:
+  1. `isGuarded` regex'inden `/i` kaldırıldı → vaka (a) (büyük harfli hook yolu artık
+     engellenmiyor) **KIRMIZI** (`exit=0`, beklenen `2`).
+  2. GG2 zinciri eski `-r(ecurse)?\b` metnine döndürüldü → `-re`/`-rec`/`-recu`/`-recur`/
+     `-recurs` beş ara adımın **TAMAMI KIRMIZI** (`exit=0`, beklenen `2`).
+  3. `scope.has(relLower)` kontrol bloğu bir yorumla değiştirildi → vaka (e) (kapsam dışı yol)
+     **KIRMIZI** (`exit=0`, beklenen `2` — kapsam dışı yol artık geçiyor).
+  Sandbox öncesi bir kez mutasyonsuz (temiz) hâliyle çalıştırılıp gerçek davranışla birebir
+  eşleştiği doğrulandı (3/3 GREEN), sonra sırayla mutasyon uygulanıp KIRMIZI görüldü, elle
+  geri alındı (kopyalar arasında `diff`, `git checkout` KULLANILMADI — zaten repo dosyası
+  değil). **Gerçek dosyaların hiç dokunulmadığının kanıtı:** dört hook dosyasının (`gate-
+  check.cjs`, `block-dangerous.cjs`, `_selftest.cjs`, `_common.cjs`) MD5'i mutasyon
+  testlerinden önce ve sonra **birebir aynı** (`2970ca3b…`, `65f38af6…`, `900eb79e…`,
+  `41c4be23…`).
+- `npx tsc --noEmit` = 0. `npx eslint .` = 0. `npm run build` = 0 (vite, 1.29s).
+- `npm run test` — ilk koşuda **1 test kırmızı** (`tests/integration/send-event-hook.test.ts`,
+  bu turun dosyalarıyla hiç ilgisi yok — olay-yazma zamanlaması), CLAUDE.md kuralı gereği
+  tekrar koşuldu → **tam yeşil: 85/86 dosya, 1361 geçti | 4 atlandı (1365 toplam)**. Flaky
+  olduğu doğrulandı, bu turun kodundan bağımsız.
+- `npm run e2e` → **55/55 geçti** (42.7s).
+- Yetim süreç yok (`tasklist` her ağır komuttan önce/sonra kontrol edildi, boş döndü).
+- `docs/approvals/GUARD.ok` ve `.guard-state.json` **tüketildi/temizlendi** (ikisi de artık
+  yok); yalnızca 6 kalıcı `G*.ok` + `README.md` duruyor. `data/` altına dokunulmadı.
+- `git status --short` yalnızca iki dosya gösteriyor: `.claude/hooks/_selftest.cjs`,
+  `.claude/hooks/block-dangerous.cjs` (kapsamın tamamı, fazlası yok).
+
+**Kalan risk / kapanmayan**
+- Kapsam kontrolü mutasyonunun **gerçek repo dosyası üzerinde** (`gate-check.cjs`) elle
+  KIRMIZI/geri-alma ile ayrıca kanıtlanması bu turda yapılamadı (kapsam dışı, GUARD.ok
+  tüketilmişti) — sandbox kopyadaki kanıt davranışsal olarak birebir aynı kodla üretildi (MD5
+  ile doğrulandı, dosyalar arasında fark yok) ama qa-evaluator isterse gerçek dosya üzerinde
+  ayrı bir tur/token ile tekrarlanabilir.
+- Madde 4'ün daha önce belgelenen sınırı (yanlış/eksik kapsamlı GUARD.ok token'ı hiç
+  tüketmeyebilir) değişmedi, bu turu etkilemedi.
+- G5 tur 3'ün dört maddesi de (1, 2, 3, 4) artık kapalı; sözleşme qa-evaluator değerlendirmesi
+  bekliyor.
+
+**Durum:** `docs/qa/g5-guvenlik-duzeltme-tur3-contract.md` → **status: qa** (dört madde de
+kod yazıldı, kendi testleriyle doğrulandı, tam `verify`+`e2e` yeşil). GEÇTİ/KALDI kararı
+qa-evaluator'a ait.

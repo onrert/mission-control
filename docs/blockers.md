@@ -1278,3 +1278,50 @@ ilgisiz parçalar birleşip masum komutları engelliyor. Bugünkü sayım: CEO'd
 engelleme, atlatma değil) ama onay yorgunluğu üretiyor ve kapıyı gevşetmeye iten baskı yaratıyor.
 **Eşik:** yedinci kez gerçek işi kilitlerse **hemen**; yoksa `block-dangerous.cjs`'e dokunan
 bir sonraki tur (B-2 ile birlikte ele alınabilir).
+
+---
+
+## 2026-09-11 — CEO — B-4 GÜNCELLEME: ölçüldü, kök neden bulunamadı (dürüst negatif sonuç)
+
+Sözleşme: `docs/qa/b4-test-kararsizligi-contract.md` (`status: qa`).
+**44 `npm run test` koşusu, dört ayrı yapılandırma turu.** `vitest.config.ts` **değiştirilmedi**.
+
+**Ölçülen taban (temiz varsayılan, n=20, iki ayrı 10'luk parti): %25 kırmızı.** İki sınıf:
+- **Sınıf A (~%20):** `Worker forks emitted error` / `exit 3221226505`. **8 farklı, ilgisiz test
+  dosyasına rastgele dağılmış** — tek kusurlu bir test yok, yani "şu testi düzelt" çözümü yok.
+- **Sınıf B (~%5):** `ENOTEMPTY` temp-dizin yarışı (ayrı ve daha önce de bilinen bir sınıf).
+
+**Hiçbiri assert kırmızısı değil**, ve ikisini de test kapısı (`scripts/verify-test-run.mjs`)
+doğru şekilde raporluyor — yani kapı çalışıyor, sorun kapıda değil.
+
+**Denenen ve işe yaramayan yapılandırmalar:**
+| Yapılandırma | n | Kırmızı | Sonuç |
+|---|---|---|---|
+| varsayılan | 20 | %25 | taban |
+| `maxWorkers: 8` | 10 | %40 | iyileşme yok |
+| `maxWorkers: 1` (tam sıralı) | 4 | **%100** | **daha kötü** — paralellik azaltmak çözüm değil |
+| `poolOptions.forks.*` | — | — | geçersiz: vitest 5'te o API şekli yok (`tsc` yakaladı, turlar iptal) |
+
+`maxWorkers: 1`'in **daha kötü** olması dikkate değer: sorun paralellik/kaynak baskısı değil.
+
+**Yan bulgu (operasyonel, önemli):** aynı makinede ağır süreçler koşarken `npm run e2e`
+kirleniyordu (8/55 hata); izole koşulunca **55/55**. Yani geçmişte "flake" sanılan bazı e2e
+kırmızıları **kendi eşzamanlılığımızdan** kaynaklanmış olabilir. Kural `CLAUDE.md`'ye işlendi.
+
+**Devam eden ölçüm:** `pool: 'threads'` sözleşmede **ölçülmeden** reddedilmişti (gerekçe: setup
+dosyası `process.env` değiştiriyor, izolasyon sızabilir). İki sebeple şüpheli — (a) çöken
+mekanizma tam olarak **fork**, en doğrudan aday onu kullanmamak; (b) Node'un `worker_threads`'inde
+her worker **kendi `process.env` kopyasını** alır (paylaşım yalnızca `SHARE_ENV` ile). Ayrı bir tur
+bunu ölçüyor. Bu depoda "ölçmeden reddetmek" kayıtlı bir hata sınıfıdır.
+
+### G6 için bağlayıcı kural (ölçüme dayalı)
+"Testler yeşil" iddiası **tek koşuyla kanıt sayılmaz.** %25 taban oranıyla iki ardışık koşunun
+ikisinin de çarpması ~%4-6 ihtimalle mümkün. G6'da uygulanacak:
+1. `npm run test` **izole olarak** (başka ağır süreç yokken) koşulur.
+2. **Assert kırmızısı = gerçek hata**, her zaman bloklayıcı. Sınıf A/B çökmesi (assert kırmızısı
+   **sıfır** olmak kaydıyla) yeniden koşmayı gerektirir, karar değil.
+3. Yayın kanıtı için **ardışık iki tam yeşil koşu** istenir.
+
+**Eşik (güncellendi):** bir **assert** kırmızısı görülürse **hemen**; ya da threads ölçümü olumlu
+çıkarsa değişikliği kalıcılaştırmak için. Aksi hâlde bu, kapatılmış değil **ölçülmüş ve
+yönetilen** bir risk olarak G6'ya taşınır.

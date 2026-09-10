@@ -3,122 +3,357 @@
 // dahil) taşır. Bunlar G2'nin "mimari onayı" kapsamına GİRMEZ — meşru bakım (hook `.cjs`'e
 // taşınması, kredi kapısı düzeltmesi gibi) G2 onayı olmadan da olur — ama G2.ok'a hiç bakmadan
 // "docs/" gibi tamamen serbest bırakılmaları da yanlıştı (bkz. docs/qa/G5-guvenlik-denetimi-
-// 2026-09-10.md K1: barındırılan CEO oturumu kendi hook'unu G2 onayı olmadan sessizce
-// zayıflatabiliyordu). Bu yüzden ayrı, DANGER.ok/PUSH.ok ile aynı desende, tek kullanımlık bir
+// 2026-09-10.md K1). Bu yüzden ayrı, DANGER.ok/PUSH.ok ile aynı desende, tek kullanımlık bir
 // onay: docs/approvals/GUARD.ok. `.claude/agents/**` ve `.claude/agent-memory/**` güvenlik
 // sınırı değildir, serbest kalır.
 //
-// Madde 4 (docs/qa/g5-guvenlik-duzeltme-tur3-contract.md — onay yorgunluğu kusuru): GUARD.ok
-// artık "her Edit/Write'ta kör tüketilen bayrak" değil, backtick ile açıkça dosya listeleyen
-// bir onay metnidir. Token, metinde `*.cjs` / `.claude/settings.json` olarak anılan
-// dosyaların TAMAMI için (kapsam) geçerlidir; kapsamdaki bir dosyaya yazmak token'ı HEMEN
-// tüketmez — kapsamın TÜMÜ en az bir kez yazılınca (docs/approvals/.guard-state.json ile
-// izlenir) tüketilir. Kapsam DIŞINDA bir guarded yola yazmak, token geçerli olsa bile
-// reddedilir (token bir DEĞİŞİKLİĞİ yetkilendirir, bir YAZMAYI değil). Kapsam çıkarılamazsa
-// (backtick'li dosya adı yoksa) fail-closed: hiçbir guarded yazmaya izin verilmez.
+// TARİHÇE (Y1 kapsam-sızıntısı ailesi, üç tur boyunca "metnin ŞEKLİ kapsamı belirliyor"
+// kusuruyla üç kez yenildi — sırasıyla: dosyanın tamamındaki backtick'li adlar → "## Kapsam"
+// blok sınırı ("nerede biter" belirsizdi: başlıksız kuyruk düzyazı/h1/kalın sözde-başlık blok
+// sınırını taklit edebiliyordu) → kapalı biçimli liste maddeleri ("## Kapsam" başlığının
+// KENDİSİNİN kimliği belirsizdi: birebir eşleşmeyen bir başlık — "## Kapsam (2 dosya)" gibi —
+// belgenin başka bir yerindeki, arşiv/kod-bloğu/HTML-yorumu içindeki birebir "## Kapsam" satırına
+// sessizce bağlanabiliyordu, bkz. docs/qa/G5-sozlesme-kararlari-2026-09-10-tur3.md). Üçü de aynı
+// aileden: serbest metinden makine kararı çıkarmak. KULLANICI KARARI (docs/qa/
+// g5-guard-json-contract.md): dördüncü bir metin-ayrıştırma yaması YOK — kaynağın kendisi
+// ortadan kaldırıldı. GUARD.ok artık bir JSON belgesidir; kapsam YALNIZCA "scope" alanından
+// okunur, başka HİÇBİR alan (özellikle "reason") hiçbir zaman ad için taranmaz. Bu, "başlık
+// kimliği" kavramını yapısal olarak imkânsız kılar — ayrıştırılacak bir "başlık" yok.
 //
-// Y1 düzeltmesi tur 1 (docs/qa/g5-tur5-kapsam-ve-selftest-contract.md): önceki `parseGuardScope`
-// metnin TAMAMINDAKİ backtick'li adları kapsam sayıyordu; tur 1 bunu "## Kapsam" başlığının
-// bloğuna (bir sonraki "##" başlığına ya da dosya sonuna kadar) daralttı.
-//
-// Y1 düzeltmesi tur 2 (docs/qa/g5-tur5-kapsam-siniri-tur2-contract.md): tur 1'in "blok NEREDE
-// BİTER" tanımı, başlığa BENZEYEN her şeye yeniliyordu (başlıksız kuyruk düzyazı, "# Gerekçe"
-// h1, "**Gerekçe**" kalın sözde-başlık) — QA gerçek bir CEO onay metniyle, "kapsam dışıdır" diye
-// AÇIKÇA reddedilen iki dosyanın sessizce (exit 0, kart yok) yetkilendirildiğini gösterdi. Bu
-// çit ikinci kez aynı aileye ("nasıl biçimlendiği sayılıyor") yenildi; bu yüzden tur 2 "nerede
-// biter" sorusunu TERK EDİP "hangi satırlar SAYILIR" sorusuna geçti (kapalı biçim / beyaz
-// liste): kapsam adları YALNIZCA "## Kapsam" başlığının hemen ardından (boş satırlar şeffaf)
-// gelen, `-`/`*` ile başlayan ve her satırında TEK backtick'li ad taşıyan liste maddelerinden
-// okunur. Liste maddesi OLMAYAN ilk boş-olmayan satır taramayı bitirir — o satırın başlık,
-// kalın, tablo ya da düzyazı olması ÖNEMSİZDİR, çünkü hiçbiri liste maddesi değildir; kalan
-// metin hiç ayrıştırılmaz. Kapalı biçimi bozan bir madde (ör. iki ad tek satırda, ya da bir
-// dışlama notu madde işaretiyle yazılmış: "- Not: `x.cjs` kapsam dışı") TÜM kapsamı geçersiz
-// kılar — o ana kadar toplanan geçerli adlar dahil (belirsizlik her zaman sıfır erişime
-// çözülür). Başlık yok / birden fazla kez geçiyorsa (belirsiz) / hemen ardından liste hiç
-// gelmiyorsa: fail-closed (boş kapsam → hiçbir guarded yazmaya izin yok). Başlık harf/boşluk
-// varyantlarına duyarsızdır (`## Kapsam`, `##Kapsam`, `## KAPSAM` hepsi tanınır) — bu depoda
-// Windows harf duyarsızlığı dört kez tuzak oldu, aynı disiplin başlık eşleştirmesine de
-// uygulanıyor.
+// Tüketim modeli de değişti (aynı sözleşme, §2.2): token artık kapsamdaki dosyalar bir kez
+// yazıldığında TÜKENMEZ (eski model onay-yorgunluğuna yol açıyordu: bir düzeltmede üç dosya =
+// üç ayrı kullanıcı onayı). Bunun yerine ZAMAN PENCERELİ: token, "created_at" + "valid_minutes"
+// penceresi boyunca kapsamındaki HER dosyaya istenildiği kadar yazma izni verir; pencere
+// dolunca dosya bir sonraki guarded-yol değerlendirmesinde SİLİNİR. Bu, bilinçli bir takastır
+// (dürüst maliyet: pencere boyunca birden fazla yazma yetkilenir) — gerekçe sözleşmede.
+// `docs/approvals/.guard-state.json` artık HİÇBİR yol tarafından yazılmıyor/okunmuyor (kısmi
+// tüketim izleme mantığı kaldırıldı) ama savunma-derinliği için sert engeli KORUNUYOR.
 const path = require('path');
 const fs = require('fs');
 const { readInput, exists, block } = require('./_common.cjs');
 
 const GUARD_OK = 'docs/approvals/GUARD.ok';
-const GUARD_STATE = 'docs/approvals/.guard-state.json';
+const GUARD_STATE = 'docs/approvals/.guard-state.json'; // artık yazılmıyor; yalnızca sert engel için anılıyor
+
+const MAX_GUARD_BYTES = 8192; // meşru bir GUARD.ok birkaç yüz bayttır; bu, DoS/aşırı okumaya karşı cömert bir üst sınır
+const DEFAULT_VALID_MINUTES = 30;
+const MAX_VALID_MINUTES = 120; // sınırsız pencere yok; üst sınır CEO'nun çok adımlı bakımına esneklik tanır
+const CLOCK_SKEW_TOLERANCE_MS = 60 * 1000; // yazan/okuyan arasındaki saniyeler mertebesindeki saat farkını tolere eder
+
+// docs/qa/g5-guard-json-contract.md P7b kapanışı — kapalı liste (allowlist), YENİ bir alan
+// eklemek isteyen biri bu listeyi de güncellemek ZORUNDA kalsın diye kasıtlı olarak dar tutuldu.
+// "approved_by" şu an hiçbir yerde OKUNMUYOR (yalnızca insana yönelik serbest metin gibi kabul
+// edilir, "reason" ile aynı muamele) — ama gelecekte provenance için kullanılabilir diye
+// şemaya önceden eklendi; davranışı YOK, yalnızca "bilinmeyen alan" reddinden muaf.
+const ALLOWED_ROOT_KEYS = new Set(['scope', 'reason', 'approved_by', 'created_at', 'valid_minutes']);
+
+// Kayıpsız ayrıştırma zorunluluğu (docs/qa/g5-guard-json-contract.md P7b kapanışı):
+// `JSON.parse` yinelenen bir anahtarla karşılaşınca (herhangi bir iç içe seviyede) SESSİZCE
+// sonuncu değeri alır — hata FIRLATMAZ. Bu, "insanın belgede gördüğü" ile "makinenin
+// yetkilendirdiği" arasında Y1 ailesiyle AYNI SINIFTA (biçim insanı yanıltıyor, makine farklı
+// bir şeyi uyguluyor) ama farklı bir mekanizmada bir uyumsuzluk açar: görünürde `"scope":
+// [".../gate-check.cjs"]` yazan bir belge, ikinci bir `"scope"` anahtarıyla aslında
+// `evil-payload.cjs`'i yetkilendirebilir. `JSON.parse`'a ULAŞMADAN, ham metin üzerinde çalışan
+// bu küçük ve KESİN tarayıcı, sözdizimsel olarak geçerli her JSON belgesinde HER SEVİYEDE
+// (kök + her iç içe nesne, kendi başına) yinelenen anahtar arar. Neden "her seviye" (yalnızca
+// kök değil): belirsizlik burada da "sıfır erişime" çözülmeli — `scope` alanının kendisi kök
+// düzeyinde tekilse ama içine gömülü (örn. gelecekte eklenebilecek bir iç içe yapı ya da bu
+// turda `reason` gibi tip-doğrulanmayan bir alana gizlenmiş) bir yinelenme varsa, bunu YOK
+// SAYMAK gelecekteki bir alanın aynı sınıfta yenilmesine kapı bırakır.
+//
+// Bu tarayıcı NEDEN kapalı bir problem (üç turdur kaybedilen markdown-ayrıştırma oyununa
+// GİRMİYOR): JSON'un grameri RFC 8259 ile SONLU ve TAM olarak tanımlı — "bu bir başlık mı,
+// yoksa başlık gibi görünen bir düzyazı mı" türünde YORUMA açık hiçbir durum yok (markdown'da
+// "## Kapsam" hem gerçek başlık hem alıntı hem kod bloğu hem HTML yorumu içinde görünebiliyordu
+// ve HANGİSİ olduğu bağlama bakmadan anlaşılamıyordu). JSON'da bir `{` HER ZAMAN bir nesne açar,
+// bir `"..."` HER ZAMAN (kaçış kurallarıyla) bir dizedir — biçim tek bir şekilde okunur. Bu
+// yüzden tarayıcı bir "yorum" motoru değil, RFC'nin kendisini birebir uygulayan bir durum
+// makinesidir; doğruluğu "JSON grameri neyi tanımlıyorsa onu tanır, başka hiçbir şeyi
+// tanımaz" ilkesiyle kanıtlanır (aşağıdaki `parseString`, dize İÇİNDEKİ `{`/`"scope"` gibi
+// metinleri asla yapı sanmaz — çünkü ayraç/anahtar arayışı yalnızca STRING TOKENİ DIŞINDAYKEN
+// yapılır, tıpkı gerçek bir JSON ayrıştırıcısı gibi).
+//
+// Alternatif değerlendirildi ve REDDEDİLDİ: `JSON.parse` sonucunu `JSON.stringify` ile geri
+// yazıp girdinin boşluk-normalize hâliyle round-trip karşılaştırması. Yinelenen anahtarı da
+// yakalardı (ikinci geçişte tek değer kalır, dolayısıyla stringify çıktısı orijinalden farklı
+// olurdu) ama YANLIŞ POZİTİF üretirdi: sayı biçimleri (`30.0` `JSON.parse` sonrası `30` olarak
+// stringify edilir → round-trip eşitsiz ama belge GEÇERLİ), `+1e1` gibi üstel gösterimler,
+// anahtar SIRASI (`{"a":1,"b":2}` vs `{"b":2,"a":1}` — aynı anlam, farklı metin) hep meşru
+// belgeleri reddederdi. Bu, "aşırı engelleme yok" ilkesini (brief §2.1) doğrudan ihlal eder.
+// Kendi yazdığımız tarayıcı bunların HİÇBİRİNE dokunmaz — yalnızca anahtar KİMLİĞİNE bakar,
+// değer biçimine/sırasına karışmaz.
+function scanForDuplicateKeys(text) {
+  const n = text.length;
+  let i = 0;
+
+  function ws() {
+    while (i < n) {
+      const c = text.charCodeAt(i);
+      if (c === 0x20 || c === 0x09 || c === 0x0a || c === 0x0d) i++;
+      else break;
+    }
+  }
+  function fail(msg) {
+    const e = new Error(msg);
+    e.__scanErr = true;
+    throw e;
+  }
+  function parseString() {
+    if (text[i] !== '"') fail('string bekleniyordu');
+    i++;
+    let out = '';
+    while (true) {
+      if (i >= n) fail('sonlandirilmamis dize');
+      const c = text[i];
+      if (c === '"') { i++; return out; }
+      if (c === '\\') {
+        i++;
+        if (i >= n) fail('sonlandirilmamis kacis dizisi');
+        const e = text[i];
+        if (e === '"') { out += '"'; i++; }
+        else if (e === '\\') { out += '\\'; i++; }
+        else if (e === '/') { out += '/'; i++; }
+        else if (e === 'b') { out += '\b'; i++; }
+        else if (e === 'f') { out += '\f'; i++; }
+        else if (e === 'n') { out += '\n'; i++; }
+        else if (e === 'r') { out += '\r'; i++; }
+        else if (e === 't') { out += '\t'; i++; }
+        else if (e === 'u') {
+          const hex = text.slice(i + 1, i + 5);
+          if (!/^[0-9a-fA-F]{4}$/.test(hex)) fail('gecersiz \\u kacisi');
+          out += String.fromCharCode(parseInt(hex, 16));
+          i += 5;
+        } else fail('gecersiz kacis dizisi: \\' + e);
+      } else if (c.charCodeAt(0) < 0x20) {
+        fail('dize icinde kacissiz kontrol karakteri');
+      } else {
+        out += c; i++;
+      }
+    }
+  }
+  function parseLiteral(word) {
+    if (text.substr(i, word.length) !== word) fail('gecersiz sabit deger');
+    i += word.length;
+  }
+  function isDigit(ch) { return ch >= '0' && ch <= '9'; }
+  function parseNumber() {
+    const start = i;
+    if (text[i] === '-') i++;
+    if (text[i] === '0') { i++; }
+    else if (isDigit(text[i])) { i++; while (i < n && isDigit(text[i])) i++; }
+    else fail('gecersiz sayi');
+    if (text[i] === '.') {
+      i++;
+      if (!isDigit(text[i])) fail('gecersiz sayi (nokta sonrasi rakam yok)');
+      while (i < n && isDigit(text[i])) i++;
+    }
+    if (text[i] === 'e' || text[i] === 'E') {
+      i++;
+      if (text[i] === '+' || text[i] === '-') i++;
+      if (!isDigit(text[i])) fail('gecersiz sayi (us sonrasi rakam yok)');
+      while (i < n && isDigit(text[i])) i++;
+    }
+    if (i === start) fail('gecersiz sayi');
+  }
+  let duplicate = null;
+  function parseObject(level) {
+    i++; // '{'
+    ws();
+    const seen = new Set();
+    if (text[i] === '}') { i++; return; }
+    while (true) {
+      ws();
+      const key = parseString();
+      if (!duplicate && seen.has(key)) duplicate = { key, level };
+      seen.add(key);
+      ws();
+      if (text[i] !== ':') fail('": " bekleniyordu');
+      i++;
+      ws();
+      parseValue(level + 1);
+      ws();
+      if (text[i] === ',') { i++; continue; }
+      if (text[i] === '}') { i++; break; }
+      fail('"," veya "}" bekleniyordu');
+    }
+  }
+  function parseArray(level) {
+    i++; // '['
+    ws();
+    if (text[i] === ']') { i++; return; }
+    while (true) {
+      ws();
+      parseValue(level);
+      ws();
+      if (text[i] === ',') { i++; continue; }
+      if (text[i] === ']') { i++; break; }
+      fail('"," veya "]" bekleniyordu');
+    }
+  }
+  function parseValue(level) {
+    ws();
+    const c = text[i];
+    if (c === '{') return parseObject(level);
+    if (c === '[') return parseArray(level);
+    if (c === '"') { parseString(); return; }
+    if (c === 't') return parseLiteral('true');
+    if (c === 'f') return parseLiteral('false');
+    if (c === 'n') return parseLiteral('null');
+    if (c === '-' || isDigit(c)) return parseNumber();
+    fail('beklenmeyen jeton');
+  }
+  ws();
+  parseValue(1);
+  ws();
+  if (i !== n) fail('JSON degerinden sonra fazladan veri');
+  return duplicate; // null: yinelenen anahtar yok; {key, level}: bulundu
+}
 
 function consume(p) {
   try { fs.unlinkSync(p); } catch (_) {}
 }
 
-// GUARD.ok metninde YALNIZCA "## Kapsam" başlığının hemen ardından gelen, kapalı biçimli
-// (`- \`ad.cjs\`` / `* \`ad.cjs\``, satır başına TEK ad) liste maddelerini kapsam kaynağı
-// sayar. Blok dışındaki (ör. gerekçe/açıklama) backtick'li adlar kapsam SAYILMAZ; biçimi bozan
-// herhangi bir madde TÜM kapsamı geçersiz kılar. Başlık yok / birden fazla (belirsiz) / hemen
-// ardından liste yok / biçim bozuk → fail-closed (boş küme — çağıran taraf boş kümeyi "hiçbir
-// yola izin yok" olarak yorumlar).
-function parseGuardScope(guardPath) {
-  let text = '';
-  try { text = fs.readFileSync(guardPath, 'utf8'); } catch (_) { return new Set(); }
-  const scope = new Set();
+const GUARD_FORMAT_HELP =
+  'GUARD.ok artik bir JSON belgesi olmali, ornek:\n' +
+  '{\n' +
+  '  "scope": [".claude/hooks/gate-check.cjs", ".claude/hooks/_selftest.cjs"],\n' +
+  '  "reason": "insan icin serbest metin - HICBIR ZAMAN taranmaz",\n' +
+  '  "created_at": "2026-09-10T19:05:00+03:00",\n' +
+  '  "valid_minutes": 30\n' +
+  '}\n' +
+  'Kurallar: kok bir JSON object olmali; "scope" dolu bir dize dizisi olmali ve HER eleman ' +
+  'tam olarak ".claude/hooks/<ad>.cjs" ya da ".claude/settings.json" bicimine uymali (harf ' +
+  'duyarsiz, tek eleman bile kurala uymazsa TUM kapsam gecersiz sayilir); "created_at" ISO 8601 ' +
+  'dize olmali ve gelecekte olamaz; "valid_minutes" (opsiyonel, varsayilan ' + DEFAULT_VALID_MINUTES +
+  ', en fazla ' + MAX_VALID_MINUTES + ') dakika sonra dosya otomatik silinir. "scope" DISINDAKI ' +
+  'hicbir alan (ozellikle "reason") kapsam icin TARANMAZ - dilediginiz kadar serbest metin yazabilirsiniz. ' +
+  'Izin verilen kok alanlar SADECE: scope, reason, approved_by, created_at, valid_minutes - baska ' +
+  'HERHANGI bir kok alan (yazim hatasi dahil) belgeyi gecersiz kilar. Belgede (hangi seviyede olursa ' +
+  'olsun) YINELENEN bir anahtar varsa belge TAMAMEN gecersizdir (JSON.parse sessizce sonuncuyu alir, ' +
+  'bu gorunen ile yetkilendirilen arasinda uyusmazlik yaratabilecegi icin reddedilir).';
 
-  const lines = text.split(/\r\n|\r|\n/);
-  const kapsamHeaderRe = /^\s*##\s*kapsam\s*$/i;
-  const listItemRe = /^\s*[-*]\s+(.*)$/;
-  const strictItemRe = /^`[^`]+`$/; // kapalı biçim: satır TAM OLARAK tek backtick'li ad
-  const blankRe = /^\s*$/;
+// Bir scope elemanının beyaz listeye uyup uymadığını kontrol eder; uyuyorsa normalize edilmiş
+// (küçük harfli) hâlini döner, uymuyorsa null döner. Elemanlar YOL OLARAK ÇÖZÜLMEZ (resolve/
+// realpath edilmez) — sabit beyaz liste dizeleridir; çözmek tur-4'te kapatılan junction/uzun-yol
+// sınıfını geri açar. `\w` bayraksızdır (Unicode değil) — yalnızca ASCII harf/rakam/alt çizgi/
+// tire kabul edilir, bu da ayrı bir Unicode-normalizasyon adımına gerek KALMADAN homoglif/
+// aksanlı-karakter saldırılarını karakter sınıfı düzeyinde eler.
+function normalizeScopeEntry(item) {
+  if (typeof item !== 'string') return null;
+  if (item.indexOf('\\') !== -1) return null; // ters bolu acikca reddedilir (regex zaten reddederdi)
+  if (/^\.claude\/hooks\/[\w-]+\.cjs$/i.test(item)) return item.toLowerCase();
+  if (/^\.claude\/settings\.json$/i.test(item)) return '.claude/settings.json';
+  return null;
+}
 
-  let headerLine = -1;
-  let headerCount = 0;
-  for (let i = 0; i < lines.length; i++) {
-    if (kapsamHeaderRe.test(lines[i])) {
-      headerCount++;
-      if (headerCount === 1) headerLine = i;
+// GUARD.ok'u JSON olarak ayrıştırır. Dönüş biçimleri:
+//   { ok:true, scope:Set }                              -> gecerli, kapsam kullanilabilir
+//   { ok:false, expired:true, createdAtIso, validMinutes } -> suresi dolmus (CAGIRAN dosyayi SILMELI)
+//   { ok:false, error:'...' }                            -> ayristirilamadi/semaya uymuyor (dosya SILINMEZ)
+function parseGuardDoc(guardPath) {
+  let buf;
+  try { buf = fs.readFileSync(guardPath); } catch (e) {
+    return { ok: false, error: 'dosya okunamadi: ' + e.message };
+  }
+  if (buf.length > MAX_GUARD_BYTES) {
+    return { ok: false, error: `dosya cok buyuk (${buf.length} bayt > ${MAX_GUARD_BYTES} bayt ust siniri)` };
+  }
+  let text = buf.toString('utf8');
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1); // UTF-8 BOM soyulur (mesru editor artefakti)
+  // NOT: burada NUL karakteri için kaçış dizisi YERİNE `String.fromCharCode(0)` kullanılıyor. Kaçış
+  // dizisi, bu dosya araçlar arasında taşınırken bir kez HAM bir NUL baytına dönüştü ve git
+  // dosyayı ikili saymaya başladı — yani bir güvenlik hook'unun diff'i incelenemez hâle geldi.
+  // Bu biçim aynı şeyi yapar ama kodda hiçbir kaçış dizisi barındırmaz.
+  if (text.indexOf(String.fromCharCode(0)) !== -1) {
+    return { ok: false, error: 'dosya metninde ham NUL bayt var' };
+  }
+
+  // P7b kapanışı: JSON.parse'a ULAŞMADAN önce ham metinde yinelenen anahtar ara (yukarıdaki
+  // `scanForDuplicateKeys` yorumuna bkz). Tarayıcı SÖZDİZİMSEL OLARAK GEÇERSİZ bir belgede
+  // (örn. yarım kalmış bir dize) kendi hatasını fırlatabilir — bu durumda tarayıcıya GÜVENME,
+  // sessizce vazgeç (null say) ve aşağıdaki `JSON.parse` zaten kendi "gecerli JSON degil"
+  // hatasını versin. Tarayıcının TEK sorumluluğu, SÖZDİZİMSEL OLARAK GEÇERLİ bir belgede
+  // JSON.parse'ın kaybedeceği bir yinelenmeyi ONDAN ÖNCE yakalamaktır.
+  let dup = null;
+  try { dup = scanForDuplicateKeys(text); } catch (_) { dup = null; }
+  if (dup) {
+    return {
+      ok: false,
+      error: `belgede yinelenen anahtar var: ${JSON.stringify(dup.key)} (seviye ${dup.level}) - ` +
+        'JSON.parse boyle bir belgede sessizce sonuncu degeri alir; bu, belgenin gorunen ile ' +
+        'yetkilendirilen arasinda uyusmazlik yaratabilecegi icin fail-closed',
+    };
+  }
+
+  let doc;
+  try {
+    doc = JSON.parse(text);
+  } catch (e) {
+    return { ok: false, error: 'gecerli JSON degil: ' + e.message };
+  }
+  if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) {
+    return { ok: false, error: 'kok deger bir JSON object olmali (dizi/dize/sayi/null degil)' };
+  }
+
+  // P7b kapanışı: bilinmeyen kök alan → fail-closed (brief'in "gizli alan" saldırısı önerisi).
+  // Kapalı liste `__proto__` gibi own-property olarak beliren egzotik anahtarları da otomatik
+  // reddeder (JSON.parse `__proto__`'yu prototipe DEĞİL own-property'ye yazar, bkz. §3 tablosu).
+  for (const k of Object.keys(doc)) {
+    if (!ALLOWED_ROOT_KEYS.has(k)) {
+      const allowed = Array.from(ALLOWED_ROOT_KEYS).sort().join(', ');
+      return { ok: false, error: `bilinmeyen kok alan: ${JSON.stringify(k)} (izin verilenler: ${allowed})` };
     }
   }
-  if (headerCount !== 1) return scope; // başlık yok ya da belirsiz (>1) → fail-closed
 
-  let matchedAnyItem = false;
-  for (let i = headerLine + 1; i < lines.length; i++) {
-    if (blankRe.test(lines[i])) continue; // boş satırlar şeffaf, hiçbir veri taşımaz
-    const m = listItemRe.exec(lines[i]);
-    if (!m) break; // liste maddesi OLMAYAN ilk boş-olmayan satır → blok biter (içeriği önemsiz)
-    matchedAnyItem = true;
-    const rest = m[1].trim();
-    if (!strictItemRe.test(rest)) return new Set(); // kapalı biçimi bozan madde → TÜM kapsam geçersiz
-    const tok = rest.slice(1, -1).trim();
-    if (/^[\w-]+\.cjs$/i.test(tok)) scope.add(('.claude/hooks/' + tok).toLowerCase());
-    else if (/^\.claude\/settings\.json$/i.test(tok)) scope.add('.claude/settings.json');
+  if (!Array.isArray(doc.scope) || doc.scope.length === 0) {
+    return { ok: false, error: '"scope" alani yok, dizi degil, ya da bos' };
   }
-  if (!matchedAnyItem) return new Set(); // başlık var ama hemen ardından liste hiç gelmedi → fail-closed
-  return scope;
-}
+  const scope = new Set();
+  for (const item of doc.scope) {
+    const norm = normalizeScopeEntry(item);
+    if (norm === null) {
+      return { ok: false, error: `"scope" icinde beyaz listeye uymayan eleman: ${JSON.stringify(item)}` };
+    }
+    scope.add(norm);
+  }
 
-function loadGuardState(scopeKey) {
-  try {
-    const s = JSON.parse(fs.readFileSync(GUARD_STATE, 'utf8'));
-    if (s && s.scopeKey === scopeKey && Array.isArray(s.touched)) return s;
-  } catch (_) {}
-  return { scopeKey, touched: [] };
-}
+  if (typeof doc.created_at !== 'string') {
+    return { ok: false, error: '"created_at" alani yok ya da dize degil' };
+  }
+  const createdMs = Date.parse(doc.created_at);
+  if (Number.isNaN(createdMs)) {
+    return { ok: false, error: `"created_at" ayristirilamiyor: ${JSON.stringify(doc.created_at)}` };
+  }
+  const now = Date.now();
+  if (createdMs > now + CLOCK_SKEW_TOLERANCE_MS) {
+    return { ok: false, error: '"created_at" gelecekte (saat farki toleransini asiyor)' };
+  }
 
-function saveGuardState(state) {
-  try { fs.writeFileSync(GUARD_STATE, JSON.stringify(state)); } catch (_) {}
-}
+  let validMinutes = DEFAULT_VALID_MINUTES;
+  if (doc.valid_minutes !== undefined) {
+    if (typeof doc.valid_minutes !== 'number' || !Number.isFinite(doc.valid_minutes) || doc.valid_minutes <= 0) {
+      return { ok: false, error: '"valid_minutes" sayisal ve pozitif olmali' };
+    }
+    if (doc.valid_minutes > MAX_VALID_MINUTES) {
+      return { ok: false, error: `"valid_minutes" ust siniri asiyor (max ${MAX_VALID_MINUTES})` };
+    }
+    validMinutes = doc.valid_minutes;
+  }
 
-function clearGuardState() {
-  try { fs.unlinkSync(GUARD_STATE); } catch (_) {}
+  const expiresAt = createdMs + validMinutes * 60000;
+  if (now > expiresAt) {
+    return { ok: false, expired: true, createdAtIso: new Date(createdMs).toISOString(), validMinutes };
+  }
+
+  return { ok: true, scope };
 }
 
 // docs/qa/g5-onay-dosyasi-korumasi-contract.md Katman A — `docs/approvals/` altındaki HER
 // dosya (GUARD.ok/DANGER.ok/PUSH.ok/G*.ok/README.md/archive/** dahil) bir güvenlik kapısı ya
-// da o kapının kaydıdır. `free` listesi `docs/` yolunun TAMAMINI serbest bıraktığı için bu
-// dizin hiçbir hook tarafından korunmuyordu (docs/qa/G5-guvenlik-denetimi-2026-09-10-tur3.md
-// §0) — barındırılan bir oturum kendi onay dosyasını kullanıcıya hiç sormadan üretebiliyordu.
-// Bu kontrol `free` kontrolünden ÖNCE çalışır. `.guard-state.json` (GUARD.ok tüketim izleyicisi)
-// bir iç durum kaydıdır, kullanıcı onayı gerektiren bir şey DEĞİLDİR — o yüzden `ask`'a
-// düşürülmez, doğrudan ve koşulsuz sert engellenir. Diğer her şey `permissionDecision:'ask'`
-// ile harness'e devredilir (bkz. ask() — sözleşme §c: headless bir oturumda bu otomatik REDDE
-// dönüşür, interaktif bir oturumda kullanıcıya bir onay kartı gösterir).
+// da o kapının kaydıdır. Bu kontrol `free` kontrolünden ÖNCE çalışır. `.guard-state.json` bir
+// iç durum kaydı İDİ (yeni tasarımda hiç yazılmıyor, ama sert engeli savunma-derinliği için
+// korunuyor) — kullanıcı onayı gerektiren bir şey DEĞİLDİR, `ask`'a düşürülmez, doğrudan ve
+// koşulsuz sert engellenir. Diğer her şey `permissionDecision:'ask'` ile harness'e devredilir.
 function ask(reason) {
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
@@ -130,15 +365,10 @@ function ask(reason) {
   process.exit(0);
 }
 
-// docs/qa/g5-tur4-yol-kanoniklestirme-contract.md — K-A/K-B düzeltmesi. Önceki kod hedefi salt
-// dize düzeyinde (`path.relative(cwd, path.resolve(f))`) değerlendiriyordu; bu, Windows'un
-// `\\?\` uzun-yol öneğini normalize edemiyordu (ne "proje dışı" ne "docs/approvals içinde"
-// sayılıp sessizce izin veriliyordu) VE bir NTFS junction/symlink'in ARKASINDA gerçekte nereye
-// yazıldığını hiç göremiyordu. `write-gate.ts`'in `resolveInsideRoot`'undaki desen (en yakın var
-// olan atayı bul, `fs.realpathSync.native` ile çöz) buraya taşındı — hedef henüz var olmayan
-// yeni bir `.ok` dosyası olabileceği için ayrıca "en yakın var olan ata" adımı gerekli.
-// Fail-closed: realpath çözülemezse (ELOOP, erişim reddi, kopuk reparse point, dosya sistemi
-// köküne ulaşılması) sessiz izin YERİNE sert engel — gerekçe sözleşme §2'de.
+// docs/qa/g5-tur4-yol-kanoniklestirme-contract.md — K-A/K-B düzeltmesi. Hedefin gerçek dosya
+// sistemi konumu `fs.realpathSync.native` ile çözülür (Windows `\\?\` uzun-yol öneki ve NTFS
+// junction/symlink arkasındaki gerçek konum dahil). Fail-closed: realpath çözülemezse sessiz
+// izin YERİNE sert engel.
 function resolveCanonicalRel(f) {
   let candidate;
   try {
@@ -184,38 +414,37 @@ readInput((j) => {
   if (isApprovalsPath) {
     const baseLower = rel.toLowerCase().split('/').pop();
     if (baseLower === '.guard-state.json') {
-      block(`Engellendi: "${rel}" GUARD.ok tüketim durumunu izleyen iç bir kayıt dosyasıdır. Hiçbir araç bunu doğrudan yazamaz/düzenleyemez.`);
+      block(`Engellendi: "${rel}" eski bir iç durum dosyasının adıdır (artık hiçbir yol tarafından yazılmıyor, savunma-derinliği için korunuyor). Hiçbir araç bunu doğrudan yazamaz/düzenleyemez.`);
     }
     ask(`UYARI: bu yazma bir GÜVENLİK KAPISINI AÇIYOR/DEĞİŞTİRİYOR ("${rel}", docs/approvals/ altında — onay/red dosyası ya da bu dizinin kaydı). Bunu SEN (kullanıcı) istemediysen REDDET.`);
   }
 
-  // Harf duyarsız (docs/qa/G5-guvenlik-denetimi-2026-09-10-tur2.md K1-YENİ): NTFS büyük/küçük
-  // harf duyarsızdır, regex'in duyarlı olması ".CLAUDE/HOOKS/..." gibi bir varyantla kapıyı
-  // tamamen atlatıyordu.
+  // Harf duyarsız: NTFS büyük/küçük harf duyarsızdır, regex'in duyarlı olması
+  // ".CLAUDE/HOOKS/..." gibi bir varyantla kapıyı tamamen atlatıyordu.
   const isGuarded = /^\.claude\/hooks\//i.test(rel) || /^\.claude\/settings\.json$/i.test(rel);
   if (isGuarded) {
     if (!exists(GUARD_OK)) {
-      block(`Engellendi: "${rel}" kendi güvenlik korumanızı değiştiriyor — docs/approvals/GUARD.ok (tek kullanımlık, kapsamı backtick ile listeleyen) gerekli. Kullanıcıya AskUserQuestion ile sor; onaylarsa GUARD.ok yaz ve komutu tekrar dene.`);
+      block(`Engellendi: "${rel}" kendi güvenlik korumanızı değiştiriyor — docs/approvals/GUARD.ok (tek kullanımlık, JSON, zaman pencereli) gerekli. Kullanıcıya AskUserQuestion ile sor; onaylarsa GUARD.ok yaz ve komutu tekrar dene.\n\n${GUARD_FORMAT_HELP}`);
     }
-    const scope = parseGuardScope(GUARD_OK);
-    const relLower = rel.toLowerCase();
-    if (scope.size === 0 || !scope.has(relLower)) {
-      block(`Engellendi: "${rel}" GUARD.ok kapsamı dışında. GUARD.ok yalnızca "## Kapsam" başlığı altında backtick ile andığı .cjs/.claude/settings.json dosyalarını kapsar (madde 4 + Y1 düzeltmesi) — bu yol o bölümde yok (ya da "## Kapsam" başlığı hiç yok/birden fazla/boş). Kapsamı genişletmek için yeni/güncel bir GUARD.ok gerekir.`);
-    }
-    const scopeKey = JSON.stringify(Array.from(scope).sort());
-    const state = loadGuardState(scopeKey);
-    if (!state.touched.includes(relLower)) state.touched.push(relLower);
-    const allTouched = Array.from(scope).every((p) => state.touched.includes(p));
-    if (allTouched) {
+    const parsed = parseGuardDoc(GUARD_OK);
+    if (parsed.expired) {
       consume(GUARD_OK);
-      clearGuardState();
-    } else {
-      saveGuardState(state);
+      block(`Engellendi: GUARD.ok süresi dolmuş (oluşturulma: ${parsed.createdAtIso}, geçerlilik: ${parsed.validMinutes} dk) — dosya silindi. Yeniden onay gerekir.\n\n${GUARD_FORMAT_HELP}`);
     }
+    if (!parsed.ok) {
+      block(`Engellendi: GUARD.ok ayrıştırılamadı (${parsed.error}). Dosya DEĞİŞTİRİLMEDİ, düzeltip tekrar deneyin.\n\n${GUARD_FORMAT_HELP}`);
+    }
+    const relLower = rel.toLowerCase();
+    if (!parsed.scope.has(relLower)) {
+      const scopeList = Array.from(parsed.scope).sort().join(', ') || '(boş)';
+      block(`Engellendi: "${rel}" GUARD.ok kapsamı dışında. Ayrıştırılan kapsam (yalnızca "scope" alanından): [${scopeList}]. Kapsamı genişletmek için yeni bir GUARD.ok yazın.\n\n${GUARD_FORMAT_HELP}`);
+    }
+    // İzin verildi. Token TÜKETİLMEZ — zaman penceresi boyunca kapsamdaki her dosyaya
+    // istenildiği kadar yazılabilir (docs/qa/g5-guard-json-contract.md §2.2, bilinçli takas).
     process.exit(0);
   }
 
-  // Harf duyarsız (aynı K1-YENİ sınıfı): ".CLAUDE/agents/x.md" gibi bir varyant yanlışlıkla
+  // Harf duyarsız (aynı sınıf): ".CLAUDE/agents/x.md" gibi bir varyant yanlışlıkla
   // G2.ok kontrolüne düşmemeli.
   const free = [/^docs\//i, /^\.claude\//i, /^assets\//i, /^README\.md$/i, /^\.gitignore$/i, /^CLAUDE\.md$/i, /^KURULUM\.md$/i];
   if (free.some((r) => r.test(rel))) process.exit(0);

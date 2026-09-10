@@ -1325,3 +1325,29 @@ ikisinin de çarpması ~%4-6 ihtimalle mümkün. G6'da uygulanacak:
 **Eşik (güncellendi):** bir **assert** kırmızısı görülürse **hemen**; ya da threads ölçümü olumlu
 çıkarsa değişikliği kalıcılaştırmak için. Aksi hâlde bu, kapatılmış değil **ölçülmüş ve
 yönetilen** bir risk olarak G6'ya taşınır.
+
+---
+
+## 2026-09-11 — CEO — B-4 EK ÖLÇÜM: `pool: 'threads'` ölçüldü ve reddedildi
+
+Önceki turda **ölçülmeden** reddedilmişti; CEO bunu sorgulattı (bu depoda "ölçmeden reddetmek"
+kayıtlı bir hata sınıfıdır). Sonuç:
+
+- **10 ardışık koşu, 10/10 kırmızı (%100)** — varsayılanın %25'inden belirgin biçimde kötü.
+- Arıza **biçimi değişti**: Sınıf A (`Worker forks emitted error`) **hiç görülmedi**. Yerine:
+  - **Sınıf C:** `Test timed out in 5000ms` — ve **tutarlı biçimde alt süreç başlatan testlerde**
+    (`check-ports`, `install-hook`, `send-event-hook`, `chat-hooks-live`), 10 koşunun hepsinde.
+  - **Sınıf D:** tam sessiz süreç ölümü — Sınıf A'dan bile daha az teşhis edilebilir.
+- **Reddin orijinal gerekçesi ölçüldü ve YANLIŞ çıktı:** iki geçici test dosyasıyla (4 koşu) ve
+  `--sequence.shuffle` ile 3 koşuda `process.env` sızıntısı **hiç gözlenmedi**. Süreç-geneli durum
+  taraması da sızan mutasyon bulmadı. Yani seçenek **doğru şekilde reddedildi ama yanlış sebeple**
+  reddedilmişti — asıl sebep izolasyon değil, kırmızı oranının artması.
+- `vitest.config.ts` elle geri alındı (`git diff` boş). Yetim süreç yok.
+
+**Ortaya çıkan ipucu:** iki farklı arıza biçiminin (fork'ta çökme, threads'te zaman aşımı) ortak
+paydası **alt süreç doğurmak** olabilir. Ayrı bir tur bu hipotezi korelasyon + manipülasyonla
+sınıyor; durma kuralı net (doğrulanmazsa yeni hipotez açılmayacak).
+
+**B-4 durumu değişmedi:** kapatılmış değil, **ölçülmüş ve yönetilen risk**. G6 için bağlayıcı
+kural yukarıdaki B-4 girdisinde: assert kırmızısı her zaman bloklayıcı; çökme (assert sıfırsa)
+yeniden koşmayı gerektirir; yayın kanıtı için ardışık iki tam yeşil koşu.

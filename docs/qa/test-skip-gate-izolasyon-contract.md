@@ -1,7 +1,8 @@
 ---
 type: qa-contract
 date: 2026-09-10
-status: qa
+status: done
+karar: GEÇTİ (docs/qa/G5-sozlesme-kararlari-2026-09-10-tur4.md). Port izolasyonu bağımsız üretildi: eski komut 7 `check-ports` hatası + EADDRINUSE veriyordu, yeni komut 0. Kalan kırmızılar (7 koşuda 3) worker fork çökmesi kaynaklı, assert kırmızısı yok — ayrı bir altyapı borcu olarak `docs/blockers.md`'de eşiğiyle kayıtlı.
 ---
 
 # Sözleşme — B1 kalıcı regresyon testinin iç içe koşumunu paylaşılan kaynaklardan izole etme

@@ -1,5 +1,6 @@
 ---
-status: qa
+status: done
+karar: GEÇTİ (docs/qa/G5-sozlesme-kararlari-2026-09-10-tur4.md). Bu sözleşmenin mekanizması (kapalı biçimli liste maddeleri) sonradan JSON tasarımıyla yürürlükten kalktı; karar mekanizmaya değil, sözleşmenin çözmeyi vaat ettiği kusurun bugün kapalı olmasına dayanıyor.
 ---
 
 # G5 Tur 5 — Y1 kapsam sızıntısı, tur 2 (kapalı biçim / beyaz liste düzeltmesi)

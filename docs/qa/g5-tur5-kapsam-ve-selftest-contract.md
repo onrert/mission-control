@@ -1,5 +1,6 @@
 ---
-status: qa
+status: done
+karar: GEÇTİ (docs/qa/G5-sozlesme-kararlari-2026-09-10-tur4.md). Y3 (self-test gerçek onay dosyalarını siliyordu) kapandı ve emniyet kemeri 4/4 doğrulandı; Y1 kısmının mekanizması JSON tasarımıyla yürürlükten kalktı ama kusur kapandı.
 ---
 
 # G5 Tur 5 — Y1 (kapsam sızıntısı) ve Y3 (self-test'in gerçek onayları imha etmesi) düzeltmesi

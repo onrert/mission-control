@@ -529,3 +529,37 @@ CALISMA ZAMANI casusu yakaliyor (iki katman), `require` ailesinde **sifir** katm
    karar verme.** (a) `3221226505` worker cokmesi (~%25-50 oran), (b) Windows temp-dizin
    yarisi (`afterEach` `fs.rmSync` → `ENOTEMPTY`). Ikisi de citle ilgisiz; raporda ayrik yaz,
    yoksa developer'in duzeltmesini haksiz yere kirmizi gostermis olursun.
+59. **Beyaz-liste/sekil citlerinde: testler HEDEFI ADLANDIRMAYAN bir girdi kullaniyorsa,
+   citi degil UYELIK kontrolunu olcerler.** G5 tur4'te `normalizeScopeEntry` (scope
+   girdisinin sekli) icin alti test vardi (D-TRAVERSAL/D-ABS/D-UNC/D-LONGPREFIX/
+   D-BACKSLASH/D-UNI); hepsi `scope:["../evil.cjs"]` yazip **baska** bir dosyaya yazmayi
+   deniyordu, yani `scope.has(hedef)` tek basina reddediyordu. Beyaz listeyi tamamen
+   kaldirdim → **157/157 YESIL**, CEO sondasi 14/14, kendi 66 saldirim 66/66 gecti.
+   **AYIRT EDICI SONDA:** girdi = hedefin KANONIK yoluna BIREBIR ESIT olsun ama beyaz
+   liste SEKLINE uymasin (`.claude/hooks/sub/x.cjs`, `.claude/hooks/notes.md`,
+   `.claude/hooks/evil file.cjs`, `.claude/hooks/a/b/c.cjs`). Kurulu kod 0/6 sizdirdi,
+   mutasyon 6/6 sizdirdi. Sozlesme "bu mutasyon 6 testi KIRMIZI yapar" diyordu — YANLIS.
+   **Kural: bir citin mutasyonu 0 kirmizi veriyorsa, once "testler ayni seyi mi olcuyor,
+   yoksa komsu bir kontrole mi takiliyor" diye sor; sonra girdiyi hedefe ESITLE.**
+60. **Ozyinelemeli EL YAZIMI ayristirici + native `JSON.parse` ikilisinde BOYUT SINIRI
+   gizli tasiyici kolondur.** `scanForDuplicateKeys` (JS, ozyineli) derinlik ~5074'te
+   `RangeError` firlatiyor; `parseGuardDoc` bunu `catch { dup = null }` ile yutuyor =
+   katman **fail-OPEN**. `JSON.parse` ayni belgede basariyla ayrisiyor → gizli ikinci
+   anahtar kazanirdi. Somurulemedi cunku `MAX_GUARD_BYTES=8192` yalnizca derinlik ~4038'e
+   izin veriyor (**pay sadece 1,26x**), ve koddaki yorum siniri yalnizca DoS ile
+   gerekcelendiriyor. **Kural: `try { X } catch { yoksay }` ile sarilmis her DOGRULAMA
+   katmani icin "X'i firlatmaya nasil zorlarim + o zaman ne oluyor" sor; cevap fail-open
+   ise, onu engelleyen sinirin ADINI ve PAYINI rapora yaz (eski borc).**
+61. **Bir hook'un bozulma bicimi fail-closed mi fail-OPEN mi — cikis koduyla olc.**
+   `scope` dizi kontrolunu kaldirinca `for (const x of undefined)` firlatti → **exit 1**.
+   Claude Code yalnizca **exit 2**'yi engelleme sayar, yani exit 1 = SESSIZ IZIN. Ilgili
+   test (`D-NO-SCOPE-FIELD`) belgesinde `{note:...}` kullandigi icin BILINMEYEN-KOK-ALAN
+   kontroluna takiliyordu, o dala hic ulasmiyordu. **Kural: fail-closed iddiasini
+   `code === 2` ile assert et, `!== 0` ile degil; ve testin belgesinin DAHA ONCEKI bir
+   kontrole takilip takilmadigini tek-nokta mutasyonuyla dogrula.**
+62. **Tek-nokta mutasyon taramasini SCRIPT'le yap, sonra "citsiz" cikanlari FAZLALIK vs
+   YUK TASIYAN diye AYIR.** G5 tur4: 17 karar noktasi, 7'si citsiz — ama yalnizca 2'si
+   gercek borc (beyaz liste, scope-dizi); digerleri (ham NUL, ters bolu, `isGuarded` `/i`,
+   GUARD.ok varlik) gercekten fazlalik cunku baska bir yol zaten fail-closed donuyor.
+   Hepsini esit agirlikta bulgu yazmak raporu inandiriciliktan dusurur; ayrimi ACIKCA yap
+   ve her "fazlalik" icin HANGI yolun yakaladigini yaz.

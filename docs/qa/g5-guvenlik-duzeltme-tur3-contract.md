@@ -4,8 +4,8 @@ gate: G5
 date: 2026-09-10
 tur: 3 (GUARD.ok mekanizmasının kendisi + GG1/GG2 kapanışı)
 kaynak: kullanıcı kararı (2026-09-10, "kapsamı genişlet, kusuru düzelt") — docs/approvals/GUARD.ok (dört madde)
-status: fix
-karar: KALDI (2. kez — docs/qa/G5-sozlesme-kararlari-2026-09-10-tur2.md). Gerekçe Y1. İlk düzeltme (53a320f) kapsamı "## Kapsam" bloğuyla sınırladı ve 22 sondanın 19'unu kapattı, ama blok dosya sonuna kadar uzadığı için üç yol hâlâ sızıyor: başlıksız kuyruk düzyazı, "# h1" ve "**kalın**" psödo-başlık. İkinci düzeltme turu açıldı (docs/qa/g5-tur5-kapsam-siniri-tur2-contract.md).
+status: done
+karar: GEÇTİ (docs/qa/G5-sozlesme-kararlari-2026-09-10-tur4.md). Kriteri Y1'di ve üç kez KALDI aldı (metnin tamamı → "## Kapsam" bloğu → kapalı biçimli liste maddeleri; sonuncusu başlık kimliğinin devralınmasıyla yenildi). Kullanıcı kararıyla dördüncü bir metin-ayrıştırma yaması yerine kaynak kaldırıldı: kapsam artık JSON'daki "scope" alanından okunuyor (ca4ce4c). Y1'in kapandığı dört bağımsız yoldan ölçüldü; eskalasyon kapandı.
 ---
 
 # Sözleşme — G5 tur 3: GUARD.ok tek-kullanımlık kusuru + GG1/GG2 kapanışı

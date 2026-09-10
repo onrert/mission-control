@@ -563,3 +563,53 @@ CALISMA ZAMANI casusu yakaliyor (iki katman), `require` ailesinde **sifir** katm
    GUARD.ok varlik) gercekten fazlalik cunku baska bir yol zaten fail-closed donuyor.
    Hepsini esit agirlikta bulgu yazmak raporu inandiriciliktan dusurur; ayrimi ACIKCA yap
    ve her "fazlalik" icin HANGI yolun yakaladigini yaz.
+
+63. **Ayristirici/tarayici citinde dogrulamayi KENDI mantiginla yapma — UCUNCU BIR
+   UYGULAMAYA karsi diferansiyel kos.** G5 tur5: `scanForDuplicateKeys`'in "benim
+   sozdizimi hatam" muafiyeti (`__scanErr` → `dup=null`) yalnizca tarayicinin grameri
+   `JSON.parse`'inkinden DAHA DAR OLMADIGI surece guvenli. Bunu **CPython 3.12'nin
+   `json` modulu** ile capraz kontrol ettim (`object_pairs_hook` her seviyede yinelenen
+   anahtar bulur; V8 ile hic kod paylasmaz). Dort kategoriyi ayri ayri say: (A) tarayici
+   "sozdizimi hatasi" der + oracle KABUL eder + yinelenen VAR = **fail-open**, (B) tarayici
+   "temiz" der + oracle yinelenen bulur = **kacirilan**, (C) tarayici "yinelenen" der +
+   oracle bulamaz = **asiri engelleme**, (D) kabul/red kumeleri ayrisiyor = **gramer farki**.
+   Kurulu kodda 180.582 belgede 0/0/0/0 cikti.
+64. **Diferansiyel harnessin KENDI pozitif kontrolu olmali — yoksa "0 bulgu" olu harness
+   demektir.** Tarayiciyi UC ayri yerden kasten bozup her kategorinin dolduğunu gosterdim:
+   us gosterimini reddettir → (A) 3 bulgu; yinelenmeyi yalnizca kokte aratti → (B) 6.825;
+   her anahtari yinelenen saydir → (C) 18.092. **Kural: "sifir bulgu" raporlamadan once
+   harnessi kasten bozup bulgu URETTIR.**
+65. **Rastgele mutasyon fuzz'i cogunlukla GECERSIZ belge uretir (%75) — tehlikeli yariya
+   yogunlas.** Ayrica **yapı geregi GECERLI** JSON ureten ikinci bir fuzzer yaz (tum kacis
+   dizileri, yalniz yedek karakterler, astral, BOM, Kiril, `__proto__`/unicode kacisli
+   anahtarlar, `1e999`/`-0`/`1e-323`, her bosluk bicimi). Iddia netlesir: "tarayici
+   HICBIR gecerli JSON'a sozdizimi hatasi demiyor" — 8,98M belge, 0 bulgu; ayni fuzzer
+   bozuk tarayiciyla 5 saniyede 141.023 bulgu verdi.
+66. **Bir duzeltme, ULASILAMAZ bir aciği ULASILABILIR hale getirebilir — duzeltmenin
+   yarilarini AYRI AYRI mutasyona ugrat.** G5'te fail-open eskiden ulasilamazdi (bayt
+   siniri ~4038 derinlige izin, RangeError ~5074'te; pay 1,26x). Kasitli bir derinlik
+   siniri (200) eklendikten sonra, EGER catch ayrimi yapilmasaydi ayni sizinti **933
+   baytlik** bir belgeyle dogrudan ulasilabilir olacakti. Olctum: catch'i geri saran
+   mutasyon → gizli ikinci `scope` ile **exit 0, EVIL yetkilendirildi**. **Kural: "sinir
+   koydum" tipi duzeltmelerde, sinirin kendisinin YENI bir tetikleyici yaratip
+   yaratmadigini sor; iki yarinin her birini tek tek ve birlikte olc.**
+67. **"Bagimsizim" iddiasini gizli bagimliligi BUYUTEREK olc.** Duzeltme "koruma artik
+   `MAX_GUARD_BYTES`'ten bagimsiz" diyorsa, o sabiti sondada 8192 → 200000 yap ve
+   GERCEK `RangeError`'a ulas. Uc varyant kos: (bayt buyuk) → derinlik siniri yakaliyor
+   mu; (bayt buyuk + derinlik kapali) → catch gercek RangeError'i yakaliyor mu; (+ eski
+   catch) → sizinti CANLI olarak geri geliyor mu. Uçu de olculmeden "bagimsiz" yazma.
+68. **Citsiz cikan bir dali "yuk tasiyor mu" diye OLC, akil yurutme.** Derinlik sayacinin
+   OBJE dali citsizdi (mutasyon → 165/165 yesil). Somurulebilir mi? Uretim bayt siniri
+   icinde en derin obje yapisini kurdum: 1611 seviye (8188 bayt) — RangeError esigi ~5074,
+   pay 3,1x → tarayici tamamliyor, duplicate'i buluyor, **sizinti YOK**. Yani savunma
+   derinligi, borc; bloklayici degil. Ayirt edici ikinci kosul: **sozlesme o dalin citli
+   oldugunu IDDIA ediyor mu?** Ediyorsa (M1 gibi) bloklayici, etmiyorsa borc.
+69. **Rapor METNININ KENDISI kabuk kapisina takilabilir.** Bu turda iki kez oldu: (1)
+   salt-okunur bir listeleme cagrisi, komutun baska yerindeki ilgisiz bir silme yuzunden
+   engellendi; (2) o olayi ANLATAN duzeltme metni ayni desene takildi ve yazma HIC
+   gerceklesmedi. **Kural: rapor duzeltmelerini `Write` ile bir `.mjs` betigine yaz ve
+   `node <betik>` ile uygula; betik ICERIGI taranmiyor, yalnizca komut satiri.**
+70. **`String.raw` sablonu ters boluyle BITEMEZ** (\` kacis sayilir) — Windows yollarini
+   sonda ayraçla yazma, `'C:/...'` duz egik cizgiyle kullan. Bash heredoc'u da `\\n`'i
+   `\n`'e dusurur; mutasyon betiklerini heredoc yerine `Write` ile yaz (kayitli ders,
+   bu turda tekrarladi ve bir betigi bozdu).

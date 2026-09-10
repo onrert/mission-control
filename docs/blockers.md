@@ -1239,3 +1239,42 @@ katmanlardan biri sökülse self-test yine tam yeşil kalıyor. Yani her katman�
 kontrolü yok; bu deponun en pahalı hata sınıfının (sessizce ölen koruma) özyinelemeli hâli.
 
 **Eşik:** `_selftest.cjs`'e dokunan bir sonraki tur.
+
+---
+
+## 2026-09-11 — CEO — G5 kapanışı: taşınan eşikli borçlar
+
+G5'in beş sözleşmesinin hepsi **GEÇTİ** (`docs/qa/G5-sozlesme-kararlari-2026-09-10-tur5.md`:
+*"G5 kapısı için kalan engel: YOK"*). Aşağıdakiler bloklayıcı **değildir**, eşikleriyle taşınır.
+
+**B-1 — KAPANDI.** Yinelenen-anahtar tarayıcısının `MAX_GUARD_BYTES`'e gizli bağımlılığı.
+Açık derinlik sınırı + `catch` ayrımıyla koparıldı (`f46954d`). Denetçi bayt sınırını 200.000'e
+çıkarıp gerçek `RangeError` ürettiğinde bile fail-closed ölçtü.
+
+**B-2 — 6 çitsiz nokta (tek nokta mutasyon taraması).** QA'nın 17 noktalık taramasında 7'si
+çitsizdi; biri (beyaz liste) kapandı, 6'sı açık. İçlerinde yük taşıyan tek nokta **P6**;
+bozulma biçimi fail-open ya da exit 1. **Eşik:** `gate-check.cjs`'e dokunan bir sonraki tur.
+
+**B-3 — "tek kullanımlık" ifadesi artık yanlış.** Tüketim modeli zaman pencereli olduğu hâlde
+kod yorumlarında ve bazı belgelerde hâlâ "tek kullanımlık" geçiyor. Yanlış zihinsel model,
+gelecekte yanlış varsayıma dayanan bir değişiklik üretebilir. **Eşik:** aynı dosyalara dokunan
+bir sonraki tur, ya da biri bu ifadeye dayanarak karar verirse **hemen**.
+
+**B-4 — `npm run test` ~%43 worker-fork kırmızısı.** Yedi koşuda üç kırmızı; hepsi
+`Worker forks emitted error`, assert kırmızısı yok. Port/`dist` çakışması (`81c049b`) ayrı bir
+sınıftı ve kapandı. **Eşik:** G6 öncesi ayrı bir altyapı turu; ya da bir kırmızı **assert**
+kaynaklı çıkarsa hemen. Risk: kırmızıya alışmak, bu deponun ikinci en pahalı hata sınıfı.
+
+**B-5 (yeni) — derinlik sayacının OBJE dalı çitsiz.** `parseObject`'teki `depth + 1` → `depth`
+mutasyonu self-test'i 165/165 yeşil bırakıyor. Sömürülebilirlik ölçüldü: bayt sınırı içinde en
+derin obje 1611 seviye, `RangeError` eşiği ~5074 → **pay 3,1x, sızıntı yok**. Sözleşme bu dalın
+çitli olduğunu iddia etmiyor (yani "yorumu ile taradığı şey çelişiyor" sınıfı değil).
+**Eşik:** `MAX_GUARD_BYTES` büyütülürse **hemen**; yoksa tarayıcıya dokunan bir sonraki tur.
+
+**B-6 — `block-dangerous.cjs` aşırı engelleme.** Komutun tamamını tek metin olarak tarıyor;
+ilgisiz parçalar birleşip masum komutları engelliyor. Bugünkü sayım: CEO'da **üç**, QA'da
+**dört** kez gerçek işi kilitledi — sonuncusunda salt-okunur bir listeleme çağrısı, ardından
+**o olayı anlatan düzeltme metninin kendisi** engellendi. Güvenlik yönünde değil (aşırı
+engelleme, atlatma değil) ama onay yorgunluğu üretiyor ve kapıyı gevşetmeye iten baskı yaratıyor.
+**Eşik:** yedinci kez gerçek işi kilitlerse **hemen**; yoksa `block-dangerous.cjs`'e dokunan
+bir sonraki tur (B-2 ile birlikte ele alınabilir).

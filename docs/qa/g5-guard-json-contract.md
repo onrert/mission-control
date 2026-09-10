@@ -1,5 +1,6 @@
 ---
-status: qa
+status: done
+karar: GEÇTİ (docs/qa/G5-sozlesme-kararlari-2026-09-10-tur5.md). İlk turda KALDI almıştı (Kod kalitesi 6): beyaz liste kontrolü yük taşıyordu ama hiçbir test onu ölçmüyordu (M1), ve yinelenen-anahtar tarayıcısı çalışamadığında fail-open oluyordu (M2). İkisi de f46954d ile kapandı ve bağımsız olarak doğrulandı — beyaz listeyi kaldıran mutasyon tam 6 vakayı kırmızı yapıyor, catch ayrımını geri saran mutasyon 933 baytlık canlı bir sızıntı üretiyor. Kod kalitesi 6 → 8.
 ---
 
 # G5 — GUARD.ok'un JSON'a taşınması (Y1'in dördüncü yaması değil, tasarım değişikliği)

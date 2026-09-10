@@ -427,6 +427,23 @@ describe('B1 kalıcı regresyon (gerçek vitest, gerçek suite -- fixture DEĞİ
   // on -- an exponential fork bomb (hit while writing this test: 185+
   // node.exe processes before it was caught and killed). Do not remove the
   // second --exclude.
+  //
+  // ISOLATION (docs/qa/test-skip-gate-izolasyon-contract.md): this nested
+  // run also excludes tests/scripts/check-ports.test.ts and tests/
+  // build-css.test.ts. Both files touch resources shared with the outer
+  // `npm run test` process that is ALSO running this exact suite at the
+  // same time: check-ports.test.ts binds the real, fixed ports 7333/7334;
+  // build-css.test.ts runs real `vite build` against the fixed, shared
+  // `dist/web` output dir (vite.config.ts's `emptyOutDir: true`). Two
+  // concurrent copies of either can collide (measured: holding port 7333
+  // externally while running this exact nested command made check-ports.
+  // test.ts fail 2/6 with EADDRINUSE -- this is the real source of a flake
+  // previously misattributed to "vitest worker fork instability"). This
+  // does NOT weaken what this test measures: the expected file count below
+  // comes from vitest.config.ts's own include/exclude (computeExpectedFile
+  // Count in scripts/verify-test-run.mjs), not from these CLI --exclude
+  // flags, so the disk-vs-reported mismatch this test asserts on only gets
+  // LARGER (four files short of 86 instead of two), never disappears.
   it('gate goes RED when a real test file is dropped via --exclude, even though vitest itself would exit 0', () => {
     const res = spawnSync(
       process.execPath,
@@ -436,6 +453,10 @@ describe('B1 kalıcı regresyon (gerçek vitest, gerçek suite -- fixture DEĞİ
         'tests/scripts/install-hook.test.ts',
         '--exclude',
         'tests/verify-test-run.test.ts',
+        '--exclude',
+        'tests/scripts/check-ports.test.ts',
+        '--exclude',
+        'tests/build-css.test.ts',
       ],
       { cwd: repoRoot, encoding: 'utf8' }
     )

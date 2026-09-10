@@ -2,7 +2,7 @@
 type: qa-contract
 date: 2026-09-11
 status: qa
-karar: kısmi sonuç — kök neden bulunamadı, denenen hiçbir yapılandırma (maxWorkers 8 veya 1) kırmızı oranını güvenilir şekilde düşürmedi; `vitest.config.ts` değiştirilmedi (orijinaline geri alındı). Çit (`scripts/verify-test-run.mjs`) zaten her çökmeyi doğru şekilde kırmızıya çeviriyor — B-4'ün riski "sessiz atlama" değil, "gerçek ama sık tekrarlayan, ürün kodundan bağımsız kırmızı".
+karar: kısmi sonuç — kök neden bulunamadı, denenen hiçbir yapılandırma (maxWorkers 8/1, pool:'threads') kırmızı oranını güvenilir şekilde düşürmedi; `vitest.config.ts` değiştirilmedi (orijinaline geri alındı). `pool:'threads'` ikinci turda ÖLÇÜLDÜ (n=10): kırmızı oranını %25'ten %100'e çıkardı ve Sınıf A çökmesini iki yeni, biri daha az teşhis edilebilir (sessiz süreç ölümü) sorunla değiştirdi — orijinal a priori red gerekçesi (env sızıntısı) ayrıca ölçüldü ve YANLIŞ çıktı (sızma yok), ama bağımsız bir sebeple red hâlâ geçerli. Çit (`scripts/verify-test-run.mjs`) zaten her çökmeyi doğru şekilde kırmızıya çeviriyor — B-4'ün riski "sessiz atlama" değil, "gerçek ama sık tekrarlayan, ürün kodundan bağımsız kırmızı".
 ---
 
 # Sözleşme — B-4: `npm run test` worker-fork kararsızlığı (altyapı turu, yeni feature değil)
@@ -87,7 +87,7 @@ kanıt: bu makine yoğun eşzamanlı süreç yüküne genel olarak hassas; B-4'�
 
 | Seçenek | Ölçülen sonuç | Karar |
 |---|---|---|
-| `pool: 'threads'` | Ölçülmedi — izolasyon riski (bu depoda `tests/setup/chat-disabled-by-default.ts` gibi süreç-geneli `process.env` mutasyonu yapan setup dosyaları var) tur 1/7'nin göstermediği bir kazanç için kabul edilemez bulundu | **REDDEDİLDİ** (a priori, gerekçe: riskli, kanıtsız) |
+| `pool: 'threads'` | **ÖLÇÜLDÜ (bkz. §5).** n=10 ardışık koşu: **10/10 kırmızı (%100)** — varsayılanın (n=20 birleşik) %25'inden belirgin biçimde KÖTÜ. İzolasyon endişesi (env sızıntısı) ayrıca doğrudan ölçüldü ve **sızmadığı** kanıtlandı — orijinal red gerekçesi (a priori varsayım) bu noktada YANLIŞTI. Ama threads yine de bağımsız, daha ciddi bir sebeple (alt süreç zaman aşımı + sessiz çökme) reddedildi. | **REDDEDİLDİ (artık ÖLÇÜLMÜŞ gerekçeyle)** — `vitest.config.ts` denendi, `git diff` boş olacak şekilde elle geri alındı |
 | `isolate: false` | Ölçülmedi, aynı gerekçe | **REDDEDİLDİ** (a priori) |
 | Belirli bir testi izole etmek/düzeltmek | §1d'nin yoğunlaşma analizi bunu desteklemiyor (8 farklı, ilgisiz dosya) | **UYGULANAMAZ** — ölçüm reddetti |
 | `maxWorkers` düşürme (8 ya da 1) | **ÖLÇÜLDÜ, gerçek API ile.** 8: n=10, %40 kırmızı (varsayılanın n=20 birleşik %25'inden daha KÖTÜ). 1: n=4, %100 kırmızı, ~10× yavaş. | **DENENDİ, İŞE YARAMADI** — geri alındı |
@@ -135,3 +135,106 @@ zaten `CLAUDE.md`'de bağımsız bir flake olarak kayıtlı. Bu turda 44 koşuda
 (sıklık tahmini: ~%5). Düzeltme önerisi (uygulanmadı, kapsam dışı): `removeTempDataDir`'e kısa bir
 retry/backoff eklemek (`fs.rmSync` ENOTEMPTY'de birkaç kez tekrar dener) — bu, `tests/helpers/**`
 dosyasına dokunmayı gerektirir, B-4'ün dosya sahipliği dışında.
+
+## 5. Threads ölçümü — B-4 turu 2 (a priori reddi ölçüme çevirme)
+
+**Görev:** §2 tablosundaki `pool: 'threads'` satırı önceki turda **ölçülmeden** reddedilmişti
+(gerekçe: risk varsayımı). Bu tur onu ölçtü. Sonuç: **hâlâ reddedildi, ama artık ölçülmüş
+gerekçeyle** — ve red gerekçesi orijinal varsayımdan **farklı** çıktı.
+
+### 5a. Kırmızı oranı — n=10 ardışık `npm run test` koşusu, `vitest.config.ts`'e yalnızca
+`pool: 'threads'` eklenmiş hâliyle (başka hiçbir ayar değişmedi)
+
+| Koşu | Sonuç | Başarısız test sayısı | Süre |
+|---|---|---|---|
+| 1 | KIRMIZI | özet satırı YOK (tamamen sessiz çökme, bkz. 5b) | 12s |
+| 2 | KIRMIZI | 3 | 19s |
+| 3 | KIRMIZI | 4 | 19s |
+| 4 | KIRMIZI | 2 | 19s |
+| 5 | KIRMIZI | 2 | 17s |
+| 6 | KIRMIZI | 3 | 19s |
+| 7 | KIRMIZI | 2 | 18s |
+| 8 | KIRMIZI | 3 | 18s |
+| 9 | KIRMIZI | 4 | 20s |
+| 10 | KIRMIZI | 3 | 18s |
+
+**Kırmızı oranı: 10/10 (%100)** — varsayılanın (§1b, n=20 birleşik) %25'inden **belirgin biçimde
+KÖTÜ**. Bu, herhangi bir örneklem varyansıyla açıklanamayacak kadar büyük bir fark (Bernoulli
+%25 gerçek oranla n=10'da hepsinin kırmızı gelmesi ~%0.00001 ihtimalli — yani gerçek oran %25
+DEĞİL, çok daha yüksek).
+
+### 5b. Başarısızlık türü tamamen FARKLI — bu, ayrı ve daha ciddi bir sorun
+
+Baseline'ın Sınıf A'sı (`Worker forks emitted error` / `exit 3221226505`) **hiçbir threads
+koşusunda görülmedi.** Bunun yerine iki yeni, ilgisiz başarısızlık sınıfı ortaya çıktı:
+
+- **Yeni Sınıf C — `Error: Test timed out in 5000ms`, alt-süreç başlatan testlerde
+  yoğunlaşıyor.** 10 koşunun **hepsinde** en az bir kez, çoğunda 2-4 kez: `tests/scripts/
+  check-ports.test.ts`, `tests/scripts/install-hook.test.ts`, `tests/integration/
+  send-event-hook.test.ts`, `tests/integration/chat-hooks-live.test.ts` — dördü de testin
+  içinde `execSync`/`spawn` ile gerçek bir Node alt süreci başlatıp bekliyor (`runScript`,
+  `runInstall`, `runHookDirect`, hook script'i çalıştırma). Bu, Sınıf A'nın rastgele
+  dağılımından (8 ilgisiz dosya) FARKLI: burada **tekrarlayan, tutarlı bir aile** var — alt
+  süreç başlatan testler threads pool'unda güvenilir biçimde zaman aşımına uğruyor. Muhtemel
+  mekanizma: `worker_threads` içinden `child_process` başlatmanın/beklemenin event-loop veya
+  handle davranışı, `child_process` fork'larından farklı ve burada engelleniyor gibi görünüyor
+  — kesin kök neden bu turun kapsamı dışında (yalnızca ölçüm yetkim var), ama örüntü net.
+- **Yeni Sınıf D — tam sessiz süreç çökmesi, Sınıf A'dan bile KÖTÜ.** Koşu 1'de ve ayrıca
+  `--sequence.shuffle` koşu 2'de (§5d) vitest **hiçbir özet satırı, hiçbir hata mesajı
+  yazmadan** çıktı verdi (`RUN v5.0.0 ...` başlığından sonra yalnızca testlerin kendi
+  `console.error` çıktıları var, sonra çıktı aniden kesiliyor). Sınıf A en azından `[vitest-pool]:
+  Worker forks emitted error` diagnostiği basıyordu; burada o bile yok. `scripts/
+  verify-test-run.mjs` yine de bunu doğru şekilde yakalayıp KIRMIZI verdi ("Test Files" özeti
+  bulunamadı) — çit burada da sessiz atlamaya İZİN VERMEDİ, ama debug edilebilirlik Sınıf A'dan
+  daha kötü.
+
+**Sonuç:** threads pool, B-4'ün asıl derdini (Sınıf A) çözmüyor — onu tamamen farklı, en az bir
+tanesi (Sınıf D) daha az teşhis edilebilir iki yeni sorunla DEĞİŞTİRİYOR, ve toplam kırmızı oranı
+%25'ten %100'e çıkıyor.
+
+### 5c. İzolasyon iddiası doğrudan ölçüldü — orijinal red gerekçesi YANLIŞ çıktı
+
+Önceki turun reddi şu varsayıma dayanıyordu: "`tests/setup/chat-disabled-by-default.ts` gibi
+süreç-geneli `process.env` mutasyonu yapan setup dosyaları threads'te dosyalar arasına sızabilir."
+Bu doğrudan ölçüldü:
+
+- İki geçici test dosyası yazıldı (`tests/tmp-env-leak-writer.test.ts`,
+  `tests/tmp-env-leak-reader.test.ts`): writer `process.env.TMP_ENV_LEAK_PROBE` set ediyor,
+  reader aynı değişkeni okuyup `undefined` olduğunu assert ediyor. **4 ayrı koşuda (`npx vitest
+  run` ile, threads pool'la) reader HER SEFERİNDE `undefined` gördü — sızma YOK.** Bu, brief'in
+  öne sürdüğü teoriyle tutarlı: Node'un `worker_threads`'i `SHARE_ENV` açıkça verilmedikçe her
+  worker'a kendi `process.env` kopyasını veriyor; ayrıca vitest'in varsayılan `isolate: true`
+  davranışı (çıktıda görülen "86 workers spawned" — dosya başına bir worker) bunu ayrıca
+  güvence altına alıyor. **Geçici dosyalar tur sonunda silindi, `git status --short` temiz.**
+- `--sequence.shuffle` ile **3 ayrı koşu** yapıldı (tam suite, `tests/e2e/**` ve geçici
+  env-leak dosyaları hariç): sonuçlar KIRMIZI/KIRMIZI(sessiz, Sınıf D)/KIRMIZI, hep aynı
+  Sınıf C aile üyeleri (alt-süreç zaman aşımı) + bir kez Sınıf D. Sıra karıştırıldığında
+  **farklı bir örüntü ortaya çıkmadı** — bu, kirlenmenin sıraya/önceki dosyalara bağlı
+  olmadığını, doğrudan threads+child_process etkileşiminden kaynaklandığını destekliyor.
+- Süreç-geneli durum kullanan diğer yerler tarandı (`process.env` ataması, `process.chdir`,
+  `vi.stubGlobal`, `globalThis` mutasyonu): `tests/setup/chat-disabled-by-default.ts` (idempotent,
+  yalnızca tanımsızsa set ediyor), `tests/integration/{chat-api,thread-api,usage-api}.test.ts` ve
+  `tests/electron/chat-enabled.test.ts` (hepsi kendi `beforeEach`/`try-finally`'inde önceki
+  değeri kaydedip geri yüklüyor), `tests/features/projects/web/useProjects.test.ts`
+  (`vi.stubGlobal`, dosya-yerel). Hiçbiri "geri yüklemeyen, sessizce sızan" bir mutasyon
+  değil — orijinal riskin somut bir örneği bulunamadı.
+
+**Yani: orijinal red gerekçesi (env sızıntısı) YANLIŞTI — ölçüldü, sızma yok. Ama bu, threads'i
+kabul edilebilir yapmıyor; §5a/§5b'deki bağımsız ve çok daha büyük kırmızı-oranı artışı tek
+başına reddetmeye yetiyor.**
+
+### 5d. Karar
+
+`pool: 'threads'` **REDDEDİLDİ** — artık a priori değil, ölçülmüş gerekçeyle: kırmızı oranını
+%25'ten %100'e çıkarıyor ve mevcut Sınıf A'yı, biri daha az teşhis edilebilir (Sınıf D) iki yeni
+sorunla değiştiriyor. `vitest.config.ts` denendi (yalnızca `pool: 'threads'` satırı eklendi),
+ölçüldü, elle geri alındı — `git diff vitest.config.ts` bu turun sonunda **boş**. Doğrulama:
+`npx tsc --noEmit` = 0, `npx eslint .` = 0, `node .claude/hooks/_selftest.cjs` = 165/165 (değişiklik
+bırakılmadığı için `npm run e2e` bu turda ayrıca koşulmadı — brief madde 4/§bitti tanımı bunu yalnızca
+değişiklik bırakılırsa istiyor). Tur boyunca ve sonunda `tasklist`'te `node.exe` sayısı 0 (yetim
+süreç yok).
+
+**Değişmeyen sonuç:** B-4 hâlâ kapanmadı, kök neden hâlâ bulunamadı, `vitest.config.ts` hâlâ
+varsayılan haliyle. Bu turun katkısı yalnızca: bir seçeneği a priori reddetmekten ölçülmüş
+reddetmeye taşımak, ve bu süreçte orijinal riskin (env sızıntısı) gerçek olmadığını ama daha
+büyük, farklı bir riskin (alt-süreç zaman aşımı + sessiz çökme) gerçek olduğunu göstermek.

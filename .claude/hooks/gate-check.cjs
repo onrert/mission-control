@@ -16,6 +16,17 @@
 // izlenir) tüketilir. Kapsam DIŞINDA bir guarded yola yazmak, token geçerli olsa bile
 // reddedilir (token bir DEĞİŞİKLİĞİ yetkilendirir, bir YAZMAYI değil). Kapsam çıkarılamazsa
 // (backtick'li dosya adı yoksa) fail-closed: hiçbir guarded yazmaya izin verilmez.
+//
+// Y1 düzeltmesi (docs/qa/g5-tur5-kapsam-ve-selftest-contract.md): önceki `parseGuardScope`
+// metnin TAMAMINDAKİ backtick'li adları kapsam sayıyordu — GUARD.ok'un "## Gerekçe" gibi
+// düzyazı bölümünde "bu KAPSAM DIŞI" diye AÇIKÇA reddedilen bir dosya adı bile kapsama
+// giriyordu (gerçek CEO operasyonunda iki kez gözlemlendi). Artık kapsam YALNIZCA "## Kapsam"
+// başlığının bloğundan (bir sonraki "##" başlığına ya da dosya sonuna kadar) çıkarılır; o
+// bloğun DIŞINDA geçen hiçbir ad kapsam sayılmaz. Başlık hiç yoksa, birden fazla kez geçiyorsa
+// (belirsiz) ya da blok boşsa (backtick'li ad yok): fail-closed (boş kapsam → hiçbir guarded
+// yazmaya izin yok). Başlık harf/boşluk varyantlarına duyarsızdır (`## Kapsam`, `##Kapsam`,
+// `## KAPSAM` hepsi tanınır) — bu depoda Windows harf duyarsızlığı dört kez tuzak oldu, aynı
+// disiplin başlık eşleştirmesine de uygulanıyor.
 const path = require('path');
 const fs = require('fs');
 const { readInput, exists, block } = require('./_common.cjs');
@@ -27,15 +38,39 @@ function consume(p) {
   try { fs.unlinkSync(p); } catch (_) {}
 }
 
-// GUARD.ok metnindeki backtick-alıntılı `*.cjs` / `.claude/settings.json` dosya adlarını
-// kapsam olarak çıkarır. Backtick dışı serbest metin kapsam SAYILMAZ.
+// GUARD.ok metninde YALNIZCA "## Kapsam" başlığının bloğunu (bir sonraki "##" başlığına ya da
+// dosya sonuna kadar) kapsam kaynağı sayar; o blok içindeki backtick-alıntılı `*.cjs` /
+// `.claude/settings.json` adları kapsamdır. Blok dışındaki (ör. gerekçe/açıklama) backtick'li
+// adlar kapsam SAYILMAZ. Başlık yok / birden fazla (belirsiz) / blok boş → fail-closed (boş
+// küme — çağıran taraf boş kümeyi "hiçbir yola izin yok" olarak yorumlar).
 function parseGuardScope(guardPath) {
   let text = '';
   try { text = fs.readFileSync(guardPath, 'utf8'); } catch (_) { return new Set(); }
   const scope = new Set();
+
+  const lines = text.split(/\r\n|\r|\n/);
+  const kapsamHeaderRe = /^\s*##\s*kapsam\s*$/i;
+  const anyHeaderRe = /^\s*##/;
+
+  let blockStart = -1;
+  let headerCount = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (kapsamHeaderRe.test(lines[i])) {
+      headerCount++;
+      if (headerCount === 1) blockStart = i + 1;
+    }
+  }
+  if (headerCount !== 1) return scope; // başlık yok ya da belirsiz (>1) → fail-closed
+
+  let blockEnd = lines.length;
+  for (let i = blockStart; i < lines.length; i++) {
+    if (anyHeaderRe.test(lines[i])) { blockEnd = i; break; }
+  }
+  const block = lines.slice(blockStart, blockEnd).join('\n');
+
   const re = /`([^`]+)`/g;
   let m;
-  while ((m = re.exec(text))) {
+  while ((m = re.exec(block))) {
     const tok = m[1].trim();
     if (/^[\w-]+\.cjs$/i.test(tok)) scope.add(('.claude/hooks/' + tok).toLowerCase());
     else if (/^\.claude\/settings\.json$/i.test(tok)) scope.add('.claude/settings.json');
@@ -150,7 +185,7 @@ readInput((j) => {
     const scope = parseGuardScope(GUARD_OK);
     const relLower = rel.toLowerCase();
     if (scope.size === 0 || !scope.has(relLower)) {
-      block(`Engellendi: "${rel}" GUARD.ok kapsamı dışında. GUARD.ok yalnızca içinde backtick ile andığı .cjs/.claude/settings.json dosyalarını kapsar (madde 4) — bu yol o listede yok. Kapsamı genişletmek için yeni/güncel bir GUARD.ok gerekir.`);
+      block(`Engellendi: "${rel}" GUARD.ok kapsamı dışında. GUARD.ok yalnızca "## Kapsam" başlığı altında backtick ile andığı .cjs/.claude/settings.json dosyalarını kapsar (madde 4 + Y1 düzeltmesi) — bu yol o bölümde yok (ya da "## Kapsam" başlığı hiç yok/birden fazla/boş). Kapsamı genişletmek için yeni/güncel bir GUARD.ok gerekir.`);
     }
     const scopeKey = JSON.stringify(Array.from(scope).sort());
     const state = loadGuardState(scopeKey);

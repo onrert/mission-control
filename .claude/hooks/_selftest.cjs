@@ -6,6 +6,64 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// Y3 düzeltmesi (docs/qa/g5-tur5-kapsam-ve-selftest-contract.md): bu betik ARTIK GERÇEK
+// docs/approvals/ yollarına hiç dokunmuyor. Aşağıdaki blok, betiğin geri kalanının çalışacağı
+// izole bir sandbox dizinine `process.chdir()` yapar: gerçek `.claude/hooks/*.cjs` dosyaları
+// (bu dosyanın kendisi HARİÇ) BİREBİR, değiştirilmeden sandbox'a kopyalanır; testler o
+// kopyalar üzerinden ve sandbox'ın KENDİ `docs/approvals/` dizini üzerinden çalışır. Betiğin
+// geri kalanı (aşağıdaki tüm dangerCases/gateCases/(c)(e)(f)/Y1/Katman A/K-A/K-B/fail-closed
+// testleri) HİÇBİR DEĞİŞİKLİK OLMADAN, salt göreli-yol varsayımına güvenerek sandbox içinde
+// aynen çalışır — çünkü hook'ların kendisi (`_common.cjs`, `gate-check.cjs`,
+// `block-dangerous.cjs`) zaten `process.cwd()`'ye göreli yollarla çalışıyor (ör.
+// `docs/approvals/GUARD.ok`), mutlak yol hardcode etmiyorlar.
+//
+// Emniyet kemeri (ikinci, bağımsız katman): sandbox'a geçmeden ÖNCE, ÇAĞIRANIN GERÇEK
+// cwd'sindeki docs/approvals/ altında PUSH.ok/DANGER.ok/GUARD.ok/.guard-state.json var mı
+// kontrol edilir. Varsa — bu kullanıcının GERÇEK, henüz tüketilmemiş bir onayı olabilir —
+// betik hiçbir şeye dokunmadan reddeder (exit 3). Sandbox izolasyonu bu dosyalara
+// dokunulmasını zaten yapısal olarak imkânsız kılıyor; bu kontrol yalnızca "sandbox kurulumu
+// her nasılsa başarısız olursa/ileride bozulursa" ihtimaline karşı bağımsız bir emniyettir —
+// CLAUDE.md'nin kendi diliyle: "bir güvenlik testinin, koruduğu şeyi tahrip etmesi" sınıfını
+// ikinci bir katmanla da kapatır.
+const REAL_ROOT = process.cwd();
+const REAL_APPROVALS_DIR = path.join(REAL_ROOT, 'docs', 'approvals');
+const REAL_PENDING = ['PUSH.ok', 'DANGER.ok', 'GUARD.ok', '.guard-state.json']
+  .map((n) => path.join(REAL_APPROVALS_DIR, n))
+  .filter((p) => fs.existsSync(p));
+if (REAL_PENDING.length) {
+  console.error('REDDEDILDI: self-test calistirilmadi, hicbir dosyaya dokunulmadi.');
+  console.error('Gercek, henuz tuketilmemis olabilecek onay/durum dosyalari mevcut:');
+  for (const p of REAL_PENDING) console.error('  - ' + path.relative(REAL_ROOT, p));
+  console.error('Once bu onayi isleyin (ilgili komutu calistirip GERCEKTEN tuketilmesini saglayin)');
+  console.error('ya da bir kalinti oldugundan eminseniz elle inceleyip kaldirin, sonra tekrar deneyin.');
+  process.exit(3);
+}
+
+const REAL_HOOKS_DIR = path.join(REAL_ROOT, '.claude', 'hooks');
+let SANDBOX_ROOT;
+try {
+  SANDBOX_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-selftest-'));
+  fs.mkdirSync(path.join(SANDBOX_ROOT, '.claude', 'hooks'), { recursive: true });
+  for (const name of fs.readdirSync(REAL_HOOKS_DIR)) {
+    if (!name.endsWith('.cjs') || name === '_selftest.cjs') continue;
+    fs.copyFileSync(path.join(REAL_HOOKS_DIR, name), path.join(SANDBOX_ROOT, '.claude', 'hooks', name));
+  }
+  fs.mkdirSync(path.join(SANDBOX_ROOT, 'docs', 'approvals'), { recursive: true });
+  fs.mkdirSync(path.join(SANDBOX_ROOT, 'assets'), { recursive: true });
+  // gateCases SRC_FILE senaryosu gercek repoda "docs/approvals/G2.ok var" varsayimina dayanir
+  // (o zaman src/** serbesttir); sandbox kendi izole G2.ok fixture'ini tasir, GERCEK G2.ok'a
+  // hic dokunulmaz/okunmaz.
+  fs.writeFileSync(path.join(SANDBOX_ROOT, 'docs', 'approvals', 'G2.ok'), 'selftest sandbox fixture\n');
+} catch (e) {
+  console.error('REDDEDILDI: izole sandbox kurulamadi, self-test calistirilmadi: ' + e.message);
+  process.exit(4);
+}
+process.chdir(SANDBOX_ROOT);
+process.on('exit', () => {
+  try { process.chdir(REAL_ROOT); } catch (_) {}
+  try { fs.rmSync(SANDBOX_ROOT, { recursive: true, force: true }); } catch (_) {}
+});
+
 const G = 'g' + 'it';
 const F = '-' + 'f';
 const RM = 'r' + 'm';
@@ -30,10 +88,19 @@ function write(p) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.write
 // ile listeleyen bir onay metnidir. Sentetik/regresyon testleri için gerçek .cjs dosyalarına
 // DOKUNMADAN (hook script'i hedef dosyaya hiçbir zaman yazmıyor, yalnızca stdin'deki
 // file_path'i değerlendiriyor) uydurma veya gerçek dosya adları backtick ile anılır.
+// Y1 (docs/qa/g5-tur5-kapsam-ve-selftest-contract.md): parseGuardScope artık YALNIZCA
+// "## Kapsam" başlığının bloğunu okuyor — bu helper da güncel format için o başlığı üretir
+// (eski düzyazı-serpiştirilmiş biçim artık geçerli bir onay metni SAYILMIYOR, bilerek).
 function writeGuardScope(names) {
   fs.mkdirSync(path.dirname(GUARD_OK), { recursive: true });
   const list = names.map((n) => '`' + n + '`').join(' ve ');
-  fs.writeFileSync(GUARD_OK, `selftest onayi: ${list} icin\n`);
+  fs.writeFileSync(GUARD_OK, `## Kapsam\n${list}\n`);
+}
+// Y1 (docs/qa/g5-tur5-kapsam-ve-selftest-contract.md): "## Kapsam" bölüm sınırlı GUARD.ok
+// senaryoları için ham içerik yazar (writeGuardScope'un aksine başlık YAPISINI test eder).
+function writeGuardRaw(content) {
+  fs.mkdirSync(path.dirname(GUARD_OK), { recursive: true });
+  fs.writeFileSync(GUARD_OK, content);
 }
 function rm(p) { try { fs.unlinkSync(p); } catch (_) {} }
 function existsFile(p) { return fs.existsSync(p); }
@@ -294,6 +361,82 @@ writeGuardScope(['selftest-f1.cjs', 'selftest-f2.cjs']);
 }
 rm(GUARD_OK); rm(GUARD_STATE);
 
+// --- Y1 (docs/qa/g5-tur5-kapsam-ve-selftest-contract.md): parseGuardScope YALNIZCA
+// "## Kapsam" bölümünü kapsam sayar; bölüm dışında (ör. gerekçe metninde anılan) bir dosya
+// adı kapsama GİRMEZ. (y1-b) gerçek CEO operasyonunda GERÇEKLEŞMİŞ bir sızıntının birebir
+// regresyon testidir.
+
+// (y1-a) "## Kapsam" bölümündeki dosya kabul edilir VE token bu tek dosyayla tüketilir.
+rm(GUARD_OK); rm(GUARD_STATE);
+writeGuardRaw('## Kapsam\n`selftest-y1a.cjs`\n\n## Gerekce\nbu degisiklik gerekli.\n');
+{
+  const code = callGate('.claude/hooks/selftest-y1a.cjs');
+  const consumed = !fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1-a) "## Kapsam" bolumundeki dosya kabul edilir ve token tuketilir', code === 0 && consumed);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (y1-b) Gerekçe (kapsam dışı) bölümünde "KAPSAM DIŞI" diye anılan bir dosya adı REDDEDİLİR.
+writeGuardRaw('## Kapsam\n`selftest-y1c.cjs`\n\n## Gerekce\nBu KAPSAM DISI birakildi: `selftest-y1d.cjs`\n');
+{
+  const code = callGate('.claude/hooks/selftest-y1d.cjs');
+  const untouched = fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1-b) Gerekce bolumunde anilan (KAPSAM DISI) dosya reddedilir, token harcanmaz', code === 2 && untouched);
+}
+// (y1-c) Aynı GUARD.ok'ta, "## Kapsam" bölümündeki dosya HÂLÂ kabul edilir (komşu davranış
+// bozulmadı) — token bu istekle tüketilir.
+{
+  const code = callGate('.claude/hooks/selftest-y1c.cjs');
+  const consumed = !fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1-c) ayni metinde "## Kapsam" bolumundeki dosya hala kabul edilir', code === 0 && consumed);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (y1-d) "## Kapsam" başlığı hiç yoksa: fail-closed (hiçbir guarded yazmaya izin yok).
+writeGuardRaw('Bu bir onaydir: `selftest-y1e.cjs` degisikligini onayliyorum.\n');
+{
+  const code = callGate('.claude/hooks/selftest-y1e.cjs');
+  const untouched = fs.existsSync(GUARD_OK);
+  fail += reportScope('(y1-d) "## Kapsam" basligi hic yoksa fail-closed (reddedilir)', code === 2 && untouched);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (y1-e) "## Kapsam" başlığı birden fazla kez geçiyorsa: belirsiz kapsam, fail-closed (ikisi de).
+writeGuardRaw('## Kapsam\n`selftest-y1f.cjs`\n\n## Kapsam\n`selftest-y1g.cjs`\n');
+{
+  const code1 = callGate('.claude/hooks/selftest-y1f.cjs');
+  const code2 = callGate('.claude/hooks/selftest-y1g.cjs');
+  fail += reportScope('(y1-e) birden fazla "## Kapsam" basligi -> belirsiz, fail-closed (ikisi de reddedilir)', code1 === 2 && code2 === 2);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (y1-f) Başlık boşluksuz varyantla da bulunur: "##Kapsam".
+writeGuardRaw('##Kapsam\n`selftest-y1h.cjs`\n\n## Gerekce\nnot.\n');
+{
+  const code = callGate('.claude/hooks/selftest-y1h.cjs');
+  const consumed = !fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1-f) "##Kapsam" (bosluksuz varyant) da baslik olarak taninir', code === 0 && consumed);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (y1-g) Başlık büyük harfle: "## KAPSAM".
+writeGuardRaw('## KAPSAM\n`selftest-y1i.cjs`\n');
+{
+  const code = callGate('.claude/hooks/selftest-y1i.cjs');
+  const consumed = !fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1-g) "## KAPSAM" (buyuk harf varyanti) da baslik olarak taninir', code === 0 && consumed);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (y1-h) "## Kapsam" bölümü var ama içinde hiç backtick'li ad yoksa: fail-closed.
+writeGuardRaw('## Kapsam\nbu bolumde hic dosya adi yok.\n\n## Gerekce\n`selftest-y1j.cjs` burada geciyor ama kapsam disi.\n');
+{
+  const code = callGate('.claude/hooks/selftest-y1j.cjs');
+  const untouched = fs.existsSync(GUARD_OK);
+  fail += reportScope('(y1-h) "## Kapsam" bolumu bos (backtick yok) -> fail-closed', code === 2 && untouched);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
 // --- Katman A (docs/qa/g5-onay-dosyasi-korumasi-contract.md): docs/approvals/** ask/blok
 // testleri. `run()`'ın aksine STDOUT'u da yakalar — bir "ask" kararının gerçekten
 // permissionDecision:'ask' JSON'u ile mi geldiğini, yoksa sessiz exit 0 (hiç sorulmadan izin)
@@ -355,7 +498,8 @@ for (const [filePath, label] of approvalsAskCases) {
 // makinede GERÇEK bir NTFS junction oluşturup kaldırır (yönetici hakkı gerekmez — junction
 // symlink'ten farklı olarak SeCreateSymbolicLinkPrivilege istemez); fail-closed ise ayrı bir
 // child process'te fs.realpathSync.native'i preload ile fırlatacak şekilde monkey-patch ederek
-// GERÇEK dosyaya hiç dokunmadan test edilir.
+// GERÇEK dosyaya hiç dokunmadan test edilir. (Y3 sonrası: bu blokta anılan "docs/approvals"
+// artık SANDBOX'ın kendi dizinidir, gerçek proje dizini DEĞİLDİR.)
 const REAL_APPROVALS_ABS = path.resolve('docs', 'approvals');
 function kaProbePath() {
   return '\\\\?\\' + path.join(REAL_APPROVALS_ABS, 'SELFTEST-KA-PROBE.ok');
@@ -438,7 +582,8 @@ function failClosedProbe() {
   fail += reportScope('(fail-closed) fs.realpathSync.native fırlatınca sert engel (exit=2, sessiz izin DEĞİL)', ok);
 }
 
-// Test artıklarını bırakma.
+// Test artıklarını bırakma (Y3 sonrası: bu zaten SANDBOX içinde, `process.on('exit', ...)`
+// ayrıca tüm sandbox dizinini siliyor — bu satırlar ek/artık bir güvenlik önlemidir).
 rm(PUSH_OK);
 rm(DANGER_OK);
 rm(GUARD_OK);

@@ -1351,3 +1351,43 @@ sınıyor; durma kuralı net (doğrulanmazsa yeni hipotez açılmayacak).
 **B-4 durumu değişmedi:** kapatılmış değil, **ölçülmüş ve yönetilen risk**. G6 için bağlayıcı
 kural yukarıdaki B-4 girdisinde: assert kırmızısı her zaman bloklayıcı; çökme (assert sıfırsa)
 yeniden koşmayı gerektirir; yayın kanıtı için ardışık iki tam yeşil koşu.
+
+---
+
+## 2026-09-11 — CEO — B-4 KAPANIŞ: alt süreç hipotezi ölçüldü, doğrulanmadı; risk yönetilen olarak taşınıyor
+
+**Hipotez:** fork'taki çökme ile threads'teki zaman aşımının ortak paydası alt süreç doğurmak.
+
+**Ölçüm:** `tests/**` altındaki **86** dosyadan **7'si** gerçekten Node alt süreci başlatıyor
+(`verify-test-run`, `chat-hooks-live`, `build-css`, `usage-aggregator`, `check-ports`,
+`install-hook`, `send-event-hook`). Bir dosya (`network-capability-guard`) grep'te `execFileSync`
+içeriyor ama yalnızca statik kaynak taraması yapıyor — dışlandı.
+
+Fork altında Sınıf A çökmesi görülen **8 dosyayla kesişim: 1** (`send-event-hook`).
+Hipergeometrik beklenti (N=86, K=7, n=8) ≈ **0,65**. Gözlenen 1, saf şanstan ayırt edilemez.
+
+**Karar: hipotez doğrulanmadı.** Manipülasyon ve hedefli düzeltme adımları **çalıştırılmadı** —
+zayıf korelasyonu zorlamak, "ölçmeden reddetmek"in simetriği olan bir hata olurdu.
+
+**Yan bulgu (bilgi amaçlı):** aynı 7 dosyanın **4'ü**, threads altındaki Sınıf C (zaman aşımı)
+listesiyle **tam örtüşüyor**. Yani alt süreç doğurmak **threads** arıza biçimini güçlü biçimde
+açıklıyor, ama B-4'ün asıl konusu olan **fork** çökmesini açıklamıyor.
+
+### B-4'ün nihai durumu
+**Kapatılmadı — ölçülmüş ve yönetilen risk olarak taşınıyor.** Üç tur, ~55 `npm run test` koşusu.
+Elenen açıklamalar: belirli bir kusurlu test (çökmeler 8 dosyaya dağılmış), paralellik/kaynak
+baskısı (`maxWorkers: 1` %100 kırmızı), pool mekanizması (`threads` %100 kırmızı, farklı arıza
+biçimi), alt süreç doğurma (kesişim şanstan ayırt edilemez). Geriye kalan en olası açıklama
+**ortamsal** (Windows + Node + dosya sistemi filtreleri/antivirüs) — ama bu da **kanıtlanmadı**,
+yalnızca artakalan.
+
+**G6'da uygulanacak bağlayıcı kural (değişmedi):**
+1. `npm run test` **izole** koşulur (aynı anda başka ağır süreç yok).
+2. **Assert kırmızısı = gerçek hata, her zaman bloklayıcı.** Sınıf A/B/D çökmesi — assert
+   kırmızısı **sıfır** olmak kaydıyla — yalnızca yeniden koşmayı gerektirir.
+3. Yayın kanıtı için **ardışık iki tam yeşil koşu**.
+
+**Eşik:** bir **assert** kırmızısı görülürse **hemen** yeniden açılır. Yeni bir vitest/Node sürümüne
+geçilirse taban oran (%25) yeniden ölçülmelidir — belki sürüm yükseltmesi kendiliğinden çözer.
+Bu, "çözülene kadar uğraş" değil **"ölçülmüş oranla yaşa"** kararıdır; gerekçe: dört açıklama
+elendi, beşincisi için elde veri yok ve her tur ~15 koşu maliyetinde.

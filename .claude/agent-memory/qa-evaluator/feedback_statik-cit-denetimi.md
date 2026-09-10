@@ -105,3 +105,26 @@ sınır-tabanlı ayrıştırıcının kör noktası.
 koşulunu sorgula; bitiş "dosya sonu"na düşebiliyorsa en az üç farklı sonraki-bölüm biçimi
 dene. Yama yerine kapalı biçim iste (yalnızca `- <ad>` satırları kabul, başka içerik →
 fail-closed) — bkz. [[kod-turu-kontrolleri]] beyaz liste dersi.
+
+10. **Kapalı biçim geldiğinde saldırıyı BİR KATMAN YUKARI taşı: bölümün İÇERİĞİ değil,
+    bölümün KİMLİĞİ.** G5 tur-3'te ayrıştırıcı "hangi satırlar sayılır"a geçti (yalnızca
+    `## Kapsam` başlığının hemen ardındaki `- `/`* ` maddeleri, satır başına tam bir ters
+    tırnaklı ad). Tur-2'nin üç sızıntısı gerçekten kapandı ve 35 biçim sondası tuttu — ama
+    başlık `/^\s*##\s*kapsam\s*$/i` ile **birebir** eşleştiği için `## Kapsam (2 dosya)` ya da
+    `## Kapsam:` yazılınca o satır başlık SAYILMIYOR; kod "başlık yok → fail-closed" diye
+    yorum düşmüş olsa bile, belgenin başka bir yerindeki **tek** birebir başlık (arşiv
+    alıntısı, HTML yorumu, kod bloğu örneği) kimliği DEVRALIYOR. Sonuç: onaylanan dosya
+    reddediliyor (exit 2), onaylanmayan dosya kabul ediliyor (exit 0, kart yok) ve token
+    tüketiliyor. **Sonda kalıbı:** görünür başlığa zararsız bir kuyruk ekle (parantez, iki
+    nokta, tire) + belgeye ikinci bir birebir başlık koy; hem kapsam dışı hedefi hem
+    onaylanan hedefi ölç. "Tanınmayan başlık fail-closed" iddiası, belgede başka bir birebir
+    başlık yoksa doğrudur — çürütmek için ikinci başlığı sen koyacaksın.
+11. **Sonda tasarım hatası: eklediğin satır iyi biçimli bir kapsam maddesiyse sonda hiçbir şey
+    ölçmez.** Aynı turda 5 sondam (satır sonu boşluk, tire sonrası fazla boşluk, ters tırnak
+    içi boşluk, nbsp girinti, form feed) "sızıntı" sandığım exit 0 üretti; oysa belge o adı
+    zaten kapsam olarak listeliyordu — kabul DOĞRU davranıştı. Kural: kapsam/beyaz liste
+    ayrıştırıcısı sınarken sondanın eklediği satırı bir insan okusa "bu bir kapsam beyanı mı,
+    yoksa açıklama/dışlama/örnek mi?" diye sor. Yalnızca ikinci gruptakiler sızıntı sondasıdır.
+    Aşırı engelleme sondasını da unutma: G5 tur-3'te `## Kapsam` + "Aşağıdaki dosyalar:"
+    cümlesi + liste (çok doğal bir yazım) fail-closed ile reddedildi ve blok mesajı kapalı
+    biçimi tarif etmediği için onarılamıyordu — bu, kullanıcıyı kapıyı gevşetmeye iter.

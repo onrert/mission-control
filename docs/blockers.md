@@ -1164,3 +1164,78 @@ bugün fark etti ve **kasten kullanmadı**; `Write` aracıyla kapıdan geçti.)
   katmanla korunuyor. Kartın metni `cp a b` yazar — kullanıcı bunun bir güvenlik kapısını
   değiştirdiğini anlamayabilir; bu, kartın **doğru ama yeterince açık olmadığı** bir durumdur.
 - **Eşik:** Katman B'ye dokunan bir sonraki tur (Y2 ile birlikte ele alınabilir).
+
+---
+
+## 2026-09-10 — CEO — ESKALE: Y1 üç turda kapanmadı, tasarım değiştiriliyor
+
+**Durum: kullanıcıya eskale edildi ve karar alındı.** `docs/qa/latest.md` → `ESKALE: true`.
+
+Y1 = `GUARD.ok` kapsamının, onay belgesinin insan için yazılmış kısmından da okunması.
+Üç düzeltme turu, üç yenilgi — hepsi **aynı aileden**: serbest metinden makine kararı çıkarmak.
+
+| Tur | Mekanizma | Nasıl yenildi | Ölçüm |
+|---|---|---|---|
+| 1 | metnin tamamındaki ters tırnaklı adlar | gerekçede "kapsam dışı" denen ad kapsama giriyordu | `G5-sozlesme-kararlari-2026-09-10.md` |
+| 2 | `## Kapsam` bloğu (bir sonraki `##` ya da dosya sonuna kadar) | başlıksız kuyruk düzyazı, `# h1`, `**kalın**` sözde-başlık | `…-tur2.md` |
+| 3 | başlıktan hemen sonraki kapalı biçimli liste maddeleri | **başlık kimliğinin devralınması** | `…-tur3.md` |
+
+**Tur 3'ün bulgusu (BLOKLAYICI):** başlık birebir `## Kapsam` ile eşleşiyordu. Kullanıcı
+`## Kapsam (2 dosya)` yazınca o satır başlık sayılmıyor, belgedeki **başka** bir birebir
+`## Kapsam` satırı (arşiv alıntısı / kod bloğu örneği / HTML yorumu) kimliği devralıyordu.
+Ölçülen sonuç, onay belgesinin **tam tersi**: onayladığı iki dosya reddedildi, "arşiv, kapsam
+değil" denen dosya **kabul edildi** — kart yok, token tüketildi. Beş ayrı kapı canlı ölçüldü.
+
+**Kullanıcı kararı (2026-09-10):** dördüncü yama yok. Onay dosyasının makineye giden kısmı
+artık markdown olmayacak — `GUARD.ok` bir JSON belgesi olacak, kapsam yalnızca `scope`
+dizisinden okunacak, gerekçe alanı hiçbir zaman taranmayacak, beyaz listeye uymayan tek bir
+eleman tüm kapsamı geçersiz kılacak. Sözleşme: `docs/qa/g5-guard-json-contract.md`.
+
+**Gerekçe (deponun kendi kayıtlı dersi):** *"aynı çit ikinci kez yenildiyse desen ekleme,
+tasarımı değiştir"* ve `ADR-013` *"beyaz liste zorunlu"*. Biz üçüncüdeydik.
+
+## 2026-09-10 — CEO — AÇIK (artık ölçülmüş maliyet): onayın birimi "bir yazma", olması gereken "bir değişiklik"
+
+Kayıtlı tasarım borcu bugün **pratik maliyete** dönüştü: tek bir Y1 düzeltmesinde
+**beş kullanıcı onayı** harcandı. Token, kapsamdaki her dosya bir kez yazıldığında tükeniyor;
+bir dosyada iki düzenleme gerekince ortada bitiyor ve yeni onay isteniyor.
+
+Onay yorgunluğu, kapının kendisini işlevsizleştirir — bu zaten K1'in ilk gerekçesiydi.
+Yani kapı, kendi tasarımıyla kendi gerekçesini çürütüyordu.
+
+**Eşik: JSON turuyla birlikte kapatılıyor** (zaman pencereli tüketim). Kabul edilen takas
+sözleşmede açıkça yazılacak: pencere boyunca token canlı kalır, yani bir kullanıcı onayı aynı
+kapsam içinde birden fazla yazmayı yetkilendirir.
+
+## 2026-09-10 — CEO — AÇIK (eşikli borç): aşırı engelleme ve belgesizlik
+
+QA tur-3'ün ÖNEMLİ bulgusu: meşru üç yazım biçimi reddediliyordu (tam yol, başlık sonrası
+HTML yorumu, "Aşağıdaki dosyalar:" cümlesi + liste). Engelleme mesajları gerekli biçimi
+**tarif etmiyor** ve ayrıştırılan kapsamı **göstermiyor**; `docs/approvals/README.md` GUARD.ok'tan
+hiç söz etmiyordu. Token deneme-yanılmaya dayanmadığı için bu, kullanıcıyı kapıyı gevşetmeye iter.
+
+**Eşik: JSON turuyla birlikte kapatılıyor** (mesajlar biçimi tarif edecek ve ayrıştırılan
+kapsamı yazacak; README'ye tam örnekli bölüm eklenecek).
+
+## 2026-09-10 — CEO — AÇIK (eşikli borç): suite yedi koşuda üç kez kırmızı
+
+Port izolasyonu turunda (`81c049b`) `npm run test` **yedi kez** ardışık koşuldu: dördü yeşil
+(1371/4), üçü kırmızı — ama **hiçbiri** o turun hedeflediği çakışma sınıfından değildi:
+- 2× bilinen organik worker fork çökmesi (`Worker forks emitted error`) — kapı doğru şekilde
+  kırmızı verdi, yani teşhis kısmen doğruymuş
+- 1× `tests/integration/send-event-hook.test.ts`'te **yeni** bir zamanlama flake'i (o turun
+  dosya sahipliği dışındaydı, düzeltilmedi, dürüstçe beyan edildi)
+
+**Neden açık:** %43 kırmızı oran, "kırmızıya alışma" riskinin ta kendisi — bu deponun en pahalı
+hata sınıfı sessizce ölen kapılar, ikincisi de gürültüye alışmak.
+**Eşik:** `send-event-hook` flake'i ikinci kez görülürse **hemen**; worker çökmesi için ayrı bir
+altyapı turu (vitest yapılandırması / izolasyon modu) G6 öncesi.
+
+## 2026-09-10 — CEO — AÇIK (eşikli borç): Y3'ün iki katmanı tek tek ölçülmüyor
+
+QA'nın §3.4 bulgusu: `_selftest.cjs`'in gerçek onay dosyalarını koruyan iki katmanı
+(emniyet kemeri + sandbox izolasyonu) **kendi başına** ölçülmüyor — bekleyen onay yokken
+katmanlardan biri sökülse self-test yine tam yeşil kalıyor. Yani her katmanın kendi pozitif
+kontrolü yok; bu deponun en pahalı hata sınıfının (sessizce ölen koruma) özyinelemeli hâli.
+
+**Eşik:** `_selftest.cjs`'e dokunan bir sonraki tur.

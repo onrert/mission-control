@@ -12,7 +12,11 @@ import { stripApiKey, checkApiKeyBarrier, hasApiKeyHelperConfigured } from './en
 import { createHistoryLog, type HistoryLog } from './history-log'
 import { readSessionId, writeSessionId } from './session-store'
 import type { SseHub } from '../../../server/sse/hub'
-import type { ChatLogEntry } from '../../../shared/types'
+import {
+  INPUT_PREVIEW_HARD_CAP,
+  OVERSIZED_INPUT_PREVIEW_MARKER,
+  type ChatLogEntry,
+} from '../../../shared/types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 /**
@@ -134,11 +138,33 @@ export interface ChatSession {
   stopAll(): void
 }
 
+/**
+ * G5 Tur 4 (4-Ek3, `docs/qa/G5-guvenlik-denetimi-2026-09-10-tur4.md`) düzeltmesi — bu fonksiyon
+ * ARTIK komutu KESMEZ. Kart tel biçimi (`chat_permission_request.input_preview`) kullanıcının
+ * onayladığı ANDA çalışacak komutun TAMAMINI taşımak ZORUNDADIR; eski `slice(0,500)` kırpması
+ * "kullanıcı okur, sonra onaylar" varsayımını (ADR-014/ADR-016) 500 karakterden uzun komutlarda
+ * sessizce geçersiz kılıyordu (denetim kanıtı: 621 karakterlik, dolgu ARKASINA gizlenmiş bir
+ * komutun hassas kısmı önizlemede HİÇ görünmüyordu). Tek istisna `INPUT_PREVIEW_HARD_CAP`'i
+ * aşan patolojik girdiler — onlar da SESSİZCE kesilmez, `OVERSIZED_INPUT_PREVIEW_MARKER` ile
+ * açıkça işaretlenir (fail-closed, bkz. sözleşme §tasarım kararı 3). `command` alanı olmayan
+ * araçlar (`Write`/`Edit` dahil) `JSON.stringify(input)`'ın TAMAMINDAN geçer — ayrı bir kod dalı
+ * YOKTUR, bu yüzden içerik alanları da aynı korumadan yararlanır (sözleşme §tasarım kararı 4).
+ */
 function buildInputPreview(input: Record<string, unknown>): string {
   const command = typeof input.command === 'string' ? input.command : undefined
   const raw = command ?? JSON.stringify(input)
-  const singleLine = raw.replace(/\s+/g, ' ').trim()
-  return singleLine.length > 500 ? `${singleLine.slice(0, 500)}…` : singleLine
+  if (raw.length > INPUT_PREVIEW_HARD_CAP) {
+    return `${OVERSIZED_INPUT_PREVIEW_MARKER} (${raw.length} karakter)`
+  }
+  // Satır-İÇİ boşluk/tab dizileri tek boşluğa indirgenir; satır sonları KORUNUR (çok satırlı
+  // bir komutu tek okunaksız satıra yığmak, `&&`/`;` zincirlerinin görsel olarak ayırt
+  // edilmesini zorlaştırır — sözleşme §tasarım kararı 5).
+  return raw
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .trim()
 }
 
 function derivePermissionOutcome(result: unknown): 'allow' | 'deny' | 'unknown' {

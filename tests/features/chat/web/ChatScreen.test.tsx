@@ -268,6 +268,95 @@ describe('ChatScreen — izin isteği: otomatik onay YOK (K3)', () => {
   })
 })
 
+describe('ChatScreen — G5 Tur 4 (4-Ek3): izin kartı önizlemesi KIRPILMAZ', () => {
+  const tail = 'GIZLI-KOMUT-SONU-ISARETI'
+  const longCommand = `${'#'.repeat(560)} ${tail}`
+
+  it('500+ karakterlik komutun TAMAMI (dolgu ARKASINDAKİ iz dahil) DOM içinde görünür, uzunluk şeridi çıkar', async () => {
+    stubFetch()
+    const chatRef = await renderHarness()
+    await act(async () => {
+      chatRef.current!.handlers.onChatPermissionRequest({
+        request_id: 'r-long',
+        turn_id: 't1',
+        tool_name: 'Bash',
+        input_preview: longCommand,
+        ts: new Date().toISOString(),
+      })
+    })
+
+    const box = screen.getByTestId('permission-command-preview')
+    // Denetimin 4-Ek3 kanıtını birebir tekrarla: eski `truncate`/500-kırpma varken bu iz DOM'da
+    // HİÇ yoktu. `textContent` (CLAUDE.md dersi: görünürlük CSS'e değil DOM içeriğine göre
+    // ölçülür) kullanılıyor.
+    expect(box.textContent).toContain(tail)
+    expect(
+      screen.getByText(new RegExp(`olağandışı uzun \\(${longCommand.length} karakter\\)`))
+    ).toBeTruthy()
+    // Uzun ama HARD_CAP altı — Onayla hâlâ etkin.
+    expect((screen.getByRole('button', { name: 'Onayla' }) as HTMLButtonElement).disabled).toBe(
+      false
+    )
+  })
+
+  it('500 altı komutta uzunluk şeridi ÇIKMAZ', async () => {
+    stubFetch()
+    const chatRef = await renderHarness()
+    await act(async () => {
+      chatRef.current!.handlers.onChatPermissionRequest({
+        request_id: 'r-short',
+        turn_id: 't1',
+        tool_name: 'Bash',
+        input_preview: 'echo kisa',
+        ts: new Date().toISOString(),
+      })
+    })
+    expect(screen.queryByText(/olağandışı uzun/)).toBeNull()
+  })
+
+  it('HARD_CAP üstü (OVERSIZED_INPUT_PREVIEW_MARKER) girdide fail-closed uyarı çıkar VE Onayla devre dışı kalır', async () => {
+    stubFetch()
+    const chatRef = await renderHarness()
+    const oversizedPreview =
+      '⚠ GÜVENLİK: Bu komut önizlemesi güvenli şekilde gösterilemeyecek kadar uzun (20200 karakter)'
+    await act(async () => {
+      chatRef.current!.handlers.onChatPermissionRequest({
+        request_id: 'r-oversized',
+        turn_id: 't1',
+        tool_name: 'Bash',
+        input_preview: oversizedPreview,
+        ts: new Date().toISOString(),
+      })
+    })
+    expect(screen.getByText(/ONAYLAMAYIN, komutun tamamı gösterilemiyor/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Onayla' }) as HTMLButtonElement).disabled).toBe(
+      true
+    )
+    // Reddet HÂLÂ mümkün — fail-closed, kilitlenme değil.
+    expect((screen.getByRole('button', { name: 'Reddet' }) as HTMLButtonElement).disabled).toBe(
+      false
+    )
+  })
+
+  it('çok satırlı komutta satır sonları görsel olarak korunur (whitespace-pre-wrap kutusu)', async () => {
+    stubFetch()
+    const chatRef = await renderHarness()
+    await act(async () => {
+      chatRef.current!.handlers.onChatPermissionRequest({
+        request_id: 'r-multiline',
+        turn_id: 't1',
+        tool_name: 'Bash',
+        input_preview: 'echo birinci\necho ikinci',
+        ts: new Date().toISOString(),
+      })
+    })
+    const box = screen.getByTestId('permission-command-preview')
+    expect(box.textContent).toContain('echo birinci\necho ikinci')
+    expect(box.className).toContain('whitespace-pre-wrap')
+    expect(box.className).not.toContain('truncate')
+  })
+})
+
 describe('ChatScreen — QA F-012 tur 2 Y1 (BLOKLAYICI): sayfa yenilemesi/yeniden bağlanma sonrası bekleyen izin GERİ GELİR ve cevaplanabilir', () => {
   it('onChatStatus (chat_sync sonrası GET /api/chat/status yanıtı) tek başına kartı kurar ve Onayla gerçekten POST atar', async () => {
     // Tekrar üretme (QA KALDI Y1): eskiden bekleyen izin yalnızca `onChatPermissionRequest`

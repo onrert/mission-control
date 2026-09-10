@@ -112,6 +112,21 @@ export interface ChatLogEntry {
 }
 
 /**
+ * G5 Tur 4 (4-Ek3) düzeltmesi — `session.ts`'in `buildInputPreview`'ı ve `ChatScreen.tsx`'in
+ * `PermissionCard`'ı bu iki sabiti PAYLAŞIR (bkz. `docs/qa/g5-tur4-izin-karti-onizlemesi-
+ * contract.md`). Sunucu `input_preview` alanına yeni bir alan EKLEMEZ (kapalı allowlist,
+ * `tests/integration/chat-api.test.ts` "Ö3") — istemci uzunluk uyarısını doğrudan
+ * `input_preview.length`'ten hesaplar; bu doğrudur çünkü artık önizleme = çalışacak komutun
+ * TAMAMI (kırpma yok).
+ */
+export const INPUT_PREVIEW_WARN_THRESHOLD = 500
+/** Bu sınırı aşan komutlar `OVERSIZED_INPUT_PREVIEW_MARKER` ile değiştirilir — sessizce
+ *  KESİLMEZ (fail-closed, bkz. sözleşme §tasarım kararı 3). */
+export const INPUT_PREVIEW_HARD_CAP = 20_000
+export const OVERSIZED_INPUT_PREVIEW_MARKER =
+  '⚠ GÜVENLİK: Bu komut önizlemesi güvenli şekilde gösterilemeyecek kadar uzun'
+
+/**
  * Kanban kartı (F-007 sözleşme §3 madde 1, mimari §5.3). `docs/features/<file>.md`
  * frontmatter'ının bir alt kümesi + türetilmiş alanlar (`column`, `content_hash`, `mtime_ms`).
  * `parse_error` doluysa `id`/`title` dosya adından türetilir, diğer alanlar boş/varsayılan kalır

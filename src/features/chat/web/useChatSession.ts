@@ -114,11 +114,12 @@ export interface PendingPermission {
   ts: string
   /**
    * `AskUserQuestion` aracının `input_preview`'undan best-effort ayrıştırılmış yapı.
-   * [T] TAHMİN — `session.ts` (round A) `input_preview`'u 500 karaktere kırpılmış, boşlukları
-   * tek satıra indirgenmiş bir JSON dizgesi olarak üretiyor; uzun/çok seçenekli sorularda bu
-   * kırpma JSON'u bozup ayrıştırmayı BAŞARISIZ kılabilir. Ayrıştırma başarısız olursa `undefined`
-   * kalır ve kart genel İzin Kartı'na (Onayla/Reddet) düşer — bkz. `docs/qa/
-   * F-012-kod-turu-B-notlari.md` "AskUserQuestion açık soru".
+   * G5 Tur 4 (4-Ek3) düzeltmesinden ÖNCE `session.ts` `input_preview`'u 500 karaktere kırpıp
+   * boşlukları tek satıra indirgeyerek üretiyordu; uzun/çok seçenekli sorularda bu kırpma JSON'u
+   * bozup ayrıştırmayı BAŞARISIZ kılabiliyordu. Artık kırpma YOK (bkz. `docs/qa/
+   * g5-tur4-izin-karti-onizlemesi-contract.md`) — bu ayrıştırma başarısızlığı sınıfı ortadan
+   * kalktı, ama `question` yine de `undefined` kalabilir (gerçekten geçersiz/beklenmeyen bir
+   * JSON şekli gelirse) — o durumda kart genel İzin Kartı'na (Onayla/Reddet) düşer.
    */
   question?: { questions: AskUserQuestionItem[] }
 }
@@ -168,8 +169,8 @@ function sortEntries(map: Map<string, ChatLogEntry>): ChatLogEntry[] {
  * `AskUserQuestionInput` şeması (`node_modules/@anthropic-ai/claude-agent-sdk/sdk-tools.d.ts`,
  * bu turda okunarak ✓ DOĞRULANDI): `{ questions: [{ question, header, options: [{label,
  * description}], multiSelect }] }`. `input_preview` yalnızca bir dizge olduğu için (sunucu
- * `JSON.stringify(input)` + boşluk sıkıştırma + 500 karakter kırpma uyguluyor,
- * `buildInputPreview`) burada best-effort geri ayrıştırılır.
+ * `JSON.stringify(input)` üretiyor, `buildInputPreview` — G5 Tur 4'ten beri KIRPMASIZ, satır-içi
+ * boşluk sıkıştırması hariç) burada best-effort geri ayrıştırılır.
  */
 function parseAskUserQuestion(
   toolName: string,

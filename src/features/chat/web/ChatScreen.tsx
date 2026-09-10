@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChatLogEntry } from '../../../shared/types'
+import {
+  INPUT_PREVIEW_WARN_THRESHOLD,
+  OVERSIZED_INPUT_PREVIEW_MARKER,
+  type ChatLogEntry,
+} from '../../../shared/types'
 import { AlertTriangle } from '../../events/web/icons'
 import { Cog, HelpCircle, KeyRound, Lock, Send } from './icons'
 import type {
@@ -108,6 +112,13 @@ function buildInputPreviewLabel(perm: PendingPermission): string {
   return perm.input_preview
 }
 
+/**
+ * G5 Tur 4 (4-Ek3) düzeltmesi — `session.ts` artık `input_preview`'ı KESMİYOR (bkz. sözleşme
+ * `docs/qa/g5-tur4-izin-karti-onizlemesi-contract.md`). Bu kart onu (a) `OVERSIZED_…` sabitiyle
+ * başlıyorsa fail-closed bir uyarı olarak, (b) `INPUT_PREVIEW_WARN_THRESHOLD`'u aşıyorsa ayrı bir
+ * uzunluk şeridiyle, (c) her koşulda TAMAMINI, kaydırılabilir bir kutuda gösterir — eski
+ * `truncate` (CSS tek satır + yalnızca `title` hover) tuzağı kaldırıldı.
+ */
 function PermissionCard({
   perm,
   onAllow,
@@ -117,6 +128,9 @@ function PermissionCard({
   onAllow: () => void
   onDeny: () => void
 }) {
+  const previewText = buildInputPreviewLabel(perm)
+  const isOversized = previewText.startsWith(OVERSIZED_INPUT_PREVIEW_MARKER)
+  const isLong = !isOversized && previewText.length > INPUT_PREVIEW_WARN_THRESHOLD
   return (
     <div
       role="group"
@@ -128,12 +142,30 @@ function PermissionCard({
         İzin isteği
       </div>
       <p className="mb-1 text-zinc-200">CEO şu aracı çalıştırmak istiyor: {perm.tool_name}</p>
-      <p
-        className="mb-3 truncate font-mono text-xs text-zinc-400"
-        title={buildInputPreviewLabel(perm)}
+      {isOversized && (
+        <p
+          role="alert"
+          className="mb-2 rounded border border-red-700 bg-red-950 px-2 py-1 text-xs font-medium text-red-300"
+        >
+          {previewText} — ONAYLAMAYIN, komutun tamamı gösterilemiyor.
+        </p>
+      )}
+      {isLong && (
+        <p
+          role="alert"
+          className="mb-2 rounded border border-amber-600 bg-amber-950 px-2 py-1 text-xs text-amber-300"
+        >
+          ⚠ Bu komut olağandışı uzun ({previewText.length} karakter). Onaylamadan önce TAMAMINI
+          okuyun.
+        </p>
+      )}
+      <pre
+        data-testid="permission-command-preview"
+        title={previewText}
+        className="mb-3 max-h-40 overflow-y-auto whitespace-pre-wrap break-all rounded border border-zinc-800 bg-zinc-950 p-2 font-mono text-xs text-zinc-400"
       >
-        Komut: {buildInputPreviewLabel(perm)}
-      </p>
+        Komut: {previewText}
+      </pre>
       <div className="flex justify-end gap-2">
         <button
           type="button"
@@ -145,7 +177,8 @@ function PermissionCard({
         <button
           type="button"
           onClick={onAllow}
-          className="min-h-8 rounded-md bg-amber-700 px-3 py-1.5 font-medium text-zinc-950"
+          disabled={isOversized}
+          className="min-h-8 rounded-md bg-amber-700 px-3 py-1.5 font-medium text-zinc-950 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Onayla
         </button>
@@ -154,13 +187,22 @@ function PermissionCard({
   )
 }
 
+/** G5 Tur 4 — bu, KARAR VERİLDİKTEN SONRAKİ tek satırlık kolaps özetidir; güvenlik sınırı
+ *  DEĞİLDİR (onay/red zaten gerçekleşti). `PermissionCard`'daki tam-metin/kaydırma kutusuyla
+ *  KARIŞTIRILMASIN — orada kırpma yok, burada yalnızca liste düzeninin bozulmaması için KOZMETİK
+ *  bir kısaltma uygulanır (sözleşme §tasarım kararı 6). */
+function summarizeResolvedPreview(text: string): string {
+  const oneLine = text.replace(/\s+/g, ' ').trim()
+  return oneLine.length > 120 ? `${oneLine.slice(0, 120)}…` : oneLine
+}
+
 /** QA F-012 Ö8 düzeltmesi — `docs/03-ux.md §7` madde (h)2/(h)3 birebir metin: karar verilen
  *  izin kartı listeden SİLİNMEZ, tek satıra kolabe olur. */
 function ResolvedPermissionRow({ resolved }: { resolved: ResolvedPermission }) {
   const text =
     resolved.outcome === 'deny' || resolved.outcome === 'unknown'
       ? 'Reddedildi'
-      : `Onaylandı — ${resolved.input_preview} çalıştı`
+      : `Onaylandı — ${summarizeResolvedPreview(resolved.input_preview)} çalıştı`
   return (
     <p role="status" className="px-1 text-xs text-zinc-500">
       {text}

@@ -400,6 +400,74 @@ describe('createChatSession — izin akışı (canUseTool, K3)', () => {
   })
 })
 
+// G5 Tur 4 (4-Ek3, `docs/qa/G5-guvenlik-denetimi-2026-09-10-tur4.md`) düzeltmesi — sözleşme
+// `docs/qa/g5-tur4-izin-karti-onizlemesi-contract.md`. `buildInputPreview` modül-içi (export
+// edilmiyor) olduğu için gerçek `canUseTool` yolundan, `chat_permission_request` broadcast'inin
+// `input_preview` alanı okunarak ölçülüyor — üretim kod yoluyla BİREBİR aynı.
+describe('createChatSession — buildInputPreview KIRPMA YOK (G5 Tur 4, 4-Ek3)', () => {
+  async function requestPreview(toolName: string, input: Record<string, unknown>): Promise<string> {
+    const { session, getHandles, broadcasts } = await bootstrapSession()
+    session.sendMessage('bir şey yap')
+    await flush()
+    const handle = getHandles()[0]!
+    void handle.options.canUseTool!(toolName, input, {
+      signal: new AbortController().signal,
+      toolUseID: 'tu-preview',
+      requestId: 'req-preview',
+    })
+    await flush()
+    const request = broadcasts.find((b) => b.name === 'chat_permission_request')
+    expect(request).toBeDefined()
+    return (request!.data as { input_preview: string }).input_preview
+  }
+
+  it('denetimin sondasını birebir tekrarlar — 500+ karakter dolgu ARKASINDAKİ iz artık GÖRÜNÜR', async () => {
+    const tail = 'GIZLI-KOMUT-SONU-ISARETI-4EK3'
+    const command = `${'#'.repeat(560)} ${tail}`
+    expect(command.length).toBeGreaterThan(500)
+    const preview = await requestPreview('Bash', { command })
+    // Eski davranış (slice(0,500)) bu izi HİÇ taşımazdı — denetimin 4-Ek3 kanıtı tam olarak
+    // buydu ("ONIZLEMEDE hassas kelime GECIYOR MU: false").
+    expect(preview).toContain(tail)
+    expect(preview).toBe(command)
+  })
+
+  it('500 karakter altı komut aynen (kısaltılmadan) döner', async () => {
+    const preview = await requestPreview('Bash', { command: 'echo kisa-komut' })
+    expect(preview).toBe('echo kisa-komut')
+  })
+
+  it('INPUT_PREVIEW_HARD_CAP (20.000) üstü girdi SESSİZCE kesilmez — OVERSIZED_INPUT_PREVIEW_MARKER ile işaretlenir, ham içerik SIZMAZ', async () => {
+    const secret = 'ASLA-GORUNMEMESI-GEREKEN-SIR'
+    const command = `${'x'.repeat(20_100)}${secret}`
+    const preview = await requestPreview('Bash', { command })
+    expect(preview.startsWith('⚠ GÜVENLİK:')).toBe(true)
+    expect(preview).not.toContain(secret)
+    expect(preview).not.toContain('x'.repeat(100))
+  })
+
+  it("Write aracının 'content' alanı da KIRPILMAZ (aynı kod yolu, sözleşme §tasarım kararı 4)", async () => {
+    const longContent = 'A'.repeat(700)
+    const preview = await requestPreview('Write', {
+      file_path: 'docs/qa/deneme.md',
+      content: longContent,
+    })
+    expect(preview).toContain(longContent)
+  })
+
+  it('çok satırlı komutta satır sonları KORUNUR (sözleşme §tasarım kararı 5)', async () => {
+    const command = 'echo birinci\necho ikinci'
+    const preview = await requestPreview('Bash', { command })
+    expect(preview).toBe('echo birinci\necho ikinci')
+  })
+
+  it('satır-içi fazla boşluk tek boşluğa indirgenir (satır sonları hariç)', async () => {
+    const command = 'echo   birinci  \n  echo    ikinci'
+    const preview = await requestPreview('Bash', { command })
+    expect(preview).toBe('echo birinci\necho ikinci')
+  })
+})
+
 describe('createChatSession — interrupt', () => {
   it('busy değilken no_active_turn döner', async () => {
     const { session } = await bootstrapSession()

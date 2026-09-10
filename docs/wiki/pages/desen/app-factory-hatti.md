@@ -1,6 +1,6 @@
 ---
 type: desen
-updated: 2026-09-10
+updated: 2026-09-11
 sources: [docs/progress.md, docs/00-idea.md, docs/decisions/ADR-001-mvp-davranis-kararlari.md, CLAUDE.md, docs/qa/F-008-contract-review-1.md, docs/qa/F-008-contract-review-2.md, docs/qa/F-008-contract.md, docs/qa/F-008-2026-09-09.md, docs/qa/F-009-2026-09-09.md, docs/qa/F-011-2026-09-10.md]
 ---
 # App Factory hattı — G0→G1 gözlemi
@@ -96,4 +96,4 @@ var olma sebebini doğrudan ölçüyor?" diye ayrı bir soru sor — o test gene
 yok, ya da dolaylı bir yolla (mekanizmanın iç tutarlılığıyla) ölçülüyor, dış bir referansla değil
 (bkz. [[desen/cit-tasarimi]] §5).
 
-İlgili: [[proje/gorev-listesi-denemesi]] [[hata/claude-code-arac-tuzaklari]] [[desen/cit-tasarimi]]
+İlgili: [[proje/gorev-listesi-denemesi]] [[hata/claude-code-arac-tuzaklari]] [[desen/cit-tasarimi]] [[desen/onay-mekanizmasi-tasarimi]]

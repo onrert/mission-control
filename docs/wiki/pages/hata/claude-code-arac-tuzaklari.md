@@ -1,6 +1,6 @@
 ---
 type: hata
-updated: 2026-09-10
+updated: 2026-09-11
 sources: [CLAUDE.md, docs/progress.md, docs/qa/test-skip-gate-contract.md]
 ---
 # Claude Code araç tuzakları (App Factory kurulumu)
@@ -54,7 +54,8 @@ tüketiliyor.
 **Çözüm:** Onay gerektiren komutu **tek başına, kendi çağrısında** çalıştır — öncesine/sonrasına
 hiçbir şey zincirleme. Token boşa gittiyse kullanıcı onayı hâlâ geçerlidir: onay dosyasını aynı
 kapsamla yeniden yaz (neden yenilendiğini içine not düş) ve komutu tekrar çalıştır; yeniden onay
-isteme.
+isteme. Bu, onay mekanizmasının tüketim biriminin "bir yazma" değil "bir değişiklik" olması
+gerektiği daha genel dersin bir örneğidir — bkz. [[desen/onay-mekanizmasi-tasarimi]] §5.
 
 ## 7. Korunan komut adını anan her metin hook'a takılabilir
 **Belirti:** Yalnızca korunan komutun kendisini çalıştırmak değil, o komutun adını **anan** bir
@@ -86,4 +87,4 @@ normalizasyonun etkisiz kaldığını **üç noktada** ölç: diskte, `git show`
 ve temiz bir `git clone`'da (`docs/qa/F-009-2026-09-09.md`, "bom-crlf fixture'ı gerçekten CRLF
 mi" ölçümü).
 
-İlgili: [[desen/app-factory-hatti]] [[proje/gorev-listesi-denemesi]] [[desen/cit-tasarimi]]
+İlgili: [[desen/app-factory-hatti]] [[proje/gorev-listesi-denemesi]] [[desen/cit-tasarimi]] [[desen/onay-mekanizmasi-tasarimi]]

@@ -1,7 +1,7 @@
 ---
 type: desen
-updated: 2026-09-10
-sources: [docs/qa/F-009-2026-09-09.md, docs/qa/F-009-2026-09-09-tur2.md, docs/qa/F-009-2026-09-09-tur3.md, docs/qa/F-011-2026-09-10.md, docs/qa/F-011-2026-09-10-tur2.md, docs/qa/F-011-2026-09-10-tur3.md, docs/qa/F-011-2026-09-10-tur4.md, docs/qa/F-011-2026-09-10-tur5.md, docs/qa/F-011-2026-09-10-tur6.md, docs/qa/F-011-2026-09-10-tur7.md, docs/qa/test-skip-gate-2026-09-10.md, docs/qa/test-skip-gate-contract.md, docs/decisions/ADR-013-yazma-uclarinda-ozel-baslik-zorunlulugu.md, CLAUDE.md]
+updated: 2026-09-11
+sources: [docs/qa/F-009-2026-09-09.md, docs/qa/F-009-2026-09-09-tur2.md, docs/qa/F-009-2026-09-09-tur3.md, docs/qa/F-011-2026-09-10.md, docs/qa/F-011-2026-09-10-tur2.md, docs/qa/F-011-2026-09-10-tur3.md, docs/qa/F-011-2026-09-10-tur4.md, docs/qa/F-011-2026-09-10-tur5.md, docs/qa/F-011-2026-09-10-tur6.md, docs/qa/F-011-2026-09-10-tur7.md, docs/qa/test-skip-gate-2026-09-10.md, docs/qa/test-skip-gate-contract.md, docs/decisions/ADR-013-yazma-uclarinda-ozel-baslik-zorunlulugu.md, docs/qa/G5-sozlesme-kararlari-2026-09-10-tur4.md, docs/qa/G5-sozlesme-kararlari-2026-09-10-tur5.md, docs/qa/g5-guard-json-contract.md, CLAUDE.md]
 ---
 
 # Çit tasarımı — güvenlik/bütünlük testlerini (mutasyon testiyle) kırılmaz yapma
@@ -9,9 +9,12 @@ sources: [docs/qa/F-009-2026-09-09.md, docs/qa/F-009-2026-09-09-tur2.md, docs/qa
 Bir "çit" (fence) — sızıntıyı, izinsiz yazmayı, ağ erişimini veya sessiz veri kaybını engellemesi
 beklenen bir yapısal test/guard — yazmak kolaydır; onun **gerçekten** ölçtüğünü kanıtlamak zordur.
 Bu sayfa Mission Control'ün Faz 2 kapanışında (F-008, F-009, F-011, "vitest sessiz test atlama
-çiti" altyapı işi) **ölçülmüş** altı dersi topluyor. Hepsi mutasyon testiyle (çiti kırıp KIRMIZI
-görüp görmediğini ölçmek) elde edildi — "41 test geçiyor" gibi bir sayı hiçbirinde tek başına
-kanıt sayılmadı. İlgili: [[hata/claude-code-arac-tuzaklari]] [[desen/app-factory-hatti]].
+çiti" altyapı işi) ve G5 (güvenlik/kalite kapısı) denetiminde **ölçülmüş** sekiz dersi topluyor.
+Hepsi mutasyon testiyle (çiti kırıp KIRMIZI görüp görmediğini ölçmek) elde edildi — "41 test
+geçiyor" gibi bir sayı hiçbirinde tek başına kanıt sayılmadı. Onay/yetkilendirme mekanizmalarına
+özgü dersler (bir onay artefaktının kendisinin korunması, serbest metinden makine kararı çıkarma,
+onay yorgunluğu) ayrı bir sayfada: [[desen/onay-mekanizmasi-tasarimi]]. İlgili:
+[[hata/claude-code-arac-tuzaklari]] [[desen/app-factory-hatti]].
 
 ## 1. Kara liste vs beyaz liste
 
@@ -186,4 +189,58 @@ satırı"), o sınırın **ötesinin** kimin sorumluluğunda olduğunu (test alt
 dağıtım ortamı) yazılı olarak kaydet ve kararı buna göre ver — sessizce "yeterince iyi" deyip
 geçme, gerekçeyi belgeye yaz ki bir sonraki QA turu aynı sınırı tekrar keşfetmeye çalışmasın.
 
-İlgili: [[hata/claude-code-arac-tuzaklari]] [[desen/app-factory-hatti]]
+## 7. Bağımsız oracle ile doğrulama — kendi kodunu kendi mantığınla doğrulamak, doğrulama değildir
+
+Dış referansla (§5) karşılaştırma tek başına yetmez — referansın kendisi **aynı hatayı** taşıyorsa
+karşılaştırma boş bir onaydan ibaret kalır. İki emsal, aynı ilkenin başarısız ve başarılı hâlini
+gösteriyor.
+
+**Başarısız emsal:** F-011'in token kullanım ekranında QA, panelin toplama mantığını **bağımsız**
+bir betikle yeniden uyguladı ve panelle **birebir aynı** sonucu aldı — ikisi de doğrulanmış gibi
+görünüyordu. Ama panel gerçek harcamanın **%101 fazlasını** gösteriyordu, çünkü ikisi de aynı
+yanlış varsayımı paylaşıyordu (her `assistant` içerik bloğu aynı `usage` nesnesini tekrar tekrar
+sayıyordu). Hata ancak tamamen farklı, bağımsız bir araçla (`ccusage`) ortaya çıktı
+(`docs/qa/F-011-2026-09-10.md` B1, bkz. [[desen/app-factory-hatti]] "Feature'ın ana vaadi").
+
+**Başarılı emsal — G5'in `GUARD.ok` JSON tarayıcısı:** Yinelenen-anahtar tarayıcısının (`catch`
+bloğunun `JSON.parse` ile aynı gramer varsayımını paylaşıp paylaşmadığı) doğrulanması gerekiyordu.
+QA kendi yazacağı ikinci bir JS ayrıştırıcının aynı kör noktayı taşıyacağını **baştan kabul edip**
+oracle olarak **V8 ile hiç kod paylaşmayan** CPython 3.12'nin C ayrıştırıcısını kullandı
+(`object_pairs_hook` ile yinelenen anahtar tespiti). Sonuç: 5 tabandan üretilmiş 180.582 belgelik
+korpus + yalnızca geçerli JSON üreten hedefli fuzz'la üretilen 8.979.165 belge (toplam ~9,16
+milyon) üzerinde **sıfır** fail-open, sıfır kaçırılmış yinelenen anahtar, sıfır gramer ayrışması
+(`docs/qa/G5-sozlesme-kararlari-2026-09-10-tur5.md` §4.1a/c). Bu ölçüm ayrıca kendi pozitif
+kontrolüyle (§3) desteklendi: tarayıcı kasten üç farklı biçimde bozulup harness'in gerçekten
+0'dan farklı sonuç ürettiği (3, 6.825, 18.092 bulgu) gösterildi — "sıfır bulgu" tek başına ölü bir
+harnessten de gelebilirdi.
+
+**Genel kural:** bir mekanizmayı doğrularken kullandığın referans/ikinci uygulama, birincisiyle
+**aynı dili, aynı kütüphaneyi veya aynı yazarın aynı varsayımını** paylaşıyorsa doğrulama değeri
+düşüktür. Mümkünse tamamen farklı bir çalışma zamanı/dilden (ör. CPython'un C ayrıştırıcısı)
+bağımsız bir oracle seç; bu mümkün değilse en azından referansın **kendi** kör noktalarını ayrı
+ayrı sorgula.
+
+## 8. Yük taşıyan ama çitsiz kontrol — kaskad değil, ayırt edici vaka
+
+Bir kontrolün sözleşmede "çitli" ilan edilmesi, onu **gerçekten** kıran bir test vakasının var
+olduğu anlamına gelmez. §4'ün kaskad-kırmızı dersinin daha keskin bir hâli: bazen kaskad bile
+oluşmaz, çünkü mevcut test vakalarının **hiçbiri** o kontrolü kendi başına gerektirmiyordur.
+
+**Ölçülmüş vaka:** G5'in `GUARD.ok` JSON tasarımında, kapsam elemanlarını normalize eden
+`normalizeScopeEntry` fonksiyonu yük taşıyan bir beyaz liste kontrolüydü (uyumsuz bir elemanın
+tüm kapsamı geçersiz kılması gerekiyordu) ama **sıfır** test kapsamına sahipti — self-test
+**157/157 yeşil** veriyordu çünkü mevcut test vakalarının hiçbiri bu fonksiyonu tek başına
+tetiklemeden de aynı sonuca ulaşıyordu. QA bunu "sözleşmenin kendi kabul kriterinde ölçülebilir
+biçimde yanlış bir iddia" sayıp turu **KALDI** verdi (`docs/qa/G5-sozlesme-kararlari-2026-09-10-tur4.md`
+§1). Düzeltme turunda kontrol, **tam olarak o kontrolü tek başına tetikleyen** altı ayırt edici
+vakayla (yalnızca `normalizeScopeEntry`'nin reddettiği, başka hiçbir katmanın reddetmediği girdi)
+test edildi ve tur 5'te "tam 6 ayırt edici vaka" ile kapandı
+(`docs/qa/G5-sozlesme-kararlari-2026-09-10-tur5.md` "Puanlar").
+
+**Genel kural:** bir kontrolün çitli olduğunu iddia eden her test için "bu vaka, yalnızca bu
+kontrol var olduğu için mi geçiyor/reddediliyor — yoksa başka bir katman da aynı sonucu verir
+miydi?" diye sor. Ayırt edici vaka, **diğer tüm kontrolleri geçen ama yalnızca hedef kontrole
+takılan** girdidir; böyle bir vaka yoksa kontrol muhtemelen çitsizdir, kaskad testi kaç tane
+başka test kırdığından bağımsız olarak.
+
+İlgili: [[hata/claude-code-arac-tuzaklari]] [[desen/app-factory-hatti]] [[desen/onay-mekanizmasi-tasarimi]]

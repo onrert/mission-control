@@ -90,6 +90,23 @@ npm run install-hook -- <izlenen-proje-yolu> --dry-run
 | `MC_MAX_PAYLOAD` | `65536` | Bu boyutu aşan olaylar küçük bir özet zarfına indirgenir (özet alanı yine dolu kalır). |
 | `MC_DISABLE` | *(boş)* | `1` yapılırsa hook hiçbir şey yapmadan çıkar — paneli geçici olarak susturmak için. |
 
+## Gizlilik — ne saklanır (G5 güvenlik denetimi, 2026-09-10)
+
+Bu hook, izlediğiniz projede çalışan Claude Code oturumunun hook olaylarını **olduğu gibi**
+Mission Control'e gönderir: `Bash` komutunun tam metni, `Edit`/`Write` çağrılarının dosya
+yolu ve içeriği (`old_string`/`new_string` dahil), kullanıcı prompt'unuz ve son asistan
+mesajı. Bunlar Mission Control'ün **kendi yerel diskine** (`data/*.jsonl`, varsayılan
+30 gün / 20.000 olay saklanır) yazılır ve panelde canlı gösterilir — dışarıya (üçüncü bir
+servise) **gönderilmez**.
+
+Sunucu tarafı (`normalize.ts`, `docs/decisions/ADR-015-olay-akisi-redaksiyonu.md`) bilinen
+sır biçimlerini (API anahtarı önekleri, `Bearer`/`api_key`/`token`/`password` gibi alanlar)
+`[redakte]` ile görünür şekilde maskeler ve tek bir alanın 4000 karakterden uzun kısmını
+görünür bir işaretle (`…[içerik kırpıldı]`) keser. **Bu bir kara listedir ve tam değildir** —
+listede olmayan bir sır biçimi (ör. özel bir şirket token formatı) redakte edilmeden
+kaydedilebilir. İzlediğiniz projede gerçekten hassas bir komut çalıştırdıysanız (ör. bilinmeyen
+biçimli bir sır), bunu `data/*.jsonl`'den elle temizlemeniz gerekebilir.
+
 ## Geri alma
 
 `.claude/settings.json.bak`, kurulumdan önceki hâli taşır. Geri almak için elle

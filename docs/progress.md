@@ -4133,3 +4133,94 @@ yalnızca "vitest 0 test topladı ve başarı saydı" felaket senaryosu için, b
   (developer kendi işini "geçti" ilan edemez).
 
 **Sonraki adım:** qa-evaluator yeniden değerlendirsin.
+
+
+## 2026-09-10 — G5 güvenlik denetimi: üç YÜKSEK bulgu (K1/K2/K3) kapatıldı
+
+**Kaynak:** `docs/qa/G5-guvenlik-denetimi-2026-09-10.md`. Sözleşme: `docs/qa/
+g5-guvenlik-duzeltme-contract.md`. Bu bir numaralı feature değil, G5 denetiminin bulgu
+kapanışı — dosya sahipliği brief'te doğrudan belirtildi (`.claude/hooks/gate-check.cjs`,
+`.claude/hooks/block-dangerous.cjs`, `.claude/hooks/_selftest.cjs`,
+`src/features/events/server/normalize.ts` + belgeleme).
+
+**FF1 (K1) — `.claude/hooks/**`/`.claude/settings.json` artık `docs/approvals/GUARD.ok`
+(DANGER.ok/PUSH.ok ile aynı desende, tek kullanımlık) gerektiriyor.** `gate-check.cjs`'in
+`free` listesinden `/^\.claude\//` çıkarıldı; yerine `.claude/hooks/**` ve
+`.claude/settings.json` için ayrı, G2.ok'tan bağımsız bir kapı eklendi. `.claude/agents/**`
+ve `.claude/agent-memory/**` bilerek serbest bırakıldı (güvenlik sınırı değil).
+
+**FF2 (K2) — `block-dangerous.cjs` artık Windows'un kendi silme komutlarını tanıyor.**
+`rd`/`rmdir` (`/s` bayrağıyla, sıra bağımsız), `del`/`erase` (bayrak sırasından bağımsız
+lookahead) ve PowerShell `ri -r`/`-Recurse` eklendi. Denetimin kaçırdığı üç somut vektör
+(`rd /s /q`, `rmdir /s /q`, `del /f /s /q`) artık engelleniyor. Dosyanın başına bu bir kara
+liste olduğunu, mutlak engel olmadığını, asıl korumanın kullanıcı onay kartı olduğunu
+açıklayan bir yorum eklendi (brief'in zorunlu kıldığı).
+
+**FF3 (K3) — `normalize.ts`'e derinlemesine redaksiyon eklendi.** `payload` parse edildikten
+hemen sonra tüm string yaprak değerler (`raw` VE `summary` — tek noktadan, tutarlı) taranır:
+(1) bilinen sır önekleri (`sk-…`, `AKIA…`/`ASIA…`, `ghp_…`, `xox…`, `AIza…`, PEM blokları),
+`Bearer <token>` ve `api_key`/`secret`/`token`/`password`/`authorization` alan+değer çiftleri
+görünür şekilde (`[redakte]`) maskelenir, `secrets_redacted` bayrağı eklenir; (2) tek bir
+string alan 4000 karakteri aşarsa görünür bir işaretle (`…[içerik kırpıldı]`) kırpılır,
+`content_truncated` bayrağı eklenir. Yapı (anahtar kümesi, sayı/boolean/null) değişmez.
+Belgeleme: `docs/decisions/ADR-015-olay-akisi-redaksiyonu.md`, `docs/00-idea.md` (gizlilik
+notu), `KURULUM.md` ("Gizlilik — ne saklanır" bölümü).
+
+**Nasıl doğrulandı**
+- **Üç mutasyon, üçü de elle uygulanıp elle geri alındı** (`git checkout` KULLANILMADI —
+  her mutasyon bir Node scriptiyle metin değiştirdi, geri alma da aynı yöntemle; md5 her
+  ikisinde de başlangıç değeriyle birebir eşleşti):
+  1. `gate-check.cjs`'te `isGuarded` kontrolü `false &&` ile kapatıldı → FF1'in 4 self-test
+     vakası KIRMIZI (`cikan=0 beklenen=2` / GUARD.ok tüketilmedi); geri alınca md5
+     `3c2c8f7810dde46655c5aae6e66f37c7` ile eşleşti, tüm 33 vaka YEŞİL.
+  2. `block-dangerous.cjs`'te K2 eklentileri regex'ten çıkarıldı → FF2'nin 8 yeni self-test
+     vakası (rd/rmdir/del-sıra/erase/ri) KIRMIZI; geri alınca md5
+     `2435015684a54d14cfd85625ddb00e1e` ile eşleşti.
+  3. `normalize.ts`'te `redactDeep(payload)` çağrısı devre dışı bırakıldı → normalize
+     testlerinin 5'i (secret sızıntısı, Bearer, api_key, kırpma) KIRMIZI; geri alınca md5
+     `99ae54fd2d4dde3aa399621c4a6cf44f` ile eşleşti.
+- `node .claude/hooks/_selftest.cjs`: **33/33 vaka YEŞİL** (18 eski + 8 yeni K2 + 7 yeni K1;
+  false-positive vakaları dahil — `.claude/agents/**` serbest kalıyor ve GUARD.ok'u
+  boşa harcamıyor, `src/**` GUARD.ok ile ilgisiz).
+- `tests/features/events/server/normalize.test.ts`: **25/25 YEŞİL** (19 eski değişmeden +
+  6 yeni K3 testi).
+- `npx tsc --noEmit` = 0, `npx eslint .` = 0, `npm run build` = 0.
+- `npm run test` (tam takım, `scripts/verify-test-run.mjs` sarmalayıcısı): **1358/1364 test
+  geçti, 84/86 dosya tamamen yeşil, 4 skip**. Kalan **2 başarısız test**
+  (`tests/scripts/check-ports.test.ts`) **ortam kaynaklı** — bu makinede port 7333 brief'in
+  bizzat uyardığı kullanıcının önceden başlatılmış canlı uygulamasınca (PID 12932/33964)
+  tutuluyor; test dosyasının kendi yorumu bile "7333/7334'ün bu makinede boş olduğu
+  varsayımıyla" diyor. Bu PID'lere **dokunulmadı** (brief kısıtı). Bir ara koşuda ayrıca
+  bilinen `Worker forks emitted error` çökme sınıfı (CLAUDE.md'de kayıtlı, ~%50 tekrar oranı)
+  görüldü; ikinci tekrar koşusunda kayboldu, üçüncü koşu yine yalnızca aynı 2 port hatasını
+  verdi — kod regresyonu değil.
+- `npm run e2e` **çalıştırılamadı**: Playwright config'i (`playwright.config.ts`) sabit
+  `127.0.0.1:7333` kullanıyor, aynı canlı-uygulama çakışmasıyla `already used` hatası veriyor.
+  `npm run dev` kullanmam yasak (brief), `e2e:dev` varyantı da `npm run dev` çağırdığı için
+  aynı yasağa takılıyor; ayrıca yalnızca `dev-shell.spec.ts` alt kümesini kapsıyor. Bu turda
+  değiştirdiğim dosyalar (`normalize.ts`, üç hook) hiçbir e2e config'ine veya sunucu
+  başlatma koduna dokunmuyor — regresyon riski normalize testleri + hook self-test'i ile
+  kapsandı, ama **e2e = 0 iddiası bu turda kanıtlanamadı**, ortam kısıtı olarak
+  `docs/blockers.md`'ye değil buraya not düşülüyor (bloklayıcı değil, dışsal).
+- `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/`: yalnızca önceden var olan
+  meşru test adları (`write-gate-manifest.test.ts:124` dahil) — yeni iz bırakılmadı (mutasyon
+  scriptleri scratchpad'de çalıştı, depoya yazılmadı).
+- Yetim süreç: her ağır komuttan sonra `tasklist`/`netstat` ile kontrol edildi — hiçbir
+  `node.exe` artığı kalmadı; port 7333'teki PID 12932/33964'e hiç dokunulmadı.
+- `docs/approvals/GUARD.ok` üç kez yazıldı (her seferinde hook dosyalarına yazmak için,
+  kendi mekanizmasının gerektirdiği gibi) ve hook tarafından otomatik tüketildi — hiçbiri
+  commit'e girmedi (`git status` temiz, gerçek `G*.ok` dosyalarına dokunulmadı).
+
+**Kalan risk / kapanmayan**
+- `npm run e2e`'nin bu turda **hiç çalıştırılamaması** (ortam çakışması) — bir sonraki
+  oturumda port 7333 boşken tekrar koşulmalı; qa-evaluator bunu kendi ortamında
+  doğrulayabilir.
+- FF2 hâlâ bir kara liste (bilinçli, belgelenmiş): PowerShell'in tüm silme yollarını
+  (`Clear-Item`, farklı UNC/sürücü biçimleri) kapsamıyor.
+- FF3'ün sır desenleri de bir kara liste: yeni/bilinmeyen bir token biçimi redakte edilmez.
+- **Geçmiş veri KASITLI dokunulmadı:** `data/events/*.jsonl`'e daha önce yazılmış **2430
+  satır** (2026-09-04 → 2026-09-09) redaksiyonsuz kaldı — ADR-001 karar 6 ("geçmiş olaylar
+  depoda kalır") ile tutarlı, ayrıntı ve kapatma önerisi `docs/blockers.md`'de.
+
+**Sonraki adım:** qa-evaluator değerlendirsin; port 7333 boşken `npm run e2e`'nin tam
+çalıştırılması önerilir.

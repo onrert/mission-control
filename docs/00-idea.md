@@ -14,6 +14,13 @@
   5. **Kapılar paneli:** G0–G6 + ASSETS durumu; Onayla → `docs/approvals/<G>.ok`, Reddet → `docs/approvals/<G>.deny.md`.
   6. **Token kullanımı:** transkriptlerdeki `usage` alanlarından agent/oturum başına toplam.
 - **Kesinlikle olmayacaklar:** dış servis/bulut/hesap/giriş yok · çok kullanıcı yok · telemetri yok · ~~Claude Code'a komut gönderme yok~~ (**2026-09-06'da kullanıcı kararıyla kaldırıldı — aşağıya bak**) · izlenen projelerin koduna dokunma yok (yalnızca `docs/features/*.md` frontmatter'ı ve `docs/approvals/*` yazılır) · üretim deploy'u yok.
+- **Gizlilik notu (G5 güvenlik denetimi, 2026-09-10) — olay akışı ne saklar:** panel, izlediği
+  projelerin hook olaylarını (Bash komutu, dosya yolu, Edit/Write içeriği, kullanıcı promptu)
+  yerel `data/*.jsonl`'e kaydeder ve canlı gösterir — bu "telemetri" değildir (hiçbir yere
+  gönderilmez, yalnızca yerel diske), ama ham metin saklandığı için secret/token içeren
+  komutlar diskte iz bırakabilir. `ADR-015` bilinen sır biçimlerini (API anahtarı önekleri,
+  `Bearer`/`api_key` gibi alanlar) görünür şekilde maskeleyen bir redaksiyon katmanı ekledi;
+  bu bir kara liste olduğu için tam değildir. Kullanıcıya görünen özet: `KURULUM.md` "Gizlilik".
 - **Kapsam değişikliği (kullanıcı, 2026-09-06) — panel CEO oturumunun sohbet arayüzü olur:** Kullanıcı Faz 1'i denedikten sonra ("aşamalara feature kartları görünüyor fakat benim herhangi bir karışabileceğim bir yer yok") panelin salt-izleyici kalmasını reddetti. İstenen: *"burada yaptığımız konuşmayı direkt Mission Control üzerinden yapmak, gecikme olmadan, başka bir yere yüklenmeden; alt agent'lar çalışırken de."* Bu, yukarıdaki "komut gönderme yok" kısıtını kaldırır. Yöntem **Claude Code Channels değil** — panel oturumu `@anthropic-ai/claude-agent-sdk` ile **kendi içinde barındırır**. Karar ve kabul edilen riskler: `ADR-014`. Fizibilite: `docs/spikes/SPIKE-002-paneli-ceo-istemcisi-yapmak.md`, ölçüm: `docs/spikes/SPIKE-002-asama0-olcum.md`.
 - **Hız/kapsam tercihi:** Kapsamlı ama 2 fazlı. Faz 1 = olay sunucusu + zaman çizelgesi + kanban (çalışan panel). Faz 2 = thread + kapılar + token.
 - **Ücretli servis / kredi kullanılabilir mi:** Hayır. Yalnızca yerel/açık kaynak bağımlılıklar; ücretli API yok, Higgsfield varlık üretimi yok. **2026-09-06 eki:** barındırılan CEO oturumu kullanıcının **mevcut Claude aboneliğiyle** çalışır (ölçüldü, `SPIKE-002-asama0-olcum.md` M1) — bu kısıt korunur. Ortamda `ANTHROPIC_API_KEY` varsa SDK onu tercih eder ve **token başına faturalandırır**; bu yüzden kod tarafında bariyer zorunludur (`ADR-014`).

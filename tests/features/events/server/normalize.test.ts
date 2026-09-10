@@ -212,4 +212,103 @@ describe('normalizeEvent', () => {
       expect(result.summary).toBe(shortCommand)
     })
   })
+
+  describe('K3 — sır redaksiyonu ve içerik kırpma (docs/qa/G5-guvenlik-denetimi-2026-09-10.md)', () => {
+    it('sk- önekli bir anahtar raw ve summary içinde [redakte] ile maskelenir', () => {
+      const secret = 'sk-ant-api03-' + 'a'.repeat(40)
+      const result = normalizeEvent(
+        JSON.stringify({
+          project_path: 'C:\\dev\\apps\\demo',
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_input: { command: `curl -H "x-api-key: ${secret}" https://example.com` },
+        }),
+        NOW
+      )
+      const raw = result.raw as { tool_input: { command: string } }
+      expect(raw.tool_input.command).not.toContain(secret)
+      expect(raw.tool_input.command).toContain('[redakte]')
+      expect(result.summary).not.toContain(secret)
+      expect(result.summary).toContain('[redakte]')
+      expect(result.flags).toContain('secrets_redacted')
+    })
+
+    it('secret olmayan çevresindeki metin korunur — tüm dizge silinmez', () => {
+      const secret = 'sk-' + 'b'.repeat(30)
+      const result = normalizeEvent(
+        JSON.stringify({
+          project_path: 'C:\\dev\\apps\\demo',
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_input: { command: `echo start ${secret} end` },
+        }),
+        NOW
+      )
+      const raw = result.raw as { tool_input: { command: string } }
+      expect(raw.tool_input.command).toBe('echo start [redakte] end')
+    })
+
+    it('Bearer token maskelenir, "Bearer " öneki korunur', () => {
+      const token = 'x'.repeat(40)
+      const result = normalizeEvent(
+        JSON.stringify({
+          project_path: 'C:\\dev\\apps\\demo',
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_input: { command: `curl -H "Authorization: Bearer ${token}" https://x` },
+        }),
+        NOW
+      )
+      const raw = result.raw as { tool_input: { command: string } }
+      expect(raw.tool_input.command).toContain('Bearer [redakte]')
+      expect(raw.tool_input.command).not.toContain(token)
+      expect(result.flags).toContain('secrets_redacted')
+    })
+
+    it('api_key=değer biçimi maskelenir, alan adı korunur', () => {
+      const result = normalizeEvent(
+        JSON.stringify({
+          project_path: 'C:\\dev\\apps\\demo',
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_input: { command: 'export api_key=abcdef1234567890' },
+        }),
+        NOW
+      )
+      const raw = result.raw as { tool_input: { command: string } }
+      expect(raw.tool_input.command).toBe('export api_key=[redakte]')
+      expect(result.flags).toContain('secrets_redacted')
+    })
+
+    it('5000 karakterlik zararsız bir alan 4000 karakterde görünür şekilde kırpılır', () => {
+      const longContent = 'a'.repeat(5000)
+      const result = normalizeEvent(
+        JSON.stringify({
+          project_path: 'C:\\dev\\apps\\demo',
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Edit',
+          tool_input: { file_path: 'src/index.ts', new_string: longContent },
+        }),
+        NOW
+      )
+      const raw = result.raw as { tool_input: { new_string: string } }
+      expect(raw.tool_input.new_string.length).toBe(4000 + '…[içerik kırpıldı]'.length)
+      expect(raw.tool_input.new_string.endsWith('…[içerik kırpıldı]')).toBe(true)
+      expect(result.flags).toContain('content_truncated')
+    })
+
+    it('secret/uzun alan yoksa yeni bayraklar eklenmez', () => {
+      const result = normalizeEvent(
+        JSON.stringify({
+          project_path: 'C:\\dev\\apps\\demo',
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_input: { command: 'npm test' },
+        }),
+        NOW
+      )
+      expect(result.flags).not.toContain('secrets_redacted')
+      expect(result.flags).not.toContain('content_truncated')
+    })
+  })
 })

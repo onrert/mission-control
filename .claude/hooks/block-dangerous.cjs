@@ -20,7 +20,14 @@ readInput((j) => {
   // Push: uzak depoya yazar ama yayın değil (private depo + CI için gerekli).
   const pushCmd = /\bgit\s+push\b/i;
   // Genel yıkıcı komutlar — büyük/küçük harf duyarsız.
-  const danger = /(\brm\s+-rf\b|\bgit\s+reset\s+--hard\b|\bdrop\s+(table|database)\b|Remove-Item[^\n]*-Recurse|\bdel\s+\/[sq]\b|\btruncate\s+table\b)/i;
+  // NOT (docs/qa/G5-guvenlik-denetimi-2026-09-10.md K2): bu bir KARA LİSTEdir — derinlik
+  // katmanıdır, MUTLAK engel değildir. Bu depoda kara listeler dört kez yenildi
+  // (docs/wiki/pages/desen/cit-tasarimi.md §1); kabuk komutları için beyaz liste pratik değil.
+  // Asıl koruma kullanıcının gördüğü izin kartıdır (`canUseTool`, ADR-014) — bu hook yalnızca
+  // erken/okunaklı bir uyarı ve tek-kullanımlık DANGER.ok ritüelini tetikler. `rd`/`rmdir`/`del`
+  // bayrak sırasından bağımsız (lookahead) eşleşir; ADR-009 bu proje yalnızca Windows olduğu
+  // için Windows'un kendi silme komutları da kapsanır.
+  const danger = /(\brm\s+-rf\b|\bgit\s+reset\s+--hard\b|\bdrop\s+(table|database)\b|Remove-Item[^\n]*-Recurse|\btruncate\s+table\b|\b(rd|rmdir)\b[^\n]*\/s\b|\b(del|erase)\b(?=[^\n]*\/[sq]\b)|\bri\b[^\n]*-r(ecurse)?\b)/i;
   // git force — harf duyarlı OLMALI: "-f" force'tur ama "-F" commit mesajını dosyadan okur (zararsız).
   // Duyarsız eşleşme "git commit -F" gibi normal komutları yanlışlıkla engelliyordu.
   const gitForce = /\bgit\b[^\n]*\s(--force\b|--force-with-lease\b|-f\b)/;

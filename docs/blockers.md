@@ -615,3 +615,20 @@ görünür bir uyarı bas — sessiz muafiyet, sessiz kayıptır.
 
 **Ortak eşik:** `scripts/verify-test-run.mjs`'e dokunan bir sonraki iş; ya da CI'da bayraklı
 koşu ihtiyacı doğarsa **hemen**.
+
+## 2026-09-10 — G5 K3 kapandı (redaksiyon), geçmiş veri KASITLI redaksiyonsuz kaldı
+
+Kaynak: `docs/qa/G5-guvenlik-denetimi-2026-09-10.md` K3, kapanış: `ADR-015-olay-akisi-
+redaksiyonu.md`. `normalize.ts`'e eklenen redaksiyon katmanı yalnızca **bundan sonra** gelen
+olayları kapsar — `data/events/*.jsonl`'e **daha önce** yazılmış **2430 satır** (2026-09-04 →
+2026-09-09 arası) redaksiyonsuz hâliyle diskte duruyor (ADR-001 karar 6: geçmiş olaylar depoda
+kalır, panel geriye dönük değiştirmez — bu ilke burada da uygulandı, dosyalara dokunulmadı).
+
+**Eşik (ne zaman gerçek risk olur):** bu geçmiş kayıtlar arasında gerçekten bir secret/token
+geçmişse (bu turda taranmadı — kapsam dışı, `git status`'a dokunmama kısıtıyla tutarlı) ve
+biri bu dosyaları paylaşırsa/panelin zaman çizelgesinde eski tarihe kaydırırsa görünür.
+**Önerilen kapatma (bu turda yapılmadı, kullanıcı kararı gerekir):** `data/events/*.jsonl`'i
+tek seferlik bir script ile `redactSecretsInString`'in aynısından geçirip yerinde güncellemek
+(bu, "geçmiş olaylara dokunma" ilkesini bilerek çiğnemek anlamına gelir — bu yüzden kullanıcı
+onayı olmadan yapılmadı) VEYA basitçe eski `data/events/*.jsonl` dosyalarını arşivleyip
+sıfırdan başlamak. Karar CEO/kullanıcıya bırakıldı.

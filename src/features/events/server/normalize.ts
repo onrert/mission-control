@@ -8,8 +8,106 @@ const DEFAULT_MAX_PAYLOAD = 65536
 const SUMMARY_MAX_LENGTH = 200
 const SUMMARY_TRUNCATION_MARK = '…'
 
+// G5 güvenlik denetimi K3 (docs/qa/G5-guvenlik-denetimi-2026-09-10.md): izlenen projelerden
+// gelen ham hook payload'ı (Bash komutları, dosya yolları, Edit/Write içerikleri, kullanıcı
+// promptları) hiçbir redaksiyon olmadan diske/panele düşüyordu. Aşağıdaki iki adım (sır
+// redaksiyonu + alan bazlı kırpma) bunu daraltır — ürünü bozmadan, `raw`'ın YAPISINI (anahtar
+// kümesi, sayı/boolean/null değerler) değiştirmeden, yalnızca string yaprak değerlerin İÇİNİ
+// işler. Bu bir KARA LİSTEdir (cit-tasarimi.md §1): rastgele metinde her sır biçimini önceden
+// bilemeyiz; yeni bir sonda turunda listenin büyümesi beklenen bir maliyettir, "kapandı"
+// denmez. Belgeleme: docs/decisions/ADR-015-olay-akisi-redaksiyonu.md.
+const SECRET_MASK = '[redakte]'
+const FIELD_MAX_LENGTH = 4000
+const FIELD_TRUNCATION_MARK = '…[içerik kırpıldı]'
+
+// Bilinen anahtar/token önekleri — eşleşen TÜM dizge maskelenir (önek zaten sır olduğunu
+// gösteriyor, çevresindeki metnin korunacak bir anlamı yok).
+const STANDALONE_SECRET_PATTERNS: RegExp[] = [
+  /\bsk-[A-Za-z0-9_-]{10,}\b/g, // Anthropic/OpenAI stili anahtarlar (sk-, sk-ant-, sk-proj-…)
+  /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, // AWS erişim anahtarı / geçici anahtar
+  /\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, // GitHub kişisel erişim token'ı
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, // GitHub ince taneli PAT
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, // Slack token
+  /\bAIza[0-9A-Za-z_-]{20,}\b/g, // Google API anahtarı
+  /-----BEGIN[ A-Z]*PRIVATE KEY-----[\s\S]*?-----END[ A-Z]*PRIVATE KEY-----/g, // PEM özel anahtar
+]
+// Bearer token — "Bearer " öneki korunur, yalnızca token maskelenir (bağlam kaybolmasın).
+const BEARER_SECRET_RE = /\bBearer\s+[A-Za-z0-9._-]{20,}\b/gi
+// api_key/secret/token/password/authorization gibi alan adı + değer çiftleri — yalnızca DEĞER
+// maskelenir, alan adı ve ayraç korunur (görünür redaksiyon, ADR-015). Opsiyonel
+// Bearer/Basic/Digest şeması korunur (BEARER_SECRET_RE ile aynı davranış, "authorization:
+// Bearer …" için çifte eşleşmede tutarlı kalır).
+const KEY_VALUE_SECRET_RE =
+  /\b(api[_-]?key|secret|token|password|passwd|authorization)\b(\s*[:=]\s*)(['"]?)(?:(Bearer|Basic|Digest)\s+)?([^\s'",}]{6,})\3/gi
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Bir string içindeki bilinen sır biçimlerini görünür bir işaretle maskeler. */
+function redactSecretsInString(input: string): { text: string; redacted: boolean } {
+  let redacted = false
+  let text = input
+  for (const pattern of STANDALONE_SECRET_PATTERNS) {
+    text = text.replace(pattern, () => {
+      redacted = true
+      return SECRET_MASK
+    })
+  }
+  text = text.replace(BEARER_SECRET_RE, () => {
+    redacted = true
+    return `Bearer ${SECRET_MASK}`
+  })
+  text = text.replace(
+    KEY_VALUE_SECRET_RE,
+    (_match, key: string, sep: string, quote: string, scheme: string | undefined) => {
+      redacted = true
+      const schemePrefix = scheme ? `${scheme} ` : ''
+      return `${key}${sep}${quote}${schemePrefix}${SECRET_MASK}${quote}`
+    }
+  )
+  return { text, redacted }
+}
+
+/** Tek bir string alanı FIELD_MAX_LENGTH'te görünür bir işaretle kırpar. */
+function truncateFieldValue(value: string): { text: string; truncated: boolean } {
+  if (value.length <= FIELD_MAX_LENGTH) return { text: value, truncated: false }
+  return {
+    text: value.slice(0, FIELD_MAX_LENGTH) + FIELD_TRUNCATION_MARK,
+    truncated: true,
+  }
+}
+
+/**
+ * `payload`'ı derinlemesine gezer; yalnızca string yaprak değerlere sır redaksiyonu + alan
+ * kırpması uygular. Obje/dizi yapısı, anahtar kümesi ve string-olmayan değerler DEĞİŞMEZ.
+ */
+function redactDeep(value: unknown): {
+  value: unknown
+  secretsRedacted: boolean
+  contentTruncated: boolean
+} {
+  let secretsRedacted = false
+  let contentTruncated = false
+
+  function walk(v: unknown): unknown {
+    if (typeof v === 'string') {
+      const secretStep = redactSecretsInString(v)
+      if (secretStep.redacted) secretsRedacted = true
+      const truncateStep = truncateFieldValue(secretStep.text)
+      if (truncateStep.truncated) contentTruncated = true
+      return truncateStep.text
+    }
+    if (Array.isArray(v)) return v.map(walk)
+    if (isPlainObject(v)) {
+      const out: Record<string, unknown> = {}
+      for (const [key, val] of Object.entries(v)) out[key] = walk(val)
+      return out
+    }
+    return v
+  }
+
+  return { value: walk(value), secretsRedacted, contentTruncated }
 }
 
 function stringField(payload: Record<string, unknown>, key: string): string | undefined {
@@ -118,6 +216,14 @@ export function normalizeEvent(
       raw: { raw_text: rawBody.slice(0, maxPayload) },
     }
   }
+
+  // K3 kapanışı: redaksiyon TEK noktada, `payload`'ın kendisi üzerinde uygulanır — böylece
+  // `summary` (panelde canlı gösterilir) ve `raw` (diske yazılır) AYNI redakte edilmiş veriden
+  // türetilir, ikisi arasında tutarsız bir sızıntı yolu kalmaz.
+  const redaction = redactDeep(payload)
+  payload = redaction.value as Record<string, unknown>
+  if (redaction.secretsRedacted) flags.push('secrets_redacted')
+  if (redaction.contentTruncated) flags.push('content_truncated')
 
   const projectPath = resolveProjectPath(payload)
   const projectName = projectPath ? path.basename(projectPath) : ''

@@ -4,6 +4,7 @@
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 const G = 'g' + 'it';
 const F = '-' + 'f';
@@ -107,6 +108,16 @@ const dangerCases = [
 
   [`${RMDIR} emptydir`, 0, 'rmdir bayraksiz (bos dizin, yikici degil) — yanlis pozitif olmamali'],
   [`${G} commit -m "update ${RD} readme"`, 0, 'metinde bare "rd" kelimesi, bayrak yok — yanlis pozitif olmamali'],
+
+  // --- G5 tur4 4-Ek2 (docs/qa/G5-guvenlik-denetimi-2026-09-10-tur4.md): mklink es degeri ---
+  // New-Item -ItemType Junction/SymbolicLink zaten yakalaniyordu (New-Item genel deseni), ama
+  // AYNI sonucu ureten mklink (bayraksiz veya /J, /D, /H ile) yakalanmiyordu — iki esdeger
+  // komuttan biri korumali digeri degildi.
+  [`${ML} link target`, 2, '(mklink) bayraksiz (sembolik baglanti) — engellenmeli'],
+  [`${ML} /J link target`, 2, '(mklink) /J (junction) — engellenmeli'],
+  [`${ML} /D link target`, 2, '(mklink) /D (dizin sembolik baglantisi) — engellenmeli'],
+  [`${ML} /H link target`, 2, '(mklink) /H (sabit baglanti) — engellenmeli'],
+  [`${ML.toUpperCase()} /J link target`, 2, '(mklink) buyuk harf MKLINK — harf duyarsiz eslesme'],
 
   // --- Katman B (docs/qa/g5-onay-dosyasi-korumasi-contract.md, bypass envanteri madde 2/3):
   // kabuktan docs/approvals altina yazma/silme. b1 = klasik yazma fiili, b2 = satir ici betik.
@@ -334,6 +345,97 @@ for (const [filePath, label] of approvalsAskCases) {
   const { code, stdout } = callGateCapture('docs/qa/some-unrelated-note.md');
   const ok = code === 0 && stdout === '';
   fail += reportScope('(katman A) docs/approvals DISI docs/** hala sessizce serbest (regresyon)', ok);
+}
+
+// --- G5 tur4 (docs/qa/g5-tur4-yol-kanoniklestirme-contract.md): yol kanoniklestirme
+// regresyon testleri. resolveCanonicalRel() eklenmeden ÖNCE: (K-A) Windows'un \\?\ uzun-yol
+// öneki ve (K-B) bir NTFS junction/symlink'in ARKASI, salt lexical path.relative()
+// karşılaştırmasını atlatıp docs/approvals'a SESSİZCE (ask JSON'suz, exit 0) yazmaya izin
+// veriyordu. Aşağıdaki testler GERÇEK (mock'lanmamış) gate-check.cjs'e karşı çalışır; K-B bu
+// makinede GERÇEK bir NTFS junction oluşturup kaldırır (yönetici hakkı gerekmez — junction
+// symlink'ten farklı olarak SeCreateSymbolicLinkPrivilege istemez); fail-closed ise ayrı bir
+// child process'te fs.realpathSync.native'i preload ile fırlatacak şekilde monkey-patch ederek
+// GERÇEK dosyaya hiç dokunmadan test edilir.
+const REAL_APPROVALS_ABS = path.resolve('docs', 'approvals');
+function kaProbePath() {
+  return '\\\\?\\' + path.join(REAL_APPROVALS_ABS, 'SELFTEST-KA-PROBE.ok');
+}
+{
+  const { code, stdout } = callGateCapture(kaProbePath());
+  const ok = code === 0 && isAskJson(stdout, 'GÜVENLİK KAPISINI');
+  fail += reportScope(
+    '(K-A) \\\\?\\ uzun yol öneki ile docs/approvals hedefi hâlâ ask üretir (regresyon: önceden sessiz exit=0)',
+    ok,
+  );
+}
+{
+  // Regresyon/yanlış pozitif: aynı \\?\ öneki, docs/approvals DIŞINDAKI serbest bir yol için
+  // hâlâ sessizce (ask'sız) izin vermeli — normalize etmek aşırı-engelleme yaratmamalı.
+  const freeLongPrefix = '\\\\?\\' + path.resolve('assets', 'SELFTEST-KA-FREE-PROBE.ok');
+  const { code, stdout } = callGateCapture(freeLongPrefix);
+  const ok = code === 0 && stdout === '';
+  fail += reportScope(
+    '(K-A) aynı \\\\?\\ öneki, docs/approvals DIŞI serbest yol için hâlâ sessizce izin verir (aşırı engelleme yok)',
+    ok,
+  );
+}
+
+const KB_JUNCTION = path.resolve('assets', '.selftest-kb-junction');
+function cleanupKbJunction() {
+  try { fs.rmdirSync(KB_JUNCTION); } catch (_) {}
+}
+cleanupKbJunction(); // önceki yarım kalmış bir koşudan artık olabilir
+let kbSetupError = null;
+try { fs.symlinkSync(REAL_APPROVALS_ABS, KB_JUNCTION, 'junction'); } catch (e) { kbSetupError = e; }
+if (kbSetupError) {
+  fail += reportScope(
+    `(K-B) junction oluşturulamadı (${kbSetupError.message}) — bu makinede junction desteği kontrol edilmeli`,
+    false,
+  );
+} else {
+  const probePath = path.join('assets', '.selftest-kb-junction', 'SELFTEST-KB-PROBE.ok');
+  const { code, stdout } = callGateCapture(probePath);
+  const ok = code === 0 && isAskJson(stdout, 'GÜVENLİK KAPISINI');
+  fail += reportScope(
+    '(K-B) assets/** altındaki bir junction docs/approvals ARKASINA çıkınca hâlâ ask üretir (regresyon: önceden assets serbest sayılıp sessiz exit=0)',
+    ok,
+  );
+}
+cleanupKbJunction();
+{
+  const removed = !fs.existsSync(KB_JUNCTION);
+  const targetIntact = fs.existsSync(path.join(REAL_APPROVALS_ABS, 'G2.ok'));
+  fail += reportScope('(K-B) test junction kaldırıldı ve hedef (docs/approvals) bozulmadı', removed && targetIntact);
+}
+
+function failClosedProbe() {
+  const preloadPath = path.join(os.tmpdir(), `selftest-realpath-throw-${process.pid}-${Date.now()}.cjs`);
+  fs.writeFileSync(preloadPath, [
+    "const fs = require('fs');",
+    'fs.realpathSync.native = function () {',
+    "  const e = new Error('ELOOP: simulated (selftest fail-closed probe)');",
+    "  e.code = 'ELOOP';",
+    '  throw e;',
+    '};',
+  ].join('\n'));
+  let code = 0;
+  let stderr = '';
+  try {
+    execFileSync('node', ['-r', preloadPath, '.claude/hooks/gate-check.cjs'], {
+      input: JSON.stringify({ tool_input: { file_path: HOOK_FILE } }),
+      stdio: ['pipe', 'ignore', 'pipe'],
+    });
+  } catch (e) {
+    code = e.status;
+    stderr = e.stderr ? e.stderr.toString('utf8') : '';
+  }
+  rm(preloadPath);
+  return { code, stderr };
+}
+{
+  const { code, stderr } = failClosedProbe();
+  const ok = code === 2 && /realpath/i.test(stderr);
+  fail += reportScope('(fail-closed) fs.realpathSync.native fırlatınca sert engel (exit=2, sessiz izin DEĞİL)', ok);
 }
 
 // Test artıklarını bırakma.

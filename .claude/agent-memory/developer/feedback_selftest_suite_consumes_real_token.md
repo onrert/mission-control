@@ -30,3 +30,16 @@ require GUARD.ok at all). Only run the *full* `_selftest.cjs` (which legitimatel
 GUARD.ok/`.guard-state.json`) after the last real guarded edit has already landed and
 consumed the token through the normal Edit-tool flow — at that point the suite's internal
 overwrite/cleanup of GUARD.ok is harmless because there is nothing left to lose.
+
+**Repeat trap (second occurrence):** this danger is NOT limited to running the real, in-repo
+`_selftest.cjs`. A *draft/scratchpad copy* of a modified `_selftest.cjs` (edited outside the
+repo while composing the eventual real edit) is just as dangerous if executed with
+`cwd=<repo root>` — the script's `GUARD_OK`/`GUARD_STATE` constants are `path.join('docs',
+'approvals', ...)`, i.e. relative to `process.cwd()`, not to the script's own location. Running
+`node <scratchpad copy>` from the repo root to dry-run/validate new test cases before writing
+them for real will overwrite and then delete whatever real `docs/approvals/GUARD.ok` currently
+exists, exactly as if the real file had been run. Lost a token this way even while being
+careful to never `Edit`/`Write` the real `_selftest.cjs` before the content was finalized. Fix:
+dry-run scratchpad copies of this file only with a `cwd` pointed at an isolated fake project
+directory (own fake `docs/approvals/`), never the real repo root — or accept that any dry-run
+against the real root consumes the current token and budget a renewal for it up front.

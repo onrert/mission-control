@@ -88,12 +88,16 @@ function write(p) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.write
 // ile listeleyen bir onay metnidir. Sentetik/regresyon testleri için gerçek .cjs dosyalarına
 // DOKUNMADAN (hook script'i hedef dosyaya hiçbir zaman yazmıyor, yalnızca stdin'deki
 // file_path'i değerlendiriyor) uydurma veya gerçek dosya adları backtick ile anılır.
-// Y1 (docs/qa/g5-tur5-kapsam-ve-selftest-contract.md): parseGuardScope artık YALNIZCA
+// Y1 tur 1 (docs/qa/g5-tur5-kapsam-ve-selftest-contract.md): parseGuardScope artık YALNIZCA
 // "## Kapsam" başlığının bloğunu okuyor — bu helper da güncel format için o başlığı üretir
 // (eski düzyazı-serpiştirilmiş biçim artık geçerli bir onay metni SAYILMIYOR, bilerek).
+// Y1 tur 2 (docs/qa/g5-tur5-kapsam-siniri-tur2-contract.md): kapsam artık KAPALI BİÇİM (her
+// satırda TEK backtick'li ad, `-` madde işaretiyle) gerektiriyor — önceki `` `a` ve `b` ``
+// tek-satır-çoklu-ad biçimi artık GEÇERSİZ bir GUARD.ok üretirdi (tüm kapsam boş dönerdi). Bu
+// yüzden her ad kendi madde satırını alıyor.
 function writeGuardScope(names) {
   fs.mkdirSync(path.dirname(GUARD_OK), { recursive: true });
-  const list = names.map((n) => '`' + n + '`').join(' ve ');
+  const list = names.map((n) => '- `' + n + '`').join('\n');
   fs.writeFileSync(GUARD_OK, `## Kapsam\n${list}\n`);
 }
 // Y1 (docs/qa/g5-tur5-kapsam-ve-selftest-contract.md): "## Kapsam" bölüm sınırlı GUARD.ok
@@ -361,14 +365,20 @@ writeGuardScope(['selftest-f1.cjs', 'selftest-f2.cjs']);
 }
 rm(GUARD_OK); rm(GUARD_STATE);
 
-// --- Y1 (docs/qa/g5-tur5-kapsam-ve-selftest-contract.md): parseGuardScope YALNIZCA
-// "## Kapsam" bölümünü kapsam sayar; bölüm dışında (ör. gerekçe metninde anılan) bir dosya
-// adı kapsama GİRMEZ. (y1-b) gerçek CEO operasyonunda GERÇEKLEŞMİŞ bir sızıntının birebir
-// regresyon testidir.
+// --- Y1 (docs/qa/g5-tur5-kapsam-ve-selftest-contract.md, tur2: g5-tur5-kapsam-siniri-tur2-
+// contract.md): parseGuardScope YALNIZCA "## Kapsam" başlığının HEMEN ardından gelen, kapalı
+// biçimli (`- \`ad.cjs\``, satır başına TEK ad) liste maddelerini kapsam sayar; bölüm dışında
+// (ör. gerekçe metninde anılan) bir dosya adı kapsama GİRMEZ. Aşağıdaki fixture'lar tur 2'de
+// düz-satır biçiminden (`` `ad.cjs` ``) madde-satırı biçimine (`` - `ad.cjs` ``) GÜNCELLENDİ —
+// NEDEN: eski düz-satır biçimi artık kapalı-biçim kuralını ihlal eder (liste maddesi değil,
+// tarama header'dan sonraki ilk satırda hemen durur) ve tüm kapsamı boş bırakırdı; davranışsal
+// beklenti (kabul/red) fixture'larda DEĞİŞMEDİ, yalnızca üretilen GUARD.ok metninin biçimi
+// güncel kurala uyacak şekilde değişti. (y1-b) gerçek CEO operasyonunda GERÇEKLEŞMİŞ bir
+// sızıntının birebir regresyon testidir.
 
 // (y1-a) "## Kapsam" bölümündeki dosya kabul edilir VE token bu tek dosyayla tüketilir.
 rm(GUARD_OK); rm(GUARD_STATE);
-writeGuardRaw('## Kapsam\n`selftest-y1a.cjs`\n\n## Gerekce\nbu degisiklik gerekli.\n');
+writeGuardRaw('## Kapsam\n- `selftest-y1a.cjs`\n\n## Gerekce\nbu degisiklik gerekli.\n');
 {
   const code = callGate('.claude/hooks/selftest-y1a.cjs');
   const consumed = !fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
@@ -377,7 +387,7 @@ writeGuardRaw('## Kapsam\n`selftest-y1a.cjs`\n\n## Gerekce\nbu degisiklik gerekl
 rm(GUARD_OK); rm(GUARD_STATE);
 
 // (y1-b) Gerekçe (kapsam dışı) bölümünde "KAPSAM DIŞI" diye anılan bir dosya adı REDDEDİLİR.
-writeGuardRaw('## Kapsam\n`selftest-y1c.cjs`\n\n## Gerekce\nBu KAPSAM DISI birakildi: `selftest-y1d.cjs`\n');
+writeGuardRaw('## Kapsam\n- `selftest-y1c.cjs`\n\n## Gerekce\nBu KAPSAM DISI birakildi: `selftest-y1d.cjs`\n');
 {
   const code = callGate('.claude/hooks/selftest-y1d.cjs');
   const untouched = fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
@@ -402,7 +412,7 @@ writeGuardRaw('Bu bir onaydir: `selftest-y1e.cjs` degisikligini onayliyorum.\n')
 rm(GUARD_OK); rm(GUARD_STATE);
 
 // (y1-e) "## Kapsam" başlığı birden fazla kez geçiyorsa: belirsiz kapsam, fail-closed (ikisi de).
-writeGuardRaw('## Kapsam\n`selftest-y1f.cjs`\n\n## Kapsam\n`selftest-y1g.cjs`\n');
+writeGuardRaw('## Kapsam\n- `selftest-y1f.cjs`\n\n## Kapsam\n- `selftest-y1g.cjs`\n');
 {
   const code1 = callGate('.claude/hooks/selftest-y1f.cjs');
   const code2 = callGate('.claude/hooks/selftest-y1g.cjs');
@@ -411,7 +421,7 @@ writeGuardRaw('## Kapsam\n`selftest-y1f.cjs`\n\n## Kapsam\n`selftest-y1g.cjs`\n'
 rm(GUARD_OK); rm(GUARD_STATE);
 
 // (y1-f) Başlık boşluksuz varyantla da bulunur: "##Kapsam".
-writeGuardRaw('##Kapsam\n`selftest-y1h.cjs`\n\n## Gerekce\nnot.\n');
+writeGuardRaw('##Kapsam\n- `selftest-y1h.cjs`\n\n## Gerekce\nnot.\n');
 {
   const code = callGate('.claude/hooks/selftest-y1h.cjs');
   const consumed = !fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
@@ -420,7 +430,7 @@ writeGuardRaw('##Kapsam\n`selftest-y1h.cjs`\n\n## Gerekce\nnot.\n');
 rm(GUARD_OK); rm(GUARD_STATE);
 
 // (y1-g) Başlık büyük harfle: "## KAPSAM".
-writeGuardRaw('## KAPSAM\n`selftest-y1i.cjs`\n');
+writeGuardRaw('## KAPSAM\n- `selftest-y1i.cjs`\n');
 {
   const code = callGate('.claude/hooks/selftest-y1i.cjs');
   const consumed = !fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
@@ -428,12 +438,155 @@ writeGuardRaw('## KAPSAM\n`selftest-y1i.cjs`\n');
 }
 rm(GUARD_OK); rm(GUARD_STATE);
 
-// (y1-h) "## Kapsam" bölümü var ama içinde hiç backtick'li ad yoksa: fail-closed.
+// (y1-h) "## Kapsam" bölümü var ama hemen ardından liste gelmiyorsa (düzyazı ile başlıyorsa):
+// fail-closed. Tur 2'de bu, YENİ "araya düzyazı girmişse" kuralının doğrudan testidir.
 writeGuardRaw('## Kapsam\nbu bolumde hic dosya adi yok.\n\n## Gerekce\n`selftest-y1j.cjs` burada geciyor ama kapsam disi.\n');
 {
   const code = callGate('.claude/hooks/selftest-y1j.cjs');
   const untouched = fs.existsSync(GUARD_OK);
-  fail += reportScope('(y1-h) "## Kapsam" bolumu bos (backtick yok) -> fail-closed', code === 2 && untouched);
+  fail += reportScope('(y1-h) "## Kapsam" hemen ardindan liste yok (duzyazi ile basliyor) -> fail-closed', code === 2 && untouched);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// --- Y1 tur 2 (docs/qa/g5-tur5-kapsam-siniri-tur2-contract.md): QA'nin uc sizdiran sondasi +
+// gercekci CEO belgesi + yeni negatif kontroller. Tur 1'in "blok NEREDE BITER" tanimi, basliga
+// BENZEYEN her seye (basliksiz kuyruk duzyazi, "# Gerekce" h1, "**Gerekce**" kalin sozde-
+// baslik) yeniliyordu. Tur 2 "hangi satirlar SAYILIR" sorusuna gecti: yalnizca "## Kapsam"
+// basligindan hemen sonraki, kapali bicimli liste maddeleri kapsam sayilir; liste maddesi
+// OLMAYAN ilk bos-olmayan satir taramayi bitirir (icerigi ONEMSIZ).
+
+// (y1t2-a) G2 sondasi: baslik + madde + bos satir + BASLIKSIZ KUYRUK DUZYAZI. Kuyrukta anilan
+// ad reddedilir, kapsamdaki asil ad hala kabul edilir ve tuketilir.
+writeGuardRaw('## Kapsam\n- `block-dangerous.cjs`\n\nNot: `evil-payload.cjs` bu listeye DAHIL DEGILDIR.\n');
+{
+  const code = callGate('.claude/hooks/evil-payload.cjs');
+  const untouched = fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1t2-a) basliksiz kuyruk duzyazidaki ad reddedilir, token harcanmaz (QA G2 sondasi)', code === 2 && untouched);
+}
+{
+  const code = callGate('.claude/hooks/block-dangerous.cjs');
+  const consumed = !fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1t2-a2) ayni metinde kapsamdaki asil ad hala kabul edilir ve tuketilir', code === 0 && consumed);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (y1t2-b) G3 sondasi: "# Gerekce" (h1) sonrasi ad reddedilir (h1, "##" ile eslesmiyor ama
+// liste maddesi de degil -> taramayi zaten bitirir).
+writeGuardRaw('## Kapsam\n- `block-dangerous.cjs`\n\n# Gerekce\nBu degisiklik gerekli: `evil-payload.cjs`\n');
+{
+  const code = callGate('.claude/hooks/evil-payload.cjs');
+  const untouched = fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1t2-b) "# Gerekce" (h1) sonrasindaki ad reddedilir (QA G3 sondasi)', code === 2 && untouched);
+}
+{
+  const code = callGate('.claude/hooks/block-dangerous.cjs');
+  const consumed = !fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1t2-b2) ayni metinde kapsamdaki asil ad hala kabul edilir ve tuketilir', code === 0 && consumed);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (y1t2-c) G4 sondasi: "**Gerekce**" kalin sozde-baslik sonrasi ad reddedilir.
+writeGuardRaw('## Kapsam\n- `block-dangerous.cjs`\n\n**Gerekce**\nBaska bir ad: `evil-payload.cjs`\n');
+{
+  const code = callGate('.claude/hooks/evil-payload.cjs');
+  const untouched = fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1t2-c) "**Gerekce**" kalin sozde-baslik sonrasindaki ad reddedilir (QA G4 sondasi)', code === 2 && untouched);
+}
+{
+  const code = callGate('.claude/hooks/block-dangerous.cjs');
+  const consumed = !fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1t2-c2) ayni metinde kapsamdaki asil ad hala kabul edilir ve tuketilir', code === 0 && consumed);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (y1t2-d) Gercekci CEO belgesi (QA G5-sozlesme-kararlari-2026-09-10-tur2.md 2.3, birebir):
+// iki dosya acikca "KAPSAM DISI"/"DOKUNULMAYACAK" diye reddediliyor, sadece bir dosya kapsamda.
+writeGuardRaw(
+  '# GUARD onayi - G5 tur 6 hook bakimi\n\nTarih: 2026-09-10\nOnaylayan: Kullanici (Veron) - AskUserQuestion\n\n' +
+  '## Kapsam\n\n- `gate-check.cjs`\n\n' +
+  'Not: bu turda `_selftest.cjs` dosyasina DOKUNULMAYACAK, kapsam disidir.\n' +
+  'Ayrica `block-dangerous.cjs` da bu onayin KAPSAMI DISINDADIR.\n'
+);
+{
+  const code = callGate('.claude/hooks/_selftest.cjs');
+  const untouched = fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1t2-d) gercekci CEO belgesi: "DOKUNULMAYACAK" denen dosya reddedilir', code === 2 && untouched);
+}
+{
+  const code = callGate('.claude/hooks/block-dangerous.cjs');
+  const untouched = fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1t2-d2) gercekci CEO belgesi: "KAPSAMI DISINDADIR" denen dosya reddedilir', code === 2 && untouched);
+}
+{
+  const code = callGate('.claude/hooks/gate-check.cjs');
+  const consumed = !fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1t2-d3) gercekci CEO belgesi: kapsamdaki tek dosya kabul edilir ve tuketilir', code === 0 && consumed);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (y1t2-e) Regresyon: "### Gerekce" (h3) sonrasi ad hala reddedilir (tur 1'de calisiyordu,
+// yeni mekanizmayla da calistigini kilitle).
+writeGuardRaw('## Kapsam\n- `block-dangerous.cjs`\n\n### Gerekce\nBaska bir ad: `evil-payload.cjs`\n');
+{
+  const code = callGate('.claude/hooks/evil-payload.cjs');
+  const untouched = fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1t2-e) "### Gerekce" (h3) sonrasindaki ad reddedilir (regresyon)', code === 2 && untouched);
+}
+{
+  const code = callGate('.claude/hooks/block-dangerous.cjs');
+  const consumed = !fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1t2-e2) ayni metinde kapsamdaki asil ad hala kabul edilir ve tuketilir', code === 0 && consumed);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (y1t2-f) Negatif kontrol (asiri engelleme yok): girintili/ic ice madde satiri kabul edilir.
+writeGuardRaw('## Kapsam\n  - `block-dangerous.cjs`\n');
+{
+  const code = callGate('.claude/hooks/block-dangerous.cjs');
+  const consumed = !fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1t2-f) girintili/ic ice liste maddesi de kabul edilir (asiri engelleme yok)', code === 0 && consumed);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (y1t2-g) Negatif kontrol: liste bloğu icinde TEK bir bos satir taramayi bitirmez, sonraki
+// madde de kabul edilir (bos satirlar seffaftir).
+writeGuardRaw('## Kapsam\n- `selftest-y1t2g1.cjs`\n\n- `selftest-y1t2g2.cjs`\n');
+{
+  const code1 = callGate('.claude/hooks/selftest-y1t2g1.cjs');
+  const remainsAfterFirst = fs.existsSync(GUARD_OK);
+  const code2 = callGate('.claude/hooks/selftest-y1t2g2.cjs');
+  const consumedAfterSecond = !fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope(
+    '(y1t2-g) liste maddeleri arasindaki bos satir taramayi bitirmez, ikinci madde de kabul edilir',
+    code1 === 0 && remainsAfterFirst && code2 === 0 && consumedAfterSecond,
+  );
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (y1t2-h) Yeni sizinti adayi: bir DISLAMA NOTU madde isaretiyle yazilmissa ("- Not: ...
+// kapsam disi: `x.cjs`"), bu satir bicimi bozar (tek backtick'li ad degil) -> TUM kapsam
+// gecersiz sayilir; daha once kabul edilecek GECERLI bir ad bile artik reddedilir.
+writeGuardRaw('## Kapsam\n- `block-dangerous.cjs`\n- Not: `evil-payload.cjs` kapsam disi birakildi\n');
+{
+  const code = callGate('.claude/hooks/block-dangerous.cjs');
+  const untouched = fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1t2-h) madde-bicimli dislama notu TUM kapsami gecersiz kilar (onceki gecerli ad da reddedilir)', code === 2 && untouched);
+}
+{
+  const code = callGate('.claude/hooks/evil-payload.cjs');
+  const untouched = fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1t2-h2) ayni bozuk belgede kapsam-disi ad da (zaten) reddedilir', code === 2 && untouched);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (y1t2-i) Cok-ad-tek-satir artik desteklenmiyor: satir kapali bicimi (TEK backtick'li ad)
+// ihlal ediyor -> TUM kapsam gecersiz.
+writeGuardRaw('## Kapsam\n- `selftest-y1t2i1.cjs` ve `selftest-y1t2i2.cjs`\n');
+{
+  const code1 = callGate('.claude/hooks/selftest-y1t2i1.cjs');
+  const code2 = callGate('.claude/hooks/selftest-y1t2i2.cjs');
+  const untouched = fs.existsSync(GUARD_OK) && !fs.existsSync(GUARD_STATE);
+  fail += reportScope('(y1t2-i) tek satirda coklu ad artik desteklenmiyor -> tum kapsam gecersiz', code1 === 2 && code2 === 2 && untouched);
 }
 rm(GUARD_OK); rm(GUARD_STATE);
 

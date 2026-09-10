@@ -17,16 +17,28 @@
 // reddedilir (token bir DEĞİŞİKLİĞİ yetkilendirir, bir YAZMAYI değil). Kapsam çıkarılamazsa
 // (backtick'li dosya adı yoksa) fail-closed: hiçbir guarded yazmaya izin verilmez.
 //
-// Y1 düzeltmesi (docs/qa/g5-tur5-kapsam-ve-selftest-contract.md): önceki `parseGuardScope`
-// metnin TAMAMINDAKİ backtick'li adları kapsam sayıyordu — GUARD.ok'un "## Gerekçe" gibi
-// düzyazı bölümünde "bu KAPSAM DIŞI" diye AÇIKÇA reddedilen bir dosya adı bile kapsama
-// giriyordu (gerçek CEO operasyonunda iki kez gözlemlendi). Artık kapsam YALNIZCA "## Kapsam"
-// başlığının bloğundan (bir sonraki "##" başlığına ya da dosya sonuna kadar) çıkarılır; o
-// bloğun DIŞINDA geçen hiçbir ad kapsam sayılmaz. Başlık hiç yoksa, birden fazla kez geçiyorsa
-// (belirsiz) ya da blok boşsa (backtick'li ad yok): fail-closed (boş kapsam → hiçbir guarded
-// yazmaya izin yok). Başlık harf/boşluk varyantlarına duyarsızdır (`## Kapsam`, `##Kapsam`,
-// `## KAPSAM` hepsi tanınır) — bu depoda Windows harf duyarsızlığı dört kez tuzak oldu, aynı
-// disiplin başlık eşleştirmesine de uygulanıyor.
+// Y1 düzeltmesi tur 1 (docs/qa/g5-tur5-kapsam-ve-selftest-contract.md): önceki `parseGuardScope`
+// metnin TAMAMINDAKİ backtick'li adları kapsam sayıyordu; tur 1 bunu "## Kapsam" başlığının
+// bloğuna (bir sonraki "##" başlığına ya da dosya sonuna kadar) daralttı.
+//
+// Y1 düzeltmesi tur 2 (docs/qa/g5-tur5-kapsam-siniri-tur2-contract.md): tur 1'in "blok NEREDE
+// BİTER" tanımı, başlığa BENZEYEN her şeye yeniliyordu (başlıksız kuyruk düzyazı, "# Gerekçe"
+// h1, "**Gerekçe**" kalın sözde-başlık) — QA gerçek bir CEO onay metniyle, "kapsam dışıdır" diye
+// AÇIKÇA reddedilen iki dosyanın sessizce (exit 0, kart yok) yetkilendirildiğini gösterdi. Bu
+// çit ikinci kez aynı aileye ("nasıl biçimlendiği sayılıyor") yenildi; bu yüzden tur 2 "nerede
+// biter" sorusunu TERK EDİP "hangi satırlar SAYILIR" sorusuna geçti (kapalı biçim / beyaz
+// liste): kapsam adları YALNIZCA "## Kapsam" başlığının hemen ardından (boş satırlar şeffaf)
+// gelen, `-`/`*` ile başlayan ve her satırında TEK backtick'li ad taşıyan liste maddelerinden
+// okunur. Liste maddesi OLMAYAN ilk boş-olmayan satır taramayı bitirir — o satırın başlık,
+// kalın, tablo ya da düzyazı olması ÖNEMSİZDİR, çünkü hiçbiri liste maddesi değildir; kalan
+// metin hiç ayrıştırılmaz. Kapalı biçimi bozan bir madde (ör. iki ad tek satırda, ya da bir
+// dışlama notu madde işaretiyle yazılmış: "- Not: `x.cjs` kapsam dışı") TÜM kapsamı geçersiz
+// kılar — o ana kadar toplanan geçerli adlar dahil (belirsizlik her zaman sıfır erişime
+// çözülür). Başlık yok / birden fazla kez geçiyorsa (belirsiz) / hemen ardından liste hiç
+// gelmiyorsa: fail-closed (boş kapsam → hiçbir guarded yazmaya izin yok). Başlık harf/boşluk
+// varyantlarına duyarsızdır (`## Kapsam`, `##Kapsam`, `## KAPSAM` hepsi tanınır) — bu depoda
+// Windows harf duyarsızlığı dört kez tuzak oldu, aynı disiplin başlık eşleştirmesine de
+// uygulanıyor.
 const path = require('path');
 const fs = require('fs');
 const { readInput, exists, block } = require('./_common.cjs');
@@ -38,11 +50,12 @@ function consume(p) {
   try { fs.unlinkSync(p); } catch (_) {}
 }
 
-// GUARD.ok metninde YALNIZCA "## Kapsam" başlığının bloğunu (bir sonraki "##" başlığına ya da
-// dosya sonuna kadar) kapsam kaynağı sayar; o blok içindeki backtick-alıntılı `*.cjs` /
-// `.claude/settings.json` adları kapsamdır. Blok dışındaki (ör. gerekçe/açıklama) backtick'li
-// adlar kapsam SAYILMAZ. Başlık yok / birden fazla (belirsiz) / blok boş → fail-closed (boş
-// küme — çağıran taraf boş kümeyi "hiçbir yola izin yok" olarak yorumlar).
+// GUARD.ok metninde YALNIZCA "## Kapsam" başlığının hemen ardından gelen, kapalı biçimli
+// (`- \`ad.cjs\`` / `* \`ad.cjs\``, satır başına TEK ad) liste maddelerini kapsam kaynağı
+// sayar. Blok dışındaki (ör. gerekçe/açıklama) backtick'li adlar kapsam SAYILMAZ; biçimi bozan
+// herhangi bir madde TÜM kapsamı geçersiz kılar. Başlık yok / birden fazla (belirsiz) / hemen
+// ardından liste yok / biçim bozuk → fail-closed (boş küme — çağıran taraf boş kümeyi "hiçbir
+// yola izin yok" olarak yorumlar).
 function parseGuardScope(guardPath) {
   let text = '';
   try { text = fs.readFileSync(guardPath, 'utf8'); } catch (_) { return new Set(); }
@@ -50,31 +63,33 @@ function parseGuardScope(guardPath) {
 
   const lines = text.split(/\r\n|\r|\n/);
   const kapsamHeaderRe = /^\s*##\s*kapsam\s*$/i;
-  const anyHeaderRe = /^\s*##/;
+  const listItemRe = /^\s*[-*]\s+(.*)$/;
+  const strictItemRe = /^`[^`]+`$/; // kapalı biçim: satır TAM OLARAK tek backtick'li ad
+  const blankRe = /^\s*$/;
 
-  let blockStart = -1;
+  let headerLine = -1;
   let headerCount = 0;
   for (let i = 0; i < lines.length; i++) {
     if (kapsamHeaderRe.test(lines[i])) {
       headerCount++;
-      if (headerCount === 1) blockStart = i + 1;
+      if (headerCount === 1) headerLine = i;
     }
   }
   if (headerCount !== 1) return scope; // başlık yok ya da belirsiz (>1) → fail-closed
 
-  let blockEnd = lines.length;
-  for (let i = blockStart; i < lines.length; i++) {
-    if (anyHeaderRe.test(lines[i])) { blockEnd = i; break; }
-  }
-  const block = lines.slice(blockStart, blockEnd).join('\n');
-
-  const re = /`([^`]+)`/g;
-  let m;
-  while ((m = re.exec(block))) {
-    const tok = m[1].trim();
+  let matchedAnyItem = false;
+  for (let i = headerLine + 1; i < lines.length; i++) {
+    if (blankRe.test(lines[i])) continue; // boş satırlar şeffaf, hiçbir veri taşımaz
+    const m = listItemRe.exec(lines[i]);
+    if (!m) break; // liste maddesi OLMAYAN ilk boş-olmayan satır → blok biter (içeriği önemsiz)
+    matchedAnyItem = true;
+    const rest = m[1].trim();
+    if (!strictItemRe.test(rest)) return new Set(); // kapalı biçimi bozan madde → TÜM kapsam geçersiz
+    const tok = rest.slice(1, -1).trim();
     if (/^[\w-]+\.cjs$/i.test(tok)) scope.add(('.claude/hooks/' + tok).toLowerCase());
     else if (/^\.claude\/settings\.json$/i.test(tok)) scope.add('.claude/settings.json');
   }
+  if (!matchedAnyItem) return new Set(); // başlık var ama hemen ardından liste hiç gelmedi → fail-closed
   return scope;
 }
 

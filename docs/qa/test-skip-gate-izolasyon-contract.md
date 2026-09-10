@@ -156,6 +156,62 @@ düşürülmesini tespit etmek) **değişmiyor**, yalnızca düşürülen dosya 
 8. `node .claude/hooks/_selftest.cjs` yalnızca çalıştırılır (dosyaya dokunulmaz), sonucu
    raporlanır.
 
+## 5b. Uygulama sonrası kanıt (bu turda ölçüldü)
+
+**Düzeltme öncesi (mutasyon/karşılaştırma noktası) — port 7333 harici tutulup TAM OLARAK
+`tests/verify-test-run.test.ts`'in eski (2 `--exclude`'lu) komutu çalıştırıldı:**
+
+```
+[harness] gate exit status: 1
+"check-ports" mentions in output: 7
+FAIL tests/scripts/check-ports.test.ts > ... gerçek varsayılan portlar boşsa exit 0 verir
+FAIL tests/scripts/check-ports.test.ts > ... (Ö3)  Error: listen EADDRINUSE: address already in use 127.0.0.1:7333
+Test Files  1 failed | 82 passed | 1 skipped (84)
+```
+
+**Düzeltme sonrası (aynı harici port tutma, yeni 4 `--exclude`'lu komut):**
+
+```
+[harness] gate exit status: 1
+"check-ports" mentions in output: 0
+Test Files  81 passed | 1 skipped (82)
+    - "Test Files" total reported by vitest (82) does not match the number of test files on
+      disk matching vitest.config.ts's include/exclude patterns (86)
+```
+
+`check-ports.test.ts` artık nested koşuma hiç girmiyor (0 geçiş, dosya sayısı 84→82), çitin
+kendisi hâlâ doğru şekilde kırmızı (madde 4'ün önden verdiği garanti tutuyor).
+
+**Mutasyon (elle, `git checkout` KULLANILMADAN):** yeni iki `--exclude` bayrağı `Edit` ile
+kaldırılıp aynı harici-port deneyi tekrarlandı → port çakışması **aynen geri geldi** (7
+"check-ports" geçişi, 2 FAIL, EADDRINUSE) — düzeltmenin gerçekten bu çakışmayı önlediğinin
+kanıtı. Ardından `Edit` ile birebir ters işlemle geri eklendi; `diff` ile dosyanın düzeltilmiş
+hâliyle **bayt bayt aynı** olduğu doğrulandı.
+
+**`npm run test` — 7 ardışık koşu (brief 5 istiyordu, karışık sonuç nedeniyle 7'ye çıkarıldı):**
+
+| Koşu | Sonuç | Not |
+|---|---|---|
+| 1 | YEŞİL | 1371 geçti / 4 atlandı, 85/86 dosya |
+| 2 | YEŞİL | 1371 / 4, 85/86 |
+| 3 | **KIRMIZI** | `crash signature detected: "Worker forks emitted error"` — bilinen, `CLAUDE.md`'de kayıtlı organik worker-fork çökmesi sınıfı. `check-ports`/`build-css`/`EADDRINUSE`/`ENOENT` **hiçbiri** çıktıda yok — bu turun düzelttiği kaynak sınıfıyla **ilgisiz**, çit doğru şekilde kırmızı verdi. |
+| 4 | **KIRMIZI** | `tests/integration/send-event-hook.test.ts:185` — gerçek bir test **assertion**'ı başarısız (`expect(events).toHaveLength(1)`), gate'in kendi mantığı değil. Bu dosya efemeral port (`listen(0)`) kullanıyor, sabit kaynak paylaşmıyor — bu turun kapsamındaki B1/port/dist sınıfıyla **ilgisiz görünüyor**. Dosya sahipliği bu sözleşmenin dışında (`tests/integration/send-event-hook.test.ts`), düzeltilmedi. |
+| 5 | YEŞİL | 1371 / 4, 85/86 |
+| 6 | YEŞİL | 1371 / 4, 85/86 |
+| 7 | **KIRMIZI** | Yine `"Worker forks emitted error"` — koşu 3 ile aynı sınıf. |
+
+**Dürüstlük — bu turun hedeflediği çakışma sınıfı 0/7 koşuda görüldü** (hiçbir koşuda
+`check-ports`, `EADDRINUSE`, `build-css` veya `dist/web` ile ilgili bir hata çıkmadı) —
+bu, §5b'nin yukarıdaki doğrudan kanıtıyla birlikte düzeltmenin **hedeflediği** sınıfı
+kapattığını gösteriyor. Ancak makine bu turda **yoğun bellek baskısı altındaydı**
+(`Total Physical Memory: 32535 MB`, `Available: 11587 MB` — ~%64 kullanımda, muhtemelen bu
+oturumdan bağımsız başka süreçler/uygulamalar) ve bu, 3/7 koşuda görülen **başka, bu
+sözleşmenin kapsamı dışındaki** kırmızıları (organik worker-fork çökmesi ×2, `send-event-
+hook.test.ts` zamanlama flake'i ×1) açıklayan makul bir ortam faktörü olabilir — ama bu
+**çıkarım**, ölçülmüş bir kanıt değil. `send-event-hook.test.ts` flake'i **yeni gözlemlenen,
+daha önce bu depoda adı geçen bir sınıfla eşleşmeyen** bir bulgu; ayrı bir incelemeyi hak
+ediyor ama bu sözleşmenin dosya sahipliği dışında olduğu için burada düzeltilmedi.
+
 ## 6. Kapsam dışı / bilinçli yapılmayanlar
 
 - `check-ports.test.ts`'in kendi "gerçek 7333/7334 boş" varsayımını (genel host-ortam

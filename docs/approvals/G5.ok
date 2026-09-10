@@ -1,0 +1,77 @@
+# G5 — Güvenlik / kalite kapısı onayı
+
+- **Tarih:** 2026-09-11
+- **Onaylayan:** Kullanıcı (Veron) — AskUserQuestion: "Onaylıyorum"
+- **Kapı:** G5 (güvenlik/kalite)
+
+## Onaylanan durum
+
+**Altı denetim turu, beş sözleşme, hepsi GEÇTİ.** Son karar:
+`docs/qa/G5-sozlesme-kararlari-2026-09-10-tur5.md` → *"G5 kapısı için kalan engel: YOK."*
+
+| Sözleşme | Karar |
+|---|---|
+| `g5-guvenlik-duzeltme-tur3-contract.md` | GEÇTİ |
+| `g5-onay-dosyasi-korumasi-contract.md` | GEÇTİ |
+| `g5-tur4-yol-kanoniklestirme-contract.md` | GEÇTİ |
+| `g5-tur4-izin-karti-onizlemesi-contract.md` | GEÇTİ |
+| `g5-tur5-kapsam-ve-selftest-contract.md` | GEÇTİ |
+| `g5-tur5-kapsam-siniri-tur2-contract.md` | GEÇTİ |
+| `test-skip-gate-izolasyon-contract.md` | GEÇTİ |
+| `g5-guard-json-contract.md` | GEÇTİ |
+
+## Kapanan kritikler
+
+1. **Onay dosyalarının kendisi korumasızdı** (tur 3, en derin bulgu). Barındırılan oturum kendi
+   `GUARD/PUSH/DANGER/G*.ok` dosyasını yazabiliyordu — yani her kapının anahtarını üretebiliyordu.
+   Bu, o ana kadar yapılmış bütün sertleştirmeyi anlamsız kılıyordu. Kapatıldı: `docs/approvals/**`
+   yazmaları izin kartına zorlanıyor, kabuk yolu engelli, `.guard-state.json` sert engelli.
+2. **Yol atlatma** (tur 4): Windows `\\?\` verbatim öneki ve NTFS junction, hook'u sessizce
+   atlatıyordu — kart hiç çıkmıyordu. Kapatıldı: `fs.realpathSync.native` ile kanonikleştirme,
+   çözülemezse fail-closed.
+3. **İzin kartı yalan söyleyebiliyordu** (tur 4): komut önizlemesi 500 karakterde kırpılıyor, ama
+   onaylanınca çalışan komut kırpılmamış oluyordu. Kapatıldı: kırpma yok, sert sınır aşılırsa
+   sessiz kesme yerine açık uyarı + onay düğmesi devre dışı.
+4. **Self-test koruduğu şeyi imha ediyordu** (tur 5): gerçek onay dosyalarını siliyordu.
+   Kapatıldı: izole geçici dizinde koşuyor, bekleyen gerçek onay varsa hiç dokunmadan reddediyor.
+5. **Kapsam sızıntısı (Y1)** — dört tur. Onay belgesinin insan için yazılmış kısmından da kapsam
+   okunuyordu; belge bir şey söylerken makine başkasını yetkilendirebiliyordu. Üç yama yenildi
+   (metnin tamamı → blok sınırı → başlık kimliği). Kullanıcı kararıyla kaynak kaldırıldı:
+   `GUARD.ok` artık JSON, kapsam yalnızca `scope` alanından okunuyor.
+6. **Test kapısının port çakışması**: iç içe koşan suite paylaşılan portlara ve `dist`'e
+   çarpıyordu — "vitest kararsızlığı" sanılan flake'in bir bölümünün gerçek kök nedeni.
+
+## Canlı doğrulanan temel varsayım
+
+Barındırılan oturumda **her `Bash` gerçekten kullanıcıya soruluyor**; proje ayarlarındaki izin
+kuralları geçersiz (`managedSettings.allowManagedPermissionRulesOnly`). Bütün savunma buna dayanır
+ve tur 4'te canlı ölçüldü.
+
+## Kabul edilen sınır (`ADR-016`)
+
+Kabuk erişimi olan **yerel** bir agent'a karşı **mutlak** koruma yoktur. Hook'lar derinlik
+katmanıdır; asıl savunma kullanıcının izin kartıdır. Bu kapı, tek kullanıcılı yerel bir araç için
+orantılı bir güvencedir — üretim güvenlik sertifikası değildir.
+
+Ayrıca `docs/00-idea.md`'deki gizlilik notu geçerlidir: panel, izlediği projelerin ham olay
+metnini yerel diske yazar; `ADR-015` redaksiyonu bir kara listedir ve tam değildir.
+
+## Ölçülen durum
+
+`node .claude/hooks/_selftest.cjs` → **165/165** · `npm run test` → **1371 geçti / 4 atlandı**
+(85 dosya) · `npm run e2e` → **55/55** · `npx tsc --noEmit` = 0 · `npx eslint .` = 0.
+`CLAUDE.md` **75 öğrenilen kural** · **16 ADR**.
+
+## Onayla birlikte kabul edilen açık maddeler
+
+Altısı da `docs/blockers.md`'de **eşikleriyle** kayıtlı, hiçbiri bloklayıcı değil:
+B-2 (altı çitsiz nokta) · B-3 ("tek kullanımlık" ifadesi artık yanlış) · **B-4 (test suite'i
+yedi koşuda üç kırmızı — worker çökmesi, assert değil)** · B-5 (derinlik sayacının obje dalı
+çitsiz, pay 3,1x) · B-6 (komut taramasının aşırı engellemesi).
+
+**B-4, G6 açılmadan önce kapatılmalı** — "testler yeşil" iddiası kapının dayanağı ve şu an o
+iddia yedi koşunun dördünde geçerli.
+
+## Sonraki kapı
+
+G6 (yayın). Henüz açılmadı.

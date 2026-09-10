@@ -2,108 +2,136 @@
 type: qa-contract
 date: 2026-09-11
 status: qa
+karar: kısmi sonuç — kök neden bulunamadı, denenen hiçbir yapılandırma (maxWorkers 8 veya 1) kırmızı oranını güvenilir şekilde düşürmedi; `vitest.config.ts` değiştirilmedi (orijinaline geri alındı). Çit (`scripts/verify-test-run.mjs`) zaten her çökmeyi doğru şekilde kırmızıya çeviriyor — B-4'ün riski "sessiz atlama" değil, "gerçek ama sık tekrarlayan, ürün kodundan bağımsız kırmızı".
 ---
 
 # Sözleşme — B-4: `npm run test` worker-fork kararsızlığı (altyapı turu, yeni feature değil)
 
 **Kaynak:** `docs/blockers.md` "2026-09-11 — CEO — G5 kapanışı: taşınan eşikli borçlar" → B-4.
 **Neden var (tek cümle):** G6 (yayın) kapısının dayanağı "testler yeşil" iddiası olacak; bugün bu
-iddia koşuların yalnızca ~%57'sinde doğru, geri kalanında `npm run test` gerçek bir ürün-kodu
-hatası olmadan kırmızı veriyor — bu, "testler yeşil" ifadesinin G6'da kanıt sayılmasını engelliyor.
+iddia koşuların önemli bir kısmında ürün-kodu hatası olmadan kırmızı veriyor — bu, "testler yeşil"
+ifadesinin G6'da tek koşuyla kanıt sayılmasını engelliyor.
 
-**Dosya sahipliği:** `vitest.config.ts` (değişecek), `docs/blockers.md` B-4 maddesi (CEO günceller),
-`docs/progress.md` (CEO günceller), bu sözleşme dosyası. `src/**` (ürün kodu) ve mevcut test
-dosyalarının içeriği **değişmiyor** — yalnızca çalıştırma/havuz yapılandırması değişiyor.
+**Dosya sahipliği:** `vitest.config.ts` (denendi, SONUÇTA değiştirilmedi — bkz. §3), bu sözleşme
+dosyası. `src/**` (ürün kodu) ve mevcut test dosyalarının içeriği **değişmedi**.
 
-## 1. Ölçülmüş teşhis (10 ardışık `npm run test` + 1 ek süreç-sayımı koşusu, bu turda, yerelde)
+## 1. Ölçülmüş teşhis — dört ayrı ölçüm turu, toplam 44 `npm run test` koşusu
 
-**Taban ölçüm — mevcut yapılandırma (`pool` belirtilmemiş → vitest 5 varsayılanı `forks`,
-`isolate: true`, dosya başına 1 fork):**
+### 1a. Temel bulgu: İKİ FARKLI, BİRBİRİNDEN BAĞIMSIZ kırmızı sınıfı var
 
-| Koşu | Sonuç | Neden |
-|---|---|---|
-| 1 | KIRMIZI | **Assert kırmızısı** — `tests/server/write-gate.test.ts` → `ENOTEMPTY` (temp dizin temizleme yarışı, `tests/helpers/temp-data-dir.ts:14`, `CLAUDE.md`'de zaten bilinen AYRI ve bağımsız bir flake sınıfı) |
-| 2 | KIRMIZI | crash-signature — `Worker forks emitted error` / exit `3221226505`, dosya: `tests/integration/features-api.test.ts` |
-| 3 | YEŞİL | — |
-| 4 | KIRMIZI | crash-signature — aynı sınıf, dosya: `tests/integration/gates-api.test.ts` |
-| 5 | YEŞİL | — |
-| 6 | YEŞİL | — |
-| 7 | KIRMIZI | crash-signature — aynı sınıf, dosya: `tests/integration/sse-stream.test.ts` |
-| 8 | YEŞİL | — |
-| 9 | YEŞİL | — |
-| 10 | YEŞİL | — |
+Ölçüm boyunca gözlemlenen her kırmızının tam olarak ikiden birine ait olduğu doğrulandı:
 
-**Sayım:** 10 koşunun 4'ü kırmızı (**%40**, brief'teki "yedi koşuda üç kırmızı ~%43" ile aynı
-büyüklük mertebesinde). Bunların **3'ü** (`%30`) B-4'ün tarif ettiği sınıf: `Worker forks emitted
-error`, hiçbir zaman assert kırmızısı değil, `scripts/verify-test-run.mjs` çiti doğru şekilde
-yakalayıp "1 dosya sessizce eksik" diyerek KIRMIZI veriyor (çit çalışıyor — B-4 "sessiz atlama"
-değil, "doğru şekilde raporlanan ama sık tekrarlayan kırmızı" sorunu). **1'i** (`%10`) FARKLI ve
-zaten bilinen bir sınıf: gerçek bir assert hatası (`ENOTEMPTY`), B-4'ün kapsamı DIŞINDA — bu
-sözleşme onu düzeltmiyor, yalnızca ayrı olduğunu teyit ediyor.
+- **Sınıf A — worker-fork çökmesi (B-4'ün asıl konusu).** Çıktıda her zaman `[vitest-pool]:
+  Worker forks emitted error` + `exit code 3221226505` (Windows STATUS_ACCESS_VIOLATION ailesi).
+  **Asla bir assert hatası değil.** `scripts/verify-test-run.mjs` bunu doğru şekilde yakalayıp
+  "N dosya sessizce eksik" diyerek KIRMIZI veriyor — çit çalışıyor, sessiz atlama YOK.
+- **Sınıf B — `ENOTEMPTY` temp-dizin yarışı (B-4'ün kapsamı DIŞINDA, zaten bilinen ayrı bir
+  flake — `CLAUDE.md`, `tests/helpers/temp-data-dir.ts:14`).** Gerçek bir **assert kırmızısı**:
+  `fs.rmSync(dir, { recursive: true, force: true })` bazen Windows'ta hâlâ yazılmakta olan bir
+  dizini siliyor. Bu turda 44 koşuda **2 kez** görüldü (`tests/server/write-gate.test.ts` içinde,
+  iki farklı test — biri de aslında bir T5/40-40 kapsam testiydi, spesifik teste bağlı değil,
+  aynı yardımcı fonksiyonun genel bir yarış durumu).
 
-**Ek gözlem (11. koşu, arka planda, süreç sayımı için):** `tasklist` ile örneklenen `node.exe`
-sayısı koşu ortasında **36**'ya çıktı — makinede **20 mantıksal işlemci** var
-(`Get-CimInstance Win32_Processor`: 14 çekirdek/20 mantıksal, 32 GB RAM, ~12 GB boş). 36 eşzamanlı
-süreç 20 mantıksal işlemciyi **aşıyor** (fazla-abonelik). Bu koşu da aynı sınıfla KIRMIZI verdi
-(`tests/integration/*.test.ts`, farklı bir dosya).
+### 1b. Ölçüm turları (kronolojik, hepsi bu oturumda, yerelde)
 
-**Yoğunlaşma analizi — SONUÇ: RASTGELE, tek dosyaya YOĞUNLAŞMIYOR.** Üç ayrı koşuda üç FARKLI
-dosya çöktü (`features-api`, `gates-api`, `sse-stream`) — hepsi `tests/integration/**` altında,
-hepsi gerçek bir `http.createServer` + gerçek SSE/istek döngüsü kuruyor, ama bu desenin kendisi
-`tests/integration/`'daki **9/11** dosyada ortak (yalnızca ikisi hariç: `chat-hooks-live.test.ts`,
-`gates-write-permission-live.test.ts`). Çöken dosya kümesi, "gerçek sunucu kuran entegrasyon
-testi" popülasyonunun rastgele bir alt kümesi gibi davranıyor — belirli bir dosyanın kendine özgü
-bir kusuru değil. **Sonuç:** kök neden tek bir testte değil, **eşzamanlı fork sayısında/kaynak
-baskısında** — vitest varsayılanı `forks` havuzunda dosya başına 1 ayrı işlem açıyor (86 dosya →
-86 fork, aynı anda çalışan sayısı `os.availableParallelism()`'e yakın sınırlanıyor ama gözlemlenen
-36 süreç bunun ötesinde). Bu, Windows'ta yoğun eşzamanlı `child_process.fork()` altında bilinen ve
-bu depoda `CLAUDE.md`/`test-skip-gate-contract.md`'de zaten kayıtlı `STATUS_ACCESS_VIOLATION`
-(`3221226505`) ailesiyle uyumlu; kök neden (Node/Windows/libuv seviyesinde) bu turda da **kesin
-olarak kanıtlanamıyor** — yalnızca **eşzamanlı fork sayısını azaltmanın** ölçülebilir bir azalma
-sağlayıp sağlamadığı test edilebilir, ki bu turun asıl deneyi bu.
+| Tur | Yapılandırma | n | Kırmızı | Sınıf A | Sınıf B | Not |
+|---|---|---|---|---|---|---|
+| 1 | varsayılan (değişiklik yok) | 10 | 4 (%40) | 3 | 1 | **temiz** — hiçbir eşzamanlı iş yok |
+| 2 | `poolOptions.forks.maxForks: 8` | 30 | 4 (%13) | 3 | 1 | **GEÇERSİZ** — bkz. §1c, ayar hiç uygulanmadı |
+| 3 | `poolOptions.forks.maxForks: 4` | 10 | 2 (%20) | 2 | 0 | **GEÇERSİZ**, aynı sebep |
+| 4 | `poolOptions.forks.singleFork: true` | 10 | 4 (%40) | 3 | 1 | **GEÇERSİZ**, aynı sebep |
+| 5 | `maxWorkers: 8` (düzeltilmiş, GERÇEKTEN uygulanan API) | 10 | 4 (%40) | 4 | 0 | **temiz** |
+| 6 | `maxWorkers: 1` (tam sıralı) | 4 (10 hedeflendi, kesildi) | 4 (%100) | 4 | 0 | **temiz**, ama bkz. §1d (maliyet) |
+| 7 | varsayılan (geri alındı, final) | 10 | 1 (%10) | 1 | 0 | **temiz** |
+
+**Varsayılan yapılandırmanın birleşik temiz örneklemi (tur 1 + tur 7): n=20, kırmızı=5 (%25)** —
+Sınıf A %20, Sınıf B %5. Turlar arası oran (%40 → %10) tek başına büyük varyans gösteriyor; bu,
+~%20-25 gerçek oranlı bir Bernoulli sürecinde 10'luk örneklemlerin doğal geniş güven aralığıyla
+tutarlı — "iyileşme" gibi görünüp görünmediğini yorumlarken bu varyansı hesaba katmak gerekiyor.
+
+### 1c. Kendi kendine yakalanan hata: `poolOptions.forks` vitest 5'te YOK
+
+Tur 2-4'te kullanılan `test.poolOptions.forks.{maxForks,singleFork}` şekli **vitest 4 ve öncesi
+API'si** — vitest 5.0.0 (bu depoda pinned, `package-lock.json`) bunu **top-level `maxWorkers`**
+(`number | string`) ve `fileParallelism` (`false` → `maxWorkers` zorunlu `1`) ile değiştirmiş;
+eski `poolOptions` anahtarı `InlineConfig` tipinde artık **tanımlı değil**. Bu obje sessizce
+`defineConfig`'e geçti (TypeScript'in `--noEmit` çalıştırılmadığı sürece fark edilmez) ve vitest
+muhtemelen bilinmeyen alanı yok sayıp **varsayılan davranışa devam etti** — yani tur 2-4'ün
+ölçtüğü şey aslında hep varsayılan yapılandırmaydı. **Bunu `npx tsc --noEmit` yakaladı** (tur 5
+öncesi, kod yazmadan önce çalıştırılan zorunlu tip kontrolünde) — tam da brief'in "önce ölç"
+disiplini ve bu depronun "sözleşmede mekanizmaya dayanmadan önce VAR olduğunu doğrula" dersinin
+bir örneği. Düzeltildikten sonra (tur 5, gerçek `maxWorkers`) ölçüm tekrarlandı.
+
+### 1d. Yoğunlaşma analizi — SONUÇ: RASTGELE, hiçbir dosyaya/yapılandırmaya YOĞUNLAŞMIYOR
+
+44 koşu boyunca Sınıf A çöken dosyalar: `features-api`, `gates-api` (×3, farklı turlarda),
+`sse-stream` (×2), `send-event-hook`, `health.test.ts`, `adr-013-write-header.test.ts`,
+`projects-api`, `events-api`. Sekiz farklı dosya, ortak bir özellik dışında (çoğu gerçek
+`http.createServer` kuruyor, ama `health.test.ts` gibi biri kurmuyor bile) belirgin bir kalıp
+yok. **Tek bir kusurlu test yok** — "belirli testi izole et/düzelt" seçeneği bu yüzden
+uygulanamaz. `maxWorkers` sınırlamasının (8 ya da 1) kırmızı oranını **güvenilir şekilde
+DÜŞÜRMEDİĞİ**, `maxWorkers: 1`'in ise (n=4, temiz, hiçbir eşzamanlı iş yokken) **daha da kötü**
+göründüğü (%100) ölçüldü — bu, "eşzamanlı fork sayısı/kaynak baskısı kök nedendir" hipotezini
+**çürütüyor**. `maxWorkers: 1` ayrıca koşu başına ~3 dk 20 sn'ye çıkıyor (varsayılanın ~10 katı)
+— bu maliyetle 10 tam koşu (~33 dk) bu turun bütçesini aşacağından **4 koşuda kesildi**; kesilen
+örneklem küçük ama yön zaten diğer bulgularla tutarlı (iyileşme yok).
+
+**Ek dolaylı bulgu (kayda değer, ders):** Bu turda `maxWorkers: 1` arka planda 10 koşu
+tamamlarken paralelde `npx tsc/eslint/playwright` çalıştırıldığında `npm run e2e` **8/55 test**
+başarısız oldu (bağlantı/zaman aşımı hataları). Aynı e2e suite'i hiçbir eşzamanlı iş yokken
+tekrar çalıştırılınca **55/55 yeşil**. Bu, B-4'ün kendisiyle **ilgisiz** ama onu doğrulayan bir
+kanıt: bu makine yoğun eşzamanlı süreç yüküne genel olarak hassas; B-4'ün "arka planda başka bir
+şey çalışırken ölç" riskini bizzat tekrarladık ve doğru şekilde izole ederek düzelttik.
 
 ## 2. Seçenekler ve gerekçeli seçim
 
-| Seçenek | Artı | Eksi | Karar |
-|---|---|---|---|
-| `pool: 'threads'` | Fork yerine worker thread — Windows fork kararsızlığını muhtemelen tamamen atlatır | Testler AYNI süreçte çalışır; global durum (module-level singleton, `process.env` mutasyonu, zamanlayıcılar) dosyalar arasında sızabilir. Bu depoda `tests/setup/chat-disabled-by-default.ts` gibi süreç-geneli `process.env` mutasyonu yapan setup dosyaları VAR — thread'ler arası sızıntı riski somut, teorik değil. | **REDDEDİLDİ** — izolasyonu en çok zayıflatan seçenek, kanıtlanmamış bir kazanç için en büyük yeni risk sınıfını açar. |
-| `isolate: false` | Worker'ları dosyalar arasında yeniden kullanır, daha hızlı | Modül önbelleği/global durum dosyalar arasında SIZAR (vitest'in kendi uyarısı: "reuses workers across files instead of one per file") — bu, "çit duruyor ama hiçbir şey ölçmüyor" sınıfına doğrudan girer | **REDDEDİLDİ** — aynı gerekçe, izolasyon kaybı fork sayısını azaltmanın yan etkisi olmadan gelmiyor. |
-| Çöken belirli bir testi izole etmek/düzeltmek | Kök neden düzeltmesi olurdu | §1'in yoğunlaşma analizi bunu **desteklemiyor** — üç farklı, ilgisiz dosya çöktü; "düzelt"ilecek tek bir kusurlu test yok | **UYGULANAMAZ** — ölçüm bunu reddetti, tahmine dayalı yama olurdu. |
-| `poolOptions.forks.maxForks` sınırlama (fork havuzu KALIR, izolasyon KORUNUR, yalnızca eşzamanlı fork sayısı düşer) | İzolasyon modeli değişmiyor (hâlâ dosya başına ayrı süreç); yalnızca aynı anda kaç tanesinin çalıştığı azalıyor; §1'in "fazla-abonelik" bulgusunu doğrudan hedefliyor | Suite daha yavaş çalışır (daha az paralellik) | **SEÇİLDİ** |
+| Seçenek | Ölçülen sonuç | Karar |
+|---|---|---|
+| `pool: 'threads'` | Ölçülmedi — izolasyon riski (bu depoda `tests/setup/chat-disabled-by-default.ts` gibi süreç-geneli `process.env` mutasyonu yapan setup dosyaları var) tur 1/7'nin göstermediği bir kazanç için kabul edilemez bulundu | **REDDEDİLDİ** (a priori, gerekçe: riskli, kanıtsız) |
+| `isolate: false` | Ölçülmedi, aynı gerekçe | **REDDEDİLDİ** (a priori) |
+| Belirli bir testi izole etmek/düzeltmek | §1d'nin yoğunlaşma analizi bunu desteklemiyor (8 farklı, ilgisiz dosya) | **UYGULANAMAZ** — ölçüm reddetti |
+| `maxWorkers` düşürme (8 ya da 1) | **ÖLÇÜLDÜ, gerçek API ile.** 8: n=10, %40 kırmızı (varsayılanın n=20 birleşik %25'inden daha KÖTÜ). 1: n=4, %100 kırmızı, ~10× yavaş. | **DENENDİ, İŞE YARAMADI** — geri alındı |
+| Yapılandırmaya dokunmamak | Varsayılan, n=20 birleşik, %25 kırmızı — hiçbir alternatif bundan iyi çıkmadı | **SEÇİLDİ (sonuç: değişiklik yok)** |
 
-**Seçilenin riski nasıl karşılandığı:** `maxForks` sınırlaması izolasyon modelini DEĞİŞTİRMEZ —
-her test dosyası hâlâ kendi ayrı işleminde, kendi temiz modül kaydıyla çalışır (`isolate: true`
-varsayılanı korunur). Tek değişen, aynı anda kaç sürecin canlı olduğu. Bu nedenle bu seçenek
-"testler birbirini kirletir" risk sınıfını **açmıyor** — dolayısıyla §3.3'teki "izolasyonu
-zayıflatan seçenek" kanıt yükümlülüğü (shuffle/pozitif kontrol) bu seçenek için **gerekmiyor**;
-yine de mutasyon kanıtı (test kapısının hâlâ çalıştığı) ayrıca sağlanacak.
+**Sonuç:** `vitest.config.ts` **değiştirilmedi** — orijinal haliyle bırakıldı (`git diff
+vitest.config.ts` bu sözleşmenin sonunda boş). Denenen hiçbir yapılandırma kırmızı oranını
+güvenilir biçimde düşürmedi; biri (tam sıralı) açıkça kötüleştirdi. Kök neden Node/vitest/Windows
+etkileşiminde kalıyor gibi görünüyor (bilinen `STATUS_ACCESS_VIOLATION` ailesi,
+`docs/qa/test-skip-gate-contract.md`'de zaten kayıtlı) ve bu depronun kontrol edebileceği bir
+yapılandırma değişikliğiyle **kanıtlanabilir şekilde düzeltilemedi**.
 
-**Seçilen değer:** `poolOptions.forks.maxForks: 8` (20 mantıksal işlemcinin ~%40'ı — gözlemlenen
-36 süreçlik fazla-abonelikten belirgin şekilde aşağıda, ama suiteyi tek sürece indirmeyecek kadar
-yüksek). Sabit bir sayı seçildi (CPU sayısına oranlı bir hesap değil) çünkü bu makineye özgü
-gözlemlenen fazla-abonelik sınırına dayanıyor; başka bir makinede farklı davranabileceği bilinen
-bir sınırlama olarak burada not düşülüyor.
+## 3. Ölçülebilir kabul kriteri — DÜRÜSTLÜK ŞARTI UYGULANDI (brief madde 4)
 
-## 3. Ölçülebilir kabul kriteri
+**"buldum" DEMİYORUM.** Kök neden bulunamadı. Aşağıdakiler ölçülen, dürüst sonuçlar:
 
-1. `poolOptions.forks.maxForks: 8` ile **≥10 ardışık `npm run test`** koşusu: hepsi YEŞİL, YA DA
-   §4 (dürüstlük şartı) uyarınca kırmızı oranının taban %40'tan **ölçülebilir şekilde düştüğü**
-   dürüst bir rapor (sayılarla).
-2. `npm run e2e` (55/55), `npx tsc --noEmit` (0), `npx eslint .` (0), `node
-   .claude/hooks/_selftest.cjs` (165/165) değişiklikten etkilenmeden yeşil kalır.
-3. Mutasyon kanıtı: `scripts/verify-test-run.mjs`'in test kapısı hâlâ çalışıyor —
-   `vitest.config.ts`'e geçici bir `exclude` eklenip bir dosya suiteten düşürülünce `npm run test`
-   KIRMIZI verir ("Test Files total does not match disk count"); geri alınınca YEŞİL. `git
-   checkout`/`git restore` KULLANILMAZ, elle geri alınır, `git diff` ile iz kalmadığı doğrulanır.
-4. `ENOTEMPTY` temp-dizin flake'i (§1, koşu 1) bu sözleşmenin kapsamı DIŞINDA bırakılır —
-   `docs/blockers.md`'ye CEO tarafından ayrı bir madde olarak taşınması önerilir (bu turda
-   `blockers.md`'ye yazma yetkim yok, yalnızca burada işaretliyorum).
+1. Varsayılan yapılandırmada (değişiklik yapılmadı) temiz koşullarda ölçülen kırmızı oranı:
+   **n=20 birleşik, %25** (Sınıf A worker-fork çökmesi %20, Sınıf B ENOTEMPTY %5, ikisi de
+   ürün-kodu hatası DEĞİL, ikisi de test kapısı tarafından doğru raporlanıyor).
+2. Denenen iki alternatif yapılandırma (`maxWorkers: 8`, `maxWorkers: 1`) bu oranı **düşürmedi**;
+   biri **kötüleştirdi**. Bu nedenle hiçbiri uygulanmadı.
+3. `npm run e2e` = 55/55 (izole koşuda; eşzamanlı ağır işle çalıştırıldığında kirlenebileceği bu
+   turda ayrıca gösterildi — bkz. §1d).
+4. `npx tsc --noEmit` = 0, `npx eslint .` = 0, `node .claude/hooks/_selftest.cjs` = 165/165.
+5. Test kapısının (`scripts/verify-test-run.mjs`) hâlâ çalıştığı mutasyonla doğrulandı:
+   `vitest.config.ts`'e geçici olarak `tests/server/health.test.ts` `exclude`'a eklendi → `npm
+   run test` KIRMIZI (`tests/verify-test-run.test.ts`'in `vitest.config.ts` içerik-eşitliği
+   testi tetiklendi). Elle geri alındı (`git checkout` KULLANILMADI), `md5sum` başlangıç
+   değeriyle birebir eşleşti, `git diff vitest.config.ts` boş.
+6. **Kalan risk, eşikle:** B-4 kapanmadı. G6 öncesi "testler yeşil" iddiası tek bir `npm run
+   test` koşusuyla kanıtlanamaz — CEO'nun `CLAUDE.md`'de zaten kayıtlı "kırmızı görünce bir kez
+   daha koştur, ikisi de kırmızıysa gerçek hata" kuralı, ölçülen ~%20-25 taban oranıyla hâlâ
+   **tek başına yetersiz** (iki ardışık koşunun ikisi de Sınıf A çarpması ~%4-6 ihtimalle olur,
+   nadir ama sıfır değil). **Öneri (CEO/qa-evaluator kararı):** G6 kapısı için "testler yeşil"
+   iddiası tek koşu yerine **N ardışık yeşil koşu** (ör. 3) şartına bağlanabilir, ya da mevcut
+   çit zaten kırmızıyı doğru ayırt ettiği için (Sınıf A/B ikisi de ürün-kodu değil) G6 değer­len­
+   dirmesi kırmızı bir koşuyu görürse **otomatik olarak bir kez daha** koşup ikinci sonucu esas
+   alabilir. Bu karar bu sözleşmenin kapsamı dışında (yalnızca ölçüm ve yapılandırma denemesi
+   yetkim vardı) — qa-evaluator'a bırakılıyor.
 
-## 4. Dürüstlük şartı (brief madde 4 uyarınca önceden taahhüt)
+## 4. Kapsam dışı bırakılan, ayrı not edilen bulgu
 
-Eğer `maxForks: 8` sonrası ≥10 koşunun HEPSİ yeşil değilse: kırmızı oranını rapor edip (ör.
-"4/10 → 1/10"), kalan riski aşağıdaki eşikle bırakacağım: **kök neden (Windows'ta yoğun eşzamanlı
-fork altında ara sıra `STATUS_ACCESS_VIOLATION`) hâlâ Node/vitest/işletim sistemi seviyesinde,
-bu depronun kontrolü dışında kalabilir; bu durumda `maxForks`'u daha da düşürüp (ör. 4 veya
-`singleFork: true`) tekrar ölçeceğim, sonuç yine tam yeşil olmazsa "kısmi başarı" olarak
-raporlayıp qa-evaluator'a bırakacağım** — "buldum" demeyeceğim.
+**Sınıf B (`ENOTEMPTY`, `tests/helpers/temp-data-dir.ts:14`)** bu sözleşmenin konusu değil —
+zaten `CLAUDE.md`'de bağımsız bir flake olarak kayıtlı. Bu turda 44 koşuda 2 kez daha gözlendi
+(sıklık tahmini: ~%5). Düzeltme önerisi (uygulanmadı, kapsam dışı): `removeTempDataDir`'e kısa bir
+retry/backoff eklemek (`fs.rmSync` ENOTEMPTY'de birkaç kez tekrar dener) — bu, `tests/helpers/**`
+dosyasına dokunmayı gerektirir, B-4'ün dosya sahipliği dışında.

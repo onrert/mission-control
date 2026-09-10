@@ -4651,3 +4651,62 @@ yazma' değil 'bir DEĞİŞİKLİK' olmalı" borcunun somut bir tekrarı.
 notuyla: kod düzeltmesi (`gate-check.cjs`/`block-dangerous.cjs`) TAMAM ve doğrulandı; kalıcı
 regresyon testi (`_selftest.cjs`) CEO'nun yeni onayını bekliyor. qa-evaluator bu ayrımı
 gözeterek değerlendirmeli.
+
+## 2026-09-10 — G5 tur4 devam turu — kod düzeltmesi hâlâ sağlam, kalıcı regresyon testi KATEGORİK bir araç kısıtlaması nedeniyle YAZILAMADI
+
+**Ne yapıldı:** CEO'nun `_selftest.cjs`'e daraltılmış yeni `GUARD.ok`'u ile önceki turun eksik
+kalan işini (K-A/K-B/mklink/fail-closed kalıcı regresyon vakaları) tamamlamaya çalıştım.
+Hazırlığın tamamı bitti ve doğrulandı:
+- K-A (`\\?\` uzun-yol öneki) ve K-B (gerçek NTFS junction, `assets/` altında kurulup
+  kaldırıldı) senaryoları GERÇEK, değiştirilmemiş `gate-check.cjs`'e karşı çalıştırıldı — ikisi
+  de düzeltme sonrası doğru `permissionDecision:'ask'` üretti.
+- Fail-closed dalı, `fs.realpathSync.native`'i ayrı bir child process'te preload ile ELOOP
+  fırlatacak şekilde monkey-patch ederek GERÇEK dosyaya karşı doğrulandı (`exit=2`).
+- `mklink` (bayraksız/`/J`/`/D`/`/H`/büyük harf) GERÇEK `block-dangerous.cjs`'e karşı `exit=2`
+  verdi.
+- **Kapsamlı bir mutasyon-testi paketi** (yalnızca sandbox'ta, MD5-birebir kopyalar + git'ten
+  çıkarılan düzeltme-öncesi sürüm + tek-koruma mutantları + tam-geri-dönüş mutantı, 16/16 iddia)
+  hem düzeltmenin ETKİLİ olduğunu hem her testin gerçekten O KORUMAYI ölçtüğünü kanıtladı.
+- Yeni `_selftest.cjs` içeriği (88→98 vaka) bir scratchpad kopyasında yazılıp sözdizimi
+  doğrulandı ve GERÇEK hook'lara karşı çalıştırılıp tüm yeni vakaların geçtiği (OK) doğrulandı.
+
+**Neden gerçek dosyaya YAZILAMADI:** Claude Code'un kendi (bu depodan bağımsız) "auto mode
+classifier" katmanı, repo hook'umuzun onayından SONRA, `.claude/hooks/_selftest.cjs`'e yönelik
+HERHANGİ bir Edit/Write'ı reddetti — hem ~350 satırlık tam dosya yazımı hem tek satırlık
+tamamen zararsız bir `Edit` (`const os = require('os');`) BİREBİR AYNI "Blocked by classifier"
+mesajıyla reddedildi. Bu, içeriğe bağlı değil, `.claude/hooks/**`'e yönelik otonom
+düzenlemeleri engelleyen kategorik bir kısıtlama görünüyor — repo'nun kendi `GUARD.ok`
+mekanizmasından tamamen bağımsız. Detay, teşhis adımları ve istenen aksiyon seçenekleri:
+`docs/blockers.md` "KATEGORİK ENGEL" maddesi.
+
+**Nasıl doğrulandı (bu turun kendi hazırlığı için):**
+- `node --check` (scratchpad kopyası) = 0.
+- Scratchpad kopyası gerçek `cwd=repo kökü` ile çalıştırılıp 98/98 OK gözlemlendi (bir istisna:
+  ilk çalıştırmada mevcut gerçek `GUARD.ok`'un `parseGuardScope()` kapsam-sızıntısı yüzünden
+  1 vaka yanlışlıkla FAIL verdi — bu, `_selftest.cjs`'in kendi mantığındaki bir hata değil,
+  test SIRASINDA gerçek `GUARD.ok`'un var olmasından kaynaklanan bir ortam etkileşimiydi;
+  ayrıntı ve kanıt `docs/blockers.md`'de).
+- Gerçek `docs/approvals/G0-G4-2.ok`/`README.md` SHA-256'ları tur öncesi/sonrası birebir aynı
+  (7 dosya, `docs/blockers.md`'de listeleniyor).
+- `git diff HEAD -- .claude/hooks/` boş — hiçbir tracked hook dosyası değişmedi.
+- `assets/` temiz (yalnızca `.gitkeep`), sandbox junction'ları kaldırıldı ve hedefin
+  (`docs/approvals`) bozulmadığı doğrulandı.
+
+**Kalan risk (değişmedi + yeni):**
+1. **Bloklayıcı olabilir:** `_selftest.cjs`'e KALICI regresyon testleri hâlâ yok — yalnızca
+   sandbox + scratchpad kanıtı var (iki turda da). Bu artık bir onay-kapsamı sorunu değil,
+   insan katılımı gerektiren bir araç kısıtlaması sorunu (üç seçenek `docs/blockers.md`'de).
+2. **Yeni bulunan, kapsam dışı bırakılan gerçek bir hata:** `gate-check.cjs`'in
+   `parseGuardScope()`'u GUARD.ok metnindeki TÜM backtick'li `.cjs` adlarını kapsam sayıyor —
+   yalnızca "## Kapsam" bölümündekileri değil, düzyazı anlatısındakileri de. Bu, mevcut
+   `docs/approvals/GUARD.ok`'un kapsamını istemeden `_selftest.cjs` + `gate-check.cjs`'e
+   genişletmiş durumda (kanıt: `docs/approvals/.guard-state.json`). Dosyanın kendisi bu turun
+   kapsamı dışında olduğu için DÜZELTİLMEDİ, yalnızca `docs/blockers.md`'ye kaydedildi.
+3. Diğer kalan riskler (paralel chat kırpma turu, `ADR-016` kabul edilen sınır,
+   `block-dangerous.cjs`'in bilinen kör noktaları) önceki maddeden değişmeden geçerli.
+
+**Durum:** `docs/qa/g5-tur4-yol-kanoniklestirme-contract.md` → **status: qa**, hâlâ eksik iş
+notuyla — kod düzeltmesi TAM ve iki ayrı turda doğrulanmış; kalıcı regresyon testi bu kez
+içerik/onay eksikliğinden değil, otonom moddaki kategorik bir araç kısıtlamasından dolayı
+yazılamadı. qa-evaluator ve CEO bu ayrımı gözeterek değerlendirmeli; olası yollar
+`docs/blockers.md`'de listeleniyor.

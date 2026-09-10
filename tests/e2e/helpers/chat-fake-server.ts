@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import { createServer } from '../../../src/server/index'
 import { createFakeQueryFactory, type FakeQueryHandle } from '../../helpers/fake-chat-query'
+import { LONG_COMMAND, LONG_COMMAND_TRIGGER } from './chat-long-command'
 
 /**
  * F-012 F6 — QA'nın "Ö5 erteleme öncülü yanlış" bulgusuna yanıt (`docs/qa/
@@ -37,8 +38,12 @@ async function streamWords(handle: FakeQueryHandle, text: string): Promise<void>
   }
 }
 
-async function driveTurn(handle: FakeQueryHandle): Promise<void> {
+async function driveTurn(handle: FakeQueryHandle, userText: string): Promise<void> {
   await streamWords(handle, 'Elbette, hemen klasörü kontrol ediyorum.')
+
+  const useLongCommand = userText.includes(LONG_COMMAND_TRIGGER)
+  const command = useLongCommand ? LONG_COMMAND : 'ls -la'
+  const description = useLongCommand ? 'Uzun komut testi' : 'Klasörü listele'
 
   const toolUseId = `toolu_${crypto.randomUUID()}`
   handle.emit({
@@ -50,7 +55,7 @@ async function driveTurn(handle: FakeQueryHandle): Promise<void> {
           type: 'tool_use',
           id: toolUseId,
           name: 'Bash',
-          input: { command: 'ls -la', description: 'Klasörü listele' },
+          input: { command, description },
         },
       ],
     },
@@ -60,7 +65,7 @@ async function driveTurn(handle: FakeQueryHandle): Promise<void> {
   const requestId = `req_${crypto.randomUUID()}`
   const decision = (await handle.options.canUseTool!(
     'Bash',
-    { command: 'ls -la', description: 'Klasörü listele' },
+    { command, description },
     { requestId, toolUseID: toolUseId, signal: new AbortController().signal }
   )) as { behavior?: string }
   const allowed = decision.behavior === 'allow'
@@ -113,7 +118,9 @@ async function main(): Promise<void> {
     if (process.env.MC_E2E_CHAT_DEBUG) {
       process.stderr.write(`[chat-fake-server] kullanıcı mesajı: ${JSON.stringify(userMessage)}\n`)
     }
-    await driveTurn(handle)
+    const userText =
+      typeof userMessage.message.content === 'string' ? userMessage.message.content : ''
+    await driveTurn(handle, userText)
   }
 }
 

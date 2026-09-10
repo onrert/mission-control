@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
+import { LONG_COMMAND, LONG_COMMAND_TAIL, LONG_COMMAND_TRIGGER } from './helpers/chat-long-command'
 
 /**
  * F-012 F6 — sohbet ekranı için ana akış E2E'si (QA'nın "sıfır E2E kabul edilemez" bulgusuna
@@ -65,3 +66,62 @@ test('mesaj gönder → akan cevap görünür → izin kartı çıkar → onayla
   await expect(page.getByText('Klasörü kontrol eder misin?')).toBeVisible()
   await expect(page.getByText('Klasörde iki dosya buldum, hazır.')).toBeVisible()
 })
+
+/** CLAUDE.md dersi — `toBeVisible()` bir kaydırma kabında YALAN SÖYLER; burada DİKEY kaydırma
+ *  kutusunun gerçek kutu modelini (`scrollHeight`/`clientHeight`/hesaplanmış `overflow-y`) ve
+ *  DOM `textContent`'ini ölçüyoruz, CSS görselliğine güvenmiyoruz. */
+async function previewBoxMetrics(page: Page): Promise<{
+  textContent: string
+  scrollHeight: number
+  clientHeight: number
+  overflowY: string
+  textOverflow: string
+}> {
+  return page.locator('[data-testid="permission-command-preview"]').evaluate((el) => {
+    const style = window.getComputedStyle(el)
+    return {
+      textContent: el.textContent ?? '',
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      overflowY: style.overflowY,
+      textOverflow: style.textOverflow,
+    }
+  })
+}
+
+for (const width of [320, 375, 480]) {
+  test(`G5 Tur 4 (4-Ek3) — dar genişlik ${width}px: 500+ karakterlik komutun TAMAMI (dolgu ARKASINDAKİ iz dahil) kartta gerçekten okunabilir, ONAYLAMAYIN uyarısı YOK (hard cap altı)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 })
+    await page.goto('/')
+    await page.getByRole('tab', { name: 'Sohbet' }).click()
+    await expect(page.getByTestId('chat-screen')).toBeVisible()
+
+    const composer = page.getByPlaceholder('CEO’ya yaz…')
+    await composer.fill(LONG_COMMAND_TRIGGER)
+    await page.getByRole('button', { name: 'Gönder' }).click()
+
+    const permissionCard = page.getByRole('group', { name: 'İzin isteği' })
+    await expect(permissionCard).toBeVisible({ timeout: 5000 })
+
+    // Denetimin kendi kanıt biçimi (4-Ek3): "ÖNIZLEMEDE hassas kelime GEÇİYOR MU" — burada
+    // GERÇEK bir tarayıcıda, GERÇEK render sonrası ölçülüyor (offline değil).
+    const metrics = await previewBoxMetrics(page)
+    expect(metrics.textContent).toContain(LONG_COMMAND_TAIL)
+    expect(metrics.textContent).toContain(LONG_COMMAND)
+    // Kaydırma kutusu — kırpma DEĞİL: içerik kutudan taşıyorsa `scrollHeight > clientHeight` VE
+    // `overflow-y` fiilen kaydırılabilir; `text-overflow: ellipsis` (eski `truncate` sınıfı)
+    // KULLANILMIYOR.
+    expect(['auto', 'scroll']).toContain(metrics.overflowY)
+    expect(metrics.textOverflow).not.toBe('ellipsis')
+
+    // 20k hard cap'in ALTINDA — fail-closed uyarı ÇIKMAMALI, Onayla etkin kalmalı.
+    await expect(page.getByText(/ONAYLAMAYIN, komutun tamamı gösterilemiyor/)).toHaveCount(0)
+    await expect(
+      page.getByText(new RegExp(`olağandışı uzun \\(${LONG_COMMAND.length} karakter\\)`))
+    ).toBeVisible()
+    const approveButton = permissionCard.getByRole('button', { name: 'Onayla' })
+    await expect(approveButton).toBeEnabled()
+  })
+}

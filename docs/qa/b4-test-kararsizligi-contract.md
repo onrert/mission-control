@@ -2,7 +2,7 @@
 type: qa-contract
 date: 2026-09-11
 status: qa
-karar: kısmi sonuç — kök neden bulunamadı, denenen hiçbir yapılandırma (maxWorkers 8/1, pool:'threads') kırmızı oranını güvenilir şekilde düşürmedi; `vitest.config.ts` değiştirilmedi (orijinaline geri alındı). `pool:'threads'` ikinci turda ÖLÇÜLDÜ (n=10): kırmızı oranını %25'ten %100'e çıkardı ve Sınıf A çökmesini iki yeni, biri daha az teşhis edilebilir (sessiz süreç ölümü) sorunla değiştirdi — orijinal a priori red gerekçesi (env sızıntısı) ayrıca ölçüldü ve YANLIŞ çıktı (sızma yok), ama bağımsız bir sebeple red hâlâ geçerli. Çit (`scripts/verify-test-run.mjs`) zaten her çökmeyi doğru şekilde kırmızıya çeviriyor — B-4'ün riski "sessiz atlama" değil, "gerçek ama sık tekrarlayan, ürün kodundan bağımsız kırmızı".
+karar: kısmi sonuç — kök neden bulunamadı, denenen hiçbir yapılandırma (maxWorkers 8/1, pool:'threads') kırmızı oranını güvenilir şekilde düşürmedi; `vitest.config.ts` değiştirilmedi (orijinaline geri alındı). `pool:'threads'` ikinci turda ÖLÇÜLDÜ (n=10): kırmızı oranını %25'ten %100'e çıkardı ve Sınıf A çökmesini iki yeni, biri daha az teşhis edilebilir (sessiz süreç ölümü) sorunla değiştirdi — orijinal a priori red gerekçesi (env sızıntısı) ayrıca ölçüldü ve YANLIŞ çıktı (sızma yok), ama bağımsız bir sebeple red hâlâ geçerli. Çit (`scripts/verify-test-run.mjs`) zaten her çökmeyi doğru şekilde kırmızıya çeviriyor — B-4'ün riski "sessiz atlama" değil, "gerçek ama sık tekrarlayan, ürün kodundan bağımsız kırmızı". **Turu 3 (bkz. §6):** alt-süreç-doğurma hipotezi ölçüldü ve Sınıf A/varsayılan yapılandırma için DOĞRULANMADI (8 çöken dosyanın yalnızca 1'i alt süreç başlatıyor, şansla ayırt edilemez); manipülasyon/düzeltme denenmedi, `vitest.config.ts` bu turda hiç dokunulmadı.
 ---
 
 # Sözleşme — B-4: `npm run test` worker-fork kararsızlığı (altyapı turu, yeni feature değil)
@@ -238,3 +238,109 @@ süreç yok).
 varsayılan haliyle. Bu turun katkısı yalnızca: bir seçeneği a priori reddetmekten ölçülmüş
 reddetmeye taşımak, ve bu süreçte orijinal riskin (env sızıntısı) gerçek olmadığını ama daha
 büyük, farklı bir riskin (alt-süreç zaman aşımı + sessiz çökme) gerçek olduğunu göstermek.
+
+## 6. Alt süreç hipotezi — B-4 turu 3
+
+**Hipotez (H):** Sınıf A (fork'ta çökme) ve Sınıf C (threads'te zaman aşımı, §5b) arızalarının
+ortak paydası testlerin gerçek bir Node alt süreci başlatması. H doğruysa Sınıf A'nın çöktüğü 8
+dosyanın çoğu alt süreç başlatan testler kümesiyle örtüşmeli.
+
+### 6a. Alt süreç başlatan test dosyalarının numaralandırılması
+
+`tests/**/*.test.ts?(x)` (vitest'in gerçekten dahil ettiği küme, `tests/e2e/**` hariç) içinde
+`execFileSync`/`execSync`/`spawnSync`/`spawn`/`fork`/`child_process` için doğrudan ve dolaylı
+(yardımcı modül üzerinden) tarama yapıldı. Toplam dosya sayısı: **86** (contract §5c'deki "86
+workers spawned" ile tutarlı, doğrulandı: `find tests -type f \( -name "*.test.ts" -o -name
+"*.test.tsx" \) | grep -v "^tests/e2e/" | wc -l` → 86).
+
+Gerçekten çalışma zamanında bir Node alt süreci **başlatan** (bir fixture string'i içinde geçen
+değil — bkz. aşağıdaki negatif bulgu) test dosyaları, **7 dosya**:
+
+| # | Dosya | Mekanizma |
+|---|---|---|
+| 1 | `tests/verify-test-run.test.ts` | `spawnSync(process.execPath, [gateScript], ...)` — gate script'i ve (ayrı bir testte) `npm run test`'i alt süreç olarak çalıştırır |
+| 2 | `tests/integration/chat-hooks-live.test.ts` | `spawnSync(process.execPath, [BLOCK_DANGEROUS_HOOK], ...)` |
+| 3 | `tests/build-css.test.ts` | `execFileSync(...)` ×4 — tailwind build'i alt süreçte çalıştırır |
+| 4 | `tests/features/usage/server/usage-aggregator.test.ts` | `execFileSync('icacls', ...)` ×2 — Windows ACL testi |
+| 5 | `tests/scripts/check-ports.test.ts` | `execFileSync('node', [scriptPath], ...)` |
+| 6 | `tests/scripts/install-hook.test.ts` | `execFileSync('node', [scriptPath, ...], ...)` ×3 |
+| 7 | `tests/integration/send-event-hook.test.ts` | dolaylı — `tests/helpers/emit-hook.ts` üzerinden `spawn('node', [scriptPath], ...)` |
+
+**Negatif bulgu (önemli):** `tests/features/usage/server/network-capability-guard.test.ts` grep'te
+`execFileSync` string'i içeriyor ama **çalışma zamanında hiçbir alt süreç başlatmıyor** — bu
+string bir geçici fixture dosyasına yazılıp `scanModuleGraph` ile statik olarak ayrıştırılıyor
+(kaynak metin taraması, çalıştırma değil). Bu dosya listeye **dahil edilmedi**. `tests/e2e/
+timeline.spec.ts` da alt süreç başlatıyor ama `vitest.config.ts`'in `exclude`'unda (Playwright
+suite'i, `npm run test` kapsamı dışı) — sayıma dahil değil.
+
+**Oran:** 7/86 ≈ **%8.1** dosya çalışma zamanında gerçek bir alt süreç başlatıyor.
+
+### 6b. Sınıf A'nın 8 çöken dosyasıyla kesişim
+
+Contract §1d'deki 8 kısa ad tam dosya yoluna çözüldü ve her birinin importları (doğrudan ve
+`tests/helpers/**` üzerinden dolaylı) tek tek kontrol edildi:
+
+| Sınıf A dosyası | Alt süreç başlatıyor mu? | Kullandığı helper'lar |
+|---|---|---|
+| `tests/integration/features-api.test.ts` | HAYIR | `temp-data-dir` (subprocess yok) |
+| `tests/integration/gates-api.test.ts` | HAYIR | `temp-data-dir`, `sse-client` (ikisi de subprocess yok) |
+| `tests/integration/sse-stream.test.ts` | HAYIR | `temp-data-dir`, `sse-client` |
+| `tests/integration/send-event-hook.test.ts` | **EVET** | `emit-hook` (spawn) |
+| `tests/server/health.test.ts` | HAYIR | `temp-data-dir` |
+| `tests/server/adr-013-write-header.test.ts` | HAYIR | `temp-data-dir` |
+| `tests/integration/projects-api.test.ts` | HAYIR | `temp-data-dir`, `sse-client` |
+| `tests/integration/events-api.test.ts` | HAYIR | `temp-data-dir` |
+
+`tests/helpers/temp-data-dir.ts` ve `tests/helpers/sse-client.ts` içinde `child_process`/`spawn`/
+`exec` grep'i **sıfır sonuç** verdi — doğrudan doğrulandı, varsayım değil.
+
+**Kesişim: 8 dosyanın yalnızca 1'i (`send-event-hook.test.ts`) alt süreç başlatıyor.**
+
+Şansla beklenen kesişim (hipergeometrik, N=86, K=7 alt-süreç-başlatan, n=8 çeken dosya):
+beklenen değer = 8 × 7/86 ≈ **0.65**; P(en az 1 örtüşme) ≈ %51, P(tam 1 örtüşme) rastgele
+dağılımla tamamen tutarlı. Gözlenen 1 örtüşme, 0.65 beklenenden **anlamlı derecede yüksek
+değil** — saf şansla ayırt edilemiyor.
+
+**Karşılaştırma (bilgi amaçlı, brief'te istenmedi ama örüntüyü netleştiriyor):** Aynı 7 alt-süreç
+dosyasının **4'ü** — `check-ports`, `install-hook`, `send-event-hook`, `chat-hooks-live` —
+contract §5b'de `pool:'threads'` altında Sınıf C (zaman aşımı) ile **tam örtüşüyor**. Yani alt
+süreç başlatma, **threads pool'undaki zaman aşımı ailesini** güçlü biçimde açıklıyor ama
+**varsayılan fork pool'undaki Sınıf A çökmesini** açıklamıyor. İki arıza biçimi göründüğünden
+daha bağımsız: threads'in Sınıf C'si gerçekten "alt süreç doğurma" ile ilişkili, fork'un Sınıf
+A'sı değil.
+
+### 6c. Karar — H DOĞRULANMADI (Sınıf A / varsayılan yapılandırma için), dur
+
+Brief §3.1 karar noktası: "kesişim zayıfsa (ör. 8'in 2-3'ü) H doğrulanmadı → §4'e geç, yeni
+araştırma açma." Gözlenen kesişim (8'in **1**'i, hipergeometrik şansla ayırt edilemez) bu
+eşiğin altında. **H, B-4'ün asıl konusu olan Sınıf A / varsayılan (fork) yapılandırma için
+doğrulanmadı.**
+
+Brief §4 gereği: **§3.2 (dahil-et/hariç-tut manipülasyonu) ve §3.3 (hedefli düzeltme) bu turda
+çalıştırılmadı.** Zayıf korelasyonda manipülasyon denemek "ölçmeden reddetmek"in tersi ama aynı
+kalitede bir hata olurdu — negatif bir korelasyonu zorlamak. Sonuç ölçülmüş bilgi olarak
+kaydedildi, yeni yapılandırma denemesi yapılmadı.
+
+**Not (kapsam dışı, ayrı bir tur için aday, bu turda kovalanmadı):** `pool:'threads'` zaten
+§5'te bağımsız gerekçeyle reddedildiği için, "alt süreç testlerini threads altında zaman
+aşımından koru" fikri B-4'ü kapatmaz — mevcut varsayılan (fork) yapılandırmanın Sınıf A
+çökmesiyle hâlâ hiçbir doğrulanmış nedensel bağı yok. Kök neden, önceki turların vardığı sonuçla
+tutarlı biçimde hâlâ Node/vitest/Windows fork etkileşiminde, bu depronun ölçülebildiği bir
+test-dosyası özelliğine (alt süreç kullanımı dahil) bağlanamadı.
+
+### 6d. Doğrulama ve hijyen
+
+- `git status --short` bu turun sonunda: temiz (hiçbir dosya değiştirilmedi — yalnızca bu
+  sözleşme dosyası güncellendi).
+- `git diff vitest.config.ts`: boş (bu turda hiç dokunulmadı).
+- `npx tsc --noEmit` = 0 hata.
+- `npx eslint .` = 0 hata.
+- `node .claude/hooks/_selftest.cjs` = **165/165**.
+- `tasklist | findstr node.exe`: tur öncesi ve sonrası **0 satır** (yetim süreç yok). Bu turda
+  hiçbir `npm run test` koşusu yapılmadı (karar noktasında durulduğu için §3.2/§3.3'ün
+  gerektirdiği koşular tetiklenmedi).
+
+**Tek cümlelik sonuç:** Alt-süreç hipotezi (H) **doğrulanmadı** — Sınıf A çöken 8 dosyanın
+yalnızca 1'i alt süreç başlatıyor (şansla ayırt edilemez, beklenen 0.65); düzeltme denenmedi
+(gerek kalmadı) ve B-4 **kapanmadı**, yönetilen risk olarak (mevcut çit doğru KIRMIZI veriyor,
+kök neden hâlâ bulunamadı) kayıtlı kalmaya devam ediyor.

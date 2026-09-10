@@ -1,3 +1,10 @@
+---
+type: qa-contract
+date: 2026-09-10
+status: fix
+karar: KALDI (docs/qa/G5-sozlesme-kararlari-2026-09-10.md) — çitin ana vaadi doğrulandı, ama kalıcı B1 testi tüm suite'i eşzamanlı ikinci kez koşturup 7333 portuna çarpıyor. Bu, "vitest worker kararsızlığı" sanılan flake'in gerçek kaynağı.
+---
+
 # Sözleşme — vitest sessiz test atlama çiti (altyapı işi, yeni feature değil)
 
 **Kaynak:** `docs/blockers.md` "2026-09-10 — YÜKSEK ÖNCELİK: test takımı sessizce test atlıyor".

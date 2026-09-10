@@ -1,4 +1,10 @@
-status: qa (developer turu tamamlandı — qa-evaluator kararı bekliyor)
+---
+type: qa-contract
+gate: G5
+date: 2026-09-10
+status: done
+karar: GEÇTİ (docs/qa/G5-sozlesme-kararlari-2026-09-10.md)
+---
 
 # G5 Tur 4 — İzin kartı önizlemesi (4-Ek3) düzeltmesi
 

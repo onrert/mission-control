@@ -4,7 +4,8 @@ gate: G5
 date: 2026-09-10
 feature: g5-onay-dosyasi-korumasi (G5 tur3 KRİTİK bulgusunun düzeltmesi)
 kaynak: docs/qa/G5-guvenlik-denetimi-2026-09-10-tur3.md
-status: qa
+status: fix
+karar: KALDI (docs/qa/G5-sozlesme-kararlari-2026-09-10.md) — gerekçe Y3 (self-test gerçek onay dosyalarını siliyordu). Düzeltme 53a320f ile indi; yeniden ölçüm bekliyor.
 ---
 
 # Sözleşme — onay dosyalarının kendi kendine üretilebilirliği düzeltmesi

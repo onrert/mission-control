@@ -1,3 +1,11 @@
+---
+type: qa-contract
+gate: G5
+date: 2026-09-10
+status: done
+karar: GEÇTİ (docs/qa/G5-sozlesme-kararlari-2026-09-10.md)
+---
+
 # G5 tur-4 yol kanonikleştirme — sözleşme
 
 **Kaynak:** `docs/qa/G5-guvenlik-denetimi-2026-09-10-tur4.md` — K-A (`\\?\` uzun-yol öneki) ve

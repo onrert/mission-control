@@ -4574,3 +4574,80 @@ iki iddiası (`allowManagedPermissionRulesOnly`, `managedSource` varlığı) hâ
 doğru; bu turda dokunulmadı, gelecekte `.claude/settings.json`'a `allow`/`deny` kuralları
 eklenirse (yalnızca `ask` değil) K3'ün henüz görmediği bir yeniden kırılma riski teorik olarak
 var — ama bu, testin ŞU AN ölçtüğü şeyin dışında (kapsayıcılık yalnızca `ask` dizisi için).
+
+## 2026-09-10 — G5 tur4 K-A/K-B kritik bulgularının kod düzeltmesi (KISMEN TAMAMLANDI — kalıcı regresyon testi CEO onayı bekliyor)
+
+**Görev:** `docs/qa/G5-guvenlik-denetimi-2026-09-10-tur4.md`'nin iki KRİTİK bulgusu: K-A
+(`\\?\` uzun-yol öneği `gate-check.cjs`'i sessizce atlatıyor) ve K-B (NTFS junction ile
+`docs/approvals`'a kartsız, kalıcı bir yazma yolu açılabiliyor). Sözleşme (kod yazmadan önce):
+`docs/qa/g5-tur4-yol-kanoniklestirme-contract.md`.
+
+**Ne yapıldı (gerçek dosyalarda, kod düzeltmesi TAMAM):**
+- **`.claude/hooks/gate-check.cjs`:** `resolveCanonicalRel()` eklendi — `write-gate.ts`'in
+  `resolveInsideRoot`'undaki desen (en yakın var olan atayı bul, `fs.realpathSync.native` ile
+  çöz) hook'a taşındı. Bu TEK değişiklik hem `\\?\` önekini normalize ediyor hem
+  junction/symlink'in ARKASINDAKİ gerçek hedefi görüyor. Proje kökü de aynı şekilde çözülüyor
+  (kök de bir junction üzerinden gelebilir). `realpathSync` fırlarsa ya da var olan ata
+  bulunamazsa **fail-closed** (`block()`, exit 2) — sessiz izin YOK; gerekçe sözleşme §2'de
+  (mevcut kod zaten belirsizlikte güvenli tarafta hata yapıyor, bu ilkeyle tutarlı).
+- **`.claude/hooks/block-dangerous.cjs`:** `danger` regex'ine `\bmklink\b` eklendi — aynı
+  sonucu üreten `New-Item -ItemType Junction` zaten yakalanıyordu, `mklink /J` yakalanmıyordu
+  (derinlik katmanı tutarlılığı; asıl düzeltme yukarıdaki kanonikleştirme).
+- **`.claude/hooks/_selftest.cjs`:** yalnızca `const ML = 'mk' + 'link';` sabiti eklendi —
+  **asıl yeni regresyon vakaları (mklink 3 vaka + K-A/K-B/fail-closed gate-check vakaları)
+  YAZILAMADI**, bkz. aşağıdaki blocker.
+
+**Nasıl doğrulandı (gerçek dosyalar + sandbox):**
+- Gerçek `_selftest.cjs`'in mevcut 88 vakası hâlâ **88/88 GEÇTİ** — yeni davranış geriye dönük
+  uyumlu, hiçbir eski test kırılmadı.
+- `npx tsc --noEmit` = 0, `npx eslint .` = 0.
+- `npm run test`: ilk koşu bilinen worker-fork çökmesiyle kırmızı (`CLAUDE.md`'de kayıtlı
+  kararsızlık), ikinci koşu **1371 geçti | 4 atlandı (1375)** tam yeşil (test sayısı artışı bu
+  turdan değil — paralel yürüyen ayrı bir turun `src/features/chat/**` çalışmasından, bkz.
+  aşağıdaki blocker).
+- `npm run e2e`: üç koşu, üç farklı dosyada üç farklı geçici kırmızı (timeline/kanban SSE
+  zamanlaması, sonra settings.spec.ts), üçüncü koşu **55/55 tam yeşil** — bu turun 3 dosyası
+  (`.claude/hooks/*.cjs`) uygulama çalışma zamanına hiç dahil değil, nedensel bağ yok; ortamsal
+  kararsızlık (muhtemelen paralel turun eşzamanlı çalışması) olarak değerlendirildi.
+- **Sandbox'ta tam mutasyon kanıtı** (gerçek dosyalara HİÇ dokunulmadan, MD5-doğrulanmış
+  kopyalar üzerinde, denetimin kendi yöntemiyle aynı): K-A (`\\?\` öneği) ve K-B (junction)
+  düzeltme ÖNCESİ davranışı (sessiz `exit=0`) birebir tekrar üretti; düzeltme SONRASI her ikisi
+  de `permissionDecision:'ask'` JSON'u verdi. Kanonikleştirmeyi geri alan mutasyon her iki
+  vakayı da tekrar sessiz `exit=0`'a döndürdü (komşu "normal approvals yolu" vakası etkilenmedi
+  — mutasyon yalnızca hedeflediği yolu kırdı). Fail-closed dalı ayrı test edildi: `fs.
+  realpathSync.native`'i bir `-r` preload ile ELOOP fırlatacak şekilde monkeypatch edip (ayrı
+  bir child process'te, gerçek dosyalara dokunmadan) `exit=2` (sert engel) doğrulandı; fail-
+  closed dalını kaldıran mutasyon aynı senaryoyu `exit=0`'a düşürdü. `mklink /J`/`/D`/bayraksız
+  3 vaka güncellenmiş `block-dangerous.cjs` kopyasında `exit=2`, yanlış pozitif kontrolleri
+  (`cat`/`ls`/`git add`/`git commit`/`git status`) `exit=0` kaldı; `\bmklink\b`'i regex'ten
+  çıkaran mutasyon 3 vakanın ÜÇÜNÜ DE `exit=0`'a (bypass) düşürdü.
+- Sandbox'ta kurulan junction ve tüm test dizinleri tur sonunda kaldırıldı, kaldırıldığı
+  `fsutil reparsepoint query` ile doğrulandı. Gerçek `docs/approvals/G*.ok`/`README.md`
+  SHA-256'ları tur öncesi/sonrası **birebir aynı** (7 dosya, `docs/blockers.md`'de listeleniyor).
+- Yetim `node`/`npm` süreci yok.
+
+**Engel (bkz. `docs/blockers.md` "GUARD.ok tek-birim tüketim borcu GERÇEKLEŞTİ"):**
+GUARD.ok kapsamı (`gate-check.cjs`, `block-dangerous.cjs`, `_selftest.cjs`) doğru sırayla
+işlendi ama `_selftest.cjs`'e yapılan İLK (küçük) `Edit` kapsamın 3/3'ünü tamamlayıp token'ı
+tüketti — asıl test bloklarını eklemek için gereken İKİNCİ `Edit` artık onaysız kaldı. Brief'in
+"Token tüketildikten sonra DUR ve raporla, kendi başına yeni GUARD.ok YAZMA" talimatına uyuldu;
+kendi kendime onay yazmadım. Bu, `docs/blockers.md`'de zaten kayıtlı olan "onay birimi 'bir
+yazma' değil 'bir DEĞİŞİKLİK' olmalı" borcunun somut bir tekrarı.
+
+**Kalan risk:**
+1. **Bloklayıcı olabilir:** `_selftest.cjs`'e K-A/K-B/mklink için KALICI regresyon testleri
+   henüz yok — yalnızca sandbox kanıtı var (yukarıda). CEO'nun `_selftest.cjs`'i kapsayan yeni
+   bir `GUARD.ok` yazması gerekiyor; onay gelince mekanik bir ekleme (sandbox'ta doğrulanmış
+   vakaların gerçek dosyaya taşınması + aynı mutasyon kanıtının gerçek dosyada tekrarı).
+2. Bu turda dokunulmayan, brief'in de kapsam dışı bıraktığı üçüncü kritik (izin kartı
+   önizlemesinin 500 karakterde kırpılması, `src/features/chat/**`) ayrı bir paralel tur
+   tarafından ele alınıyor.
+3. Kabul edilmiş sınır (değişmedi, `ADR-016`): yerel kabuk erişimi olan bir ajana karşı mutlak
+   koruma yok; hook derinlik katmanıdır, asıl savunma kullanıcının Bash izin kartıdır.
+   `block-dangerous.cjs`'in zaten bilinen kör noktaları (ayrı dosyaya yazılmış betik, npm
+   script, HTTP endpoint) bu turda kapatılmadı — kapsam dışı.
+
+**Durum:** `docs/qa/g5-tur4-yol-kanoniklestirme-contract.md` → **status: qa**, ama eksik iş
+notuyla: kod düzeltmesi (`gate-check.cjs`/`block-dangerous.cjs`) TAMAM ve doğrulandı; kalıcı
+regresyon testi (`_selftest.cjs`) CEO'nun yeni onayını bekliyor. qa-evaluator bu ayrımı
+gözeterek değerlendirmeli.

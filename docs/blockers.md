@@ -862,3 +862,121 @@ ikinci koşu temiz — `CLAUDE.md`'deki bilinen kararsızlık, gerçek hata değ
 `allowManagedPermissionRulesOnly` alanı kaldırılınca yine 2 test kırmızı oldu — ikisi de elle
 geri alındı (`git checkout` KULLANILMADI), `git diff -- src/features/chat/server/session.ts`
 boş çıktı verdi. `src/`'te kalıcı değişiklik yok, yalnızca test dosyası değişti.
+
+## 2026-09-10 — developer (G5 tur4 yol kanonikleştirme) — GUARD.ok tek-birim tüketim borcu GERÇEKLEŞTİ, üçüncü dosyanın kalan yazımı için yeni onay gerekiyor
+
+**Görev:** `docs/qa/G5-guvenlik-denetimi-2026-09-10-tur4.md` K-A (`\\?\` uzun-yol öneği) ve K-B
+(NTFS junction) kritik bulgularını kapatmak. Kapsam tam olarak üç dosya: `gate-check.cjs`,
+`block-dangerous.cjs`, `_selftest.cjs` — mevcut `docs/approvals/GUARD.ok` bu üçünü backtick ile
+listeliyordu.
+
+**Ne tamamlandı (gerçek dosyalarda, kod yazıldı ve doğrulandı):**
+1. `.claude/hooks/gate-check.cjs` — `resolveCanonicalRel()` eklendi: en yakın var olan atayı
+   bulup `fs.realpathSync.native` ile çözüyor (hem `\\?\` önekini normalize ediyor hem
+   junction/symlink'i takip ediyor), kökü de aynı şekilde çözüyor, tüm kararlar artık bu
+   çözülmüş yola göre veriliyor. `realpathSync` fırlarsa ya da var olan ata bulunamazsa
+   fail-closed (`block()`, exit 2) — sessiz izin YOK. Algoritma ve gerekçe:
+   `docs/qa/g5-tur4-yol-kanoniklestirme-contract.md` §1/§2.
+2. `.claude/hooks/block-dangerous.cjs` — `danger` regex'ine `\bmklink\b` eklendi (derinlik
+   katmanı; `New-Item -ItemType Junction` zaten yakalanıyordu, `mklink /J` yakalanmıyordu).
+3. `.claude/hooks/_selftest.cjs` — YALNIZCA bir sabit eklendi (`const ML = 'mk' + 'link';`);
+   asıl yeni regresyon vakaları (mklink 3 vaka + K-A/K-B/fail-closed gate-check vakaları)
+   HENÜZ YAZILMADI (aşağıda neden).
+
+**Engel — GUARD.ok kapsamın TAMAMI ilk dokunuşta tüketildi, ikinci düzenleme için token yok:**
+Brief'in kendi uyarısı ("Üç dosyayı da yazacaksan, en son yazacağın dosyayı en sona bırak ve
+ondan önce diğer ikisinde işini bitir") doğru sırayla izlendi (`gate-check.cjs` →
+`block-dangerous.cjs` → `_selftest.cjs`), AMA `_selftest.cjs`'e yaptığım İLK (küçük, tek
+sabit ekleyen) `Edit` çağrısı kapsamın 3/3'ünü tamamladı ve `docs/approvals/GUARD.ok` +
+`.guard-state.json` o anda tüketildi/silindi — asıl büyük değişikliği (yeni test vaka
+blokları) eklemek için yaptığım İKİNCİ `Edit` çağrısı artık GUARD.ok yokken engellendi:
+
+```
+Engellendi: ".claude/hooks/_selftest.cjs" kendi güvenlik korumanızı değiştiriyor —
+docs/approvals/GUARD.ok (tek kullanımlık, kapsamı backtick ile listeleyen) gerekli.
+```
+
+**Kök neden (yeni değil, kayıtlı borç):** `docs/blockers.md`'nin "K1'in gerekçesi tam da
+buydu" notunda zaten yazılı olan madde — "tek kullanımlık onayın birimi 'bir yazma' değil 'bir
+DEĞİŞİKLİK' olmalı" borcu bu turda somut olarak gerçekleşti. Üç dosyaya TEK bir mantıksal
+değişiklik (bu düzeltme) uygulanıyor olsa da, mekanizma "kapsamdaki dosyaların HEPSİ en az BİR
+KEZ dokunulunca tüket" kuralını izliyor — bir dosyaya birden fazla ayrı `Edit` çağrısı yapmak
+gerekiyorsa (benim durumumda: önce küçük bir sabit, sonra asıl test blokları), İLK dokunuş
+tüketimi tetikliyor, sonraki dokunuşlar için yeni onay gerekiyor. Kendi kendime yeni bir
+`docs/approvals/GUARD.ok` YAZMADIM (brief'in açık talimatı: "Kendi başına yeni bir GUARD.ok
+YAZMA").
+
+**Neden düzeltmedim/atlamadım:** Brief'in "Onay bütçesi" bölümü net: "Token tüketildikten
+sonra bir koruma dosyasına daha yazman gerekirse DUR ve raporla — CEO yeni onay alır."
+
+**Somut durumun ölçümü (bu blocker yazılırken):**
+- `node .claude/hooks/_selftest.cjs` → hâlâ **88/88 GEÇTİ** (mevcut vakalar `gate-check.cjs`/
+  `block-dangerous.cjs`'in yeni davranışıyla da bozulmadı — yeni davranış geriye dönük uyumlu).
+  Ama bu 88 vaka arasında K-A (`\\?\`), K-B (junction) ve mklink'e özgü YENİ bir kalıcı
+  regresyon testi YOK — bu turun asıl kanıtı yalnızca **sandbox'ta** (gerçek dosyalara hiç
+  dokunmadan, MD5 doğrulamalı kopyalar üzerinde) alındı, aşağıda özetleniyor.
+- `npx tsc --noEmit` = 0. `npx eslint .` = 0.
+- `npm run test`: 1. koşu bilinen worker-fork çökmesiyle KIRMIZI (`Worker forks emitted error`,
+  `CLAUDE.md`'de kayıtlı kararsızlık), 2. koşu **1371 geçti | 4 atlandı (1375)** tam yeşil —
+  bu turun 3 dosyası `src/**`'e hiç dokunmadığı için test SAYISINDAKİ artış (1365→1375) bu
+  turdan değil, paralel yürüyen başka bir tur'un (chat 500-karakter kırpma düzeltmesi,
+  `src/features/chat/**`) commit'siz çalışmasından — `git status --short` bunu da gösteriyor
+  (`tests/e2e/chat.spec.ts`, `tests/e2e/helpers/chat-fake-server.ts` değişmiş, BENİM
+  DOKUNMADIĞIM dosyalar, dokunulmadı).
+- `npm run e2e`: 1. koşu 3 kırmızı (timeline/kanban SSE zamanlama), 2. koşu 1 farklı kırmızı
+  (settings.spec.ts), 3. koşu **55/55 tam yeşil**. Üç ayrı koşuda üç FARKLI dosyanın kırmızı
+  vermesi ve üçüncü koşuda hepsinin geçmesi, bunun ortamsal/eşzamanlı bir kararsızlık olduğunu
+  (muhtemelen paralel turun aynı makinede eşzamanlı çalışması) gösteriyor — bu turun 3 dosyası
+  (`.claude/hooks/*.cjs`) uygulama çalışma zamanına hiç dahil değil, nedensel bir bağ yok.
+- Yetim `node`/`npm` süreci yok (`tasklist` boş).
+- Gerçek `docs/approvals/G*.ok`/`README.md` dosyalarına hiç dokunulmadı (SHA-256 değişmedi —
+  bu blocker'ın sonunda listeleniyor).
+
+**Sandbox'ta alınan kanıt (gerçek dosyalara HİÇ dokunulmadan, MD5-doğrulanmış kopyalar
+üzerinde, `docs/qa/G5-guvenlik-denetimi-2026-09-10-tur4.md`'nin kendi yöntemiyle aynı):**
+1. **K-A (`\\?\` uzun yol öneği):** `\\?\<sandbox>\docs\approvals\G5.ok` → gerçek
+   (güncellenmiş) `gate-check.cjs` kopyası `exit=0` + `permissionDecision:'ask'` JSON'u
+   döndürdü (önceden: sessiz `exit=0`, JSON YOK — denetimin bulgusu bu farkla doğrulandı).
+2. **K-B (NTFS junction):** `assets/shortcut2` → `docs/approvals` junction'ı üzerinden
+   `assets/shortcut2/G5.ok` → aynı şekilde `ask` JSON'u döndü (önceden: `assets/**` serbest
+   listesine düşüp sessiz `exit=0`).
+3. **Fail-closed:** `fs.realpathSync.native`'i bir `-r` preload ile ELOOP fırlatacak şekilde
+   monkeypatch edip (yalnızca ayrı bir child process'te, gerçek dosyalara dokunmadan) test
+   edildiğinde `gate-check.cjs` **exit=2** (sert engel) verdi, sessiz izin vermedi.
+4. **Mutasyon kanıtı (K-A/K-B):** kanonikleştirme satırı eski `path.relative(cwd,
+   path.resolve(f))` davranışına geri alınınca (sandbox kopyasında) K-A ve K-B vakalarının
+   İKİSİ DE **sessiz `exit=0`**'a döndü (orijinal açığın birebir tekrarı), "normal approvals
+   yolu" regresyon vakası ise hâlâ doğru `ask` verdi (mutasyon yalnızca hedeflediği yolu
+   kırıyor, komşu davranışı değil).
+5. **Mutasyon kanıtı (fail-closed):** fail-closed dalı kaldırılınca (`resolveCanonicalRel(f) ||
+   'MUTANT-fail-open'`) aynı ELOOP-simüle senaryosu **exit=0**'a döndü (sessiz izin).
+6. **mklink (block-dangerous.cjs):** `mklink /J`, `mklink /D`, bayraksız dosya sembolik
+   bağlantısı → güncellenmiş kopya **exit=2** (engellendi); yanlış pozitif kontrolleri (`cat`,
+   `ls`, `git add`, `git commit`, `git status`) **exit=0** kaldı.
+7. **Mutasyon kanıtı (mklink):** `\bmklink\b` regex'ten çıkarılınca 3 vakanın ÜÇÜ DE
+   **exit=0**'a (bypass) döndü, yanlış pozitif kontrolleri etkilenmedi.
+
+Tüm sandbox dosyaları (`sandbox-repo*`, junction'lar, preload script'leri) test sonunda
+temizlendi — gerçek repoda hiçbir iz yok.
+
+**İstenen aksiyon (CEO'dan):** `_selftest.cjs`'e YALNIZCA (kapsamı yalnızca bu dosyayı
+kapsayan, ya da üçünü tekrar kapsayan — fark etmez, zaten diğer ikisinin işi bitti) yeni bir
+`docs/approvals/GUARD.ok` yazılması — kullanıcı onayıyla. Onay gelince eklenecek değişiklik
+küçük ve mekanik: yukarıda sandbox'ta doğrulanmış 3+ danger vakası ve 3 gate-check vakası
+(K-A/K-B/fail-closed) `_selftest.cjs`'e taşınacak, gerçek dosya üzerinde AYNI mutasyon kanıtı
+tekrarlanacak, `verify`/`e2e` tekrar koşulacak.
+
+**Durum:** `docs/qa/g5-tur4-yol-kanoniklestirme-contract.md` → **status: qa** ama EKSİK —
+`gate-check.cjs`/`block-dangerous.cjs`'in kod düzeltmesi TAMAM ve doğrulandı (gerçek dosyalar,
+gerçek `_selftest.cjs` regresyonu bozmadı); `_selftest.cjs`'in KALICI yeni regresyon testleri
+YAZILAMADI (yalnızca sandbox kanıtı var). qa-evaluator bu ayrımı gözetmeli: kod düzeltmesi canlı
+ve doğrulanmış, kalıcı regresyon testi CEO'nun yeni onayını bekliyor.
+
+**Gerçek `docs/approvals/*.ok`/`README.md` SHA-256 (bu tur öncesi/sonrası — DEĞİŞMEDİ):**
+G0.ok `3b21fd8e7c4b2d1f3797275eb18dfe476a7f2c83435b905df3d6f31824148565` ·
+G1.ok `72bcf9757aec9ca5ba76f1a02bddad85f3051d1110d7e7a62189c1dc8d5b5234` ·
+G2.ok `a87cd696dd44424084594e2a32e83f0f32b4fc797cbb0148ef8b3cbdefba1bf5` ·
+G3.ok `36b18d582ac02afd3d0709d908ef256079b6ff147f09c08afccda5757bf9eef2` ·
+G4-1.ok `08d0fe3aaa80ed11a1eece6956a4c48272903ebadcb74974aa09c8fffba0d82b` ·
+G4-2.ok `6bf5be0828d071a215dfff9aa9b01c210f26709b10799f5f0b93250c9c862ace` ·
+README.md `770799bb377c769c3633217a73d579f5ddfc9d705c84a5c730f2425f554a3ed7`.

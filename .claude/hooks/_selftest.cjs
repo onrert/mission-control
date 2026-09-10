@@ -14,6 +14,7 @@ const ERASE = 'era' + 'se';
 const RD = 'r' + 'd';
 const RMDIR = 'rm' + 'dir';
 const RI = 'r' + 'i';
+const ML = 'mk' + 'link';
 const FLAG_S = '/' + 's';
 const FLAG_Q = '/' + 'q';
 const FLAG_F = '/' + 'f';

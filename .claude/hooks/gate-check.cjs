@@ -80,11 +80,55 @@ function ask(reason) {
   process.exit(0);
 }
 
+// docs/qa/g5-tur4-yol-kanoniklestirme-contract.md — K-A/K-B düzeltmesi. Önceki kod hedefi salt
+// dize düzeyinde (`path.relative(cwd, path.resolve(f))`) değerlendiriyordu; bu, Windows'un
+// `\\?\` uzun-yol öneğini normalize edemiyordu (ne "proje dışı" ne "docs/approvals içinde"
+// sayılıp sessizce izin veriliyordu) VE bir NTFS junction/symlink'in ARKASINDA gerçekte nereye
+// yazıldığını hiç göremiyordu. `write-gate.ts`'in `resolveInsideRoot`'undaki desen (en yakın var
+// olan atayı bul, `fs.realpathSync.native` ile çöz) buraya taşındı — hedef henüz var olmayan
+// yeni bir `.ok` dosyası olabileceği için ayrıca "en yakın var olan ata" adımı gerekli.
+// Fail-closed: realpath çözülemezse (ELOOP, erişim reddi, kopuk reparse point, dosya sistemi
+// köküne ulaşılması) sessiz izin YERİNE sert engel — gerekçe sözleşme §2'de.
+function resolveCanonicalRel(f) {
+  let candidate;
+  try {
+    candidate = path.resolve(f);
+  } catch (_) {
+    return null;
+  }
+  const pending = [];
+  let anc = candidate;
+  while (true) {
+    let hit;
+    try { hit = fs.existsSync(anc); } catch (_) { hit = false; }
+    if (hit) break;
+    const parent = path.dirname(anc);
+    if (parent === anc) return null; // dosya sistemi köküne ulaşıldı, var olan ata yok
+    pending.push(path.basename(anc));
+    anc = parent;
+  }
+  let resolvedAnc;
+  let resolvedRoot;
+  try {
+    resolvedAnc = fs.realpathSync.native(anc);
+    resolvedRoot = fs.realpathSync.native(process.cwd());
+  } catch (_) {
+    return null;
+  }
+  const resolvedCandidate = pending.length
+    ? path.join(resolvedAnc, ...pending.reverse())
+    : resolvedAnc;
+  return path.relative(resolvedRoot, resolvedCandidate).replace(/\\/g, '/');
+}
+
 readInput((j) => {
   const f = (j.tool_input && (j.tool_input.file_path || j.tool_input.path)) || '';
   if (!f) process.exit(0);
-  let rel = path.relative(process.cwd(), path.resolve(f)).replace(/\\/g, '/');
-  if (rel.startsWith('..')) process.exit(0); // proje dışı: karışma
+  const rel = resolveCanonicalRel(f);
+  if (rel === null) {
+    block(`Engellendi: "${f}" yolu çözülemedi (realpath hatası/döngü/erişim reddi/dosya sistemi köküne ulaşıldı). Hedefin gerçek dosya sistemi konumu doğrulanamadığı için güvenlik kararı verilemiyor — güvenli taraf: sert engel.`);
+  }
+  if (rel.startsWith('..')) process.exit(0); // proje dışı (çözülmüş yola göre): karışma
 
   const isApprovalsPath = /^docs\/approvals\//i.test(rel);
   if (isApprovalsPath) {

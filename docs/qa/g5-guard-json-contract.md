@@ -229,8 +229,13 @@ Taban: **122 vaka**, hepsi geçiyor (mevcut rapor). Hiçbir davranışsal vaka k
 
 ## 5. Mutasyon kanıtı planı (en az dört, brief zorunlu kılıyor)
 
-1. **Beyaz liste kontrolünü kaldıran mutasyon** (`isWhitelistedScopeEntry` her dizeyi olduğu
-   gibi kabul etsin) → D-TRAVERSAL/D-ABS/D-UNC/D-LONGPREFIX/D-BACKSLASH/D-UNI KIRMIZI.
+1. **[TUR 5'te DÜZELTİLDİ — bkz. §11] Beyaz liste kontrolünü kaldıran mutasyon** (`normalizeScopeEntry`
+   her dizeyi olduğu gibi kabul etsin) → **YANLIŞ ÖLÇÜLMÜŞTÜ.** Bu turun ilk hâli
+   D-TRAVERSAL/D-ABS/D-UNC/D-LONGPREFIX/D-BACKSLASH/D-UNI'nin kırmızı vereceğini iddia ediyordu;
+   qa-evaluator ölçtü (G5-sozlesme-kararlari-2026-09-10-tur4.md §1.5) ve **0 kırmızı** çıktı — bu
+   altı vakanın hepsi `scope`'a HEDEFTEN FARKLI bir değer yazıyor, yani kapsam ÜYELİK kontrolü
+   (`parsed.scope.has(relLower)`) tek başına reddediyor; beyaz liste kaldırılsa da AYNI ŞEKİLDE
+   reddeder. Doğru mutasyon kanıtı ve doğru (ayırt edici) test vakaları için **§11**'e bakın.
 2. **`scope` dışındaki alanları da tarayan mutasyon** (eski kusuru geri getirir — `reason`
    içindeki backtick'li/`.cjs` biten dizeleri de kapsama ekleyen bir "yardımcı" ekle) →
    D-REASON-CANNOT-LEAK ve y1t2-a/b/c karşılığı (D-FIELD-ISOLATION) KIRMIZI.
@@ -283,7 +288,11 @@ devreye girer — CEO bu ikinci yazma için **yeni bir JSON biçimli GUARD.ok** 
 2. Tur-3'ün bloklayıcı senaryosu (D-REASON-CANNOT-LEAK) KIRMIZI vermeden **geçer** (yani ad
    reddedilir) — kanıt çıkış koduyla.
 3. T-REGRESSION-MULTI-WRITE geçer (aynı dosyaya iki yazma, token tükenmez).
-4. §5'teki dört mutasyonun her biri belirtilen testleri KIRMIZI'ya çevirir, geri alınca YEŞİL.
+4. **[TUR 5'te DÜZELTİLDİ] §5'teki dört mutasyonun her biri belirtilen testleri KIRMIZI'ya
+   çevirir, geri alınca YEŞİL.** qa-evaluator ölçtü: mutasyon 1'in iddiası **yanlıştı** (0 kırmızı,
+   §5 madde 1'e bakın). Doğru ölçüm ve doğru test vakaları için **§11**'e bakın: M1 kapanışı 6 yeni
+   ayırt edici vaka ekliyor ve BUNLAR mutasyon 1'i doğru ölçüyor (6/6 kırmızı, geri alınca 6/6
+   yeşil).
 5. `docs/approvals/README.md` güncel ve tam örnekli (bu tur içinde commit edilir).
 6. Gerçek `docs/approvals/*` dosyalarının (README hariç, README için ayrı) SHA-256'ları
    değişmemiş; `git status --short` temiz (yalnızca bu contract dosyası + README + scratchpad
@@ -339,7 +348,7 @@ Alınan karar noktaları:
    (Node'da doğrulandı: `JSON.parse('{}xyz')` ve `JSON.parse('{}{}')` ikisi de fırlatır); bu
    davranış mevcut `try/catch` ile zaten fail-closed'a düşüyordu. D-TRAILING-GARBAGE ve
    D-MULTI-JSON-DOCS testleri bu native davranışı KİLİTLEMEK için eklendi (regresyon güvencesi).
-6. **BOM, ` `?** Zaten önceki turda ele alınmıştı (BOM soyulur, ham NUL reddedilir) —
+6. **BOM, `NUL karakteri`?** Zaten önceki turda ele alınmıştı (BOM soyulur, ham NUL reddedilir) —
    değişiklik yok, mevcut C-BOM/D-NUL-RAW/D-NUL-ESCAPED testleri korunuyor.
 
 ### 9.2 Tarayıcının kendisi de bir metin ayrıştırıcısıdır — neden bu sefer farklı
@@ -430,3 +439,126 @@ anında çalıştırır) aynen geçerli.
   157 test vakası ve 3 mutasyonla ölçüldü ama resmi bir JSON test-suite'i (örn. json.org'un
   test kümesi) karşı çalıştırılmadı — küçük bir kalıntı risk (kabul edilen sınır, yerel
   tek-kullanıcı aracın tehdit modeline göre orantısız bulunuyor).
+
+## 11. TUR 5 kapanışı — M1 (beyaz liste çiti) ve M2 (tarayıcı fail-open) düzeltmeleri
+
+Kaynak: `docs/qa/G5-sozlesme-kararlari-2026-09-10-tur4.md` (KARAR: KALDI — kod kalitesi 6/10,
+tek gerekçe §1.5'teki M1 bulgusu; diğer dört sözleşme GEÇTİ, Y1 kapandı). Bu tur yalnızca iki
+maddeyi kapatır; M1/M2 dışındaki 6 çitsiz nokta (§1.6'daki 17 noktanın geri kalanı) kapsam dışı
+bırakıldı, CEO'ya eşikleriyle raporlandı (bkz. developer raporu).
+
+### 11.1 M1 — beyaz liste kontrolü artık ölçülüyor
+
+**Kök neden (§5 madde 1'in neden yanlış olduğu):** D-TRAVERSAL/D-ABS/D-UNC/D-LONGPREFIX/
+D-BACKSLASH/D-UNI vakalarının hepsi `HOOK_FILE`'a (`.claude/hooks/block-dangerous.cjs`) yazmayı
+deniyor ama `scope`'a HOOK_FILE'dan FARKLI bir değer (`../evil.cjs`, `C:/Temp/evil.cjs`, vb.)
+yazıyordu. Kapsam ÜYELİK kontrolü (`parsed.scope.has(relLower)`) TEK BAŞINA reddediyor — beyaz
+liste (`normalizeScopeEntry`) tamamen kaldırılsa bile AYNI ŞEKİLDE reddederdi. Yani bu 6 test
+YANLIŞ NEDENLE yeşildi.
+
+**Düzeltme:** `_selftest.cjs`'e 6 AYIRT EDİCİ vaka eklendi (`D-WHITELIST-SUBDIR/EXT-MD/EXT-JSON/
+SPACE/DOUBLE-EXT/NESTED`, gate-check.cjs'e dokunulmadı — mekanizma zaten doğruydu, yalnızca test
+kapsamı eksikti). Her vakada `scope` elemanı YAZILMAK İSTENEN HEDEFİN KANONİK YOLUNA TAM OLARAK
+EŞİT (kapsam-üyelik kontrolü GEÇER) ama beyaz liste BİÇİMİNE UYMUYOR (alt dizin, `.cjs` dışı
+uzantı, boşluk, çift uzantı, iki seviyeli alt dizin) — QA'nın §1.5 raporundaki ayırt edici
+sondanın birebir karşılığı:
+
+| Vektör | `scope`=hedef | Kurulu kod | Mutasyon (`normalizeScopeEntry` kaldırılınca) |
+|---|---|---|---|
+| D-WHITELIST-SUBDIR | `.claude/hooks/sub/evil.cjs` | exit 2 | exit 0 (SIZINTI) |
+| D-WHITELIST-EXT-MD | `.claude/hooks/notes.md` | exit 2 | exit 0 (SIZINTI) |
+| D-WHITELIST-EXT-JSON | `.claude/hooks/config.json` | exit 2 | exit 0 (SIZINTI) |
+| D-WHITELIST-SPACE | `.claude/hooks/evil file.cjs` | exit 2 | exit 0 (SIZINTI) |
+| D-WHITELIST-DOUBLE-EXT | `.claude/hooks/evil.payload.cjs` | exit 2 | exit 0 (SIZINTI) |
+| D-WHITELIST-NESTED | `.claude/hooks/a/b/c.cjs` | exit 2 | exit 0 (SIZINTI) |
+
+**Ölçülen mutasyon kanıtı** (sandbox: `scratchpad/verify-json-repo/`):
+- Kurulu kod (düzeltme sonrası): self-test **165/165 yeşil**, exit 0 (baz 157 + 6 M1 + 2 M2).
+- `normalizeScopeEntry` mutasyonu (her dizeyi olduğu gibi kabul et) → **tam olarak 6 KIRMIZI**
+  (yukarıdaki 6 vaka), diğer 159 vaka DEĞİŞMEDEN yeşil kalıyor — eski D-TRAVERSAL/D-ABS/D-UNC/
+  D-LONGPREFIX/D-BACKSLASH/D-UNI vakaları hâlâ yeşil (üyelik kontrolü onları zaten karşılıyor,
+  §5 madde 1'in düzeltilmiş metni budur).
+- Mutasyon elle geri alındı (kaynak taslaktan yeniden kopyalama, `git checkout` KULLANILMADI) →
+  165/165 yeşil, `diff` ile kaynakla bayt-bayt aynı doğrulandı.
+
+**§5 madde 1'in düzeltilmiş metni:** *"Beyaz liste kontrolünü kaldıran mutasyon
+(`normalizeScopeEntry` her dizeyi olduğu gibi kabul etsin) → `scope`'u YAZILMAK İSTENEN HEDEFİN
+KANONİK YOLUNA EŞİT ama beyaz liste biçimine UYMAYAN 6 ayırt edici vaka (D-WHITELIST-*) KIRMIZI
+verir (6/6); eski D-TRAVERSAL/D-ABS/D-UNC/D-LONGPREFIX/D-BACKSLASH/D-UNI vakaları YEŞİL KALIR
+(onlar kapsam-üyelik kontrolünü ölçer, beyaz listeyi değil — bu iki kontrol BAĞIMSIZDIR)."*
+
+### 11.2 M2 — yinelenen-anahtar tarayıcısı artık MAX_GUARD_BYTES'ten bağımsız fail-closed
+
+**Kök sorun (QA §1.3):** `scanForDuplicateKeys` özyinelemeli bir JS fonksiyonu; kendi JS çağrı
+yığını sınırına (~5074 seviye, QA ölçümü) çarpınca `RangeError` fırlatıyordu ve
+`parseGuardDoc`'taki `catch (_) { dup = null; }` bunu SESSİZCE yutuyordu (fail-open) — yani
+yinelenen-anahtar koruması yalnızca `MAX_GUARD_BYTES`'in (8192 bayt, YALNIZCA DoS gerekçesiyle
+seçilmiş) o derinliğe erişmeye YETMEMESİNE güveniyordu (emniyet payı ~1.26x).
+
+**Düzeltme (`gate-check.cjs`):**
+1. Yeni `MAX_SCAN_DEPTH = 200` sabiti: `scanForDuplicateKeys` artık hem OBJECT hem ARRAY iç içe
+   geçmesinde artan AYRI bir `depth` sayacı tutuyor (eski `level` sayacı yalnızca object'lerde
+   artıyordu — QA'nın gerçek sızıntı denemesi DİZİ iç içe geçmesiyle yapılmıştı, bir derinlik
+   sınırı `level` üzerinden yazılsaydı dizileri hiç yakalamazdı). 200 seviyeyi aşan herhangi bir
+   değer `{ __scanDepthExceeded: true }` işaretli bir hata fırlatır.
+2. `parseGuardDoc`'taki catch artık AYRIŞTIRILDI: yalnızca tarayıcının KENDİ sözdizim hatası
+   (`e.__scanErr`, örn. yarım kalmış bir dize) sessizce yutulur (JSON.parse zaten aynı belgeyi
+   reddedecek). Bunun DIŞINDAKİ her şey (derinlik sınırı aşımı DAHİL, gerçek bir RangeError
+   DAHİL) artık "tarayıcı çalışamadı" sayılır ve belge FAIL-CLOSED reddedilir — dosya SİLİNMEZ.
+
+**Ölçülen kanıt 1 — üretim sabitleriyle, `_selftest.cjs`'e eklenen kalıcı regresyon testleri**
+(sandbox: `scratchpad/verify-json-repo/`):
+- (D-SCANNER-DEPTH-OK, negatif kontrol) 50 seviye iç içe `reason` → kabul, `MAX_SCAN_DEPTH`'in
+  çok altında, aşırı engelleme yok. **YEŞİL.**
+- (D-SCANNER-DEPTH-EXCEEDED) 400 seviye iç içe `reason` (~800 bayt — `MAX_GUARD_BYTES`'in (8192)
+  ÇOK altında, yani boyut sınırı devreye GİRMEDEN önce derinlik sınırı KENDİ BAŞINA tetiklenir) →
+  fail-closed. **YEŞİL** (düzeltmeyle).
+- Mutasyon (eski `catch (_) { dup = null; }` geri getirildi, derinlik sınırı KORUNDU) →
+  D-SCANNER-DEPTH-EXCEEDED **KIRMIZI** (belge artık kabul ediliyor, exit 0) — TEK bu test kırmızı
+  verdi, diğer 164 vaka değişmeden yeşil kaldı. Mutasyon elle geri alındı, `diff` ile kaynakla
+  bayt-bayt aynı doğrulandı.
+
+**Ölçülen kanıt 2 — gerçek `RangeError` senaryosu, yalnızca kanıt amaçlı geçici bir prob kopyasıyla
+(`scratchpad/g5-tur5-work/rangeerror-probe/`, TESLİM EDİLEN dosyaların parçası DEĞİL):**
+`MAX_SCAN_DEPTH=Infinity` ve `MAX_GUARD_BYTES=200000` olarak geçici biçimde büyütülmüş bir
+kopyada (yalnızca gerçek çağrı-yığını sınırına ulaşabilmek için — üretim sabitleri bu turda
+DEĞİŞMEDİ), 8000 seviye iç içe dizi içeren bir `reason` (16098 bayt) ile:
+- **Düzeltmeyle:** `scanForDuplicateKeys` gerçek bir `RangeError: Maximum call stack size
+  exceeded` fırlatıyor, yeni catch bunu yakalayıp **fail-closed reddediyor** (exit 2, GUARD.ok
+  SİLİNMİYOR, hata mesajı "tarayici gerekli kontrolu TAMAMLAYAMADIGI icin ... FAIL-CLOSED
+  reddedildi" diyor).
+- **Eski catch'e (`catch (_) { dup = null; }`) geri dönülünce, AYNI belge:** `JSON.parse`
+  tarayıcının atladığı yeri sorunsuz ayrıştırıyor, belge GEÇERLİ sayılıyor, **exit 0 (KABUL)** —
+  QA'nın bulduğu sınıfın canlı kanıtı. Üretimde bu senaryoya `MAX_GUARD_BYTES=8192` ile
+  ulaşılamıyor (QA'nın B-1 notu, emniyet payı ~1.26x) — bu prob, düzeltmenin `MAX_GUARD_BYTES`'in
+  DEĞERİNDEN gerçekten bağımsız olduğunu (yalnızca `MAX_SCAN_DEPTH`'e değil) doğrulamak için.
+
+**Sonuç:** iki bağımsız katman var — (a) `MAX_SCAN_DEPTH=200`, üretim bayt sınırının ÇOK altında
+kendi başına tetiklenen kasıtlı bir sınır, (b) catch'in kendisi, tarayıcının HANGİ nedenle
+çalışamadığından bağımsız olarak fail-closed. B-1 borcu (QA §1.9) bu turda KAPANDI: koruma artık
+`MAX_GUARD_BYTES`'in değerine gizlice bağımlı değil.
+
+### 11.3 Doğrulama özeti (bu tur)
+
+- Sandbox self-test (`scratchpad/verify-json-repo/`): **165/165 yeşil**, exit 0 (157 taban + 6 M1
+  + 2 M2).
+- CEO'nun bağımsız sondası (`scratchpad/probe-json-guard.mjs`), final `gate-check.cjs` ile:
+  **14/14 GEÇTİ**, exit 0.
+- Gerçek `docs/approvals/*` (G0–G4-2, 6 dosya) SHA-256'ları tur başı/sonu **değişmedi**;
+  `git status --short` bu commit dışında temiz.
+- `node --check` iki teslim dosyasında da temiz; ham NUL bayt sayısı iki dosyada da **0**.
+- Yetim `node.exe` süreci bırakılmadı (tur sonu `tasklist` kontrolü: eşleşme yok).
+- **Ayrıca bu turda düzeltildi:** bu dosyanın (§9.1 madde 6) 2026-09-10 turundan kalma HAM bir NUL
+  baytı (kaçış dizisi taşıma sırasında oluşmuş, CLAUDE.md'nin kayıtlı "kaçış dizisi tuzağı"
+  dersiyle aynı sınıf) metinsel bir açıklamayla değiştirildi — dosya artık `git`'in ikili
+  sayacağı bir bayt içermiyor.
+
+### 11.4 Teslim dosyaları
+
+- `scratchpad/gate-check-m2.cjs` → hedef `.claude/hooks/gate-check.cjs` (M2 fix; M1 için kod
+  değişikliği YOK, mekanizma zaten doğruydu).
+- `scratchpad/selftest-m1.cjs` → hedef `.claude/hooks/_selftest.cjs` (M1 + M2 test vakalarının
+  ikisini de içerir — tek `_selftest.cjs` hedefi olduğu için).
+- Kurulum sırası serbest (brief §5, token artık zaman pencereli, yazma başına tükenmiyor) — yine
+  de önerilen sıra: önce `_selftest.cjs`, sonra `gate-check.cjs` (§6'daki gerekçe hâlâ geçerli:
+  PreToolUse hook'u diskteki `gate-check.cjs`'i çalışma anında çalıştırır).

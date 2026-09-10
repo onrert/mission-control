@@ -289,7 +289,122 @@ devreye girer — CEO bu ikinci yazma için **yeni bir JSON biçimli GUARD.ok** 
    değişmemiş; `git status --short` temiz (yalnızca bu contract dosyası + README + scratchpad
    dışı hiçbir iz yok).
 
-## 9. Kalan risk ve kabul edilen sınırlar
+## 9. P7b kapanışı (bu tur) — kayıpsız ayrıştırma zorunluluğu
+
+CEO'nun bağımsız sondası (`scratchpad/probe-json-guard.mjs`), tur-5'in "yinelenen `scope`
+anahtarı güvenlik açığı değil, JSON'un kendi kuralı (sonuncusu geçerli)" kararının (§3 tablosu,
+madde 1) **yanlış** olduğunu kanıtladı: P7b, `evil-payload.cjs` gibi beyaz listeye uyan bir adın
+**ikinci** (görünmeyen) `scope` anahtarında yer alınca sessizce KABUL edildiğini ölçtü
+(`exit=0`). Bu, Y1 ailesiyle aynı sınıfta (belge insana bir şey söylüyor, makine başkasını
+yetkilendiriyor) ama farklı bir mekanizmada (başlık kimliği yerine JSON anahtar kimliği) dördüncü
+bir tekrar. Kullanıcı kararı: beşinci bir yama değil, **kayıpsız ayrıştırma zorunluluğu** —
+`JSON.parse`'a ulaşmadan, `JSON.parse`'ın sessizce veri kaybettiği hiçbir yapıyı (en az yinelenen
+anahtar) belgede barındırmama kuralı.
+
+### 9.1 Seçilen mekanizma — adıyla
+
+**Küçük, elle yazılmış, RFC 8259'u birebir uygulayan bir ham-metin tarayıcısı**
+(`scanForDuplicateKeys`, `gate-check.cjs`). `JSON.parse`'DAN ÖNCE çalışır; SÖZDİZİMSEL OLARAK
+GEÇERLİ bir belgede HER SEVİYEDE (kök + her iç içe nesne, kendi başına) yinelenen bir anahtar
+bulursa belgeyi **tamamen** geçersiz sayar (fail-closed, dosya silinmez). Tarayıcı sözdizimsel
+olarak GEÇERSİZ bir girdide kendi hatasını fırlatabilir — bu durumda sessizce vazgeçer (`null`
+döner) ve asıl `JSON.parse` kendi "geçerli JSON değil" hatasını verir; tarayıcının TEK
+sorumluluğu geçerli bir belgede JSON.parse'ın kaybedeceği bir yinelenmeyi ONDAN ÖNCE yakalamak.
+
+Alınan karar noktaları:
+
+1. **Hangi seviyede reddedilir?** HER seviye (yalnızca kök değil). Gerekçe: belirsizlik her
+   zaman sıfır erişime çözülür ilkesinin burada da geçerli olması — kök temiz olsa bile iç içe
+   bir yapıdaki (örn. `reason` bir JSON object olarak yazılmışsa) bir yinelenmeyi göz ardı etmek,
+   aynı sınıfın bir sonraki alanda yenilmesine kapı bırakır (D-DUP-KEY-NESTED testiyle kanıtlı).
+2. **Dize içindeki "anahtar gibi" metin anahtar sayılır mı?** HAYIR. Tarayıcı gerçek bir JSON
+   durum makinesi olduğu için (`parseString` yalnızca STRING TOKENİ içindeyken kaçış dizilerini
+   çözer, dışına asla "yapı" gözüyle bakmaz) `"reason": "\"scope\": [...]"` gibi bir değer asla
+   yinelenen anahtar sayılmaz (D-DUP-KEY-STRING-DECOY testiyle kanıtlı — aşırı engelleme yok).
+3. **Bilinmeyen kök anahtar ne olur?** Kapalı liste (`scope`, `reason`, `approved_by`,
+   `created_at`, `valid_minutes`) — dışındaki HERHANGİ bir kök alan (yazım hatası dahil) belgeyi
+   geçersiz kılar (D-UNKNOWN-ROOT-KEY). Bunun **istenmeyen ama doğru** bir yan etkisi: `__proto__`
+   `JSON.parse` tarafından öz-özellik olarak yazıldığı için (`Object.keys(doc)` onu görür,
+   önceki turlarda ölçülmüştü) artık kapalı listede olmadığından TEK BAŞINA belgeyi geçersiz
+   kılıyor — D-PROTO testi bunu doğruluyor (evil scope zaten etkisizdi, şimdi safe scope da aynı
+   belgede reddediliyor; `__proto__` OLMADAN aynı safe scope'un normal kabul edildiği ayrı bir
+   izolasyon testiyle (D-PROTO-ISOLATION) bu regresyon riskten ayrıştırıldı).
+4. **Unicode kaçışlı anahtar (`scope`) `scope` sayılır mı?** EVET, TEK BAŞINA kullanılırsa
+   (D-UNICODE-ESCAPED-KEY-SINGLE) — bu bir saldırı değil, aynı anahtarı yazmanın JSON-yasal başka
+   bir yolu, `JSON.parse` zaten "scope" olarak çözer. Ama literal `"scope"` İLE AYNI ANDA
+   kullanılırsa (D-UNICODE-ESCAPED-KEY-DUP) tarayıcı anahtarları RAW METİN olarak değil DECODE
+   EDİLMİŞ (canonical) hâlleriyle karşılaştırdığı için bu bir YİNELENEN ANAHTARDIR ve reddedilir.
+5. **Metnin sonunda artık veri / birden fazla JSON belgesi?** Ek kod GEREKMEDİ — `JSON.parse`
+   zaten trailing-garbage ve ardışık çoklu belgeyi native olarak SyntaxError ile reddediyor
+   (Node'da doğrulandı: `JSON.parse('{}xyz')` ve `JSON.parse('{}{}')` ikisi de fırlatır); bu
+   davranış mevcut `try/catch` ile zaten fail-closed'a düşüyordu. D-TRAILING-GARBAGE ve
+   D-MULTI-JSON-DOCS testleri bu native davranışı KİLİTLEMEK için eklendi (regresyon güvencesi).
+6. **BOM, ` `?** Zaten önceki turda ele alınmıştı (BOM soyulur, ham NUL reddedilir) —
+   değişiklik yok, mevcut C-BOM/D-NUL-RAW/D-NUL-ESCAPED testleri korunuyor.
+
+### 9.2 Tarayıcının kendisi de bir metin ayrıştırıcısıdır — neden bu sefer farklı
+
+Brief'in açık itirazı: üç tur boyunca markdown'ı "yorumlayan" bir mekanizma her seferinde yeni
+bir sözdizimi boşluğuna yenildi; bu tarayıcı da bir metin ayrıştırıcısı olduğuna göre neden aynı
+kaderi paylaşmasın? Cevap: **JSON'un grameri RFC 8259 ile SONLU ve TAM olarak tanımlıdır** —
+markdown'da "bu bir başlık mı yoksa başlık gibi görünen bir düzyazı/alıntı/kod bloğu mu" türünde
+YORUMA açık hiçbir durum yoktu bu proje için (üç turun kaybettiği tam olarak buydu: "## Kapsam"
+hem gerçek başlık hem arşiv metni hem HTML yorumu içinde görünebiliyordu ve BAĞLAMA bakmadan
+ayırt edilemiyordu). JSON'da bir `{` HER ZAMAN bir nesne açar, bir `"..."` HER ZAMAN (kaçış
+kurallarıyla) bir dizedir — biçim TEK bir şekilde okunur, ikinci bir yorum yoktur. Tarayıcı bu
+yüzden bir "sezgi" motoru değil, gramerin kendisini birebir uygulayan bir durum makinesidir;
+doğruluğu 157 test vakasıyla (aralarında string-içi-sahte-anahtar, unicode kaçışlı anahtar, iç
+içe nesne, çok baytlı/BOM'lu girdi, sözdizimsel hata) ve üç bağımsız mutasyonla (§10.3) ölçüldü.
+Kabul edilen tek risk: tarayıcının KENDİ implementasyon hatası (RFC'yi yanlış uygulaması) —
+bu, "gramerin belirsizliği" değil "kodun doğruluğu" sorunudur ve normal test kapsamıyla azaltılır
+(markdown turlarındaki risk KATEGORİK olarak farklıydı: gramer YOKTU, "doğru" davranış tanımsızdı).
+
+### 9.3 Reddedilen alternatif — round-trip (stringify) eşitliği
+
+`JSON.parse` sonucunu `JSON.stringify` ile geri yazıp girdinin boşluk-normalize hâliyle
+karşılaştırma REDDEDİLDİ: yinelenen anahtarı yakalardı ama sayı biçimlerinde (`30.0` →
+`JSON.parse` sonrası `30` olarak stringify edilir → round-trip eşitsiz ama belge GEÇERLİ),
+üstel gösterimde (`3e1`), ve anahtar SIRASINDA (`{"a":1,"b":2}` vs `{"b":2,"a":1}` — anlamca
+aynı, metince farklı) YANLIŞ POZİTİF üretirdi — brief'in "aşırı engelleme yok" ilkesini ihlal
+eder. Elle yazılan tarayıcı bunların HİÇBİRİNE dokunmaz, yalnızca anahtar KİMLİĞİNE bakar.
+
+### 9.4 Yeni/güncellenen testler ve mutasyon kanıtı
+
+Taban 145 → **157 vaka**, hepsi geçiyor (sandbox: `scratchpad/verify-json-repo/`, CEO'nun
+sondası `probe-json-guard.mjs` 14/14). Eklenen/güncellenen vakalar: D-DUP-KEY (P7b'nin birebir
+regresyonu — artık HEM görünen HEM gizlenen ad reddediliyor, "sonuncusu kazanır" beklentisi
+tersine çevrildi), D-DUP-KEY-CREATED-AT, D-DUP-KEY-VALID-MINUTES, D-DUP-KEY-NESTED,
+D-DUP-KEY-STRING-DECOY (+ isim sızdırmama kontrolü), D-UNKNOWN-ROOT-KEY,
+D-UNKNOWN-ROOT-KEY-APPROVED-BY (negatif kontrol), D-TRAILING-GARBAGE, D-MULTI-JSON-DOCS,
+D-UNICODE-ESCAPED-KEY-SINGLE (negatif kontrol), D-UNICODE-ESCAPED-KEY-DUP, D-PROTO (güncellendi:
+artık belgenin TAMAMI reddediliyor) + D-PROTO-ISOLATION (yeni, regresyon izolasyonu).
+
+Üç mutasyon (`git checkout` KULLANILMADI — sandbox kopyasında elle uygulanıp elle geri alındı):
+
+1. **Yinelenen-anahtar kontrolünü kaldıran mutasyon** (`scanForDuplicateKeys` çağrısı `if
+   (false)` ile devre dışı) → **5 test KIRMIZI**: D-DUP-KEY/P7b, D-DUP-KEY-CREATED-AT,
+   D-DUP-KEY-VALID-MINUTES, D-DUP-KEY-NESTED, D-UNICODE-ESCAPED-KEY-DUP.
+2. **Bilinmeyen-kök-anahtar kontrolünü kaldıran mutasyon** (döngü boş diziye çevrildi) → **2
+   test KIRMIZI**: D-UNKNOWN-ROOT-KEY, D-PROTO.
+3. **İkisini birden geri alan mutasyon** (P7b düzeltmesinin TAMAMI, düzeltme-öncesi davranışın
+   birebir eşdeğeri) → **7 test KIRMIZI** (yukarıdaki iki kümenin BİRLEŞİMİ — kesişim yok, bu iki
+   kontrolün birbirinden bağımsız çalıştığını da doğruluyor).
+
+Her mutasyon ayrı bir sandbox dosyasında (`scratchpad/mutation-work/mutA|B|C-gate-check.cjs`)
+uygulandı, `verify-json-repo`'ya kopyalanıp ölçüldü, sonra kaynak taslaktan (`scratchpad/
+gate-check-json.cjs`) yeniden kopyalanarak geri alındı — `git checkout`/`git restore`
+KULLANILMADI (kayıtlı ders: mutasyon commit'siz iş üstünde yapılırsa checkout komşu değişiklikleri
+de siler; bu turda dosyalar zaten yalnızca scratchpad'de olduğu için risk yoktu, ama disiplin
+aynı şekilde uygulandı).
+
+### 9.5 Kurulum sırası — DEĞİŞMEDİ
+
+§6'daki sıra (önce `_selftest.cjs`, EN SON `gate-check.cjs`) bu turda da geçerli ve
+DEĞİŞMEDİ — bu turun değişikliği yalnızca `gate-check.cjs`'in İÇ mantığını (parseGuardDoc)
+güçlendiriyor, kurulum sırasının gerekçesi (PreToolUse hook'u diskteki `gate-check.cjs`'i çalışma
+anında çalıştırır) aynen geçerli.
+
+## 10. Kalan risk ve kabul edilen sınırlar
 
 - **Saat kayması (§2.2):** wall-clock tabanlı süre kontrolü sistem saati geriye alınırsa
   atlatılabilir. Kabul edilen sınır — yerel tek-kullanıcı araç, ek yetki kazandırmıyor.
@@ -299,7 +414,19 @@ devreye girer — CEO bu ikinci yazma için **yeni bir JSON biçimli GUARD.ok** 
   yazmıyor) ama savunma-derinliği için korunuyor; gelecekte biri bu dosyayı gerçekten
   kullanılmayan bir kalıntı sayıp kaldırabilir — o zaman bu karar metni referans alınmalı.
   Yeniden ele alınma eşiği: `.claude/hooks/**` üzerinde çalışan bir sonraki güvenlik turu.
-- **Yinelenen `"scope"` anahtarı görsel kafa karışıklığı yaratabilir** (§3) — güvenlik açığı
-  değil ama README'de açıkça uyarılmazsa bir CEO'yu şaşırtabilir. README'ye eklendi.
+- **(GÜNCEL DEĞİL, tarihsel not) Eski §3 kararı:** "Yinelenen `\"scope\"` anahtarı güvenlik
+  açığı değil, görsel kafa karışıklığı" kararı P7b sondasıyla **çürütüldü** ve §9'da kapatıldı —
+  yinelenen anahtar artık HER SEVİYEDE fail-closed. Bu madde yalnızca kararın nasıl değiştiğinin
+  izini bırakmak için tutuluyor, güncel davranış §9.1'dedir.
 - **`.claude/settings.json` dışında ".claude/" altında `.claude/agents/**`/`.claude/agent-memory/**`
   hâlâ serbest** (bu turun kapsamı dışı, mevcut tasarım korunuyor, değiştirilmedi).
+- **(§9'dan taşındı) `__proto__` kök anahtarının reddi bir yan etki, birincil hedef değil.**
+  Kapalı liste "gizli alan" saldırılarını kapatmak için eklendi; `__proto__`'nun da bu listede
+  olmaması (dolayısıyla otomatik reddi) tasarım gereği değil `Object.keys` davranışının doğal
+  sonucu. Gelecekte `__proto__`'ya özel bir istisna eklenmek istenirse (örn. "bilinen ama zararsız"
+  sayılırsa) bu, kapalı listenin GEVŞETİLMESİ anlamına gelir ve dikkatle değerlendirilmeli.
+- **Tarayıcının kendi implementasyon doğruluğu, test kapsamına bağlıdır.** §9.2'nin savunduğu
+  "JSON grameri kapalı bir problem" iddiası, tarayıcının RFC'yi DOĞRU uyguladığını varsayar; bu,
+  157 test vakası ve 3 mutasyonla ölçüldü ama resmi bir JSON test-suite'i (örn. json.org'un
+  test kümesi) karşı çalıştırılmadı — küçük bir kalıntı risk (kabul edilen sınır, yerel
+  tek-kullanıcı aracın tehdit modeline göre orantısız bulunuyor).

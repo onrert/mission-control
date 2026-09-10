@@ -4224,3 +4224,68 @@ notu), `KURULUM.md` ("Gizlilik — ne saklanır" bölümü).
 
 **Sonraki adım:** qa-evaluator değerlendirsin; port 7333 boşken `npm run e2e`'nin tam
 çalıştırılması önerilir.
+
+---
+
+## 2026-09-10 — G5 tur 2: bağımsız denetimin bulduğu K1-YENİ (GG1) + iki düşük bulgu
+
+**Kaynak:** `docs/qa/G5-guvenlik-denetimi-2026-09-10-tur2.md` (bağımsız denetim, K2/K3 kapalı
+onaylandı, K1'in kapanışı harf-varyantı atlatmasıyla geçersiz kılındığı bulundu). Sözleşme:
+`docs/qa/g5-guvenlik-duzeltme-tur2-contract.md`.
+
+**Ne yapıldı**
+- **GG3 (K3 küçük borç) — KAPANDI.** `normalize.ts`'teki `KEY_VALUE_SECRET_RE` alan adı
+  grubuna `pwd` eklendi (`mysql --pwd=...` gibi yaygın kısaltmalar artık `password`/`passwd`
+  gibi redakte ediliyor). Yeni test eklendi (`tests/features/events/server/normalize.test.ts`,
+  26. test). Mutasyon: `pwd` alternatifi regex'ten çıkarıldı → yeni test KIRMIZI
+  (`beklenen 'mysql -u root --pwd=[redakte]'`, `alınan` ham secret) → elle geri alındı,
+  `md5sum` başlangıçla birebir eşleşti (`b9d22d032152ec6e023d2ffad638856d`). Commit: `15a3b10`.
+- **GG1 (bloklayıcı, K1-YENİ) — HAZIRLANDI, UYGULANAMADI.** `gate-check.cjs`'teki `isGuarded`
+  regex'ine `/i` eklemeyi (ve `free` listesindeki `/^\.claude\//`'a tutarlılık için `/i`)
+  denedim; **PreToolUse hook'un kendisi bu Edit'i canlı olarak engelledi**
+  (`Engellendi: ".claude/hooks/gate-check.cjs" kendi güvenlik korumanızı değiştiriyor —
+  docs/approvals/GUARD.ok ... gerekli`), tam da denetimin belgelediği mekanizma. Brief'in
+  kısıtı gereği (`CLAUDE.md`: tek kullanımlık onay dosyalarını agent yazmaz) `GUARD.ok`'u
+  kendim yazmadım. Tam değişiklik `docs/qa/g5-guvenlik-duzeltme-tur2-contract.md`'de hazır
+  (regex + en az 4 `_selftest.cjs` vakası + mutasyon planı) — GUARD.ok kullanıcı tarafından
+  yazılınca tek bir kod turuyla uygulanabilir.
+- **GG2 (düşük, K2 küçük borç) — HAZIRLANDI, UYGULANAMADI.** Aynı sebeple (`block-dangerous.cjs`
+  de `.claude/hooks/**` kapsamında) `ri -rec` boşluğunun kapatılması da GUARD.ok bekliyor;
+  plan sözleşmede hazır, GG1 ile aynı yazma turunda yapılacak.
+- **Diğer harf-duyarlılık taraması (GG1 görev listesinin "başka yer var mı" maddesi):**
+  `.claude/hooks/` altındaki tüm dosyalar (`asset-guard.cjs`, `stop-check.cjs`,
+  `send-event.cjs`, `session-start.cjs`, `post-format.cjs`, `_common.cjs`) okundu. Yalnızca
+  `gate-check.cjs`'in `isGuarded`/`free` regex'leri path karşılaştırması yapıyor ve harf
+  duyarlı; diğerleri ya tool_name regex'i (zaten `/i` taşıyor, `asset-guard.cjs`) ya da
+  path-güvenlik amaçlı değil (formatter atlama, bilgilendirme). Başka bir harf-duyarlılık
+  sınıfı bulunmadı.
+
+**Nasıl doğrulandı**
+- `npx vitest run tests/features/events/server/normalize.test.ts`: 26/26 yeşil.
+- `npx tsc --noEmit` = 0, `npx eslint .` = 0, `npm run build` = 0 (77 modül).
+- `npm run test` iki kez koşturuldu: ilkinde 3 başarısız (2 beklenen port hatası +
+  `features-api.test.ts`'te bir `ENOTEMPTY` — tek başına koşulunca 25/25 yeşil geçti);
+  ikinci tam koşuda yalnızca **beklenen 2 port hatası** kaldı (`check-ports.test.ts`, port
+  7333 kullanıcının PID 12932 sürecinde) — 1359/1365 geçti, `features-api` flake'i
+  tekrarlamadı (CLAUDE.md'de kayıtlı vitest worker fork kararsızlığıyla tutarlı, kod
+  regresyonu değil).
+- `npm run e2e` çalıştırılmadı (aynı port çakışması, brief kısıtı — PID 12932'ye dokunulmadı).
+- `grep -rn "MUTATION\|MUTASYON" src/ tests/ electron/ scripts/`: yalnızca önceden var olan
+  meşru test adları, yeni iz yok.
+- Yetim süreç kontrolü: `tasklist` node.exe artığı göstermedi.
+- `docs/approvals/GUARD.ok` **hiç yazılmadı** (ne benim tarafımdan ne başka bir yolla) —
+  yalnızca 6 kalıcı `G*.ok` dosyası duruyor, denetim öncesiyle birebir.
+
+**Kalan risk / kapanmayan**
+- **GG1 (bloklayıcı) hâlâ açık** — `.claude/hooks/gate-check.cjs`'e yazmak için
+  `docs/approvals/GUARD.ok` gerekiyor, bunu yalnızca kullanıcı/CEO onaylayıp yazabilir.
+  Onaylanınca sözleşmedeki planla tek turda kapanır (tahmini süre: birkaç dakika).
+- **GG2 (düşük) aynı sebeple açık**, GG1 ile aynı yazma turunda kapanacak.
+- GG3 kapandı ama hâlâ bir kara liste (bilinçli, ADR-015 ile tutarlı): Türkçe alan adları,
+  bölünmüş/kodlanmış anahtarlar redakte edilmiyor — kapsam dışı.
+- `npm run e2e` bu turda da hiç çalıştırılamadı (port 7333 kullanıcı sürecinde) — bir sonraki
+  oturumda port boşken koşulmalı.
+
+**Sonraki adım:** Kullanıcı/CEO `docs/approvals/GUARD.ok` yazsın → developer GG1+GG2'yi tek
+kod turunda uygular (`gate-check.cjs` `/i` bayrağı + `_selftest.cjs` ≥4 yeni vaka,
+`block-dangerous.cjs` `ri` regex genişletmesi) → qa-evaluator son kez doğrulasın.

@@ -821,7 +821,7 @@ DOĞRULANMADI (bu turun kendisi headless). Asıl/ölçülen savunma Katman A/B'n
 kararlarıdır. **Eşik:** bir sonraki interaktif (headless olmayan) oturumda kullanıcı bunu
 gözlemleyip doğrularsa kapanır.
 
-### Kapsam dışı bırakılan test kırmızısı — `tests/features/chat/server/session.test.ts`
+### Kapsam dışı bırakılan test kırmızısı — `tests/features/chat/server/session.test.ts` — KAPANDI (2026-09-10)
 Bu turun `.claude/settings.json`'a eklediği `permissions.ask: ["Edit(docs/approvals/**)",
 "Write(docs/approvals/**)"]`, chat özelliğinin (F-012) `K3 çevrimdışı çit (mutasyon 13, Y-B1)`
 testindeki `expect(resolved.effective.permissions?.ask).toEqual(['Bash'])` (satır 543)
@@ -849,3 +849,16 @@ var olan, `.claude/settings.json`'ın tam içeriğine sıkı bağlı test.
 **Durum:** G5 tur3 KRİTİK bulgusunun düzeltmesi tamamlandı ve commit edildi; bu madde tek
 başına onu bekletmiyor (qa-evaluator karar versin, `CLAUDE.md`: "GEÇTİ/KALDI kararını yalnızca
 qa-evaluator verir").
+
+**KAPANIŞ (2026-09-10, developer, ayrı tur):** İstenen (a) uygulandı —
+`tests/features/chat/server/session.test.ts:543` `toEqual(['Bash'])` → `toContain('Bash')`
+yapıldı, üstüne neden tam eşitlik kullanılmadığını açıklayan yorum eklendi (sözleşme:
+`docs/qa/f012-k3-ask-assertion-contract.md`). Doğrulama: `npx vitest run tests/features/
+chat/server/session.test.ts` → 27/27 yeşil; `npm run test` (tam suite) → 85 dosya (1 atlandı,
+86), 1361 test (4 atlandı, 1365) yeşil (ilk koşu bilinen worker-fork çökmesiyle kırmızı verdi,
+ikinci koşu temiz — `CLAUDE.md`'deki bilinen kararsızlık, gerçek hata değil). Mutasyon kanıtı:
+(m1) `session.ts`'teki `permissions.ask`'tan `'Bash'` çıkarılınca 2 test kırmızı oldu (K3 +
+`opts.managedSettings` literal eşitliğini kontrol eden komşu test); (m2)
+`allowManagedPermissionRulesOnly` alanı kaldırılınca yine 2 test kırmızı oldu — ikisi de elle
+geri alındı (`git checkout` KULLANILMADI), `git diff -- src/features/chat/server/session.ts`
+boş çıktı verdi. `src/`'te kalıcı değişiklik yok, yalnızca test dosyası değişti.

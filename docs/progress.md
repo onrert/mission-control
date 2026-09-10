@@ -4526,3 +4526,51 @@ dosyalarinin-korunmasi.md`.
 **Durum:** `docs/qa/g5-onay-dosyasi-korumasi-contract.md` → **status: qa**. GEÇTİ/KALDI kararı
 qa-evaluator'a ait; özellikle §Kalan risk madde 1'in (panel HTTP ucu) kapsam dışı bırakılma
 gerekçesini ve cross-feature test kırmızısının kabul edilebilirliğini değerlendirmesi gerekir.
+
+## 2026-09-10 — K3 çevrimdışı çit `permissions.ask` iddiası daraltıldı (G5 sonrası cross-feature kırmızı kapatıldı)
+
+**Görev:** `docs/blockers.md`'de G5 turundan kalan tek kırmızıyı (`tests/features/chat/server/
+session.test.ts`'in K3 `describe` bloğu, satır ~543) kapatmak. G5'in `.claude/settings.json`'a
+eklediği `permissions.ask: ["Edit(docs/approvals/**)", "Write(docs/approvals/**)"]`,
+`resolveSettings()`'in ham kademe birleştirmesini okuyan `expect(resolved.effective.permissions
+?.ask).toEqual(['Bash'])` tam-eşitlik iddiasını kırmıştı — güvenlik regresyonu değil (eklenen
+kurallar `ask`, `allow` değil), yalnızca testin `.claude/settings.json`'ın tam içeriğine
+gereğinden fazla sıkı bağlı olması.
+
+**Sözleşme:** `docs/qa/f012-k3-ask-assertion-contract.md`.
+
+**Yapılan:** `tests/features/chat/server/session.test.ts:543` tek satır değişti:
+`toEqual(['Bash'])` → `toContain('Bash')`. Üstüne, tam eşitlik yerine kapsayıcılık kullanma
+gerekçesini açıklayan bir Türkçe yorum eklendi (`resolveSettings` proje kademesinin TÜM
+`ask`/`allow` kurallarını ham birleştirmeye dahil eder; `allowManagedPermissionRulesOnly` bir
+karar-anı bayrağıdır, kademe filtresi değil — testin işi `managedSettings`'in kaybolmadığını
+kanıtlamak, `.claude/settings.json`'ın anlık içeriğini sabitlemek değil). `src/` dosyalarına
+kalıcı dokunulmadı; `.claude/` dosyalarına hiç dokunulmadı.
+
+**Nasıl doğrulandı:**
+- Başlangıç kırmızısı tekrar üretildi: `npx vitest run tests/features/chat/server/
+  session.test.ts` → 1 kırmızı (K3), diff brief'teki beklentiyle birebir eşleşti.
+- Düzeltme sonrası: aynı komut → **27/27 yeşil**.
+- `npm run test` (tam suite): ilk koşu bilinen worker-fork çökmesiyle kırmızı verdi
+  (`3221226505`, `CLAUDE.md`'de kayıtlı kararsızlık — 1 dosya/12 test "sessizce eksik" olarak
+  raporlandı, `verify-test-run` gate'i doğru şekilde yakaladı); **ikinci koşu tam yeşil**:
+  **85 dosya (1 atlandı, 86), 1361 test (4 atlandı, 1365)**.
+- **Mutasyon kanıtı** (`src/features/chat/server/session.ts`, geçici, elle geri alındı,
+  `git checkout` KULLANILMADI):
+  - (m1) `managedSettings.permissions.ask`'tan `'Bash'` çıkarılınca → **2 test kırmızı**
+    (K3'ün kendisi + `opts.managedSettings` literal eşitliğini kontrol eden komşu test, satır
+    ~142).
+  - (m2) `managedSettings.allowManagedPermissionRulesOnly` alanı kaldırılınca → **2 test
+    kırmızı** (aynı iki test, farklı iddialarından).
+  - Her iki mutasyon sonrası elle ters `Edit` uygulandı; `git diff -- src/features/chat/
+    server/session.ts` **boş** çıktı verdi (iz yok), test dosyası tekrar 27/27 yeşile döndü.
+- `git status --short`: yalnızca `tests/features/chat/server/session.test.ts` ve
+  `docs/qa/f012-k3-ask-assertion-contract.md` (bu turun commit'i); `.claude/agent-memory/**`
+  ayrı, ilgisiz bir commit'te (turun başında bulunan commit'siz artık).
+- Yetim `node`/`npm` süreci yok (`tasklist` boş döndü).
+
+**Kalan risk:** Yok — bu madde `docs/blockers.md`'de KAPANDI olarak işaretlendi. K3'ün diğer
+iki iddiası (`allowManagedPermissionRulesOnly`, `managedSource` varlığı) hâlâ tam eşitlik/kesin
+doğru; bu turda dokunulmadı, gelecekte `.claude/settings.json`'a `allow`/`deny` kuralları
+eklenirse (yalnızca `ask` değil) K3'ün henüz görmediği bir yeniden kırılma riski teorik olarak
+var — ama bu, testin ŞU AN ölçtüğü şeyin dışında (kapsayıcılık yalnızca `ask` dizisi için).

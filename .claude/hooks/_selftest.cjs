@@ -8,6 +8,12 @@
 // token artık kapsamdaki bir dosya yazıldığında TÜKENMİYOR, yalnızca zaman penceresi dolunca
 // SİLİNİYOR — bu, birçok eski "GUARD.ok tuketilmeliydi" beklentisini "GUARD.ok
 // tuketilmemeliydi" olarak tersine çeviriyor (kasıtlı, bkz. sözleşme §2.2).
+//
+// TUR 5 (aynı sözleşme, M1+M2 kapanışı — QA'nın G5-sozlesme-kararlari-2026-09-10-tur4.md
+// bulguları): M1 — `D-WHITELIST-*` vakaları eklendi, çünkü mevcut D-TRAVERSAL/D-ABS/D-UNC/
+// D-LONGPREFIX/D-BACKSLASH/D-UNI vakalarının hiçbiri beyaz listeyi (normalizeScopeEntry) ÖLÇMÜYORDU
+// (§1.5). M2 — `D-SCANNER-DEPTH-*` vakaları eklendi, çünkü yinelenen-anahtar tarayıcısının kendi
+// çağrı-yığını taşmasını yutan catch bloğu MAX_GUARD_BYTES'e gizlice bağımlıydı (§1.3).
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -753,6 +759,37 @@ writeGuardRaw(JSON.stringify({ scope: ['.claude\\hooks\\block-dangerous.cjs'], c
 }
 rm(GUARD_OK); rm(GUARD_STATE);
 
+// (D-WHITELIST-*, M1 kapanışı — docs/qa/G5-sozlesme-kararlari-2026-09-10-tur4.md §1.5 KALDI
+// gerekçesi): yukarıdaki D-TRAVERSAL/D-ABS/D-UNC/D-LONGPREFIX/D-BACKSLASH/D-UNI vakalarının
+// HİÇBİRİ beyaz listeyi (`normalizeScopeEntry`) ÖLÇMÜYORDU — hepsi HOOK_FILE'a
+// (.claude/hooks/block-dangerous.cjs) yazmayı deniyor ama `scope`'a HOOK_FILE'DAN FARKLI bir
+// değer yazıyordu; bu yüzden kapsam ÜYELİK kontrolü (`parsed.scope.has(relLower)`) TEK BAŞINA
+// reddediyordu — beyaz liste tamamen kaldırılsa bile AYNI ŞEKİLDE reddederdi. QA ölçtü:
+// `normalizeScopeEntry` TAMAMEN kaldırılınca self-test 157/157 YEŞİL kalıyordu (çit YOKMUŞ gibi
+// görünüyordu, oysa YÜK TAŞIYAN bir kontroldü). AYIRT EDİCİ vakalar: `scope` elemanı, YAZILMAK
+// İSTENEN HEDEFİN KANONİK YOLUNA TAM OLARAK EŞİT (yani kapsam-üyelik kontrolü GEÇER) ama beyaz
+// liste BİÇİMİNE UYMUYOR (alt dizin, .cjs dışı uzantı, boşluk, çift uzantı). Bu durumda TEK ret
+// nedeni beyaz listedir — kaldırılırsa bu 6 vakanın HEPSİ KIRMIZI (SIZINTI) vermeli. QA'nın
+// raporundaki (§1.5) ayırt edici sondanın birebir karşılığı.
+const whitelistDiscriminatingCases = [
+  ['.claude/hooks/sub/evil.cjs', 'D-WHITELIST-SUBDIR: alt dizin (.cjs dogru ama .claude/hooks/ DOGRUDAN altinda degil)'],
+  ['.claude/hooks/notes.md', 'D-WHITELIST-EXT-MD: .claude/hooks/ altinda ama uzanti .cjs DEGIL (.md)'],
+  ['.claude/hooks/config.json', 'D-WHITELIST-EXT-JSON: .claude/hooks/ altinda ama uzanti .cjs DEGIL (.json, .claude/settings.json ile KARISTIRILMAMALI)'],
+  ['.claude/hooks/evil file.cjs', 'D-WHITELIST-SPACE: dosya adinda bosluk ([\\w-]+ bosluk kabul etmez)'],
+  ['.claude/hooks/evil.payload.cjs', 'D-WHITELIST-DOUBLE-EXT: dosya adinda ikinci bir nokta (evil.payload.cjs)'],
+  ['.claude/hooks/a/b/c.cjs', 'D-WHITELIST-NESTED: iki seviyeli alt dizin'],
+];
+for (const [vectorPath, label] of whitelistDiscriminatingCases) {
+  writeGuardRaw(JSON.stringify({ scope: [vectorPath], created_at: nowIso() }));
+  const code = callGate(vectorPath);
+  const untouched = fs.existsSync(GUARD_OK);
+  fail += reportScope(
+    `(${label}) scope = hedefin kanonik yolu (kapsam UYELIGI gecer) ama beyaz liste BICIMINE uymuyor -> fail-closed`,
+    code === 2 && untouched,
+  );
+  rm(GUARD_OK); rm(GUARD_STATE);
+}
+
 // (D-ROOT-NOT-OBJECT): kok deger bir JSON object olmali; dizi/dize/null kok degerler reddedilir.
 for (const [rootVal, label] of [
   [['./.claude/hooks/block-dangerous.cjs'], 'kok bir dizi'],
@@ -773,6 +810,47 @@ writeGuardRaw('{ scope: [oops, bozuk json');
   const code = callGate(HOOK_FILE);
   const untouched = fs.existsSync(GUARD_OK);
   fail += reportScope('(D-SYNTAX-ERROR) gecersiz JSON sozdizimi -> fail-closed, dosya silinmez', code === 2 && untouched);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (D-SCANNER-DEPTH-*, M2 kapanışı — docs/qa/G5-sozlesme-kararlari-2026-09-10-tur4.md §1.3):
+// `scanForDuplicateKeys` artık MAX_GUARD_BYTES'TEN BAĞIMSIZ, KASITLI bir iç içe derinlik sınırına
+// (`MAX_SCAN_DEPTH`, gate-check.cjs) sahip. QA'nın ölçümü: tarayıcının kendi JS çağrı yığını
+// sınırı ~5074 seviyede RangeError fırlatıyordu ve bu ESKİDEN `catch (_) { dup = null; }` ile
+// SESSİZCE yutuluyordu (fail-OPEN) — yani koruma yalnızca MAX_GUARD_BYTES'in (8192 bayt, sadece
+// DoS gerekçesiyle seçilmiş) o derinliğe ULAŞILAMAMASINA güveniyordu (emniyet payı ~1.26x).
+// Aşağıdaki iki test: (1) makul derinlik hiç sorun çıkarmaz (aşırı engelleme yok), (2) sınırın
+// ÇOK altında bir bayt boyutuyla (MAX_GUARD_BYTES'e ULAŞMADAN ÖNCE) derinlik sınırı KENDİ BAŞINA
+// devreye girer ve belge FAIL-CLOSED reddedilir — yani koruma artık MAX_GUARD_BYTES'in DEĞERİNDEN
+// bağımsız. (DİZİ iç içe geçmesi kullanılıyor: QA'nın gerçek sızıntı denemesi de dizilerledi,
+// tarayıcının "level" sayacı YALNIZCA object'lerde arttığı için bir derinlik sınırı "level"
+// üzerinden yazılsaydı diziler için işlemezdi — gate-check.cjs bu yüzden ayrı bir "depth" sayacı
+// kullanıyor.)
+function nestedArrayJson(depth) { return '['.repeat(depth) + '0' + ']'.repeat(depth); }
+
+// (D-SCANNER-DEPTH-OK, negatif kontrol): 50 seviye ic ice bir "reason" degeri tarayiciyi hic
+// zorlamiyor (MAX_SCAN_DEPTH'in COK altinda), belge normal kabul edilir.
+writeGuardRaw('{"scope":[".claude/hooks/depth-ok.cjs"],"created_at":"' + nowIso() + '","reason":' + nestedArrayJson(50) + '}');
+{
+  const code = callGate('.claude/hooks/depth-ok.cjs');
+  const remains = fs.existsSync(GUARD_OK);
+  fail += reportScope('(D-SCANNER-DEPTH-OK) 50 seviye ic ice "reason" -> tarayici siniri asilmaz, belge kabul edilir (asiri engelleme yok)', code === 0 && remains);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (D-SCANNER-DEPTH-EXCEEDED, M2 zorunlu kanit): 400 seviye ic ice "reason" (~800 bayt —
+// MAX_GUARD_BYTES'in (8192) COK altinda, yani boyut siniri devreye GIRMEDEN once derinlik siniri
+// tetiklenir) -> tarayici KASITLI olarak vazgecer (__scanDepthExceeded), YENI catch mantigi bunu
+// __scanErr SAYMAZ ve belgeyi FAIL-CLOSED reddeder (dosya SILINMEZ, kullanici duzeltip tekrar dener).
+{
+  const raw = '{"scope":[".claude/hooks/depth-exceeded.cjs"],"created_at":"' + nowIso() + '","reason":' + nestedArrayJson(400) + '}';
+  writeGuardRaw(raw);
+  const code = callGate('.claude/hooks/depth-exceeded.cjs');
+  const untouched = fs.existsSync(GUARD_OK);
+  fail += reportScope(
+    '(D-SCANNER-DEPTH-EXCEEDED) 400 seviye ic ice "reason" (bayt sinirinin COK altinda, ~800B) -> derinlik siniri KENDI BASINA tetiklenir, fail-closed',
+    code === 2 && untouched,
+  );
 }
 rm(GUARD_OK); rm(GUARD_STATE);
 

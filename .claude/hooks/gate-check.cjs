@@ -28,6 +28,11 @@
 // (dürüst maliyet: pencere boyunca birden fazla yazma yetkilenir) — gerekçe sözleşmede.
 // `docs/approvals/.guard-state.json` artık HİÇBİR yol tarafından yazılmıyor/okunmuyor (kısmi
 // tüketim izleme mantığı kaldırıldı) ama savunma-derinliği için sert engeli KORUNUYOR.
+//
+// TUR 5 (docs/qa/g5-guard-json-contract.md, "M2" kapanışı — QA'nın G5-sozlesme-kararlari-
+// 2026-09-10-tur4.md §1.3 bulgusu): `scanForDuplicateKeys`'in kendi çağrı-yığını taşmasını
+// (RangeError) yutan `catch (_) { dup = null; }` artık AYRIŞTIRILDI — bkz. aşağıdaki
+// `parseGuardDoc` içindeki catch bloğu ve `MAX_SCAN_DEPTH` sabiti.
 const path = require('path');
 const fs = require('fs');
 const { readInput, exists, block } = require('./_common.cjs');
@@ -39,6 +44,17 @@ const MAX_GUARD_BYTES = 8192; // meşru bir GUARD.ok birkaç yüz bayttır; bu, 
 const DEFAULT_VALID_MINUTES = 30;
 const MAX_VALID_MINUTES = 120; // sınırsız pencere yok; üst sınır CEO'nun çok adımlı bakımına esneklik tanır
 const CLOCK_SKEW_TOLERANCE_MS = 60 * 1000; // yazan/okuyan arasındaki saniyeler mertebesindeki saat farkını tolere eder
+
+// docs/qa/g5-guard-json-contract.md M2 kapanışı (G5-sozlesme-kararlari-2026-09-10-tur4.md §1.3):
+// `scanForDuplicateKeys` JS'de yazılmış ÖZYİNELEMELİ bir tarayıcı, kendi JS çağrı yığını sınırına
+// çarpıp RangeError fırlatabilir (QA ölçümü: ~5074 seviyede). Bu sınır ESKİDEN yalnızca
+// `MAX_GUARD_BYTES`'in (8192 bayt, YALNIZCA DoS gerekçesiyle seçilmiş) o derinliğe erişmeye
+// YETMEMESİNE güveniyordu (emniyet payı ~1.26x, 4038'e karşı 5074) — yani yinelenen-anahtar
+// koruması, DEĞERİ herhangi bir an büyütülebilecek BAŞKA bir sabite GİZLİCE bağımlıydı. Aşağıdaki
+// sınır bunu KOPARIR: tarayıcı, meşru bir GUARD.ok'un olabileceğinden (iç içe derinlik 2-3) çok
+// daha cömert ama gerçek çağrı-yığını sınırından ÇOK ÖNCE, KENDİ KARARIYLA durur — MAX_GUARD_BYTES
+// değişse bile bu sınır sabit kalır.
+const MAX_SCAN_DEPTH = 200;
 
 // docs/qa/g5-guard-json-contract.md P7b kapanışı — kapalı liste (allowlist), YENİ bir alan
 // eklemek isteyen biri bu listeyi de güncellemek ZORUNDA kalsın diye kasıtlı olarak dar tutuldu.
@@ -156,7 +172,13 @@ function scanForDuplicateKeys(text) {
     if (i === start) fail('gecersiz sayi');
   }
   let duplicate = null;
-  function parseObject(level) {
+  // `level`: yinelenen-anahtar raporlaması için SEMANTİK iç içe geçme seviyesi (yalnızca OBJECT
+  // sınırlarında artar — orijinal davranış DEĞİŞMEDİ). `depth`: MAX_SCAN_DEPTH kontrolü için ayrı
+  // bir GERÇEK ÖZYİNELEME SAYACI — hem object hem ARRAY iç içe geçmesinde artar, çünkü JS çağrı
+  // yığını her iki durumda da büyür (QA'nın sızıntı denemesi tam olarak DİZİ iç içe geçmesiyle
+  // RangeError üretmişti; `level` yalnızca object'lerde arttığı için diziler onu HİÇ artırmazdı ve
+  // bir derinlik sınırı `level` üzerinden yazılsaydı diziler için işlemezdi).
+  function parseObject(level, depth) {
     i++; // '{'
     ws();
     const seen = new Set();
@@ -170,31 +192,36 @@ function scanForDuplicateKeys(text) {
       if (text[i] !== ':') fail('": " bekleniyordu');
       i++;
       ws();
-      parseValue(level + 1);
+      parseValue(level + 1, depth + 1);
       ws();
       if (text[i] === ',') { i++; continue; }
       if (text[i] === '}') { i++; break; }
       fail('"," veya "}" bekleniyordu');
     }
   }
-  function parseArray(level) {
+  function parseArray(level, depth) {
     i++; // '['
     ws();
     if (text[i] === ']') { i++; return; }
     while (true) {
       ws();
-      parseValue(level);
+      parseValue(level, depth + 1);
       ws();
       if (text[i] === ',') { i++; continue; }
       if (text[i] === ']') { i++; break; }
       fail('"," veya "]" bekleniyordu');
     }
   }
-  function parseValue(level) {
+  function parseValue(level, depth) {
+    if (depth > MAX_SCAN_DEPTH) {
+      const e = new Error(`izin verilen en fazla ic ice derinlik (${MAX_SCAN_DEPTH}) asildi (seviye ${depth})`);
+      e.__scanDepthExceeded = true;
+      throw e;
+    }
     ws();
     const c = text[i];
-    if (c === '{') return parseObject(level);
-    if (c === '[') return parseArray(level);
+    if (c === '{') return parseObject(level, depth);
+    if (c === '[') return parseArray(level, depth);
     if (c === '"') { parseString(); return; }
     if (c === 't') return parseLiteral('true');
     if (c === 'f') return parseLiteral('false');
@@ -203,7 +230,7 @@ function scanForDuplicateKeys(text) {
     fail('beklenmeyen jeton');
   }
   ws();
-  parseValue(1);
+  parseValue(1, 1);
   ws();
   if (i !== n) fail('JSON degerinden sonra fazladan veri');
   return duplicate; // null: yinelenen anahtar yok; {key, level}: bulundu
@@ -275,7 +302,29 @@ function parseGuardDoc(guardPath) {
   // hatasını versin. Tarayıcının TEK sorumluluğu, SÖZDİZİMSEL OLARAK GEÇERLİ bir belgede
   // JSON.parse'ın kaybedeceği bir yinelenmeyi ONDAN ÖNCE yakalamaktır.
   let dup = null;
-  try { dup = scanForDuplicateKeys(text); } catch (_) { dup = null; }
+  try {
+    dup = scanForDuplicateKeys(text);
+  } catch (e) {
+    if (e && e.__scanErr) {
+      // GERÇEK bir JSON sözdizim hatası (parseString/parseNumber/vb. sırasında, örn. yarım kalmış
+      // bir dize): JSON.parse zaten AYNI belgeyi kendi "geçerli JSON değil" hatasıyla reddedecek,
+      // tarayıcının burada sessizce vazgeçmesi GÜVENLİDİR — asıl kabul/red kararını JSON.parse verir.
+      dup = null;
+    } else {
+      // docs/qa/g5-guard-json-contract.md M2 kapanışı: ESKİDEN buradaki `catch (_) { dup = null; }`
+      // HER hatayı (RangeError DAHİL) yutuyordu — yani tarayıcı GÖREVİNİ TAMAMLAYAMADIĞINDA (çok
+      // derin iç içe bir yapıda JS çağrı yığını taşması, ya da MAX_SCAN_DEPTH'in yukarıdaki KASITLI
+      // reddi) sessizce "yinelenen anahtar yok" SAYILIYORDU (fail-OPEN) — bu da korumayı
+      // MAX_GUARD_BYTES'in DEĞERİNE gizlice bağımlı kılıyordu. Artık tarayıcının KENDİ sözdizim
+      // hatası (__scanErr) DIŞINDAKİ her şey "tarayıcı çalışamadı" anlamına gelir ve belge
+      // MAX_GUARD_BYTES'İN DEĞERİNDEN BAĞIMSIZ olarak FAIL-CLOSED reddedilir (dosya SİLİNMEZ).
+      return {
+        ok: false,
+        error: `yinelenen-anahtar tarayicisi calisamadi (${e && e.message ? e.message : String(e)}) - ` +
+          'tarayici gerekli kontrolu TAMAMLAYAMADIGI icin belge guvenlik geregi FAIL-CLOSED reddedildi',
+      };
+    }
+  }
   if (dup) {
     return {
       ok: false,

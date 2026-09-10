@@ -4764,3 +4764,63 @@ uygulandı, ikisi de çalıştı.
 
 **Açık kalan (G5'i bloklayan):** Y1 ve Y3. Düzeltme turu ve beş sözleşmenin resmî GEÇTİ/KALDI
 kararı devam ediyor.
+
+---
+
+## 2026-09-10 (akşam) — CEO — Y1 kapandı: GUARD.ok markdown'dan JSON'a taşındı
+
+**Bağlam:** Y1 (GUARD.ok kapsamının, onay belgesinin insan için yazılmış kısmından da okunması)
+üç turda üç kez yenildi ve kullanıcıya eskale edildi. Kullanıcı kararı: **dördüncü bir
+metin-ayrıştırma yaması yok, kaynak kaldırılıyor.**
+
+| Tur | Mekanizma | Nasıl yenildi |
+|---|---|---|
+| 1 | metnin tamamındaki ters tırnaklı adlar | gerekçede "kapsam dışı" denen ad kapsama giriyordu |
+| 2 | `## Kapsam` bloğu (sonraki `##` ya da dosya sonu) | başlıksız kuyruk düzyazı, `# h1`, `**kalın**` sözde-başlık |
+| 3 | başlıktan sonraki kapalı biçimli liste maddeleri | **başlık kimliğinin devralınması** |
+| 4 | **JSON** — kapsam yalnızca `scope` dizisinden | — (bu tur) |
+
+Tur 3'ün bulgusu ölçülerek gösterildi: onay belgesi **tam tersine** çalışıyordu — onayladığı
+iki dosya reddediliyor, "arşiv, kapsam değil" denen dosya kart çıkmadan kabul ediliyordu.
+
+**Yeni tasarım (`docs/qa/g5-guard-json-contract.md`, commit `ca4ce4c`):**
+- `GUARD.ok` bir JSON belgesidir; kapsam **yalnızca** `scope` dizisinden okunur. `reason` ve
+  diğer alanlar **hiçbir zaman** ad için taranmaz — "başlık" kavramı ortadan kalktığı için
+  başlık-kimliği sınıfı yapısal olarak imkânsız.
+- Kapsam elemanları sabit bir **beyaz listeye** uyar ve **yol olarak çözülmez** (çözmek, tur-4'te
+  kapatılan junction/uzun-yol sınıfını geri açardı). Tek bozuk eleman **tüm kapsamı** geçersiz kılar.
+- **Kayıpsız ayrıştırma zorunluluğu:** `JSON.parse` yinelenen anahtarda sessizce sonuncuyu alır —
+  yani belge bir kapsam gösterirken makine başkasını yetkilendirebilir (Y1'in JSON'daki hâli).
+  `JSON.parse`'a ulaşmadan ham metni tarayan bir RFC 8259 durum makinesi, **her seviyede**
+  yinelenen anahtarı reddeder. Kök alanlar **kapalı listede**.
+- **Tüketim zaman pencereli** (varsayılan 30 dk, üst sınır 120, `created_at` zorunlu, gelecek
+  tarih fail-closed). Eski "her yazmada tüket" modeli tek bir düzeltmede **beş kullanıcı onayı**
+  yakmıştı. Kabul edilen takas sözleşmede yazılı.
+- Engelleme mesajları artık gerekli biçimi **tarif ediyor** ve ayrıştırılan kapsamı gösteriyor;
+  `docs/approvals/README.md` tam örnekli.
+
+**Kurulmadan önce doğrulandı — ve bu bir açık yakaladı.** İzole bir sahte depoda (gerçek
+hook'ların kopyası + kendi onay ağacı) self-test **157/157** ve CEO'nun bağımsız saldırı sondası
+koşturuldu. İlk adayda sonda **P7b**'yi kırmızı verdi: yinelenen `scope` anahtarıyla görünen
+kapsam reddediliyor, gizlenen ad **kabul ediliyordu**. Kapatıldıktan sonra **14/14**.
+Bugün önceki üç kurulumda tersi yapılmıştı (önce kur, sonra QA yensin) — kural `CLAUDE.md`'ye
+işlendi.
+
+**Ölçülen son durum:** `_selftest` **157/157** (122'den) · bağımsız sonda **14/14** ·
+`npm run test` 1371 geçti / 4 atlandı (85 dosya) · `tsc`=0 · `eslint`=0 ·
+altı gerçek kapı dosyasının SHA-256'sı değişmedi.
+
+**Canlı doğrulanan davranışlar (gerçek depoda):** süresi geçmiş token bir sonraki değerlendirmede
+**silindi**; bekleyen token varken `_selftest.cjs` hiçbir şeye dokunmadan **exit 3** ile reddetti
+(Y3 emniyet kemeri).
+
+**İki CEO hatası, açıkça:**
+1. Verimlilik için `.claude/hooks/` altına kapıdan geçmeden bir hazırlık dosyası kopyalandı —
+   bu, `docs/blockers.md`'de Y4 olarak kayıtlı açığın ta kendisi. Fark edilip silindi, hiçbir
+   koruma dosyası etkilenmedi.
+2. Kurulum sırasında bir kaçış dizisi **ham NUL baytına** dönüştü; kod doğru çalışıyordu ama git
+   dosyayı ikili saymaya başlamıştı (güvenlik hook'unun diff'i incelenemez). Kaçış dizisi
+   `String.fromCharCode(0)` ile değiştirilerek kapatıldı; bayt eşitliği `diff` ile doğrulandı.
+
+**Durum:** `g5-guard-json-contract.md` → `status: qa`. GEÇTİ/KALDI kararı qa-evaluator'a ait.
+`CLAUDE.md` 68 → **75 kural**.

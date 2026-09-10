@@ -4438,3 +4438,91 @@ doğrulasın.
 **Durum:** `docs/qa/g5-guvenlik-duzeltme-tur3-contract.md` → **status: qa** (dört madde de
 kod yazıldı, kendi testleriyle doğrulandı, tam `verify`+`e2e` yeşil). GEÇTİ/KALDI kararı
 qa-evaluator'a ait.
+
+## 2026-09-10 — G5 tur3 KRİTİK bulgusunun düzeltmesi: onay dosyaları artık korumasız değil
+
+**Görev:** `docs/qa/G5-guvenlik-denetimi-2026-09-10-tur3.md` §0 KRİTİK bulgusu — `docs/
+approvals/` hiçbir hook tarafından korunmuyordu, barındırılan bir oturum kendi GUARD.ok/
+DANGER.ok/PUSH.ok/G*.ok dosyasını kullanıcıya hiç sormadan üretebiliyor, hatta mevcut gerçek
+bir GUARD.ok'un kapsamını tüketilmeden önce genişletebiliyordu. Sözleşme (kod yazmadan önce):
+`docs/qa/g5-onay-dosyasi-korumasi-contract.md`. Karar/gerekçe: `docs/decisions/ADR-016-onay-
+dosyalarinin-korunmasi.md`.
+
+**Ne yapıldı:**
+- **Katman A — `.claude/hooks/gate-check.cjs`:** `free` listesi kontrolünden ÖNCE çalışan yeni
+  bir kontrol eklendi — `docs/approvals/` altındaki HER dosya (GUARD/DANGER/PUSH/G*.ok,
+  README.md, archive/** dahil) artık `permissionDecision:'ask'` JSON'u ile harness'e devredilir
+  (sessiz `exit 0` YOK). `.guard-state.json` (GUARD.ok'un iç tüketim izleyicisi) kullanıcı
+  onayı gerektiren bir şey DEĞİL — koşulsuz sert engellendi (`exit 2`).
+- **Katman B — `.claude/hooks/block-dangerous.cjs`:** kabuktan `docs/approvals/` altına
+  yazma/silme sert engellendi. İki alt-sınıf: (b1) klasik yazma fiili — yönlendirme (`>`/`>>`,
+  yalnızca hedef GERÇEKTEN docs/approvals'a bakıyorsa — `cat … 2>/dev/null` gibi ilgisiz
+  redirection'lar yanlış pozitif ALMASIN diye ayrı ve dar bir desen), `cp`/`copy`/`mv`/`move`/
+  `ren`/`tee`/`sed -i`, PowerShell `Set-Content`/`Out-File`/`Add-Content`/`New-Item`/
+  `Remove-Item`, Windows `del`/`erase`/`rd`/`rmdir`, PowerShell `ri` (bayraksız TEK dosya dahil
+  — eski `danger` deseni yalnızca `/s`/`/q` ile "büyük" silmeleri yakalıyordu). (b2) satır içi
+  betik — `node -e`/`--eval`, `npx tsx -e`, `python -c` + `docs/approvals` aynı komutta,
+  KASITLI OLARAK geniş (betiğin gerçekten yazıp yazmadığı metinden güvenilir anlaşılamaz).
+  QA'nın §0.2/§0.3 birebir istismarı (`node -e "require('fs').writeFileSync('docs/approvals/
+  GUARD.ok', ...)"`) bu sınıfa girer ve artık engelleniyor.
+- **Katman C — `.claude/hooks/_selftest.cjs`:** 50 → **88** vaka. Yeni: 25 `block-dangerous`
+  vakası (b1/b2 pozitif + negatif: `cat`/`ls`/`git status`/`git add`/`git commit`/ilgisiz
+  `2>/dev/null` yönlendirmesi/Windows `type`), 9 `gate-check` vakası (ask JSON'unu STDOUT'tan
+  ayrıştırıp `permissionDecision:'ask'` olduğunu doğrulayan yeni bir yardımcı — yalnızca exit
+  kodu 0 kontrolü "sessiz izin" ile "ask" kararını AYIRT EDEMEZDİ, "her çitin kendi pozitif
+  kontrolü olmalı" dersi).
+- **Katman D — `.claude/settings.json`:** EN SON yazıldı (token'ı tüketen adım).
+  `permissions.ask`: `["Edit(docs/approvals/**)", "Write(docs/approvals/**)"]` eklendi —
+  harness'in kendi izin sisteminde ikinci, bağımsız bir "sor" kuralı; mevcut geniş
+  `Write(docs/**)`/`Edit(docs/**)` `allow` kuralını daha spesifik bir desenle önceliklendirir.
+- **`docs/decisions/ADR-016-onay-dosyalarinin-korunmasi.md`:** mimari kararı ve KABUL EDİLMİŞ
+  sınırı (kabuk erişimli bir oturuma karşı mutlak koruma yok) belgeledi.
+
+**Nasıl doğrulandı:**
+- `node .claude/hooks/_selftest.cjs` → **88/88 GEÇTİ** ("TUM TESTLER GECTI").
+- **İki mutasyon, SANDBOX KOPYALARINDA** (gerçek `GUARD.ok` token'ı zaten bu turda dört dosyanın
+  hepsi gerçekten Edit edildiği için TÜKETİLDİ — kalan mutasyon kanıtı için yeni bir token
+  istemek yerine, önceki turların kabul edilmiş yöntemiyle sandbox kopyası kullanıldı, gerçek
+  dosyalara HİÇ Edit/Write çağrısı yapılmadı):
+  1. Katman A'nın yeni kontrolü (`if (isApprovalsPath)` → `if (false && isApprovalsPath)`)
+     devre dışı bırakıldı → 8/9 yeni "(katman A)" vakası **KIRMIZI** (sessiz `exit 0`, ask JSON
+     yok), 1 ilgisiz negatif vaka (docs/qa) YEŞİL kaldı (pozitif kontrol doğru hedefe bağlı).
+  2. Katman B'nin yeni kontrolü (`isApprovalsWrite` → sabit `false`) devre dışı bırakıldı →
+     21/29 pozitif vaka **KIRMIZI**, 8 negatif vaka (cat/ls/git…) YEŞİL kaldı.
+  Her iki mutasyon SADECE `C:\Users\...\scratchpad\mutation\*.cjs` kopyalarında yapıldı;
+  gerçek `.claude/hooks/gate-check.cjs`/`block-dangerous.cjs`'in MD5'i mutasyon öncesi/sonrası
+  **birebir aynı** (mutasyon hiç uygulanmadı gerçek dosyaya).
+- `npx tsc --noEmit` = 0. `npx eslint .` = 0.
+- `npm run test` — **1 failed | 1360 passed | 4 skipped (1365)**. Tek kırmızı: `tests/features/
+  chat/server/session.test.ts` "K3 çevrimdışı çit" — `expect(resolved.effective.permissions
+  ?.ask).toEqual(['Bash'])`, bu test GERÇEK `.claude/settings.json`'ı okuyup SDK'nın
+  `resolveSettings()`'iyle birleştiriyor; bu turun `permissions.ask` eklemesi bu TAM-EŞİTLİK
+  iddiasını kırıyor. Bu dosya `tests/features/chat/**` (F-012) dosya sahipliğinde, bu turun
+  kapsamı DIŞINDA — dokunulmadı, `docs/blockers.md`'ye CEO kararı için yazıldı (önerilen tek
+  satırlık düzeltme: `toEqual(['Bash'])` → `toContain('Bash')`, orada da belirtildi).
+  Reproducible/deterministik olduğu izole koşuyla doğrulandı (flaky DEĞİL).
+- `npm run e2e` → **55/55 geçti** (44.3s), bu turdan tamamen etkilenmemiş.
+- Yetim süreç yok (`tasklist` boş döndü).
+- `docs/approvals/GUARD.ok` ve `.guard-state.json` **tüketildi/temizlendi** (dört dosyanın
+  hepsi gerçekten Edit edildiği için); yalnızca 6 kalıcı `G*.ok` + `README.md` duruyor.
+- `git status --short`: `.claude/hooks/_selftest.cjs`, `.claude/hooks/block-dangerous.cjs`,
+  `.claude/hooks/gate-check.cjs`, `.claude/settings.json` (M), `docs/qa/g5-onay-dosyasi-
+  korumasi-contract.md` (??) — kapsamın tamamı, fazlası yok. `docs/decisions/ADR-016-*.md` ve
+  `docs/blockers.md`/`docs/progress.md` güncellemeleri de eklenecek commit'e dahil.
+
+**Kalan risk / kapanmayan (üçü de `docs/blockers.md`'ye eşikleriyle yazıldı):**
+1. **Panelin kendi HTTP onay ucu** (`POST /api/gates/:project_id/:gate/approve`) `confirmed:
+   true` ile gerçek bir `G*.ok`'u (G5 dahil) barındırılan oturumun `Bash(node *)` erişimiyle
+   kullanıcıya sormadan onaylatabiliyor — YENİ bir açık değil, ADR-005 ekinin (F-012) BİLEREK
+   kabul ettiği "panelden yazılan onay = kullanıcı onayı" kararının öngörmediği bir sonucu.
+   Kapatmak `src/features/gates/**`'e dokunmayı gerektirir, bu turun kısıtı dışında.
+2. Komut satırında `docs/approvals` dizesi hiç geçmeyen, betik İÇİNE gömülü bir yazma
+   (`node scripts/x.mjs`) metin-tabanlı hiçbir regex'le görülemez — kabul edilmiş sınır,
+   kapatmak çalışma-zamanı gözlemi gerektirir.
+3. `permissions.ask`'ın harness'te `allow`'u gerçekten geçersiz kıldığı yalnızca SDK tip
+   tanımından (satır 258, 2564-2568) ÇIKARILDI, canlı interaktif bir oturumla DOĞRULANMADI
+   (bu tur headless). Asıl ölçülen savunma Katman A/B'nin hook kararlarıdır.
+
+**Durum:** `docs/qa/g5-onay-dosyasi-korumasi-contract.md` → **status: qa**. GEÇTİ/KALDI kararı
+qa-evaluator'a ait; özellikle §Kalan risk madde 1'in (panel HTTP ucu) kapsam dışı bırakılma
+gerekçesini ve cross-feature test kırmızısının kabul edilebilirliğini değerlendirmesi gerekir.

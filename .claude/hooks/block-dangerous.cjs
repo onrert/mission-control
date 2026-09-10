@@ -37,6 +37,31 @@ readInput((j) => {
   // Duyarsız eşleşme "git commit -F" gibi normal komutları yanlışlıkla engelliyordu.
   const gitForce = /\bgit\b[^\n]*\s(--force\b|--force-with-lease\b|-f\b)/;
 
+  // docs/qa/g5-onay-dosyasi-korumasi-contract.md Katman B (bypass envanteri madde 2/3) — kabuktan
+  // docs/approvals/ altına yazma/silme. Bu da bir KARA LİSTEdir (aynı NOT geçerli — derinlik
+  // katmanı, mutlak değil; §(b) madde 4 kapatılamıyor, dürüstçe açık). İki alt-sınıf:
+  //  b1) klasik yazma/silme fiili (yönlendirme, cp/mv/tee/sed -i, Windows/PowerShell eşdeğerleri)
+  //      + komut metninde docs/approvals geçmesi.
+  //  b2) satır içi betik (node -e/--eval, npx tsx -e, python -c) + komut metninde docs/approvals
+  //      geçmesi — betiğin GERÇEKTEN yazıp yazmadığı metinden güvenilir anlaşılamaz (obfuscation,
+  //      ör. fs['writeFileSync']), bu yüzden KASITLI OLARAK geniş: içerik yazma fiili taşımasa
+  //      bile engellenir. QA'nın §0.2/§0.3 birebir istismarı (`node -e "require('fs').
+  //      writeFileSync('docs/approvals/GUARD.ok', ...)"`) bu sınıfa girer.
+  const approvalsRef = /docs[\\/]approvals\b/i;
+  // Yönlendirme (`>`/`>>`) AYRI ve DAR bir desendir — hedefin GERÇEKTEN docs/approvals'a
+  // baktığını ister (`\s*['"]?docs[\\/]approvals`), aksi hâlde `cat docs/approvals/G5.ok
+  // 2>/dev/null` gibi tamamen zararsız, hedefi başka yere (stderr'e) yönlendiren okuma
+  // komutları yanlış pozitif alırdı (ilk sürümde tam bu oldu, elle bulundu ve düzeltildi).
+  const approvalsRedirect = /(>>|>(?!=))\s*['"]?docs[\\/]approvals\b/i;
+  const approvalsWriteVerb = /(\btee\b|\bcp\b|\bcopy\b|\bmv\b|\bmove\b|\bren(?:ame)?\b|\bsed\b[^\n]*-i\b|\bSet-Content\b|\bOut-File\b|\bAdd-Content\b|\bNew-Item\b|\bRemove-Item\b|\b(del|erase)\b|\brd\b|\brmdir\b|\bri\b)/i;
+  const approvalsInlineEval = /(\bnode\b[^\n]*(-e\b|--eval\b)|\bnpx\s+tsx\b[^\n]*-e\b|\bpython\b[^\n]*-c\b)/i;
+  const touchesApprovals = approvalsRef.test(cmd);
+  const isApprovalsWrite =
+    approvalsRedirect.test(cmd) || (touchesApprovals && (approvalsWriteVerb.test(cmd) || approvalsInlineEval.test(cmd)));
+  if (isApprovalsWrite) {
+    block('Engellendi: docs/approvals/ altına kabuktan yazma/silme girişimi. Onay dosyaları yalnızca Write aracıyla oluşturulmalı (o da kullanıcı izin kartına düşer, docs/qa/g5-onay-dosyasi-korumasi-contract.md Katman A).');
+  }
+
   const isRelease = release.test(cmd);
   const isPush = pushCmd.test(cmd);
   const isDestructive = danger.test(cmd) || gitForce.test(cmd);

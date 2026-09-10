@@ -106,6 +106,41 @@ const dangerCases = [
 
   [`${RMDIR} emptydir`, 0, 'rmdir bayraksiz (bos dizin, yikici degil) — yanlis pozitif olmamali'],
   [`${G} commit -m "update ${RD} readme"`, 0, 'metinde bare "rd" kelimesi, bayrak yok — yanlis pozitif olmamali'],
+
+  // --- Katman B (docs/qa/g5-onay-dosyasi-korumasi-contract.md, bypass envanteri madde 2/3):
+  // kabuktan docs/approvals altina yazma/silme. b1 = klasik yazma fiili, b2 = satir ici betik.
+  [`echo x > docs/approvals/GUARD.ok`, 2, '(b1) yonlendirme > ile docs/approvals altina yazma'],
+  [`echo x >> docs/approvals/GUARD.ok`, 2, '(b1) yonlendirme >> ile docs/approvals altina ekleme'],
+  [`cp foo docs/approvals/GUARD.ok`, 2, '(b1) cp ile docs/approvals altina kopyalama'],
+  [`copy foo docs\\approvals\\GUARD.ok`, 2, '(b1) Windows copy, ters bolu ayraci'],
+  [`mv foo docs/approvals/GUARD.ok`, 2, '(b1) mv ile docs/approvals altina tasima'],
+  [`tee docs/approvals/GUARD.ok`, 2, '(b1) tee ile docs/approvals altina yazma'],
+  [`sed -i s/a/b/ docs/approvals/GUARD.ok`, 2, '(b1) sed -i ile yerinde duzenleme'],
+  [`Set-Content docs/approvals/GUARD.ok -Value x`, 2, '(b1) PowerShell Set-Content'],
+  [`Out-File -FilePath docs/approvals/GUARD.ok`, 2, '(b1) PowerShell Out-File'],
+  [`Add-Content docs/approvals/GUARD.ok -Value x`, 2, '(b1) PowerShell Add-Content'],
+  [`del docs\\approvals\\GUARD.ok`, 2, '(b1) del, bayraksiz TEK dosya (eski danger deseni bunu yakalamiyordu)'],
+  [`erase docs\\approvals\\GUARD.ok`, 2, '(b1) erase, bayraksiz TEK dosya'],
+  [`rd docs\\approvals\\GUARD.ok`, 2, '(b1) rd, bayraksiz TEK dosya'],
+  [`rmdir docs\\approvals\\GUARD.ok`, 2, '(b1) rmdir, bayraksiz TEK dosya'],
+  [`ri docs/approvals/GUARD.ok`, 2, '(b1) PowerShell ri, bayraksiz TEK dosya'],
+  [`Remove-Item docs/approvals/GUARD.ok`, 2, '(b1) PowerShell Remove-Item, bayraksiz TEK dosya'],
+  [`echo x > DOCS\\APPROVALS\\guard.ok`, 2, '(b1) harf duyarsizlik + ters bolu ayraci'],
+  [
+    `node -e "require('fs').writeFileSync('docs/approvals/GUARD.ok','x')"`, 2,
+    '(b2) QA PoC birebir: node -e ile writeFileSync (docs/qa/G5-guvenlik-denetimi-2026-09-10-tur3.md §0.2)',
+  ],
+  [`node --eval "fs.appendFileSync('docs/approvals/GUARD.ok','x')"`, 2, '(b2) node --eval + appendFileSync (QA §0.3 kapsam genisletme PoC ailesi)'],
+  [`npx tsx -e "require('fs').writeFileSync('docs/approvals/GUARD.ok','x')"`, 2, '(b2) npx tsx -e satir ici betik'],
+  [`python -c "open('docs/approvals/GUARD.ok','w').write('x')"`, 2, '(b2) python -c satir ici betik'],
+  [`node -e "console.log('hello')"`, 0, '(b2) yanlis pozitif olmamali: docs/approvals gecmeyen zararsiz node -e'],
+  [`cat docs/approvals/G5.ok`, 0, 'yanlis pozitif olmamali: docs/approvals okuma (cat)'],
+  [`ls docs/approvals`, 0, 'yanlis pozitif olmamali: docs/approvals okuma (ls)'],
+  [`git add docs/approvals/G5.ok`, 0, 'yanlis pozitif olmamali: git add docs/approvals altinda'],
+  [`git commit -m "add G5.ok"`, 0, 'yanlis pozitif olmamali: git commit, docs/approvals disinda'],
+  [`cat docs/approvals/G5.ok 2>/dev/null`, 0, 'yanlis pozitif olmamali: docs/approvals okuma + ILGISIZ stderr yonlendirmesi (ilk surumde bu KIRMIZI veriyordu, elle bulunup duzeltildi)'],
+  [`ls -la docs/approvals/ 2>&1`, 0, 'yanlis pozitif olmamali: ls + 2>&1 (ayni sinif)'],
+  [`type docs\\approvals\\GUARD.ok`, 0, 'yanlis pozitif olmamali: Windows type (yonlendirmesiz okuma)'],
 ];
 
 // --- gate-check.cjs vakaları (K1) --------------------------------------------------------
@@ -246,6 +281,59 @@ writeGuardScope(['selftest-f1.cjs', 'selftest-f2.cjs']);
   );
 }
 rm(GUARD_OK); rm(GUARD_STATE);
+
+// --- Katman A (docs/qa/g5-onay-dosyasi-korumasi-contract.md): docs/approvals/** ask/blok
+// testleri. `run()`'ın aksine STDOUT'u da yakalar — bir "ask" kararının gerçekten
+// permissionDecision:'ask' JSON'u ile mi geldiğini, yoksa sessiz exit 0 (hiç sorulmadan izin)
+// mi olduğunu ayırt etmek İÇİN gerekli (yalnızca exit kodu 0/0 ile ayırt edilemez — "her çitin
+// kendi pozitif kontrolü olmalı" dersi, bu tam olarak o kontrol).
+function callGateCapture(filePath) {
+  let code = 0;
+  let stdout = '';
+  try {
+    stdout = execFileSync('node', ['.claude/hooks/gate-check.cjs'], {
+      input: JSON.stringify({ tool_input: { file_path: filePath } }),
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).toString('utf8');
+  } catch (e) {
+    code = e.status;
+    stdout = e.stdout ? e.stdout.toString('utf8') : '';
+  }
+  return { code, stdout };
+}
+function isAskJson(stdout, expectedReasonSubstring) {
+  let parsed;
+  try { parsed = JSON.parse(stdout); } catch (_) { return false; }
+  const out = parsed && parsed.hookSpecificOutput;
+  if (!out || out.hookEventName !== 'PreToolUse' || out.permissionDecision !== 'ask') return false;
+  if (expectedReasonSubstring && !String(out.permissionDecisionReason || '').includes(expectedReasonSubstring)) return false;
+  return true;
+}
+const approvalsAskCases = [
+  ['docs/approvals/G5.ok', 'permissionDecision:ask (gercek gate onayi, sentetik dosya adi)'],
+  ['docs/approvals/GUARD.ok', 'permissionDecision:ask (onay dosyasinin KENDISI)'],
+  ['docs/approvals/DANGER.ok', 'permissionDecision:ask'],
+  ['docs/approvals/PUSH.ok', 'permissionDecision:ask'],
+  ['docs/approvals/README.md', 'permissionDecision:ask (README dahil, brief acikca istedi)'],
+  ['docs/approvals/archive/G2-2026-01-01T00-00-00-000Z.deny.md', 'permissionDecision:ask (archive/** dahil)'],
+  ['DOCS/APPROVALS/g5.OK', 'permissionDecision:ask (harf duyarsiz)'],
+];
+for (const [filePath, label] of approvalsAskCases) {
+  const { code, stdout } = callGateCapture(filePath);
+  const ok = code === 0 && isAskJson(stdout, 'GÜVENLİK KAPISINI');
+  fail += reportScope(`(katman A) ${filePath} -> ${label}`, ok);
+}
+{
+  const { code, stdout } = callGateCapture('docs/approvals/.guard-state.json');
+  const ok = code === 2 && stdout === '';
+  fail += reportScope('(katman A) .guard-state.json her zaman SERT engellenir, ask DEGIL', ok);
+}
+{
+  // Regresyon: docs/approvals DISINDAKI docs/** hala tamamen serbest, ask YOK.
+  const { code, stdout } = callGateCapture('docs/qa/some-unrelated-note.md');
+  const ok = code === 0 && stdout === '';
+  fail += reportScope('(katman A) docs/approvals DISI docs/** hala sessizce serbest (regresyon)', ok);
+}
 
 // Test artıklarını bırakma.
 rm(PUSH_OK);

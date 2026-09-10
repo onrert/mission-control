@@ -779,3 +779,73 @@ edildi" sorusu açık kalıyor.
 maddesi de kapalı. `npm run verify` denkliği: tsc=0, eslint=0, build=0, test 85/86 dosya
 1361/1365 geçti (1 flaky test bir kez kırmızı verdi, tekrar koşuda yeşil — bu turun kodundan
 bağımsız), e2e 55/55. Yetim süreç yok, `GUARD.ok`/`.guard-state.json` tüketildi/temizlendi.
+
+## 2026-09-10 — developer (G5 tur3 KRİTİK bulgu düzeltmesi) — 3 AÇIK madde + 1 kapsam dışı bırakılan cross-feature test kırmızısı
+
+**Görev:** `docs/qa/G5-guvenlik-denetimi-2026-09-10-tur3.md` §0 KRİTİK bulgusu (barındırılan
+oturum kendi onay dosyasını kendi yazabiliyordu — `docs/approvals/` hiçbir hook tarafından
+korunmuyordu). Sözleşme: `docs/qa/g5-onay-dosyasi-korumasi-contract.md`. Karar/gerekçe:
+`docs/decisions/ADR-016-onay-dosyalarinin-korunmasi.md`.
+
+**Yapılan (özet, detay progress.md'de):** `gate-check.cjs`'e Katman A (`docs/approvals/**`
+artık `permissionDecision:'ask'`a düşer, `.guard-state.json` sert engellenir), `block-
+dangerous.cjs`'e Katman B (kabuktan docs/approvals'a yazma/silme — yönlendirme/cp/mv/tee/
+sed -i/Windows-PowerShell eşdeğerleri VE `node -e`/`npx tsx -e`/`python -c` satır içi betikler
+sert engellenir), `.claude/settings.json`'a Katman D (`permissions.ask`: `Edit|Write
+(docs/approvals/**)`). `_selftest.cjs` 50 → 88 vaka. İki mutasyon (Katman A ve Katman B'nin
+yeni kontrolleri, sandbox kopyalarında) elle uygulanıp KIRMIZI görüldü (8 ve 21 vaka sırasıyla),
+gerçek dosyalara dokunulmadı (md5 doğrulandı).
+
+### AÇIK madde 1 (kabul edilmiş sınır, KAPSAM DIŞI) — panelin kendi HTTP onay ucu
+`POST /api/gates/:project_id/:gate/approve` `confirmed:true` + doğru `expectedBody` ile
+HERHANGİ bir `G*.ok`'u (G5 dahil) barındırılan oturumun kendi `Bash(node *)` erişimiyle
+(`node -e "fetch(...)"`) kullanıcıya hiç sormadan onaylatabilir — `Host`/`Origin`/`x-mc-write`
+kontrolleri bunu gerçek bir tarayıcı tıklamasından ayırt etmez. **Yeni bir açık değil**,
+ADR-005 ekinin (F-012) BİLEREK kabul ettiği "panelden yazılan onay = kullanıcı onayı"
+kararının öngörmediği bir sonucu. Kapatmak `src/features/gates/**`'e dokunmayı (CSRF token
+gibi mimari bir değişiklik) gerektirir — bu turun `src/`'e dokunmama kısıtı bunu yasakladı.
+**Eşik:** `src/features/gates/**`'e dokunan bir sonraki güvenlik turu.
+
+### AÇIK madde 2 (kabul edilmiş sınır, kapatılamadı) — betik İÇİNE gömülü yazma
+Komut satırında `docs/approvals` dizesi hiç geçmeyen, harici bir betiğin İÇİNDE gömülü bir
+yazma (ör. `node scripts/x.mjs`, hedef yol betiğin içinde) hiçbir Bash-metni regex'iyle
+görülemez. Kapatmak çalışma-zamanı gözlemi (dosya sistemi çağrı sentinel'i, F-011'in ağ
+sentinel'i emsali) gerektirir. **Eşik:** bu sınıfın gerçekten sömürüldüğüne dair bir kanıt
+görülürse hemen, aksi hâlde bir sonraki güvenlik/izleme turu.
+
+### AÇIK madde 3 (kapsam dışı, `.claude/settings.json`'ın `permissions.ask` desteği DOĞRULANMADI)
+`permissions.ask`'ın harness'te gerçekten `allow`'u geçersiz kılıp kullanıcıya soru sorduğu
+yalnızca `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts`'ten (satır 258, 2564-2568)
+ÇIKARILDI — canlı, interaktif bir oturumla (gerçek bir insanın "sor" kartını gördüğü)
+DOĞRULANMADI (bu turun kendisi headless). Asıl/ölçülen savunma Katman A/B'nin hook
+kararlarıdır. **Eşik:** bir sonraki interaktif (headless olmayan) oturumda kullanıcı bunu
+gözlemleyip doğrularsa kapanır.
+
+### Kapsam dışı bırakılan test kırmızısı — `tests/features/chat/server/session.test.ts`
+Bu turun `.claude/settings.json`'a eklediği `permissions.ask: ["Edit(docs/approvals/**)",
+"Write(docs/approvals/**)"]`, chat özelliğinin (F-012) `K3 çevrimdışı çit (mutasyon 13, Y-B1)`
+testindeki `expect(resolved.effective.permissions?.ask).toEqual(['Bash'])` (satır 543)
+iddiasını kırıyor — bu test `CHAT_SESSION_CWD` üzerinden GERÇEK `.claude/settings.json`'ı
+okuyup SDK'nın `resolveSettings()`'iyle birleştiriyor, `.claude/settings.json`'ın `permissions.
+ask` alanına EK yapan HERHANGİ bir değişiklik bu tam-eşitlik iddiasını kırar. Bu, `tests/
+features/chat/**`'in dosya sahipliğinde (F-012), bu turun sahipliği (`.claude/hooks/**`,
+`.claude/settings.json`) DIŞINDA — dokunulmadı ("Alt agent'lar çalışırken onların dosya
+sahipliğindeki dizinlere dokunma" kuralı, `CLAUDE.md`).
+
+**Neden kendim düzeltmedim:** Düzeltme mekanik (`toEqual(['Bash'])` → `expect.arrayContaining(
+['Bash'])` ya da `toContain('Bash')`) ama dosya `tests/features/chat/**` altında, F-012'nin
+dosya sahipliğinde.
+
+**İstenen aksiyon (CEO'dan):** Ya (a) chat özelliği sahibi bir agent bu tek satırlık assert'i
+gevşetsin (`toContain('Bash')` — testin gerçek niyeti "Bash her zaman ask'ta" idi, "ask
+DİZİSİ TAM OLARAK ['Bash']" değil), ya da (b) bu dosyayı bu turun kapsamına tek satırlık
+gerekçeyle ekleyin.
+
+**Somut etki:** `npm run test` bu TEK dosya/vaka yüzünden KIRMIZI: `1 failed | 1360 passed |
+4 skipped (1365)`. Bu turun kendi 88 hook self-test vakası (`node .claude/hooks/_selftest.cjs`)
+ve `npm run e2e` (55/55) tam yeşil, bu turun kodunda hiçbir regresyon yok — yalnızca bu ÖNCEDEN
+var olan, `.claude/settings.json`'ın tam içeriğine sıkı bağlı test.
+
+**Durum:** G5 tur3 KRİTİK bulgusunun düzeltmesi tamamlandı ve commit edildi; bu madde tek
+başına onu bekletmiyor (qa-evaluator karar versin, `CLAUDE.md`: "GEÇTİ/KALDI kararını yalnızca
+qa-evaluator verir").

@@ -59,11 +59,41 @@ function clearGuardState() {
   try { fs.unlinkSync(GUARD_STATE); } catch (_) {}
 }
 
+// docs/qa/g5-onay-dosyasi-korumasi-contract.md Katman A — `docs/approvals/` altındaki HER
+// dosya (GUARD.ok/DANGER.ok/PUSH.ok/G*.ok/README.md/archive/** dahil) bir güvenlik kapısı ya
+// da o kapının kaydıdır. `free` listesi `docs/` yolunun TAMAMINI serbest bıraktığı için bu
+// dizin hiçbir hook tarafından korunmuyordu (docs/qa/G5-guvenlik-denetimi-2026-09-10-tur3.md
+// §0) — barındırılan bir oturum kendi onay dosyasını kullanıcıya hiç sormadan üretebiliyordu.
+// Bu kontrol `free` kontrolünden ÖNCE çalışır. `.guard-state.json` (GUARD.ok tüketim izleyicisi)
+// bir iç durum kaydıdır, kullanıcı onayı gerektiren bir şey DEĞİLDİR — o yüzden `ask`'a
+// düşürülmez, doğrudan ve koşulsuz sert engellenir. Diğer her şey `permissionDecision:'ask'`
+// ile harness'e devredilir (bkz. ask() — sözleşme §c: headless bir oturumda bu otomatik REDDE
+// dönüşür, interaktif bir oturumda kullanıcıya bir onay kartı gösterir).
+function ask(reason) {
+  process.stdout.write(JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'ask',
+      permissionDecisionReason: reason,
+    },
+  }));
+  process.exit(0);
+}
+
 readInput((j) => {
   const f = (j.tool_input && (j.tool_input.file_path || j.tool_input.path)) || '';
   if (!f) process.exit(0);
   let rel = path.relative(process.cwd(), path.resolve(f)).replace(/\\/g, '/');
   if (rel.startsWith('..')) process.exit(0); // proje dışı: karışma
+
+  const isApprovalsPath = /^docs\/approvals\//i.test(rel);
+  if (isApprovalsPath) {
+    const baseLower = rel.toLowerCase().split('/').pop();
+    if (baseLower === '.guard-state.json') {
+      block(`Engellendi: "${rel}" GUARD.ok tüketim durumunu izleyen iç bir kayıt dosyasıdır. Hiçbir araç bunu doğrudan yazamaz/düzenleyemez.`);
+    }
+    ask(`UYARI: bu yazma bir GÜVENLİK KAPISINI AÇIYOR/DEĞİŞTİRİYOR ("${rel}", docs/approvals/ altında — onay/red dosyası ya da bu dizinin kaydı). Bunu SEN (kullanıcı) istemediysen REDDET.`);
+  }
 
   // Harf duyarsız (docs/qa/G5-guvenlik-denetimi-2026-09-10-tur2.md K1-YENİ): NTFS büyük/küçük
   // harf duyarsızdır, regex'in duyarlı olması ".CLAUDE/HOOKS/..." gibi bir varyantla kapıyı

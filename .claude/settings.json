@@ -54,7 +54,8 @@
       "Bash(rm -rf *)",
       "Bash(git push --force*)",
       "Bash(git reset --hard*)"
-    ]
+    ],
+    "ask": ["Edit(docs/approvals/**)", "Write(docs/approvals/**)"]
   },
   "hooks": {
     "SessionStart": [

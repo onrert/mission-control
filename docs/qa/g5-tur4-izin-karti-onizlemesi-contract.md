@@ -1,4 +1,4 @@
-status: taslak → uygulanıyor
+status: qa (developer turu tamamlandı — qa-evaluator kararı bekliyor)
 
 # G5 Tur 4 — İzin kartı önizlemesi (4-Ek3) düzeltmesi
 
@@ -114,3 +114,35 @@ ayrılıyor ki QA bunu "kırpma geri geldi" diye yanlış sınıflandırmasın.
 - `INPUT_PREVIEW_HARD_CAP` SDK/Bash aracının gerçekten bu kadar uzun `command` kabul edip
   etmediğini test etmek — kapsam dışı (denetimin kendi notu, 4-Ek): hook/uygulama davranışını
   test ediyoruz, SDK'nın iç sınırlarını değil.
+
+## Sonuç (developer turu)
+
+**Kod:** `src/features/chat/server/session.ts` (`buildInputPreview`), `src/features/chat/web/
+ChatScreen.tsx` (`PermissionCard`, `ResolvedPermissionRow`), `src/shared/types.ts` (3 yeni sabit),
+`src/features/chat/web/useChatSession.ts` (yalnızca yorum güncellemesi).
+
+**Testler:** `tests/features/chat/server/session.test.ts` (+6, denetimin sondasını birebir
+tekrar eden vaka dahil), `tests/features/chat/web/ChatScreen.test.tsx` (+4), gerçek tarayıcı E2E
+`tests/e2e/chat.spec.ts` (+3, 320/375/480px) + `tests/e2e/helpers/chat-fake-server.ts` (opt-in
+uzun komut senaryosu) + yeni `tests/e2e/helpers/chat-long-command.ts` (yan etkisiz paylaşılan
+sabitler — `chat-fake-server.ts`'in koşulsuz `main()` çağrısını test dosyasına İTHAL ETMEMEK
+için ayrı dosya).
+
+**Mutasyon kanıtları (2/2, elle geri alındı, `git diff` temiz):**
+1. Kırpmayı geri getirdim (`slice(0,500)`) → `session.test.ts`'in 4 yeni testi KIRMIZI oldu
+   (denetim-sondası tekrarı, Write içerik testi, iki satır-sonu testi).
+2. `isLong` dalını `false`'a sabitledim → `ChatScreen.test.tsx`'in uzunluk-şeridi testi KIRMIZI
+   oldu.
+
+**Doğrulama:** `npx tsc --noEmit` 0 hata, `npx eslint .` 0 hata, `npm run test` 1371 geçti / 4
+atlandı (başlangıç 1361/4 + bu turun 10 yeni testi), `npm run e2e` 55/55 yeşil, `npm run e2e:chat`
+4/4 yeşil (gerçek tarayıcı, kota 0). Tur sonunda yetim `node`/`chrome` süreci yok (`tasklist`
+boş döndü), 7333/7435 portlarında dinleyen kalmadı.
+
+**Kapanmayan risk (CEO'ya, eşiğiyle):** `check-ports.test.ts` bir kez EADDRINUSE ile kırmızı
+verdi (port 7333'te bu turdan bağımsız, geçici bir dinleyici vardı — muhtemelen paralel `.claude`
+turunun kendi canlı denetimi). İkinci koşuda ve tam `npm run test`'te temiz geçti; kodda hiçbir
+değişiklik yapılmadı. Gerçek bir regresyon DEĞİL, ama bu depoda port 7333 paylaşımlı bir kaynak —
+paralel turlar aynı anda gerçek sunucu başlatırsa `npm run e2e`/`check-ports` testleri flake
+verebilir (eşik: yalnızca aynı anda iki turun ikisi de gerçek sunucu/E2E çalıştırırsa görülür,
+tek başına çalışan bir tur için sıfır risk).

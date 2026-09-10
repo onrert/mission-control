@@ -2,7 +2,7 @@
 feature: F-003
 title: SSE akışı + canlı zaman çizelgesi ekranı + filtreler
 author: developer
-status: draft
+status: approved
 date: 2026-09-05
 revision: tur 3 (2026-09-05) — QA tur 1'in 5 BLOKLAYICI + 9 ÖNEMLİ bulgusu + CEO kararları D1-D7
   (tur 2), ardından QA tur 2'nin 3 YENİ (regresyon) bulgusu (YENİ-1/2/3) + CEO kararları D8-D10 +

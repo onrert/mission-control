@@ -2,7 +2,7 @@
 feature: F-004
 title: send-event.cjs hook scripti + install-hook.mjs + hook smoke testleri
 author: developer
-status: draft
+status: approved
 date: 2026-09-04
 ---
 

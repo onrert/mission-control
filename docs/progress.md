@@ -4710,3 +4710,57 @@ notuyla — kod düzeltmesi TAM ve iki ayrı turda doğrulanmış; kalıcı regr
 içerik/onay eksikliğinden değil, otonom moddaki kategorik bir araç kısıtlamasından dolayı
 yazılamadı. qa-evaluator ve CEO bu ayrımı gözeterek değerlendirmeli; olası yollar
 `docs/blockers.md`'de listeleniyor.
+
+---
+
+## 2026-09-10 — CEO — G5 turları 3–5 ve kayıt hijyeni
+
+**G5 (güvenlik/kalite) kapısı beş denetim turu gördü ve hâlâ açık.** Özet:
+
+| Tur | Sonuç | Kapanan | Açılan |
+|---|---|---|---|
+| 1 | Koşullu geçer | — | K1, K2, K3 (3 KRİTİK) |
+| 2 | Koşullu geçer | K2, K3 | K1-YENİ (harf duyarsızlığı hook'un kendisini atlatıyordu) |
+| 3 | **GEÇEMEZ** | K1-YENİ | **Onay dosyalarının kendisi korumasız** (KRİTİK) |
+| 4 | **GEÇEMEZ** | onay dosyası koruması | 4-Ek (`\\?\` öneki), 4-Ek2 (junction), 4-Ek3 (kart kırpması) |
+| 5 | **GEÇEMEZ** | 4-Ek, 4-Ek2, 4-Ek3 | Y1 (kapsam sızıntısı), Y3 (self-test onayları siliyor) |
+
+**Turun en önemli bulgusu (tur 3):** bütün kapılar `docs/approvals/*.ok` dosyalarına dayanıyordu
+ama o dosyaların kendisi korumasızdı — barındırılan oturum kendi anahtarını üretebiliyordu.
+Tur 1–2'de yapılan bütün sertleştirme bu yüzden anlamsızdı. Karar kaydı: `ADR-016`.
+
+**Yapılan düzeltmeler (hepsi commit'li):**
+- `1789633` — Katman A/B/C/D: onay yolları izin kartına zorlanır, kabuk yolu kapatılır,
+  `.guard-state.json` sert engellenir, self-test 50 → 88 vaka.
+- `9a48d8d` — `gate-check.cjs`'e `resolveCanonicalRel()`: en yakın var olan atayı bulup
+  `fs.realpathSync.native` ile çözer (verbatim uzun-yol öneki + junction/symlink arkası),
+  proje kökünü de çözer, çözemezse fail-closed. Bağlantı oluşturan komut Katman B'ye eklendi.
+- İzin kartı turu — komut önizlemesi artık **kırpılmıyor**; satır sonları korunuyor; sert üst
+  sınır aşılırsa sessiz kesme yerine açık uyarı + onay düğmesi devre dışı (fail-closed).
+  10 yeni test, üçü gerçek tarayıcıda 320/375/480px'te.
+- `aff9bdc` — kalıcı regresyon çiti: self-test 88 → **98 vaka**.
+
+**Ölçülen durum:** `_selftest` 98/98 · `npm run test` 1371 geçti / 4 atlandı ·
+`npm run e2e` 55/55 · `tsc`=0 · `eslint`=0. Gerçek `docs/approvals/*.ok` dosyaları hiç değişmedi
+(her turda SHA-256 önce/sonra doğrulandı).
+
+**Doğrulanan temel varsayım:** barındırılan oturumda **her `Bash` gerçekten kullanıcıya
+soruluyor** — proje ayarlarındaki izin kuralları geçersiz (tur-4'te canlı ölçüldü). `ADR-016`'nın
+"asıl savunma izin kartıdır" sınırı bu ölçüme dayanıyor.
+
+**Bir araç kısıtı keşfedildi:** alt agent'lar bu ortamda `.claude/hooks/**` altına otonom
+yazamıyor (harness sınıflandırıcısı, içerikten bağımsız, kategorik). Reddetme deponun kendi onay
+token'ı tüketildikten **sonra** gerçekleştiği için her deneme bir onay yakıyor. Çözüm: alt agent
+içeriği hazırlayıp scratchpad'e bırakır, kurulumu CEO ana oturumdan yapar. Bugün iki kez
+uygulandı, ikisi de çalıştı.
+
+**Kayıt hijyeni (bu turda CEO tarafından):**
+- `CLAUDE.md` — bugünün yedi dersi eklendi (61 → 68 kural).
+- `docs/blockers.md` — "kategorik engel" maddesi **KAPANDI** olarak güncellendi (yanlış kalmıştı);
+  Y1, Y2, Y3, Y4 eşikleriyle kaydedildi.
+- `docs/qa/F-002…F-013-contract.md` — on iki sözleşme `draft`ta kalmıştı; hepsinin QA kararı
+  mevcut ve feature'ları `done` olduğu için `approved`'a çekildi. (Kayıt gerçeği yansıtmıyordu.)
+- `docs/qa/G5-guvenlik-denetimi-2026-09-10-tur5.md` — izlemeye alındı.
+
+**Açık kalan (G5'i bloklayan):** Y1 ve Y3. Düzeltme turu ve beş sözleşmenin resmî GEÇTİ/KALDI
+kararı devam ediyor.

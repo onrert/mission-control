@@ -2,7 +2,7 @@
 feature: F-010
 title: Feature thread görünümü (docs/qa birincil, transkript best-effort)
 author: developer
-status: draft
+status: approved
 date: 2026-09-09
 ---
 

@@ -2,7 +2,7 @@
 feature: F-013
 title: Feature penceresinde içerik — gövde, sözleşme ve QA raporları
 author: developer
-status: draft
+status: approved
 date: 2026-09-08
 ---
 

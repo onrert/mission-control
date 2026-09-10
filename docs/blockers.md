@@ -1085,3 +1085,82 @@ kapatıp regresyon testi eklemeyi ayrı, insan-katılımlı bir işlem olarak za
 kod düzeltmesi TAM ve doğrulanmış (canlı + mutasyon kanıtlı, bu turda tekrar teyit edildi);
 kalıcı regresyon testi bu kez içerik/onay eksikliğinden değil, otonom moddaki kategorik bir araç
 kısıtlamasından dolayı yazılamadı. qa-evaluator ve CEO bu ayrımı gözetmeli.
+
+---
+
+## 2026-09-10 — CEO — KAPANDI: yukarıdaki "kategorik engel" maddesi (self-test kalıcı regresyon testi)
+
+**Durum: KAPANDI.** Yukarıdaki madde (auto-mode sınıflandırıcısının `.claude/hooks/**` üzerindeki
+otonom yazmayı reddetmesi) **engelin kendisi için hâlâ geçerlidir**, ama engellediği iş tamamlandı.
+
+**Nasıl kapandı:** developer'ın scratchpad'e bıraktığı, sandbox'ta doğrulanmış içeriği **CEO ana
+oturumdan `Write` aracıyla** kurdu (önerilen (a) seçeneği). Sınıflandırıcı ana oturumu engellemiyor;
+kısıt yalnızca alt agent'ların otonom yazmalarına uygulanıyor.
+
+- Commit: `aff9bdc` — `.claude/hooks/_selftest.cjs`, 345 → 447 satır.
+- Ölçüm: `node .claude/hooks/_selftest.cjs` → **98/98 GEÇTİ** (88 → 98, 10 yeni vaka).
+- Yeni vakalar: `\\?\` uzun-yol öneki (pozitif + aşırı-engelleme negatifi), gerçek NTFS junction
+  arkası (kurulur, ölçülür, kaldırılır, hedefin bozulmadığı doğrulanır), bağlantı oluşturan
+  komutun dört bayrak varyantı + harf varyantı, `realpathSync` fırlatınca fail-closed dalı.
+- Bağımsız doğrulama: G5 tur-5 denetimi kendi sandbox aynasını kurdu, aynı 98 vakayı aldı ve eski
+  `path.relative` davranışına döndürünce **95/98**'e düştüğünü ölçtü — yani yeni vakalar tam olarak
+  hedefledikleri çiti ölçüyor (`docs/qa/G5-guvenlik-denetimi-2026-09-10-tur5.md`).
+- Gerçek `docs/approvals/*.ok` dosyaları değişmedi; `git status` temiz.
+
+**Kalan (bu maddeden ayrılan, AÇIK borç):** engelin kendisi. Hook değişikliği gereken her turda
+alt agent doğrudan yazmayı deneyip **onay token'ı yakıyor** (bugün iki kez). Eşik: bir sonraki hook
+turundan **önce**, brief'in ilk maddesi "yazmayı deneme, scratchpad'e hazırla" olmalı. Kural
+`CLAUDE.md`'ye işlendi.
+
+## 2026-09-10 — CEO — AÇIK: onay metninin düzyazısı kapsamı sessizce genişletiyor (Y1)
+
+`gate-check.cjs`'in `parseGuardScope()`'u `GUARD.ok` metninin **her yerindeki** ters tırnaklı
+dosya adlarını kapsam sayıyor — yalnızca "## Kapsam" bölümündekileri değil. Gerekçe paragrafında
+*"şu dosya kapsam DIŞI"* diye anılan bir ad bile kapsama giriyor.
+
+- **Bugün iki kez gerçekleşti**, ikisi de CEO'nun kendi onay metniydi (yenileme notunda diğer hook
+  adlarını anmak kapsamı üçe çıkardı; kanıt `.guard-state.json` dökümünde).
+- Tur-5 denetimi canlı PoC kurup **BLOKLAYICI** sınıflandırdı: tur-3'te kapatılmış bir kritiğin
+  (kapsam dışı yazma reddedilir) yeniden açılması.
+- **Eşik: G5 kapısı geçilmeden kapanmalı.** Düzeltme turu başlatıldı
+  (`docs/qa/g5-tur5-kapsam-ve-selftest-contract.md`).
+
+## 2026-09-10 — CEO — AÇIK: self-test gerçek onay dosyalarını yok ediyor (Y3)
+
+`.claude/hooks/_selftest.cjs` koşarken gerçek `docs/approvals/{GUARD,PUSH,DANGER}.ok` ve
+`.guard-state.json` yollarına yazıyor, koşu sonunda **koşulsuz siliyor**. Yani bekleyen bir
+kullanıcı onayı varken self-test koşturmak onu imha ediyor — üstelik `CLAUDE.md` "hook
+değişikliğinden sonra self-test koştur" diyor.
+
+- Tur-5 denetimi **BLOKLAYICI** sınıflandırdı: kalıcı artefakta dokunuyor (severity kuralı (a)).
+- **Eşik: G5 kapısı geçilmeden kapanmalı.** Aynı düzeltme turunda ele alınıyor.
+- **Bu arada geçerli geçici kural:** bekleyen bir `GUARD.ok`/`PUSH.ok`/`DANGER.ok` varken
+  `_selftest.cjs` ÇALIŞTIRILMAZ. Çalıştırmadan önce `docs/approvals/` içeriğine bak.
+
+## 2026-09-10 — CEO — AÇIK (eşikli borç): komut taramasında çapraz eşleşme yanlış pozitifi (Y2)
+
+`block-dangerous.cjs` komutun tamamını tek metin olarak tarıyor; ilgisiz alt komutların parçaları
+birleşip masum komutları engelliyor. Bugün iki kez canlı gerçekleşti: (a) bir kopyalama komutu,
+zincirin sonundaki ilgisiz bir **okuma** komutundaki korumalı yol metni yüzünden engellendi;
+(b) bir **commit mesajı** yeni engellenen bir fiilin adını içerdiği için commit engellendi.
+
+- Tur-5 denetimi **eşikli borç** sınıflandırdı: aşırı engelleme, atlatma değil. Ama onay
+  yorgunluğu riski yüksek — kapıyı gevşetmeye iten baskı yaratır.
+- **Eşik:** `block-dangerous.cjs`'e dokunan bir sonraki tur, ya da bu yanlış pozitif üçüncü kez
+  gerçek bir işi kilitlerse **hemen**.
+- Geçici kural (`CLAUDE.md`'ye işlendi): commit mesajları **her zaman** dosyadan verilir; korumalı
+  yolu anan komutlar başka fiillerle zincirlenmez.
+
+## 2026-09-10 — CEO — AÇIK (eşikli borç): kabuktan hook yazma Katman B'siz (Y4)
+
+`gate-check.cjs` yalnızca `Edit|Write` araçlarına bağlı. `block-dangerous.cjs`'in Katman B kuralı
+yalnızca `docs/approvals`'ı koruyor, `.claude/hooks/**`'ı **korumuyor**. Dolayısıyla bir kabuk
+kopyalama komutu `GUARD.ok` kapısını hiç görmeden hook'un kendisini değiştirebilir. (CEO bunu
+bugün fark etti ve **kasten kullanmadı**; `Write` aracıyla kapıdan geçti.)
+
+- Tur-5 denetimi **eşikli borç** sınıflandırdı: `ADR-016`'nın kabul edilmiş sınırı içinde, çünkü
+  her `Bash` yine **doğru bilgi taşıyan** bir izin kartına düşüyor (tur-4'te canlı doğrulandı).
+- Ama **mimari asimetri**: `docs/approvals` iki katmanla (A+B) korunurken `.claude/hooks/**` tek
+  katmanla korunuyor. Kartın metni `cp a b` yazar — kullanıcı bunun bir güvenlik kapısını
+  değiştirdiğini anlamayabilir; bu, kartın **doğru ama yeterince açık olmadığı** bir durumdur.
+- **Eşik:** Katman B'ye dokunan bir sonraki tur (Y2 ile birlikte ele alınabilir).

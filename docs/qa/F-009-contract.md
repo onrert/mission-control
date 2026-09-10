@@ -2,7 +2,7 @@
 feature: F-009
 title: Spike — transkript format doğrulama + dayanıklı okuyucu + fixture'lar
 author: developer
-status: draft
+status: approved
 date: 2026-09-09
 ---
 

@@ -2,7 +2,7 @@
 feature: F-005
 title: Proje kayıt defteri + dosya izleme + Ayarlar ekranı (çok projeli izleme)
 author: developer
-status: draft
+status: approved
 date: 2026-09-05
 revision: tur 3 (2026-09-05) — QA tur 2'nin 1 BLOKLAYICI + 3 ÖNEMLİ + 2 NOT bulgusu kapatıldı:
   CEO'nun "Ayarlar'ın yeri ve sekme deseninin ertelenmesi" kararı gövdeye işlendi (tam `tablist`

@@ -2,7 +2,7 @@
 feature: F-008
 title: Kapılar paneli — G0-G6/ASSETS onay, red, arşiv akışı
 author: developer
-status: draft
+status: approved
 date: 2026-09-09
 ---
 

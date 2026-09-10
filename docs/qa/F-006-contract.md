@@ -2,7 +2,7 @@
 feature: F-006
 title: Yazma kapısı + sınır testleri
 author: developer
-status: draft
+status: approved
 date: 2026-09-05
 revision: tur 3 (QA tur 2 doğrulamasına göre düzeltildi — 1 bloklayıcı + 3 önemli + 1 kısmi + 2 not kapatıldı)
 ---

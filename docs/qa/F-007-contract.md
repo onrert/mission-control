@@ -2,7 +2,7 @@
 feature: F-007
 title: Kanban panosu + frontmatter status yazma + çakışma/echo yönetimi
 author: developer
-status: draft
+status: approved
 date: 2026-09-05
 revision: düzeltme turu 1 (2026-09-06)
 ---

@@ -2,7 +2,7 @@
 feature: F-002
 title: Olay alma uç noktası + JSONL depo + retention + N1/N4 borçları
 author: developer
-status: draft
+status: approved
 date: 2026-09-04
 ---
 

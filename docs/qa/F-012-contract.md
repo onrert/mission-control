@@ -2,7 +2,7 @@
 feature: F-012
 title: CEO sohbet arayüzü — panel, oturumu Agent SDK ile barındırır
 author: developer
-status: draft
+status: approved
 date: 2026-09-06
 revision: 3 (docs/qa/F-012-contract-review-2.md bulgularına yanıt — 3 BLOKLAYICI: Y-B1/Y-B2/Y-B3,
   + Ö5/Ö6 kapatıldı. Tur 1 → docs/qa/F-012-contract-review-1.md, 7 BLOKLAYICI + 13 ÖNEMLİ + 6 NOT.)

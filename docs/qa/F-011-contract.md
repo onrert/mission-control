@@ -2,7 +2,7 @@
 feature: F-011
 title: Token kullanımı ekranı (proje / gün / oturum / agent grupları)
 author: developer
-status: draft
+status: approved
 date: 2026-09-09
 ---
 

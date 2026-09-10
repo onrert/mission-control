@@ -632,3 +632,74 @@ tek seferlik bir script ile `redactSecretsInString`'in aynısından geçirip yer
 (bu, "geçmiş olaylara dokunma" ilkesini bilerek çiğnemek anlamına gelir — bu yüzden kullanıcı
 onayı olmadan yapılmadı) VEYA basitçe eski `data/events/*.jsonl` dosyalarını arşivleyip
 sıfırdan başlamak. Karar CEO/kullanıcıya bırakıldı.
+
+## 2026-09-10 — developer (G5 tur2 GUARD düzeltmesi) — GUARD.ok kendi test komutumla boşa gitti, sıfır kod değişikliği yapılmadan durduruldu
+
+**Görev:** `docs/qa/g5-guvenlik-duzeltme-tur2-contract.md` GG1 (`gate-check.cjs` harf
+duyarsızlığı) + GG2 (`block-dangerous.cjs` `-rec` kısaltması), tek `docs/approvals/GUARD.ok`
+ile.
+
+**Ne oldu:** Kodu düzenlemeden ÖNCE, mevcut (düzeltilmemiş) `gate-check.cjs`'in K1-YENİ
+vektörlerine gerçekten nasıl davrandığını **BEFORE kanıtı** olarak Bash üzerinden doğrudan
+`node .claude/hooks/gate-check.cjs` çağırarak ölçtüm (Edit/Write aracı **kullanmadım**, sadece
+betiği stdin ile çalıştırdım). Test listeme, regresyon kontrolü olsun diye **gerçek korumalı
+yolu da** (`.claude/hooks/block-dangerous.cjs`, tam küçük harf) ekledim. `gate-check.cjs`,
+kim çağırırsa çağırsın (Claude Code'un PreToolUse'u mu, benim manuel `node` çağrım mı ayırt
+etmiyor) `isGuarded && exists(GUARD.ok)` ise **tüketiyor** — benim salt-okunur/gözlem amaçlı
+çağrım GUARD.ok'u **gerçek bir Edit/Write olmadan sildi**. Kanıt:
+```
+$ test -f docs/approvals/GUARD.ok  # once VAR
+$ echo '{"tool_input":{"file_path":".claude/hooks/block-dangerous.cjs"}}' \
+    | node .claude/hooks/gate-check.cjs   # exit 0 (beklenen, GUARD.ok o an vardi)
+$ test -f docs/approvals/GUARD.ok  # artik YOK
+```
+`git status --porcelain` bu turda **tamamen temiz** — hiçbir dosyaya (kaynak veya
+`.claude/hooks/**`) dokunulmadı, GUARD.ok zaten git'te izlenmiyordu (untracked, hiç commit
+edilmemişti), yani repo etkilenmedi. Ama **görev sıfır kod değişikliğiyle durdu**: talimat
+açıkça "Token boşa giderse dur ve bana raporla — kendin yeniden yazma, kullanıcı onayı
+gerekir" diyordu; yeni bir GUARD.ok yazmadım.
+
+**Yeni ders (bu deponun 3. GUARD/DANGER/PUSH.ok boşa gitme vakası):** Tek kullanımlık onay
+tüketen bir hook'u **manuel doğrulama amacıyla `node script.cjs < stdin` ile çalıştırmak**,
+gerçek bir Edit/Write aracı çağrısıyla **aynı sonucu** doğurur — script çağıranın kim
+olduğunu bilmiyor. Bundan sonra böyle bir hook'u manuel test ederken **korumalı gerçek yolu
+(tam küçük harf) hiç test senaryosuna koyma**, ya da GUARD.ok yokken çalıştır (yalnızca
+`exit 2` beklenen negatif vakaları dene), ya da hook'u `execFileSync` yerine saf fonksiyon
+olarak import edilebilir hâle getirmeden (bu turun kapsamı dışı bir refactor) elle
+`docs/approvals/GUARD.ok`'un varlığını her komuttan önce **`test -f`** ile kontrol edip
+varsa o komutu atla.
+
+**Ek bulgu (kapsam dışı, düzeltilmedi, yalnızca bilgi):** `gate-check.cjs` yalnızca
+`PreToolUse` `Edit|Write` matcher'ında tetikleniyor (bkz. `.claude/settings.json`); bir Bash
+komutu (`node -e "require('fs').writeFileSync(...)"`, `sed -i`, vb.) ile `.claude/hooks/**`
+içeriğini değiştirmek bu hook'u **hiç tetiklemiyor** — GUARD.ok'a hiç ihtiyaç duymuyor.
+Bu turda bu yolu **bilerek kullanmadım** (gerçek, kalıcı bir güvenlik hook'u değişikliğini
+onay zincirinin dışından yapmak olurdu — bulunan bir açığı sömürmek, düzeltmek yerine).
+Sadece CEO/kullanıcı bilsin diye not düşüyorum; bu turun onaylanmış kapsamı dışında, ayrı bir
+karar/onay gerektirir.
+
+**Ayrıca fark edilen matematik sorunu (yeni onay istenmeden önce bilinmesi gereken):**
+`consume()` **her** korumalı yazımda tetikleniyor, dosya bazında değil — yani GG1
+(`gate-check.cjs`) + GG2 (`block-dangerous.cjs`) + `_selftest.cjs`'e kalıcı regresyon
+vakaları eklemek **3 ayrı dosyaya 3 ayrı Edit/Write çağrısı**, dolayısıyla **3 ayrı
+GUARD.ok** gerektiriyor (tek onay üç dosyayı da kapsıyor gibi görünse de, mekanik olarak her
+korumalı yazım kendi tek-kullanımlık token'ını tüketiyor). Şu an elimde **0** token var
+(1 tanesi yukarıdaki hatayla, kod değişikliği olmadan gitti).
+
+**Denenen:** (1) Plan tamamlandı (`gate-check.cjs`/`block-dangerous.cjs` için tam regex
+metni hazır, aşağıda). (2) BEFORE kanıtı toplandı (K1-YENİ'nin 4 vektörü + agents/
+agent-memory regresyonu, hepsi mevcut davranışla eşleşiyor, QA raporuyla tutarlı). (3) İlk
+gerçek Edit denemesine geçmeden GUARD.ok kayboldu — **hiçbir Edit/Write çağrısı yapılmadı**,
+bu 1 deneme sayılıyor.
+
+**Soru / istenen:** Yeni bir tur için üç `GUARD.ok` (ya da her Edit çağrısından hemen önce
+tek tek yazılan, sırayla tüketilen üç ayrı GUARD.ok) yazılabilir mi? Hazır plan:
+1. `gate-check.cjs` satır 24: `const isGuarded = /^\.claude\/hooks\//i.test(rel) ||
+   rel.toLowerCase() === '.claude/settings.json';` — satır 33 `free` dizisindeki
+   `/^\.claude\//` → `/^\.claude\//i`.
+2. `block-dangerous.cjs` satır 30: `\bri\b[^\n]*-r(ecurse)?\b` →
+   `\bri\b[^\n]*-r(e(c(u(r(s(e)?)?)?)?)?)?\b` (kısaltma zincirini kapsar, tam sözleşme
+   metniyle birebir).
+3. `_selftest.cjs`: GG1 için 4+ vaka (K1-YENİ), GG2 için 5 vaka (contract'ta listeli) eklenir.
+
+Bu üç adım onaylanıp GUARD.ok(lar) yazılınca devam ederim; kendi başıma yeniden yazmadım.

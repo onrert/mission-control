@@ -1,0 +1,58 @@
+# G4-2 — Faz 2 kilometre taşı onayı
+
+- **Tarih:** 2026-09-10
+- **Onaylayan:** Kullanıcı (Veron) — "G4-2 onaylandı"
+- **Kapı:** G4 (kilometre taşı), Faz 2 sonu
+- **Not:** Kullanıcı onaydan önce **paketlenmiş uygulamayı kendisi denedi** (G4-1'deki gibi).
+
+## Onaylanan durum
+
+**14/14 feature `done`.** Faz 1 (F-001…F-007) + Faz 2 (F-008…F-014).
+
+| Feature | Kapsam |
+|---|---|
+| F-008 | Kapılar paneli — onay / red / arşiv akışı |
+| F-009 | Transkript spike — doğrulanmış format, dayanıklı okuyucu, donmuş fixture'lar |
+| F-010 | Thread görünümü — feature'ın CEO brief → QA kararı zinciri, kronolojik |
+| F-011 | Token kullanımı — proje / gün / oturum / agent kırılımı |
+| F-012 | CEO sohbet arayüzü — panel oturumu Agent SDK ile barındırıyor |
+| F-013 | Feature detay içeriği — gövde + sözleşme + QA raporları |
+| F-014 | Masaüstü uygulaması — Electron kabuğu, tepsi, açılışta başlama |
+
+**Ölçülen durum:** `npm run verify` = 0 → **1354 test + 4 atlandı / 85 dosya + 1 skip (86)** ·
+`npm run e2e` = 0 → **55** · **58 öğrenilen kural** (`CLAUDE.md`) · **14 ADR** ·
+paket **631,3 MB**, depo ağacıyla birebir doğrulandı.
+
+**Altı ekran:** Zaman Çizelgesi · Kanban · Sohbet · Kapılar · Thread · Token.
+
+## Faz 2'de kapsam iki kez değişti (ikisi de kullanıcı kararı)
+
+1. **Panel salt-izleyici olmaktan çıktı** (`ADR-014`). Kullanıcı Faz 1'i deneyip *"aşamalara
+   feature kartları görünüyor fakat benim herhangi bir karışabileceğim bir yer yok"* dedi.
+   `docs/00-idea.md`'nin "kesinlikle olmayacaklar" listesinden bir madde bilinçli olarak kaldırıldı.
+2. **Masaüstü paketleme G6'dan öne çekildi** (`ADR-011`). Panel birincil çalışma yüzeyi olunca
+   her açılışta terminal komutu istemesi kabul edilemez hâle geldi.
+
+## Onayla birlikte kabul edilen açık maddeler
+
+Hepsi `docs/blockers.md`'de **eşikleriyle** kayıtlı, hiçbiri bloklayıcı değil:
+- F-008: küçük harfli kapı dosyası yazmayı kalıcı 500'e düşürüyor · normalizasyon katmanı çitsiz
+- F-009: charset dışı bayt · `.gitattributes` muafiyetinin yola değil ada bağlı olması ·
+  dört desende eksik negatif test
+- F-010: eskalasyon rozetinin iki kenar durumu · `sm:` üstü sıfır genişlikli sekme · ölü `retry`
+- F-011: precapture katmanının pozitif kontrolü yok · import sırası yalnızca yorumla korunuyor
+- Test kapısı: bilinmeyen bayraklar sessizce muafiyet alıyor · env kill-switch'leri sessiz
+- Kök neden açık: `vitest` worker çökmesinin bazen exit 0 vermesi **tekrar üretilemedi**
+  (18 ham koşuda her çökme doğru şekilde kırmızı verdi; kapı çıkış koduna zaten güvenmiyor)
+
+## Faz 2'nin en pahalı dersi
+
+**Bir feature'ın var olma sebebi, en az test edilen şeydir.** Üç ardışık örnek: F-008'in
+"gördüğün yazılır" vaadi çitsizdi, F-010'un tek işi kronolojiydi ve zaman damgaları geriye
+gidiyordu, F-013'ün amacı okumaktı ve içerik okunamıyordu. Çevre işlevler hep çalışıyordu.
+
+İkinci ders: **çitler sessizce ölebiliyor** — ve bunu yakalamak için kurulan çitler de.
+Ayrıntı: `docs/wiki/pages/desen/cit-tasarimi.md`.
+
+## Sonraki kapılar
+G5 (güvenlik/kalite) → G6 (yayın). Henüz açılmadı.

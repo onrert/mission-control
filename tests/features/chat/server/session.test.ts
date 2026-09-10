@@ -540,7 +540,15 @@ describe('K3 çevrimdışı çit (mutasyon 13, Y-B1) — allowManagedPermissionR
     // (o yalnızca canlı testle kanıtlanır, `tests/integration/chat-hooks-live.test.ts`) — ama
     // yapılandırmanın sessizce kaybolmadığını (§8a'nın kendi uyarısı: "raw cascade, not a
     // security decision") çevrimdışı, `verify` içinde, kota harcamadan doğrular.
-    expect(resolved.effective.permissions?.ask).toEqual(['Bash'])
+    // NOT (G5 sonrası daraltma, docs/blockers.md): `resolveSettings` proje kademesinin
+    // (`.claude/settings.json`) TÜM `permissions.ask`/`allow` kurallarını ham birleştirmeye
+    // dahil eder (ölçüldü: `effective.allow` içinde proje ayarlarının `Write(docs/**)` kuralı
+    // da görünüyor) — `allowManagedPermissionRulesOnly` bir KARAR ANI bayrağıdır, kademe
+    // filtresi değil. Bu iddianın işi `managedSettings`'in (bu oturumun `buildOptions()`
+    // çıktısı) sessizce kaybolmadığını kanıtlamak, `.claude/settings.json`'ın o anki TAM
+    // içeriğini sabitlemek değil — bu yüzden tam eşitlik yerine kapsayıcılık kullanılıyor;
+    // proje ayarlarına eklenecek başka `ask` kuralları bu testi bir daha kırmamalı.
+    expect(resolved.effective.permissions?.ask).toContain('Bash')
   })
 })
 

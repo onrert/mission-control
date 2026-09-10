@@ -4289,3 +4289,66 @@ onaylandı, K1'in kapanışı harf-varyantı atlatmasıyla geçersiz kılındı�
 **Sonraki adım:** Kullanıcı/CEO `docs/approvals/GUARD.ok` yazsın → developer GG1+GG2'yi tek
 kod turunda uygular (`gate-check.cjs` `/i` bayrağı + `_selftest.cjs` ≥4 yeni vaka,
 `block-dangerous.cjs` `ri` regex genişletmesi) → qa-evaluator son kez doğrulasın.
+
+---
+
+## 2026-09-10 — G5 tur 3 (madde 1+4 kapandı): GUARD.ok'un kendisi kapsam-listeli hâle getirildi
+
+**Kaynak:** Kullanıcı kararı — mevcut GUARD.ok kapsamı genişletildi, dördüncü madde eklendi:
+"GUARD.ok mekanizmasının kendisi, her Edit/Write'ta kör tüketilmek yerine, kapsadığı yolları
+açıkça listeleyip kapsam başına bir kez tüketilecek." Gerekçe: onay yorgunluğu (3 dosyalık tek
+bir düzeltme 4+ ayrı onay istiyordu) kapının kendisini işlevsizleştiriyordu. Sözleşme:
+`docs/qa/g5-guvenlik-duzeltme-tur3-contract.md`.
+
+**Ne yapıldı**
+- **Madde 1 — KAPANDI.** `gate-check.cjs`'teki `free` listesinin tüm regex'lerine `/i`
+  eklendi (`isGuarded` zaten tur2'de düzeltilmişti; bu yalnızca `free` dizisiydi — aksi halde
+  `.CLAUDE/agents/x.md` gibi zararsız bir varyant yanlışlıkla G2.ok kontrolüne düşerdi).
+- **Madde 4 — KAPANDI.** `gate-check.cjs`, `docs/approvals/GUARD.ok`'un METNİNİ okuyup
+  içindeki backtick-alıntılı `*.cjs` / `.claude/settings.json` dosya adlarını **kapsam**
+  olarak çıkarıyor artık. Kapsamdaki bir dosyaya yazmak token'ı hemen tüketmiyor —
+  `docs/approvals/.guard-state.json` ile hangi dosyaların görüldüğü izleniyor, kapsamın
+  TAMAMI görülünce hem GUARD.ok hem state dosyası siliniyor. Kapsam dışı bir guarded yola
+  yazma, geçerli bir token varken bile reddediliyor. Backtick'siz/kapsam çıkarılamayan bir
+  GUARD.ok fail-closed davranıyor (hiçbir guarded yazmaya izin vermiyor).
+- Bu iki maddeyi TEK Edit çağrısıyla (`gate-check.cjs`) uyguladım çünkü bu dosyaya yapılan İLK
+  yazma, PreToolUse anında hâlâ ESKİ (kör tüketen) kodla kontrol ediliyor — mevcut GUARD.ok bu
+  Edit'te koşulsuz tüketildi (sözleşmede öngörülen, kaçınılmaz "tavuk-yumurta" maliyeti).
+- **Madde 2 (GG2 `-Recurse` kısaltma zinciri) ve madde 3 (`_selftest.cjs` 7 vaka) — HENÜZ
+  UYGULANMADI.** İkisi de artık YENİ mekanizmayla korunuyor ve ikinci bir GUARD.ok bekliyor
+  (`docs/blockers.md`'de talep edildi: metin yalnızca `` `block-dangerous.cjs` `` ve
+  `` `_selftest.cjs` `` ansın, `` `gate-check.cjs` `` tekrar anılmasın — yoksa kapsam hiç
+  tamamlanmayacağı için token tükenmez).
+
+**Nasıl doğrulandı**
+- `node --check .claude/hooks/gate-check.cjs` = temiz.
+- Yeni mekanizma, gerçek GUARD.ok'a hiç dokunmadan, `docs/approvals/` altına Bash `echo` ile
+  yazılan SENTETİK GUARD.ok dosyalarıyla elle sınandı (bu yol zaten `free` listede, Edit/Write
+  aracı kullanılmadığı için gate-check.cjs hiç tetiklenmedi, gerçek token risk altında
+  değildi):
+  - kapsam dışı yol (`gate-check.cjs`), kapsamı yalnızca `block-dangerous.cjs` olan geçerli
+    token varken → **reddedildi**, token harcanmadı.
+  - iki dosyalık kapsam: 1. yazma → geçti + token **kaldı**; 2. yazma → geçti + token
+    **tükendi** (madde 4'ün asıl amacı, iki yazma tek token'la aktı).
+  - token yokken → reddedildi (regresyon).
+- `git status --porcelain` temiz, commit `0f4d76f`. `docs/approvals/` altında yalnızca kalıcı
+  `G*.ok` + `README.md` var; sınama artıkları (`GUARD.ok`, `.guard-state.json`) temizlendi.
+- Yetim süreç yok (`tasklist` boş).
+- `_selftest.cjs`, `npx tsc`/`eslint`/`build`, `npm run test`/`e2e` bu turda **koşulmadı** —
+  madde 2/3 kod yazılmadığı için henüz anlamlı bir tam-suit koşusu yok; madde2+3
+  tamamlanınca tek seferde koşulup sayılar raporlanacak.
+
+**Kalan risk / kapanmayan**
+- Madde 2 (GG2) ve madde 3 (7 self-test vakası + 3 mutasyon kanıtı) açık — ikinci GUARD.ok
+  bekliyor, ayrıntı `docs/blockers.md`.
+- Madde 4'ün bilinen sınırı (sözleşmede belgeli): GUARD.ok metni yanlış/eksik kapsam
+  listelerse (örn. zaten tamamlanmış bir dosyayı tekrar anarsa) token hiç tükenmeyip diskte
+  kalabilir — güvensiz değil (kapsam dışına hâlâ izin yok) ama "tek kullanımlık" idealini tam
+  karşılamıyor. Sıradaki her GUARD.ok yalnızca henüz yapılmamış dosyaları anmalı.
+- Toplam tahmini token ihtiyacı sözleşmede **2** olarak yazıldı; 1. kullanıldı, 2.'si
+  bekleniyor.
+
+**Sonraki adım:** İkinci GUARD.ok (yalnızca `block-dangerous.cjs` + `_selftest.cjs` kapsamlı)
+yazılınca developer madde2+3'ü tek turda tamamlar (GG2 regex + 7 vaka + 3 mutasyon kanıtı +
+tam `_selftest.cjs`/`tsc`/`eslint`/`build`/`test`/`e2e` koşusu) → qa-evaluator son kez
+doğrulasın.

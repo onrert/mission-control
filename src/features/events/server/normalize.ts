@@ -38,7 +38,7 @@ const BEARER_SECRET_RE = /\bBearer\s+[A-Za-z0-9._-]{20,}\b/gi
 // Bearer/Basic/Digest şeması korunur (BEARER_SECRET_RE ile aynı davranış, "authorization:
 // Bearer …" için çifte eşleşmede tutarlı kalır).
 const KEY_VALUE_SECRET_RE =
-  /\b(api[_-]?key|secret|token|password|passwd|authorization)\b(\s*[:=]\s*)(['"]?)(?:(Bearer|Basic|Digest)\s+)?([^\s'",}]{6,})\3/gi
+  /\b(api[_-]?key|secret|token|password|passwd|pwd|authorization)\b(\s*[:=]\s*)(['"]?)(?:(Bearer|Basic|Digest)\s+)?([^\s'",}]{6,})\3/gi
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

@@ -280,6 +280,22 @@ describe('normalizeEvent', () => {
       expect(result.flags).toContain('secrets_redacted')
     })
 
+    it('pwd=değer biçimi maskelenir (G5 tur2 GG3, "password" kısaltması)', () => {
+      const result = normalizeEvent(
+        JSON.stringify({
+          project_path: 'C:\\dev\\apps\\demo',
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_input: { command: 'mysql -u root --pwd=SuperSecretPass123456' },
+        }),
+        NOW
+      )
+      const raw = result.raw as { tool_input: { command: string } }
+      expect(raw.tool_input.command).toBe('mysql -u root --pwd=[redakte]')
+      expect(raw.tool_input.command).not.toContain('SuperSecretPass123456')
+      expect(result.flags).toContain('secrets_redacted')
+    })
+
     it('5000 karakterlik zararsız bir alan 4000 karakterde görünür şekilde kırpılır', () => {
       const longContent = 'a'.repeat(5000)
       const result = normalizeEvent(

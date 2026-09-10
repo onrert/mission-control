@@ -363,3 +363,19 @@ zaten tarihli bir kopyası var mı diye bak (`diff -q`) — ikinci kez yanlış 
     icerik genisligine gore bagimsiz hizalandi: 320px'te baslikta "Proje" 95px, satirlarda ayni
     hucre **0px**. Basligi olcerken satir hucresini de ayni viewport'ta olc ve **ikisinin
     genisligini karsilastir**.
+
+**Katman mutasyonunu ORTAM DURUMUNUN İKİ HÂLİNDE birden koştur.** G5 tur-2'de iki katmanlı
+bir koruma (emniyet kemeri + sandbox izolasyonu) vardı. Katmanları tek tek sökmek, ortamda
+"bekleyen onay" varken ANLAMLI sonuç verdi (kemer sökülü → izolasyon tuttu, 106/106 yeşil ve
+dosyalar sağlam; izolasyon sökülü → kemer yakaladı, exit 3). Aynı mutasyonlar bekleyen onay
+YOKKEN ikisi de 106/106 yeşil — yani her iki katmanın ölümü de sessiz. Ortam durumunu
+değiştirmeden ölçseydim ya "çit var" ya "çit yok" diye yanlış sonuca varırdım.
+
+**Why:** Bir korumanın ölçülüp ölçülmediği, çoğu zaman koda değil ORTAMA bağlı; tek durumda
+ölçmek her iki yönde de yanıltır.
+
+**How to apply:** Koşullu çalışan (bir dosya/bayrak/durum varsa devreye giren) her korumada
+mutasyonu en az iki ortam hâlinde koştur ve tabloyu ikili yaz. Ayrıca "zararlı senaryo sessiz
+mi?" diye sor: zararlı hâlde kırmızı çıkıyorsa borç bloklayıcı değildir — ama o kırmızının
+TASARLANMIŞ bir assert'ten mi yoksa ilgisiz bir vakanın bozulmasından mı (kazara) geldiğini
+ayır; kazara sinyal bir sonraki refaktörde kaybolur. Bkz. [[statik-cit-denetimi]] madde 9.

@@ -81,3 +81,27 @@ arasındaki tek savunulabilir çizgidir.
    parça hizalamasını kaydırıp içeriği görünmez yapıyor. Şiddeti GERÇEK veri kümesinde bu
    biçimlerin sıklığını sayarak kalibre et (F-009: 638 satırda e-posta biçimi, 282 satırda tek
    sayıda kaçışlı tırnak) — "teorik açık" ile "haftada bir gerçekleşecek açık" farkı budur.
+9. **Markdown BÖLÜM SINIRINA dayanan ayrıştırıcıyı, "sonraki bölüm yoksa ne olur" ile yen.**
+   G5 tur-2'de onay kapsamı ayrıştırıcısı düzeltildi: kapsam artık yalnızca `## Kapsam`
+   başlığının bloğundan okunuyor, blok "bir sonraki `##` başlığına **ya da dosya sonuna**"
+   kadar. Sözleşme "bölümden sonraki ad artık yapısal olarak imkânsız" diye kabul yazmıştı.
+   22 sondanın 19'u tuttu, **3'ü sızdırdı** ve üçü de aynı boşluktan: sonraki bölüm `##` ile
+   BAŞLAMIYORSA blok dosya sonuna kadar uzuyor ve o metni kapsam sayıyor —
+   (a) başlıksız kuyruk düzyazı ("Not: `x.cjs` bu listeye dahil değildir"),
+   (b) `# Gerekçe` (h1 — `###` güvenli yönde çalışıyordu, `#` düşünülmemişti),
+   (c) `**Gerekçe**` kalın psödo-başlık.
+   Kontrol listesi: başlık ÖNCESİ metin · başlık SONRASI ama sonraki başlıktan önce ·
+   sonraki başlık h1/h3/kalın/başlıksız · aynı satırda içerik · iki nokta ekli başlık ·
+   kod bloğuna gömülü sahte başlık · CRLF.
+   **Gerçekçilik testi zorunlu:** sentetik sondalar "kenar durum" diye küçümsenir; hedef
+   biçimde **gerçek bir belge** yaz (bu turda: tarih + onaylayan + `## Kapsam` listesi +
+   altına "bu dosya kapsam dışıdır" notu) ve sızıntıyı onunla göster — itiraz kalmaz.
+
+**Why:** Metin ŞEKLİ sayan çitler bu depoda beş kez yenildi; bölüm sınırı da bir şekil
+sayımıdır, yalnızca daha ince. "Sonraki sınırlayıcı yoksa sona kadar" varsayımı her
+sınır-tabanlı ayrıştırıcının kör noktası.
+
+**How to apply:** Bir düzeltme "artık yalnızca X bölümünü okuyor" diyorsa, X'in BİTİŞ
+koşulunu sorgula; bitiş "dosya sonu"na düşebiliyorsa en az üç farklı sonraki-bölüm biçimi
+dene. Yama yerine kapalı biçim iste (yalnızca `- <ad>` satırları kabul, başka içerik →
+fail-closed) — bkz. [[kod-turu-kontrolleri]] beyaz liste dersi.

@@ -1,493 +1,332 @@
 KARAR: KALDI
 ESKALE: false
 
-# G5 — beş `status: qa` sözleşmesinin resmî kararı
+# G5 — iki sözleşmenin yeniden ölçüm turu (tur 2)
 
 **Tarih:** 2026-09-10
-**Tür:** dar karar turu (yeni tam güvenlik denetimi YAPILMADI — beş turun kanıtı okundu,
-kritik noktalar bağımsız olarak yeniden ölçüldü)
-**Bileşik karar:** beşten üçü KALDI → **KALDI**
+**Tür:** ÇOK DAR yeniden ölçüm. Yalnızca Y1 ve Y3 ölçüldü; başka hiçbir kriter yeniden
+açılmadı, yeni denetim yapılmadı.
+**Ölçülen düzeltme:** commit `53a320f` ("fix(hooks): close G5 round-5 blockers Y1 and Y3")
+**Bileşik karar:** ikiden biri KALDI → **KALDI**
 
-| # | Sözleşme | Karar |
-|---|---|---|
-| 1 | `docs/qa/g5-guvenlik-duzeltme-tur3-contract.md` | **KALDI** |
-| 2 | `docs/qa/g5-onay-dosyasi-korumasi-contract.md` | **KALDI** |
-| 3 | `docs/qa/g5-tur4-yol-kanoniklestirme-contract.md` | **GEÇTİ** |
-| 4 | `docs/qa/g5-tur4-izin-karti-onizlemesi-contract.md` | **GEÇTİ** |
-| 5 | `docs/qa/test-skip-gate-contract.md` | **KALDI** |
+| # | Sözleşme | Önceki | Bu tur |
+|---|---|---|---|
+| 1 | `docs/qa/g5-guvenlik-duzeltme-tur3-contract.md` (Y1) | KALDI | **KALDI** |
+| 2 | `docs/qa/g5-onay-dosyasi-korumasi-contract.md` (Y3) | KALDI | **GEÇTİ** |
+
+**Tek cümlelik özet:** Y3 **tam olarak kapandı** (ölçülen her boyutta); Y1 **daraltıldı ama
+kapanmadı** — "kapsam dışıdır" diye açıkça reddedilen bir dosya adı hâlâ sessizce kapsama
+girebiliyor, yalnızca artık metnin belli bir şekline bağlı olarak.
 
 ---
 
 ## 0. Kısıtlara uyum
 
-- **Gerçek `docs/approvals/*.ok` dosyalarına yazılmadı/silinmedi.** Tur başı ve tur sonu
-  SHA-256'lar birebir aynı (§6). `git status --porcelain docs/approvals/` her iki uçta da boş.
-- **`_selftest.cjs` ön kontrolü (brief §5.1):** betik çalıştırılmadan ÖNCE depo genelinde
-  `find` ile `GUARD.ok`/`PUSH.ok`/`DANGER.ok`/`.guard-state.json` arandı → **boş sonuç**.
-  Bekleyen onay yoktu, bu yüzden betiği çalıştırmak güvenliydi. (Y3 gereği aksi hâlde
-  çalıştırılmayacaktı.)
-- `.claude/` ve `src/` yalnızca okundu; `git status --porcelain .claude/ src/` boş.
-  Tüm mutasyonlar MD5'i doğrulanmış **sandbox kopyalar** üzerinde yapıldı (§2).
-- `docs/progress.md`, `docs/blockers.md` ve hiçbir `*-contract.md` dosyasına yazılmadı.
-- Tur sonunda yetim süreç yok: `node.exe` sayısı 2, ikisi de Playwright MCP sunucusu
-  (bu ajanın kendi araç ortamı, test koşularının artığı değil — komut satırlarıyla
-  doğrulandı). 7333/7334'te dinleyen yok (`netstat`).
-- Korunan komut adları hiçbir Bash komut satırına gömülmedi; sandbox kurulumu ve komut
-  sondaları `Write` ile yazılan Node betikleri üzerinden yapıldı (gerekçe: §5.2/Y2).
-
-> **TUR SIRASINDA DEĞİŞEN DURUM — 17:55.** Tur sonu kontrolünde `docs/approvals/GUARD.ok`
-> belirdi (927 bayt, `git status`'ta izlenmeyen). **Bu dosyayı ben oluşturmadım ve ona hiç
-> dokunmadım.** İçeriği paralel bir CEO turunun kullanıcı onayı ("Onaylayan: Kullanıcı
-> (Veron) — AskUserQuestion") ve kapsamı tam olarak bu raporun iki bloklayıcısı
-> (`gate-check.cjs` kapsam ayrıştırıcısı + `_selftest.cjs`'in gerçek onaylara dokunmaması).
-> Benim gerçek depoda `_selftest.cjs` koşturmam **17:33**'teydi ve hemen ardından alınan
-> dizin listesi 7 dosya gösteriyordu — yani token o an **henüz yoktu**, tüketilmedi.
-> **Bu token belirdikten sonra `_selftest.cjs` bir daha KOŞTURULMADI** (Y3 gereği; brief §5.1
-> ön koşulu artık sağlanmıyor). SHA-256 tablosu §6'da buna göre güncellendi.
->
-> **18:0x — paralel tur Y1 düzeltmesini uygulamaya başladı.** Tur kapanışında
-> `.claude/hooks/gate-check.cjs` **değişmiş** görünüyor
-> (`md5 14d615ca9088f4610d564676a7cb6599`, `git diff --stat`: +39/-4) ve
-> `docs/approvals/.guard-state.json` belirmiş
-> (`touched: [".claude/hooks/gate-check.cjs"]`, kapsam iki dosya). **Bu değişiklik bana ait
-> değil** — benim tüm mutasyonlarım sandbox kopyalardaydı ve her biri MD5 ile geri alındı
-> (`git status --porcelain .claude/` tur ortasında boş ölçüldü).
->
-> **Bu raporun tüm kararları ölçtüğüm duruma aittir:**
-> `gate-check.cjs md5 = a5bee8ab33559c51e269152b148e27ca`,
-> `block-dangerous.cjs md5 = 8099805ee49f9d9f816d8041253dbd1e`,
-> `_selftest.cjs md5 = 28df0680f515176b8531e1cf6223c596`, self-test 98/98.
-> #1 (Y1) ve #2 (Y3) için verilen KALDI kararları **o duruma karşı** geçerlidir; paralel turun
-> düzeltmesi tamamlandığında **yeniden ölçülmelidir** — özellikle Y1 için "düzyazıda ters
-> tırnaklı ad" sondası (§3.1 sonda B) ve Y3 için "bekleyen gerçek onay varken betik ne
-> yapıyor" sondası (§3.2) tekrarlanmalı. #3 ve #5 kararları `gate-check.cjs`'ten bağımsız
-> dosyalara dayandığı için etkilenmez; #4 tamamen `src/` tarafındadır.
+- **Gerçek `docs/approvals/` altına hiçbir şey yazılmadı/silinmedi.** Tur başı ve tur sonu
+  SHA-256'ları birebir aynı (§4). `git status --porcelain docs/approvals/ .claude/ src/`
+  tur sonunda **boş**.
+- `.claude/` altındaki hiçbir dosya değiştirilmedi. Tur sonu MD5'leri tur başıyla aynı:
+  `gate-check.cjs 14d615ca9088f4610d564676a7cb6599`,
+  `_selftest.cjs d28c5b4d1dff8c9cf94b15d6b53f087b`,
+  `block-dangerous.cjs 8099805ee49f9d9f816d8041253dbd1e`.
+- Tüm PoC ve mutasyonlar **MD5'i doğrulanmış sandbox kopyalarda** yapıldı (§1.0).
+- `npm run test` / `npm run e2e` **çalıştırılmadı** (brief §4).
+- `docs/progress.md`, `docs/blockers.md`, hiçbir `*-contract.md`, `scripts/`, `tests/`,
+  `package.json`, `CLAUDE.md` dosyasına yazılmadı.
+- Korunan komut adları hiçbir Bash komut satırına gömülmedi; sandbox kurulumu/temizliği
+  `Write` ile yazılan Node betikleriyle yapıldı (Y2 sınıfı, üçüncü kez gözlemlendi).
+- **Süreç hijyeni:** tur sonunda 4 `node.exe` var, **hiçbiri bana ait değil** — 2 tanesi
+  Playwright MCP (bu ajanın kendi araç ortamı), 1 tanesi paralel turun `hold-*` port
+  tutucusu, 1 tanesi paralel turun `vite build`'i (komut satırlarıyla doğrulandı).
+  7333/7334'te dinleyen yok. `chrome.exe` yok. `%TEMP%` altında `mc-selftest-*` artığı **0**.
+- *Dürüstlük notu:* temizlik betiğim scratchpad'de `sb1` ve `mut-*` kalıplı **17** dizin
+  sildi; bunlardan 10'u bu turda benim oluşturduklarım, 7'si önceki turlardan kalma
+  artıklardı. Paralel turun bu kalıpta bir dizini varsa etkilenmiş olabilir (yalnızca
+  geçici dosyalar; depo dosyası değil).
 
 ---
 
-## 1. Bağımsız doğrulamalar — sayılarla
+## 1. Ölçüm altyapısı
 
-### 1.1 Hook self-test (brief §5.1)
+### 1.0 Sandbox — MD5 doğrulanmış
 
-| Ölçüm | Sonuç |
-|---|---|
-| `node .claude/hooks/_selftest.cjs` (gerçek depo) | **98 OK / 0 FAIL**, exit 0 |
-| Beklenen (brief) | 98/98 ✓ **tuttu** |
-| Koşum sonrası `docs/approvals/` | 7 dosya, hepsi değişmemiş |
+`.claude/hooks/` altındaki **9 dosyanın tamamı** izole bir kopyaya alındı, kaynak/kopya
+MD5'leri **9/9 eşleşti** (`ALL_MD5_MATCH=true`):
 
-### 1.2 Test takımı (brief §5.3) — **beş koşu**
+```
+asset-guard.cjs      533c9688db335af9b39f1aa4907d196d
+block-dangerous.cjs  8099805ee49f9d9f816d8041253dbd1e
+gate-check.cjs       14d615ca9088f4610d564676a7cb6599
+post-format.cjs      2d78b66bb08a18582f3b957c7366e894
+send-event.cjs       308fd02488a872b499c351b5dacfb740
+session-start.cjs    c73bfa90d9cc5eb2925c3319a2244cae
+stop-check.cjs       3c12934629ab5ce2c25460ffca13cad4
+_common.cjs          41c4be2337f72053b71fd91703ecebaf
+_selftest.cjs        d28c5b4d1dff8c9cf94b15d6b53f087b
+```
 
-Brief iki koşu istiyordu; kırmızı çıktığı için beşe çıkarıldı (sıklık ölçümü).
+Sandbox kendi izole `docs/approvals/` ağacını taşır (kendi `G2.ok`/`README.md` fixture'ı);
+gerçek dosyalar okunmadı bile.
 
-| Koşu | Sonuç | Not |
+### 1.1 Gerçek depoda self-test
+
+| Ölçüm | Beklenen | Çıkan |
 |---|---|---|
-| 1 | **KIRMIZI** | `tests/build-css.test.ts` → `ENOENT ... scandir 'dist\web\assets'`. `Test Files 1 failed \| 84 passed \| 1 skipped (86)`, `Tests 1365 passed \| 10 skipped` |
-| 2 | YEŞİL | **1371 geçti / 4 atlandı (1375)** |
-| 3 | YEŞİL | 1371 / 4 |
-| 4 | **KIRMIZI** | Bilinen vitest worker-fork çökmesi (`3221226505`, `chat-api.test.ts`). `84 passed \| 1 skipped (86)` → **84+1 ≠ 86**; çit doğru şekilde KIRMIZI verdi |
-| 5 | YEŞİL | 1371 / 4 |
-
-**Beklenen 1371/4 → üç koşuda birebir tuttu.** İki kırmızı **iki AYRI sınıf**:
-koşu 4 `CLAUDE.md`'de kayıtlı fork çökmesi (regresyon değil, üstelik çit onu yakaladı —
-bkz. §5.1), koşu 1 ise **yeni bir sınıf** (§5.2).
-
-`npx tsc --noEmit` → **0 hata**. `npx eslint .` → **0 hata**.
-
-### 1.3 E2E
-
-| Komut | Sonuç |
-|---|---|
-| `npm run e2e` | **55 passed** (41.8s) — beklenen 55 ✓ |
-| `npm run e2e:chat` | **4 passed** (gerçek tarayıcı, 320/375/480px) |
-
-Tur-5 hiç e2e koşturmamıştı; bu turda ikisi de koşturuldu.
+| `node .claude/hooks/_selftest.cjs` (gerçek depo, 3 kez) | 106/106, exit 0 | **106 OK / 0 FAIL, exit 0** |
+| Koşum sonrası `docs/approvals/` | 7 dosya, değişmemiş | 7 dosya, SHA-256 birebir aynı |
+| `%TEMP%` altında `mc-selftest-*` artığı | 0 | 0 |
 
 ---
 
-## 2. Mutasyonlar (brief §5.2) — sandbox, MD5 doğrulanmış
+## 2. Sözleşme #1 — `g5-guvenlik-duzeltme-tur3-contract.md` (Y1)
 
-Sandbox `.claude/hooks/` altındaki **9 dosyanın tamamı** için kaynak/kopya MD5'leri eşleşti
-(`ALL_MD5_MATCH=true`). Gerçek dosyalar (tur sonu, değişmemiş):
+### KARAR: KALDI
 
-```
-gate-check.cjs        a5bee8ab33559c51e269152b148e27ca
-block-dangerous.cjs   8099805ee49f9d9f816d8041253dbd1e
-_selftest.cjs         28df0680f515176b8531e1cf6223c596
-```
+**Puanlar:** İşlevsellik **6** · Özellik bütünlüğü **5** · Görsel/UX *yok say* · Kod kalitesi **6**
 
-Sandbox baz: **98 OK / 0 FAIL**. Her mutasyon uygulandıktan sonra **elle** (ters işlemle,
-`git checkout` KULLANILMADAN) geri alındı ve MD5 eşleşmesi doğrulandı.
+### 2.1 Kapanan kısım (hakkını verelim)
 
-| # | Mutasyon | Hedef sözleşme | Sonuç |
+Düzeltme gerçek ve ölçülebilir. `parseGuardScope()` artık tek bir `## Kapsam` başlığının
+bloğunu okuyor; başlık yok / birden fazla / blok boş → fail-closed; başlık varyantları
+tanınıyor. **22 sondanın 19'u beklendiği gibi** davrandı:
+
+| Sonda | Beklenen | Çıkan | Durum |
 |---|---|---|---|
-| M1 | `isApprovalsPath = false` (Katman A ask bloğu) | #2 | **88 OK / 10 FAIL** |
-| M2 | `scope.has(relLower)` kapsam reddini kaldır | #1 | **97 OK / 1 FAIL** — vaka (e) |
-| M3 | `approvalsRef = /$^/` (Katman B) | #2 | **80 OK / 18 FAIL** |
-| M4 | `resolveCanonicalRel` → eski dize davranışı | #3 | **95 OK / 3 FAIL** — K-A, K-B, fail-closed |
+| A kontrol: yalnız Kapsam, hedef kapsam dışı | 2 | 2 | ✓ |
+| **B — önceki turun PoC'i birebir**: `## Gerekce` bölümünde "KAPSAM DIŞI" diye anılan ad | 2 | **2** | ✓ **kapandı** |
+| B2 komşu davranış: aynı metinde kapsam İÇİNDEKİ ad hâlâ kabul | 0 | 0 | ✓ (aşırı engelleme yok) |
+| C başlık hiç yok → fail-closed | 2 | 2 | ✓ |
+| D / D2 iki `## Kapsam` başlığı → belirsiz, ikisi de red | 2 / 2 | 2 / 2 | ✓ |
+| E bölüm var, ters tırnaklı ad yok → fail-closed | 2 | 2 | ✓ |
+| F1 `##Kapsam` (boşluksuz) | 0 | 0 | ✓ |
+| F2 `## KAPSAM` (büyük harf) | 0 | 0 | ✓ |
+| F3 `##   kapsam   ` (küçük harf + fazla boşluk) | 0 | 0 | ✓ |
+| G1 **başlık ÖNCESİ** önsöz düzyazısındaki ad | 2 | 2 | ✓ |
+| G5 sonraki bölüm `### Gerekce` (h3) | 2 | 2 | ✓ |
+| G6 kod bloğuna gömülü sahte `## Kapsam` | 2 | 2 | ✓ (belirsiz → fail-closed) |
+| G7 `## Kapsam \`x.cjs\`` (aynı satırda ad) | 2 | 2 | ✓ fail-closed |
+| G8 `## Kapsam:` (iki nokta) | 2 | 2 | ✓ fail-closed |
+| G9 kapsamda tam yol yazımı | 2 | 2 | ✓ fail-closed |
+| G10/G11 CRLF satır sonları | 0 / 2 | 0 / 2 | ✓ |
+| G12 harf varyantı hedef (`.CLAUDE/HOOKS/...`) | 0 | 0 | ✓ |
 
-**M4 notu (dürüstlük):** ilk denemem kabuk kaçış katmanları yüzünden hook'u **çökerten**
-(exit 1, 27 sahte kırmızı) geçersiz bir mutasyon üretti. `node --check` ile sözdizimi
-doğrulayan temiz bir sürümle tekrarlandı; sonuç tur-5'in bildirdiği **3 kırmızıyla birebir**
-aynı çıktı. *Ders: mutasyonun kendisi çökerse "kırmızı" bir şey ölçmez.*
+Yani brief'in istediği "başlık yok · iki başlık · boş bölüm · başlık varyantları · komşu
+davranış" vakalarının **hepsi tuttu**, üstelik pozitif yol bozulmadı.
 
-**M2'nin dar kapsamı önemli:** tur-3'ün madde-4 çiti **tek** bir testle ölçülüyor ve o test
-**düzyazısız, sentetik** bir GUARD.ok kullanıyor. Y1 (§3.1) tam olarak bu boşluktan geçiyor.
+### 2.2 BLOKLAYICI — Y1 kapanmadı, yalnızca daraldı
 
----
+Kapsam, `## Kapsam` başlığından **bir sonraki `##` ile başlayan satıra ya da dosya sonuna**
+kadar uzanıyor. Dolayısıyla "kapsam bölümü dışındaki ad kapsam sayılmaz" iddiası **yalnızca
+sonraki bölüm `##` ile başlıyorsa** doğru. **3/22 sonda sızdırdı:**
 
-## 3. Sözleşme kararları
+| Sonda | Sonraki bölümün biçimi | Beklenen | **Çıkan** |
+|---|---|---|---|
+| **G2** | *(başlık yok — kapsam listesinin altına düşülmüş not)* | 2 | **0 — sessiz izin** |
+| **G3** | `# Gerekce` (h1) | 2 | **0 — sessiz izin** |
+| **G4** | `**Gerekce**` (kalın psödo-başlık) | 2 | **0 — sessiz izin** |
 
-### 3.1 `g5-guvenlik-duzeltme-tur3-contract.md` — **KARAR: KALDI**
-
-**Puanlar:** İşlevsellik **5** · Özellik bütünlüğü **5** · Görsel/UX *yok say* · Kod kalitesi **6**
-
-Madde 1 (`free` listesi harf duyarsız), madde 2 (`-Recurse` kısaltma zinciri) ve madde 3
-(7 self-test vakası) **karşılandı** — 98/98 yeşil, M3 ile Katman B'nin gerçekten ölçüldüğü
-kanıtlandı.
-
-**Karşılanmayan kabul kriteri — madde 4, "Kapsam dışı reddi":**
-
-> *"Yazılan yol, çıkarılan kapsamda yoksa — token dosyası var olsa bile — `block()` ile
-> reddedilir."* … *"Serbest metin (backtick dışı) kapsam SAYILMAZ — fail-closed."*
-
-Sözleşme "serbest metin kapsam sayılmaz" diyor ama uygulama **metnin tamamını** tarıyor:
-
-`.claude/hooks/gate-check.cjs:34-36`
-```js
-const re = /`([^`]+)`/g;
-while ((m = re.exec(text))) { ... }   // "## Kapsam" ile SINIRLANMIYOR
-```
-
-**Bağımsız tekrar üretim (sandbox, bu turda):**
-
-| Sonda | GUARD.ok metni | `evil-payload.cjs` yazma isteği |
-|---|---|---|
-| A | yalnızca `## Kapsam` + `` `block-dangerous.cjs` `` | **exit 2** (doğru: kapsam dışı) |
-| B | A + `## Gerekce` bölümünde *"ilgisiz ve **KAPSAM DIŞI** bırakılan `evil-payload.cjs`"* | **exit 0 — sessiz izin** |
-
-B'de `.guard-state.json` şu hâle geliyor:
+Üçünde de `.guard-state.json` şu hâle geliyor:
 ```json
 {"scopeKey":"[\".claude/hooks/block-dangerous.cjs\",\".claude/hooks/evil-payload.cjs\"]",
  "touched":[".claude/hooks/evil-payload.cjs"]}
 ```
 
-**Neden bloklayıcı (pratik sızıntı, teorik değil):** onay metninin **doğal dil anlamı**
-("KAPSAM DIŞI") ile **sistemin uyguladığı karar** (kapsama DAHİL) çelişiyor. Kullanıcı kartı
-doğru okuyup doğru sonuca varsa bile sistem sessizce ikinci bir dosyayı yetkilendiriyor —
-kart **yanıltıcı bilgi taşıyor** (brief §7'nin "pratik sızıntı" tanımı). Ayrıca severity
-kuralının **her iki** koşulunu birden karşılıyor: **(a)** kalıcı artefakt (`GUARD.ok` kapsamı,
-`.guard-state.json` içeriği), **(b)** sözleşmenin ana vaadi — *"token bir DEĞİŞİKLİĞİ
-yetkilendirir, bir YAZMAYI değil"* — çürütülüyor.
-
-**Ağırlaştırıcı:** sözleşmenin **kendi** öngördüğü GUARD.ok biçimi tam da savunmasız biçim.
-Sözleşme §"Zincirleme sorun" şunu yazıyor: *"Bu ikinci GUARD.ok'un metni yalnızca
-`block-dangerous.cjs` ve `_selftest.cjs` anmalı"* — yani mekanizmanın doğruluğu, insanın
-gerekçe paragrafına dosya adı yazmamayı **hatırlamasına** bağlanmış. Bu bir çit değil, bir
-temenni. `docs/approvals/GUARD.ok`'un gerçek geçmiş biçimi (bu sözleşmenin kendi §"Ne
-yapacağım" listesi gibi, numaralı düzyazı + backtick'li adlar) doğrudan bu tuzağa giriyor.
-
-**Tur içi ek kanıt (17:55):** yeni beliren gerçek `GUARD.ok`, bu kusuru **elle** dolanmak
-zorunda kalmış. Metninde şu cümle var: *"Bu metinde, aşağıdaki Kapsam bölümü dışında hiçbir
-dosya adı ters tırnak içine alınmamıştır — çünkü düzeltilmekte olan kusurlardan biri tam
-olarak budur."* Yani mekanizmanın bugünkü güvenliği, onay metnini yazan insanın kusuru
-bilmesine ve gerekçe paragrafında ters tırnak kullanmamaya **dikkat etmesine** bağlı.
-Bu, yukarıda "çit değil, temenni" dediğim şeyin canlı doğrulaması.
-
-**Muhtemel dosya:satır:** `.claude/hooks/gate-check.cjs:30-44` (`parseGuardScope`).
-
-**Kapanış için gereken:** (i) yalnızca `## Kapsam` bölümünü ayrıştır; (ii) bölüm dışında
-`.cjs`/`.claude/settings.json` adı geçiyorsa **fail-closed reddet** (belirsiz kapsam);
-(iii) self-test vakası (e)'yi **düzyazılı** bir GUARD.ok ile tekrarla — mevcut sentetik
-vaka bu sınıfı görmüyor.
-
----
-
-### 3.2 `g5-onay-dosyasi-korumasi-contract.md` — **KARAR: KALDI**
-
-**Puanlar:** İşlevsellik **6** · Özellik bütünlüğü **5** · Görsel/UX *yok say* · Kod kalitesi **6**
-
-Kabul kriterlerinin çoğu **karşılandı ve ölçüldü**:
-
-| Kriter | Durum |
-|---|---|
-| 1-2 (approvals altındaki her dosya → `ask`) | ✓ self-test, M1 ile 10 kırmızı |
-| 3 (`.guard-state.json` koşulsuz sert engel) | ✓ |
-| 4-5 (regresyon, `docs/**` yanlış pozitifi yok) | ✓ |
-| 6-7 (Katman B: yönlendirme/kopyalama/satır-içi betik) | ✓ M3 ile 18 kırmızı |
-| 8 (Bash negatif vakalar) | **kısmen** — bkz. §5.3 |
-| 10 (`permissions.ask`) | ✓ `["Edit(docs/approvals/**)","Write(docs/approvals/**)"]`, JSON geçerli |
-| 11 (tsc/eslint/test/e2e) | ✓ 0/0/1371-4/55 |
-
-**Karşılanmayan kabul kriteri — §(b) BYPASS ENVANTERİ'nin kapsam iddiası:**
-
-> *"Kapsam: `docs/approvals/` altına bir dosyanın yazılabileceği/değiştirilebileceği/
-> **silinebileceği** her yol."*
-
-Envanter altı maddeyi sayıyor ve her birini "kapatıldı / kabul edilmiş sınır / kapsam dışı"
-diye etiketliyor. **Deponun kendi zorunlu bakım betiği bu listede yok** — ve o betik, bu
-sözleşmenin korumak için var olduğu dosyaları **koşulsuz siliyor**:
-
-`.claude/hooks/_selftest.cjs:441-445`
-```js
-rm(PUSH_OK);      // docs/approvals/PUSH.ok
-rm(DANGER_OK);    // docs/approvals/DANGER.ok
-rm(GUARD_OK);     // docs/approvals/GUARD.ok
-rm(GUARD_STATE);  // docs/approvals/.guard-state.json
-```
-
-**Bağımsız canlı kanıt (sandbox, bu turda):** kullanıcı imzalı (selftest imzası TAŞIMAYAN)
-üç onay dosyası yerleştirildi, sonra betik çalıştırıldı:
-
-```
-KOSUM ONCESI : GUARD.ok=var  PUSH.ok=var  DANGER.ok=var
-KOSUM SONRASI: GUARD.ok=YOK  PUSH.ok=YOK  DANGER.ok=YOK
-docs/approvals kalanlar: ["G2.ok"]
-```
-
-Hiçbir uyarı, hiçbir yedek, hiçbir kayıt. **İkinci etki (bu turda yeni bulundu):** bekleyen
-onaylar varken self-test'in **kendi sonuçları da bozuluyor** — 98/98 yerine 96 OK/2 FAIL:
-
-```
-FAIL [block-dangerous.cjs] rm -rf  <- cikan=0 beklenen=2
-FAIL [gate-check.cjs] K1: hook dosyasina yazma GUARD.ok yokken engelli  <- cikan=0 beklenen=2
-```
-
-Yani ortamdaki onay durumu, güvenlik takımının verdiği kararı değiştiriyor: `DANGER.ok`
-diskteyken "yıkıcı komut engelleniyor mu" testi **engellenmiyor** cevabını alıyor.
-
-**Neden bloklayıcı:** severity kuralı **(a)** — kalıcı bir artefakta (kullanıcının verdiği
-gerçek izin kararının kaydı) dokunuyor, üstelik **silerek**. Ayrıca `CLAUDE.md` bu betiği
-rutin bakımın zorunlu parçası yapıyor (*"Hook değişikliğinden sonra `node .claude/hooks/
-_selftest.cjs` çalıştır"*), yani tehlike hipotetik değil, **standart iş akışına gömülü**.
-Bu turda felaket yaşanmadı çünkü bekleyen onay yoktu — **şans**, çit değil.
-
-> **Ve artık şans da bitti: 17:55 itibarıyla `docs/approvals/GUARD.ok` GERÇEKTEN VAR.**
-> `CLAUDE.md`'nin *"hook değişikliğinden sonra `_selftest.cjs` çalıştır"* kuralını izleyen
-> bir sonraki tur — ki o tur tam da bu token'ın yetkilendirdiği hook düzeltmesini yapacak —
-> betiği koşturduğu anda **kullanıcının bu onayını sessizce silecek**. Y3 bu andan itibaren
-> varsayımsal değil, **yürürlükte**. Düzeltme sırası zorunlu olarak şudur: önce
-> `_selftest.cjs`'in temizlik bloğu güvenli hâle getirilmeli, ANCAK ondan sonra self-test
-> koşturulmalı.
-
-**Muhtemel dosya:satır:** `.claude/hooks/_selftest.cjs:441-445` (temizlik bloğu) ve
-`:34-36` (`write`/`writeGuardScope` gerçek yollara yazıyor).
-
-**Kapanış için gereken:** betik başında bu dört yolun **önceden var olup olmadığını** ve
-içeriğinin `selftest` imzası taşıyıp taşımadığını kontrol etsin; imzasızsa ya **çalışmayı
-reddetsin** ya da **yedekleyip geri yüklesin**. Koşulsuz `rm()` ile bitirmesin.
-
----
-
-### 3.3 `g5-tur4-yol-kanoniklestirme-contract.md` — **KARAR: GEÇTİ**
-
-**Puanlar:** İşlevsellik **9** · Özellik bütünlüğü **8** · Görsel/UX *yok say* · Kod kalitesi **8**
-
-| Kabul kriteri (§3) | Kanıt |
-|---|---|
-| 1 — `\\?\` öneki → exit 0 + `ask` | self-test OK; **M4 ile kırmızıya döndü** |
-| 2 — junction arkası → exit 0 + `ask` | self-test OK; **M4 ile kırmızıya döndü** |
-| 3 — bağlantı oluşturma komutu → exit 2 | 5 self-test vakası (bayraksız, `/J`, `/D`, `/H`, büyük harf) |
-| 4 — 88 vakalık regresyon + yanlış pozitif listesi | **98/98**; yanlış pozitif listesi bu turda **elle sondalandı** (§5.3) |
-| 5 — `realpathSync` fırlarsa exit 2 | self-test OK; **M4 ile kırmızıya döndü** |
-
-M4 (temiz sürüm) tur-5'in sonucunu **bağımsız olarak birebir** yeniden üretti: 95/98,
-kırmızıya düşen üç vaka tam olarak bu sözleşmenin koruduğu üç davranış (K-A, K-B,
-fail-closed) — çit **komşu bir yolu değil, tam da bu mekanizmayı** ölçüyor.
-
-Y1 ve Y3 bu sözleşmenin kapsamındaki hiçbir mekanizmayı çürütmüyor (ikisi de kapsam
-çıkarımı ve test temizliği ile ilgili, yol kanonikleştirmesiyle değil).
-
-**Açık eşikli borç (bloklayıcı DEĞİL):** madde 3'ün `danger` desenine eklediği bağlantı-
-oluşturma adı, komut metninin **tamamında** aranıyor. Sonuç: komut adını yalnızca **anan**
-bir commit mesajı da engelleniyor (§5.3, sonda 6). Bu **aşırı engelleme** — güvenli yönde
-hata, sızıntı değil, bu yüzden bloklayıcı değil. **Eşik:** `CLAUDE.md`'de kayıtlı "korunan
-komut adını anan metin tüm zinciri engelliyor" sınıfının **üçüncü** tekrarı; segment bazlı
-eşleştirmeye geçilene kadar bu belgeyi commit'lerken de tetiklenecek.
-
----
-
-### 3.4 `g5-tur4-izin-karti-onizlemesi-contract.md` — **KARAR: GEÇTİ**
-
-**Puanlar:** İşlevsellik **9** · Özellik bütünlüğü **8** · Görsel/UX **8** · Kod kalitesi **7**
-
-Ana vaat — *"kartta görünen komut, onaylanınca çalışacak komutun tamamı olmalıdır"* —
-**doğrudan çitlenmiş**: `tests/features/chat/server/session.test.ts:424` üretim kod yolundan
-(`canUseTool` → `chat_permission_request` yayını) okuyup `expect(preview).toBe(command)`
-diyor; yani "gösterilen ≡ taşınan" kimliği ölçülüyor (F-008'de eksik olan tam buydu).
-
-| Kabul kriteri | Kanıt |
-|---|---|
-| 1 — denetimin sondası (`560×'#' + iz`) | `toContain(tail)` **ve** `toBe(command)` |
-| 2 — uyarı şeridi eşik altı/üstü | `ChatScreen.test.tsx` + e2e'de şerit görünürlüğü |
-| 3 — hard cap → marker, alt dize sızıntısı yok | `session.ts:156-157` sabit metin döndürüyor, içerikten hiçbir parça taşımıyor |
-| 4 — gerçek tarayıcı, 320/375/480px | **`npm run e2e:chat` 4/4 bu turda koşturuldu**; `textContent` tam komutu içeriyor, `overflow-y ∈ {auto,scroll}`, `text-overflow ≠ ellipsis` |
-| 5 — oversized'da Onayla `disabled` | `ChatScreen.test.tsx` |
-| 6 — iki mutasyon | developer bildirdi; **bağımsız yeniden üretilmedi** (brief `src/` yazmayı yasaklıyor) |
-
-Kriter 6 için dürüst not: mutasyonu kendim koşturamadım. Ancak assert `toBe(command)`
-biçiminde **kesin eşitlik** olduğu ve sonda 560 karakterlik dolgu + kuyruk içerdiği için,
-`slice(0, 500)`'e dönüş bu testi **deterministik olarak** kırar (olasılıksal değil).
-Boşluk normalizasyonu bu girdide birim işlem (tek boşluk, satır sonu yok), yani eşitlik
-gerçekten tutuyor. Bu, tam mutasyon kanıtından zayıf ama sağlam bir çıkarım.
-
-**Açık eşikli borçlar (bloklayıcı DEĞİL):**
-
-1. **`previewBoxMetrics` `scrollHeight`/`clientHeight` topluyor ama HİÇBİR test bunları
-   assert etmiyor** — üstelik hemen üstündeki yorum *"içerik kutudan taşıyorsa
-   `scrollHeight > clientHeight`"* diye iddia ediyor. Sözleşme kriteri 4 bunu açıkça
-   istiyordu. Deponun kayıtlı "yorumun iddia ettiği kapsam ≠ taradığı şey" sınıfı.
-   Okunabilirlik yine de kanıtlı (`textContent` + `overflow-y` + ellipsis yokluğu), o yüzden
-   bloklayıcı değil. **Dosya:** `tests/e2e/chat.spec.ts:73-90, 110-117`.
-   **Eşik:** kutunun `max-h` değeri değişirse bu iddia sessizce yanlışlaşır.
-2. **`chat.spec.ts` `npm run e2e`'de KOŞMUYOR** — `playwright.config.ts`'in `testMatch`
-   listesi kapalı ve onu içermiyor; yalnızca `playwright.chat.config.ts` (`npm run e2e:chat`)
-   koşuyor. `npm run verify` ise e2e'yi hiç zincirlemiyor. Yani bu sözleşmenin **tek gerçek
-   tarayıcı kanıtı**, rutin hiçbir kapıda çalışmıyor; tur-5 de koşturmamıştı. `tests/
-   e2e-config-guard.test.ts` "her spec en az bir config'de" diyor, bu sağlanıyor — ama
-   "hangi config rutin olarak koşuyor" sorusunu sormuyor. **Eşik:** kart mantığı değişirse
-   regresyon yalnızca elle `e2e:chat` koşturulursa görülür.
-
----
-
-### 3.5 `test-skip-gate-contract.md` — **KARAR: KALDI**
-
-**Puanlar:** İşlevsellik **8** · Özellik bütünlüğü **7** · Görsel/UX *yok say* · Kod kalitesi **6**
-
-**Önce hakkını verelim — ana vaat bu turda ÜÇ ayrı yoldan canlı doğrulandı:**
-
-1. **Zorlanmış dosya düşürme.** `npm run test -- --exclude tests/verify-test-run.test.ts`:
-   vitest'in **kendisi mutlu** (`84 passed | 1 skipped (85)`, tüm testler yeşil), çit KIRMIZI:
+**Tekrar üretme adımları (G2, en gerçekçi biçim):**
+1. Sandbox depo kopyasında `docs/approvals/GUARD.ok` dosyasına şunu yaz:
    ```
-   [verify-test-run] KIRMIZI -- silent test-skip guard tripped:
-     - "Test Files" total reported by vitest (85) does not match the number of test files on
-       disk matching vitest.config.ts's include/exclude patterns (86)
+   ## Kapsam
+   `block-dangerous.cjs`
+
+   Not: `evil-payload.cjs` bu listeye DAHİL DEĞİLDİR.
    ```
-   Bu, B1'in birebir kanıtı ve **disk referansı** katmanının (madde 2b) gerçekten çalıştığını
-   gösteriyor.
-2. **Organik çökme (koşu 4).** Gerçek bir worker-fork çökmesi (`3221226505`,
-   `chat-api.test.ts`) → `84+1 ≠ 86` **ve** çökme imzası; çit KIRMIZI. Fixture değil, gerçek.
-3. **Fail-closed (kazara).** PATH'te `vitest` yokken özet satırı hiç üretilmedi; çit
-   *"could not find a Test Files summary line"* ile KIRMIZI verdi — belirsizliği başarı
-   saymadı.
+2. `gate-check.cjs`'e stdin ile
+   `{"tool_name":"Write","tool_input":{"file_path":".claude/hooks/evil-payload.cjs"}}` ver.
+3. **Beklenen:** exit 2 (kapsam dışı reddi).
+   **Gerçek:** exit 0, stdout boş — **hiçbir izin kartı gösterilmeden** yazma yetkilendirildi.
 
-`package.json` bağlantısı da yerinde (`"test": "node scripts/verify-test-run.mjs"`,
-`verify` zinciri `npm run test` içeriyor).
+### 2.3 Gerçekçi onay metniyle canlı gösterim
 
-**Karşılanmayan nokta — §3b'nin iç içe koşum tasarımı yalnızca fork bomb'a karşı çitlendi,
-PAYLAŞILAN DURUMA karşı hiç düşünülmedi.**
-
-B1'in kalıcı regresyon testi (`tests/verify-test-run.test.ts:429-444`) **gerçek `vitest`'i
-gerçek suite üzerinde** alt süreç olarak çalıştırıyor ve yalnızca **iki** dosyayı dışlıyor
-(`install-hook.test.ts`, `verify-test-run.test.ts`). Yani `npm run test` her koştuğunda
-**suite'in tamamı ikinci bir kez, dış koşumla EŞZAMANLI** çalışıyor — ve suite'in içinde
-**izole olmayan, paylaşılan kaynaklara** dokunan testler var:
-
-**(a) Sabit portlar 7333/7334 — kanıtlanmış çakışma.**
-`tests/scripts/check-ports.test.ts` gerçek 7333 ve 7334'ü **bilerek bağlıyor**
-(`server.listen(7333, '127.0.0.1')`, satır 72-74 ve 86-88) ve ayrıca bir test
-*"gerçek varsayılan portlar boş"* varsayımına assert ediyor (satır 60-65).
-Bu turda 7333'ü dışarıdan tutup testi koşturdum:
+Sondaların sentetik olduğu itirazını kapatmak için, bir CEO'nun doğal olarak yazacağı bir
+onay belgesiyle tekrarlandı:
 
 ```
-FAIL check-ports.mjs > ...gerçek varsayılan portlar boşsa exit 0 verir
-     AssertionError: expected 1 to be +0
-FAIL check-ports.mjs > MC_PORT geçersizse gerçek varsayılan port (7333) kullanılır (Ö3)
-     Error: listen EADDRINUSE: address already in use 127.0.0.1:7333
-Tests  2 failed | 4 passed (6)
+# GUARD onayi — G5 tur 6 hook bakimi
+
+Tarih: 2026-09-10
+Onaylayan: Kullanici (Veron) — AskUserQuestion
+
+## Kapsam
+
+- `gate-check.cjs`
+
+Not: bu turda `_selftest.cjs` dosyasina DOKUNULMAYACAK, kapsam disidir.
+Ayrica `block-dangerous.cjs` da bu onayin KAPSAMI DISINDADIR.
 ```
 
-İç içe koşum bu testi **aynı anda ikinci kez** çalıştırdığı için bu çakışma tasarım gereği
-mümkün. Bu **varsayımsal değil**: `g5-tur4-izin-karti-onizlemesi-contract.md`'nin kapanış
-notu tam olarak bu belirtiyi rapor etmiş (*"`check-ports.test.ts` bir kez EADDRINUSE ile
-kırmızı verdi"*) ama nedenini *"paralel `.claude` turunun kendi canlı denetimi"* diye
-**yanlış teşhis etmiş**. Kaynak dışarıda değil, **çitin kendi iç içe koşumunda**.
-
-**(b) `dist/` — gözlenmiş çakışma.**
-Koşu 1'in kırmızısı: `ENOENT ... scandir 'dist\web\assets'`, `tests/build-css.test.ts`'in
-`beforeAll`'unda. `vite.config.ts` `outDir: '../../dist/web'`, **`emptyOutDir: true`** —
-`dist/web/assets`'i silen **tek** kod yolu bir `vite build`. `build-css.test.ts` dört kez
-`vite build` çağırıyor; `npm run test` sırasında bu dosyanın **iki suite'te birden**
-(dış + iç içe) koşması, iki eşzamanlı `vite build`'in birbirinin çıktısını silmesi anlamına
-geliyor.
-*Dürüstlük notu:* bu nedenselliği **zorlayarak yeniden üretemedim** (bir denemede eşzamanlı
-iki koşum yeşil kaldı; ilk iki denemem ise `vitest` PATH'te olmadığı için **geçersizdi**).
-Yani: **oluş ✓ DOĞRULANDI (1/5 koşu), mekanizma ? ÇIKARIM** (güçlü — silen başka kod yok).
-
-**Neden KALDI:** `npm run test` bu turda **5 koşunun 2'sinde kırmızı** verdi ve iki kırmızı
-**farklı sınıflardan**. Deponun kayıtlı kuralı ("bir kez daha koştur") artık **iki ayrı**
-çevresel kırmızı sınıfını birden örtüyor; ikisi de üstünkörü bakışta aynı görünüyor. Bu tam
-olarak `CLAUDE.md`'nin uyardığı *"kırmızıya alışmak tehlikeli"* durumu — ve bir **test
-kapısının** kendi kalıcı testinin, kapının koruduğu suite'i kararsızlaştırması, kapının
-uzun vadede yok sayılmasına giden yol. Sözleşme §3b iç içe koşumun **üstel** riskini
-(fork bomb) görüp çitlemiş, ama **paylaşılan durum** riskini hiç ele almamış; ne sözleşmede
-ne testlerde bu konuda tek satır var.
-
-Severity kuralına göre bu **(a)** değil (dist bir yapı çıktısı, kullanıcı verisi değil) ve
-ana vaadi de çürütmüyor (hata **güvenli yönde** — yanlış kırmızı, yanlış yeşil değil).
-Bu yüzden karar bir *bloklayıcı sızıntı* gerekçesiyle değil, **Kod kalitesi < 7** eşiğiyle
-KALDI: kalıcı regresyon testi, izole olmayan paylaşılan kaynaklara karşı çitsiz bırakılmış.
-
-**Muhtemel dosya:satır:** `tests/verify-test-run.test.ts:429-444` (iç içe gerçek suite
-koşumu), `tests/scripts/check-ports.test.ts:60-95` (sabit port), `tests/build-css.test.ts:28,
-80,138,192` (`vite build` × 4) + `vite.config.ts:21-23` (`emptyOutDir`).
-
-**Kapanış için gereken (öneri):** iç içe koşumdan paylaşılan kaynağa dokunan dosyaları da
-dışla (`--exclude tests/scripts/check-ports.test.ts --exclude tests/build-css.test.ts`) — bu,
-testin ölçtüğü şeyi (disk sayısı ≠ rapor edilen sayı) hiç değiştirmez, çünkü beklenen sayı
-zaten dışlama bayraklarından türetiliyor. Alternatif: iç içe koşumu ayrı bir geçici
-`MC_DATA_DIR`/`outDir` ve efemeral portlarla izole et.
-
----
-
-## 4. Y1/Y3'ün sözleşmelere dağılımı (brief §1 talebi)
-
-| Açık kritik | Hangi sözleşmenin kriterini çürütüyor | Sonuç |
+| Hedef | Onay metninin dediği | Sistemin yaptığı |
 |---|---|---|
-| **Y1** (`parseGuardScope` düzyazı sızıntısı) | #1 madde 4 "kapsam dışı reddi" + "serbest metin kapsam sayılmaz" | #1 → KALDI |
-| **Y3** (`_selftest.cjs` gerçek onayları siliyor) | #2 §(b) "silinebileceği HER yol" envanteri | #2 → KALDI |
-| Y2 (çapraz eşleşme yanlış pozitifi) | #3 kriter 4'e komşu; aşırı engelleme | eşikli borç |
-| Y4 (`.claude/hooks/**` Katman B simetriği yok) | ADR-016 sınırı içinde | eşikli borç |
+| `.claude/hooks/gate-check.cjs` | kapsamda | **exit 0 — izin** (doğru) |
+| `.claude/hooks/_selftest.cjs` | **"DOKUNULMAYACAK, kapsam dışıdır"** | **exit 0 — SESSİZ İZİN, kart YOK** |
+| `.claude/hooks/block-dangerous.cjs` | **"KAPSAMI DIŞINDADIR"** | **exit 0 — SESSİZ İZİN, kart YOK** |
 
-#3 ve #4 sözleşmelerinin kapsamındaki hiçbir mekanizmayı Y1/Y3 çürütmüyor — bu yüzden
-onlar GEÇTİ alabildi.
+`.guard-state.json` üç dosyalık bir kapsam kaydediyor:
+`"scopeKey":"[\".claude/hooks/_selftest.cjs\",\".claude/hooks/block-dangerous.cjs\",\".claude/hooks/gate-check.cjs\"]"`
+
+**Ek ağırlaştırıcı:** kapsam üç dosyaya şiştiği için token, amaçlanan tek yazmadan sonra
+**tüketilmiyor** (`allTouched` false) — kullanıcının "tek değişiklik" onayı diskte açık
+kalmaya devam ediyor.
+
+### 2.4 Neden bloklayıcı (yumuşatma yok)
+
+Brief §6'nın **her iki** ölçütü de karşılanıyor:
+- **(a) kalıcı artefakt:** `GUARD.ok`'un uygulanan kapsamı ve diske yazılan
+  `.guard-state.json` içeriği, kullanıcının onayladığı kararla çelişecek şekilde oluşuyor.
+- **(b) ana vaat:** sözleşmenin madde 4'ü *"token bir DEĞİŞİKLİĞİ yetkilendirir, bir YAZMAYI
+  değil"* ve *"serbest metin kapsam SAYILMAZ — fail-closed"* diyor. Onaylanan değişiklik ile
+  uygulanan değişiklik hâlâ farklı olabiliyor.
+
+ADR-016 sınırına göre de **pratik sızıntı**: kart **hiç gösterilmiyor** (exit 0, sessiz).
+"Teorik ihlal ama doğru bilgi taşıyan kart var" savunması burada geçerli değil.
+
+Ayrıca `g5-tur5-kapsam-ve-selftest-contract.md`'nin kendi kabul iddiası doğrudan yanlış:
+> *"5. Bölümden SONRA gelen metinde ad geçerse: blok sınırı … bu adı asla içermez — asıl
+> kusur buydu, artık yapısal olarak imkânsız."*
+
+G2 bunun aksini gösteriyor: sonraki bir `##` başlığı yoksa blok **dosya sonuna kadar** uzanır
+ve o adı **içerir**. Sözleşme `###` sınırını "bilinen sınır" diye kayda geçmiş (o taraf
+**güvenli** yönde çalışıyor, G5 doğrulandı) ama `#`, kalın psödo-başlık ve **başlıksız
+kuyruk düzyazı** hiç düşünülmemiş — ve bunların üçü de **güvensiz** yönde.
+
+**Muhtemel dosya:satır:** `.claude/hooks/gate-check.cjs:56-70` (`blockEnd` hesabı ve
+`anyHeaderRe = /^\s*##/`).
+
+### 2.5 Sınıf uyarısı (CEO için)
+
+Bu, `CLAUDE.md`'de kayıtlı **"kodun/metnin NASIL YAZILDIĞINI sayan çit, sözdizimi
+çeşitliliğine yenilir"** sınıfının bu depodaki beşinci tekrarı. Y1 için üçüncü tur da aynı
+aileden bir yama olursa (`#{1,}` kabul et, kalın satırı da başlık say…) dördüncü bir varyant
+çıkacaktır. Yapısal alternatifler (biri seçilmeli, brief'te **adıyla** yazılmalı):
+- **Kapalı biçim dayatması:** GUARD.ok'un kapsam bölümü, `## Kapsam` ile başlayıp
+  **yalnızca** `- \`ad.cjs\`` biçiminde satırlar içeren, ilk boş satırda biten bir blok
+  olsun; blokta başka herhangi bir içerik varsa fail-closed. Belgenin geri kalanındaki
+  ters tırnaklar hiç ayrıştırılmasın.
+- **Metin ayrıştırmasını tamamen bırak:** kapsamı ayrı, makine üretimli bir alanda taşı
+  (ör. GUARD.ok'un ilk satırında `SCOPE=a.cjs,b.cjs`), düzyazı hiç okunmasın.
+- Hangisi seçilirse seçilsin: self-test'e **kuyruk düzyazı**, **`#` başlık** ve **kalın
+  psödo-başlık** vakaları eklenmeli — bugünkü `y1-b` vakası yalnızca `##` biçimini görüyor.
 
 ---
 
-## 5. Bu turda bağımsız olarak yeniden ölçülen üç şey
+## 3. Sözleşme #2 — `g5-onay-dosyasi-korumasi-contract.md` (Y3)
 
-### 5.1 Çitin gerçek bir düşüşü yakalaması
-Koşu 4'te organik fork çökmesi → çit KIRMIZI (§3.5). Fixture değil.
+### KARAR: GEÇTİ
 
-### 5.2 Y2'nin bu turu fiilen etkilemesi
-Sandbox kurulumunu `cp`/`mkdir` ile yapmak **imkânsızdı**: komut metninde sandbox yolunun
-parçası olarak `docs/approvals` alt dizesi geçtiği için `block-dangerous.cjs` komutu
-engelledi. Kurulum `Write` ile yazılan bir Node betiğine taşındı. Y2 canlı, ikinci kez
-gözlemlendi (tur-5'te de aynısı olmuştu).
+**Puanlar:** İşlevsellik **9** · Özellik bütünlüğü **8** · Görsel/UX *yok say* · Kod kalitesi **7**
 
-### 5.3 Yanlış pozitif sondaları (11 komut, hook'a **veri** olarak verildi, hiçbiri çalıştırılmadı)
+### 3.1 Canlı kanıt — önceki turun PoC'i birebir tekrarlandı
 
-| Beklenen | Çıkan | Komut |
+**Gerçek `docs/approvals/` altına dosya konmadı.** Bunun yerine deponun MD5 doğrulanmış
+izole bir kopyasında, ayırt edilebilir içerikli sahte onay dosyaları kullanıldı
+(`AYIRT-EDILEBILIR-ICERIK-GUARD` vb.).
+
+| Ölçüm | Beklenen | **Çıkan** |
 |---|---|---|
-| 0 | 0 | `cat docs/approvals/G2.ok` |
-| 0 | 0 | `ls docs/approvals` |
-| 0 | 0 | `git add docs/` |
-| 0 | 0 | `git status` |
-| 0 | 0 | `git commit -m "feat: bir sey"` |
-| 0 | **2** | `git commit -m "docs: <bağlantı-komutu-adı> korumasi hakkinda not"` |
-| 0 | 0 | `git commit -m "docs: docs/approvals korumasi notu"` |
-| 0 | 0 | `echo "bkz docs/approvals/README.md" >> docs/notlar.md` |
-| 0 | **2** | `cp rapor.txt out/rapor-kopya.txt && ls docs/approvals` |
-| 2 | 2 | `cp payload.cjs docs/approvals/GUARD.ok` *(kontrol)* |
-| 2 | 2 | `echo x > docs/approvals/GUARD.ok` *(kontrol)* |
+| (a) exit kodu | 3 | **3** |
+| (b) dört dosya hâlâ duruyor mu | evet | **evet, 4/4** |
+| (b) içerikler birebir aynı mı (SHA-256) | evet | **evet, 4/4** |
+| (c) hiç test çıktısı üretildi mi | hayır | **stdout tamamen BOŞ (0 satır)** |
+| Red mesajı | hangi dosyalar + ne yapılmalı | **4 dosyayı tek tek listeliyor + iki yol öneriyor** |
 
-**SAPMA = 2/11.** İkisi de aşırı engelleme (güvenli yön). Kontrol vakalarının ikisi de doğru
-engellendi — yani desen gerçekten çalışıyor, sorun **kapsamının genişliği**. Sözleşme #3'ün
-kriter 4'ü genel `git commit -m ...` için sağlanıyor (nötr mesaj geçiyor); yalnızca korunan
-adı **anan** mesajlar takılıyor.
+stderr birebir:
+```
+REDDEDILDI: self-test calistirilmadi, hicbir dosyaya dokunulmadi.
+Gercek, henuz tuketilmemis olabilecek onay/durum dosyalari mevcut:
+  - docs\approvals\PUSH.ok
+  - docs\approvals\DANGER.ok
+  - docs\approvals\GUARD.ok
+  - docs\approvals\.guard-state.json
+```
+
+**Dosya bazında tek tek (dördü ayrı ayrı bekletildi):**
+
+| Bekleyen tek dosya | exit | duruyor | içerik aynı |
+|---|---|---|---|
+| `GUARD.ok` | 3 | evet | evet |
+| `PUSH.ok` | 3 | evet | evet |
+| `DANGER.ok` | 3 | evet | evet |
+| `.guard-state.json` | 3 | evet | evet |
+
+### 3.2 Bekleyen onay YOKKEN normal koşu
+
+| Ölçüm | Beklenen | Çıkan |
+|---|---|---|
+| exit | 0 | **0** |
+| sonuç | 106/106 | **106 OK / 0 FAIL** |
+| `docs/approvals/` içeriği önce/sonra | değişmemiş | `["G2.ok","README.md"]` → `["G2.ok","README.md"]` |
+| `%TEMP%` sandbox artığı | 0 | **0** |
+
+**İkinci Y3 belirtisi de kapandı:** önceki turdaki "bekleyen onay varken sonuçlar bozuluyor
+(98/98 → 96 OK / 2 FAIL)" etkisi artık **imkânsız** — betik bu durumda hiç çalışmıyor. Ek
+olarak M2 mutasyonu (emniyet kemeri sökülmüş, bekleyen onay var) **106/106** verdi: yani
+izolasyon katmanı tek başına da sonuç bozulmasını engelliyor.
+
+### 3.3 Ek robustluk sondası (brief'te istenmemişti)
+
+Yanlış çalışma dizininden çağrıldığında (`cwd = C:\dev\apps`) betik **fail-closed**:
+`REDDEDILDI: izole sandbox kurulamadi … ENOENT … 'C:\dev\apps\.claude\hooks'`, **exit 4**.
+Hiçbir dosyaya dokunmadan durdu.
+
+### 3.4 Eşikli borç (bloklayıcı DEĞİL — §3.5'te ölçüldü)
+
+İki koruma katmanının **hiçbirinin kendi pozitif kontrolü yok**: bekleyen onay yokken
+katmanlardan biri sökülse bile self-test **106/106 yeşil** kalıyor (M5, M6). Bu, deponun
+kayıtlı en pahalı hata sınıfının (*"koruma sessizce ölürse"*) özyinelemeli hâli.
+
+**Neden yine de bloklayıcı değil:** zararlı hiçbir senaryo sessiz değil —
+- izolasyon sökülür + bekleyen onay var → **emniyet kemeri yakalıyor** (exit 3, dosyalar sağlam);
+- ikisi birden sökülür + bekleyen onay var → dosyalar imha oluyor **ama** self-test kırmızı
+  veriyor (M3b: 1 FAIL, M4: 5 FAIL).
+Katmanlar birbirini kapıyor ve bugünkü kodda gerçek onaylara **hiç dokunulmuyor** (§0'daki
+SHA-256 tablosu, üç ayrı gerçek koşudan sonra).
+
+**Eşik:** M3b'deki kırmızı **tasarlanmış bir assert'ten değil**, `DANGER.ok`'un ilgisiz bir
+vakayı bozmasından geliyor — yani kazara. Kemer ya da izolasyon tek başına yeniden yazılırsa
+(ör. başlık bloğu refaktörü) bu kazara sinyal kaybolabilir. Kalıcı çözüm: `_selftest.cjs`'i
+alt süreç olarak koşturan, sahte bekleyen onayla exit 3'ü ve dosya bütünlüğünü assert eden
+bir vaka (kendi dosyasını dışlamayı unutmadan — fork bomb dersi).
 
 ---
 
-## 6. Gerçek onay dosyaları — SHA-256 (tur başı = tur sonu)
+## 4. Mutasyonlar — hepsi sandbox'ta, `node --check` ile sözdizimi doğrulanmış
+
+Her mutasyon **taze bir sandbox kopyasında** yapıldı; gerçek dosyalara hiç dokunulmadı, bu
+yüzden geri alma da gerekmedi (`git checkout` **kullanılmadı**).
+
+**Baz (mutasyonsuz sandbox): 106 OK / 0 FAIL, exit 0.**
+
+| # | Mutasyon | Hedef | Sonuç |
+|---|---|---|---|
+| **M1** | `parseGuardScope`'un **bölüm sınırlamasını kaldır** (`block = text`) | #1 | **104 OK / 2 FAIL** — `y1-b` (gerekçe-kapsam-dışı), `y1-h` (boş bölüm) |
+| **M1b** | `parseGuardScope`'u **birebir düzeltme öncesi** hâline döndür (`53a320f^`) | #1 | **102 OK / 4 FAIL** — `y1-b`, `y1-d` (başlık yok), `y1-e` (belirsiz başlık), `y1-h` |
+| **M2** | Emniyet kemerini (**exit 3 dalı**) kaldır, bekleyen onay VAR | #2 | **106 OK / 0 FAIL** — *hiçbir test görmüyor*; ama dosyalar **sağlam** (izolasyon tutuyor) |
+| **M3** | Sandbox izolasyonunu (**`process.chdir`**) kaldır, bekleyen onay VAR | #2 | **exit 3** — emniyet kemeri yakaladı; dosyalar **sağlam**, dizin değişmedi |
+| **M3b** | **Kemer + izolasyon ikisi de** kaldırıldı (= Y3 düzeltmesini birebir geri sar), bekleyen onay VAR | #2 | **105 OK / 1 FAIL**; `approvals` **imha edildi**: `[DANGER.ok, G2.ok, GUARD.ok, PUSH.ok, README.md]` → `[G2.ok, README.md]` |
+| **M4** | `_selftest.cjs` **birebir eski hâli** (`53a320f^`), bekleyen onay VAR | #2 | **93 OK / 5 FAIL**; `approvals` **imha edildi** (aynı üç dosya silindi) |
+| **M5** | `process.chdir` kaldırıldı, bekleyen onay **YOK** | #2 | **106 OK / 0 FAIL** — sessiz (zarar yok, ama ölçülmüyor) |
+| **M6** | Emniyet kemeri kaldırıldı, bekleyen onay **YOK** | #2 | **106 OK / 0 FAIL** — sessiz (zarar yok, ama ölçülmüyor) |
+
+**Yorum:**
+- **M1 vs M1b farkı çitin kalitesini kanıtlıyor:** bölüm sınırı ile başlık-sayımı dalları
+  **bağımsız** ölçülüyor (kaskad bir yeşil/kırmızıya dayanmıyor). Sözleşmenin iddia ettiği
+  "4 kırmızı" bu turda **bağımsız olarak birebir yeniden üretildi**.
+- **M3b ve M4, önceki turun canlı bulgusunu birebir yeniden üretti** (üç kullanıcı onayı
+  uyarısız silindi + sonuçlar bozuldu). Yani düzeltme **gerçek bir zararı** kapatıyor,
+  komşu bir yolu değil.
+- **M2/M5/M6** §3.4'teki borcun ölçümü.
+
+---
+
+## 5. Gerçek onay dosyaları — SHA-256 (tur başı = tur sonu)
 
 ```
 docs/approvals/G0.ok      3b21fd8e7c4b2d1f3797275eb18dfe476a7f2c83435b905df3d6f31824148565
@@ -499,40 +338,29 @@ docs/approvals/G4-2.ok    6bf5be0828d071a215dfff9aa9b01c210f26709b10799f5f0b9325
 docs/approvals/README.md  770799bb377c769c3633217a73d579f5ddfc9d705c84a5c730f2425f554a3ed7
 ```
 
-Bu yedi dosya tur başında ve sonunda **birebir aynı** (`git status --porcelain
-docs/approvals/` bunlar için boş).
-
-**Tur sonunda EKLENEN, bana ait OLMAYAN dosya:**
-
-```
-docs/approvals/GUARD.ok   4f5bb5178c5083eabc5aee012ed6711f4ec702c050403e9090a6a75336a390b6
-                          (927 bayt, mtime 2026-09-10 17:55, izlenmeyen)
-```
-
-Paralel CEO turunun kullanıcı onayı; ben oluşturmadım, okumak dışında dokunmadım, silmedim.
-`PUSH.ok`/`DANGER.ok`/`.guard-state.json` tur boyunca hiç var olmadı.
+Yedi dosya, tur başında ve tur sonunda **birebir aynı**. Bekleyen token (`GUARD.ok`,
+`PUSH.ok`, `DANGER.ok`, `.guard-state.json`) tur boyunca **hiç var olmadı**.
 
 ---
 
-## 7. CEO'nun uygulaması gereken frontmatter değişiklikleri
+## 6. CEO'nun uygulaması gereken frontmatter değişiklikleri
 
 ```
-docs/qa/g5-guvenlik-duzeltme-tur3-contract.md      → status: fix
-docs/qa/g5-onay-dosyasi-korumasi-contract.md       → status: fix
-docs/qa/g5-tur4-yol-kanoniklestirme-contract.md    → status: done
-docs/qa/g5-tur4-izin-karti-onizlemesi-contract.md  → status: done
-docs/qa/test-skip-gate-contract.md                 → status: fix
+docs/qa/g5-guvenlik-duzeltme-tur3-contract.md   → status: fix    (Y1 hâlâ açık)
+docs/qa/g5-onay-dosyasi-korumasi-contract.md    → status: done   (Y3 kapandı)
 ```
 
-**Uygulama notu:** üç dosyanın frontmatter'ı bugünkü hâliyle bu satırı taşıyamıyor —
-`g5-tur4-yol-kanoniklestirme-contract.md` ve `test-skip-gate-contract.md` **hiç frontmatter
-bloğu içermiyor** (doğrudan `#` başlıkla başlıyorlar);
-`g5-tur4-izin-karti-onizlemesi-contract.md` ise `---` sınırlayıcıları olmadan çıplak bir
-`status: qa` satırıyla başlıyor. CEO bu üçüne `status` alanını eklerken önce geçerli bir
-`---` bloğu açmalı, yoksa alan hiçbir araç tarafından okunmaz.
+`docs/qa/g5-tur5-kapsam-ve-selftest-contract.md` (şu an `status: qa`) bu turun resmî
+kapsamında değildi; ama Y3 tarafı tamamen doğrulandı, Y1 tarafının kabul iddiası
+(madde 5, "artık yapısal olarak imkânsız") **yanlış** ölçüldü — CEO bunu bir sonraki
+düzeltme turunun girdisi yapmalı.
 
-## 8. G5 kapısı hakkında
+## 7. G5 kapısı hakkında
 
-Bu tur **G5 kapısı kararı vermez** (yalnızca beş sözleşmenin durumunu karara bağlar). Ancak
-kayda geçsin: Y1 ve Y3 açıkken G5 kapatılamaz — tur-5'in "G5 geçmek için kapanması ŞART"
-listesi bu turda **bağımsız olarak doğrulandı** ve iki madde de hâlâ açık.
+Bu tur G5 kapısı kararı vermez. Kayda geçsin: **Y3 kapandı, Y1 açık** — dolayısıyla
+"G5 geçmek için kapanması ŞART" listesindeki iki maddeden biri hâlâ açık.
+
+---
+
+**Bu turun kapsamı dışında, hâlâ açık:** `test-skip-gate-contract.md` → **KALDI**
+(port izolasyonu, paralel tur).

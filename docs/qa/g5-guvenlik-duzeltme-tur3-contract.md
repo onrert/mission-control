@@ -5,7 +5,7 @@ date: 2026-09-10
 tur: 3 (GUARD.ok mekanizmasının kendisi + GG1/GG2 kapanışı)
 kaynak: kullanıcı kararı (2026-09-10, "kapsamı genişlet, kusuru düzelt") — docs/approvals/GUARD.ok (dört madde)
 status: fix
-karar: KALDI (docs/qa/G5-sozlesme-kararlari-2026-09-10.md) — gerekçe Y1 (kapsam ayrıştırıcısı düzyazıyı da okuyordu). Düzeltme 53a320f ile indi; yeniden ölçüm bekliyor.
+karar: KALDI (2. kez — docs/qa/G5-sozlesme-kararlari-2026-09-10-tur2.md). Gerekçe Y1. İlk düzeltme (53a320f) kapsamı "## Kapsam" bloğuyla sınırladı ve 22 sondanın 19'unu kapattı, ama blok dosya sonuna kadar uzadığı için üç yol hâlâ sızıyor: başlıksız kuyruk düzyazı, "# h1" ve "**kalın**" psödo-başlık. İkinci düzeltme turu açıldı (docs/qa/g5-tur5-kapsam-siniri-tur2-contract.md).
 ---
 
 # Sözleşme — G5 tur 3: GUARD.ok tek-kullanımlık kusuru + GG1/GG2 kapanışı

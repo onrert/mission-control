@@ -1442,3 +1442,68 @@ engellenir. Betiğin gerçekten yazıp yazmadığı metinden güvenilir anlaşı
 yüzden kasıtlı olarak geniş. **Pratik sonuç:** böyle bir teşhis komutu gerekirse betiği bir `.mjs`
 dosyasına yazıp `node dosya.mjs` ile çalıştır — komut satırı taranır, betik içeriği taranmaz.
 Bu kural kurulumdan hemen sonra CEO'nun kendi salt-okunur komutunu engelleyerek doğrulandı.
+
+---
+
+## 2026-09-11 — CEO — GRUP 2 KAPANDI: kapılar ekranı (S1, S2, N6)
+
+Commit `30c9ea9`. Sözleşme: `docs/qa/grup2-kapilar-borclari-contract.md` (`status: qa`).
+Üçü de **diskte doğrulandı** (gerçekten açıktılar), tekrar üretildi, düzeltildi, mutasyonla kanıtlandı.
+
+**S1 — KAPANDI (ÖNEMLİ).** Kök neden ölçüldü: `write-gate.ts`'teki işlem desenleri harf duyarlıydı,
+ama yol çözümleyici mevcut bir hedefi **diskteki gerçek adına** çeviriyor (`realpathSync.native`,
+Windows harf duyarsız). Sonuç: bir kez `g2.ok` oluştuysa **sonraki her** `G2` onayı kalıcı olarak
+başarısız oluyordu — kaydın "kalıcı 500" dediği şey tam olarak buydu. Düzeltme: desenlere `i`
+bayrağı (emsal: `a6ee710`'daki `gate-id.ts` düzeltmesi). Güvenli, çünkü buraya ulaşan kapı kimliği
+yukarıda zaten kanonik büyük harfe doğrulanıyor.
+
+**S2 — KAPANDI (ÖNEMLİ).** `.toUpperCase()` normalizasyonu **doğruydu ama çitsizdi**. Yeni çit
+(`tests/features/gates/shared/gate-id.test.ts`) geçerli kimlik kümesini **kaynaktan** (`isValidGateId`)
+süzerek türetiyor — elle kopyalanmış liste yok, liste büyüyünce test kör kalmaz. 457 harf varyantı.
+`.toUpperCase()` kaldırılınca **228/457 kırmızı**; aynı mutasyon altında **mevcut 322 test yeşil
+kalıyor** — yani orijinal borç kaydının "çitsiz" iddiası bağımsız olarak doğrulandı.
+**Yan ölçüm (endişe kapandı):** `String.prototype.toUpperCase()` spec gereği **locale'den
+bağımsızdır** — `tr-TR` altında bile `'i'.toUpperCase() === 'I'`; yalnızca açık
+`toLocaleUpperCase('tr')` `'İ'` üretir. Kapı kimliği alfabesinde zaten `i` yok.
+
+**N6 — KAPANDI.** Kanban erişilebilirlik testi `.focus()` ile "ölçüyordu" (programatik, klavyeyle
+erişilebilirliği kanıtlamaz). Gerçek `keyboard.press('Tab')` + `document.activeElement` ölçümüyle
+değiştirildi (emsal: `thread.spec.ts` X4/D1). `tabIndex={0}` kaldırılınca kırmızı veriyor.
+
+## 2026-09-11 — CEO — YENİ VE KAPANDI: test izolasyonu (assert kırmızısı üreten temizlik yarışı)
+
+CEO'nun Grup 2 sonrası bağımsız doğrulamasında tam suite'te bir **assert kırmızısı** çıktı
+(`history-log.test.ts > sayfalama (Ö4)`), ama aynı dosya izole koşuda 5/5 yeşildi.
+Commit'ler: `08184a4` (sözleşme), `e004b34` (düzeltme), `3d71c2c` (ölçüm).
+Sözleşme: `docs/qa/test-izolasyon-contract.md`.
+
+**CEO'nun hipotezi YANLIŞ çıktı — ve bu doğru şekilde ölçülerek çürütüldü.** CEO, FAIL'in yanında
+görünen `mc-events-*\projects.json okunamadı` satırını nedensel sanmıştı (paylaşılan geçici dizin
+yarışı). Ölçüm: o mesaj **40/40 koşuda** çıkıyor ve her seferinde `projects-registry.test.ts:107`
+içindeki **bilinçli bozuk-JSON testinin beklenen çıktısı**; hiçbir zaman bir hatayla mantıksal
+ilişkisi yok. Ayrıca çapraz-dosya paylaşımı mimari olarak zaten imkânsız: vitest her test dosyası
+için ayrı süreç açıyor (`Isolate: 87 workers spawned`) ve iki dosya **ayrık** geçici önekler
+kullanıyor (`mc-chat-history-*` vs `mc-events-*`).
+
+**Gerçek kök neden (36/40 koşusunda CANLI yakalandı):** `afterEach` temizliğindeki
+`fs.rmSync(dir, { recursive: true, force: true })` geçici bir Windows **`ENOTEMPTY`** fırlatıyor —
+antivirüs/dizinleyicinin özyineli silme sırasında bir dosyayı kısa süre kilitlemesi. Node'un kendi
+API'sinde bunun için **yerleşik** çözüm var (`maxRetries`/`retryDelay`) ve bu depoda **hiç
+kullanılmıyordu**; sınıf haftalardır "tekrar koştur ve umut et" ile idare ediliyordu
+(B-4 Sınıf B olarak kayıtlıydı).
+
+**Düzeltme:** bu temizlik deseninin **61 örneğine** `maxRetries: 5, retryDelay: 50` eklendi
+(**19 test dosyası**). `tests/e2e/**` hariç (Playwright ile koşuyor, `npm run test` kapsamında değil).
+
+**Ölçüm:** düzeltme öncesi 40 koşuda **1 assert kırmızısı**; düzeltme sonrası **30 koşuda 0**.
+CEO'nun bağımsız 3 koşusu da temiz (1831 geçti / 4 atlandı, assert 0, worker çökmesi 0).
+
+### B-4 GÜNCELLEME
+**Sınıf B (geçici dizin yarışı) KAPANDI.** Sınıf A (`Worker forks emitted error`) **değişmedi**:
+ölçülen **%23,3** — ortamsal, dört açıklama elendi (belirli test, paralellik, pool mekanizması,
+alt süreç doğurma), yönetilen risk olarak taşınıyor.
+
+**G6 kuralı GÜÇLENDİ:** "assert kırmızısı = gerçek hata" kuralı artık daha güvenilir, çünkü assert
+kırmızısı üretebilen bilinen tek izolasyon sınıfı kapandı. Kural aynen geçerli:
+(1) izole koş, (2) assert kırmızısı **her zaman** bloklayıcı, (3) yayın kanıtı için ardışık iki
+tam yeşil koşu.

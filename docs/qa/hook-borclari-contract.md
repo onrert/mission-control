@@ -157,19 +157,59 @@ Kod DEĞİŞMEDİ (zaten doğru); yalnızca test eksikliği kapatıldı.
 ## 8. Kabul edilen sınırlar (dürüstçe açık)
 
 - Heredoc/`$(...)` içeren komutlarda aşırı engelleme kasıtlı olarak KORUNUYOR (retreat, §2.3).
-- `rm dosya` (bayraksız) hem `docs/approvals` hem `.claude/hooks/**` için hâlâ kaçırılabilir
-  (§2.5, önceden var olan, paylaşılan sınır — bu turun beş maddesinde yok, kapsam dışı).
 - Segmentasyon bir kabuk PARSER'I değildir; alias/fonksiyon/değişken genişletme gibi kabuk
   seviyesi dolaylamalar hâlâ metinsel taramanın doğal sınırları içindedir (ADR-016'nın zaten
   kabul ettiği sınırla aynı sınıf).
 
+## 8-ek. RM KAPANIŞI (önceki turun "kapsam dışı" notu geçersiz kılındı)
+
+**Önceki not** ("`rm dosya` bayraksız hem docs/approvals hem .claude/hooks/** için hâlâ
+kaçırılabilir, kapsam dışı") CEO'nun bağımsız sondası (`probe-segment.mjs` E1/E2) tarafından
+ölçülüp reddedildi: bu boşluk kapsam dışı bırakılamaz, çünkü (1) `del`/`erase`/`rd`/`rmdir`/`ri`
+zaten bayraksız TEK dosya sildiğinde engelleniyordu — eksik olan tek fiil, bu ortamın VARSAYILAN
+kabuğunun (Git Bash, POSIX) birincil silme komutuydu, yani en olası saldırı biçimi listenin
+dışındaydı; (2) `gate-check.cjs` silinirse `.claude/settings.json` onu çağırmaya devam eder,
+`node` çıkış kodu 1 döner, Claude Code yalnızca çıkış kodu 2'yi engelleme saydığı için kapı
+SESSİZCE ölür (`CLAUDE.md`'de kayıtlı en pahalı hata sınıfı).
+
+**Yapılan değişiklik:** `block-dangerous.cjs`'in `writeVerb` deseni `\b(del|erase|rm|unlink)\b`
+oldu (önceden yalnızca `del|erase`). `\brm\b` kelime-sınırlı olduğu için `git rm` de OTOMATİK
+kapsanır (ek desen gerekmedi). `rm -rf` zaten bağımsız `danger` deseninde ayrı yakalanıyordu ve
+bu değişiklik onu etkilemedi (regresyon testiyle doğrulandı, aşağıya bkz).
+
+**Bilerek EKLENMEYENLER** (aynı boşluk ailesinde değerlendirilip reddedildi, gerekçeleri
+`block-dangerous.cjs`'te "RM KAPANIŞI" yorumunda da kalıcı olarak yazılı):
+- `shred` — ADR-009 bu projeyi yalnızca Windows hedefliyor; Git for Windows'un minimal coreutils
+  alt kümesinde standart olarak bulunmaz. Eklemek tutarlılığı değil listeyi büyütür.
+- `truncate` (dosya sıfırlama) — silme değil, farklı bir tehdit sınıfı (içerik boşaltma). Bu
+  turun brief'i açıkça "bayraksız SİLME" idi; eklemek scope creep olurdu.
+- `find ... -delete` — bileşik bir deyim. Bare `find` kelimesini eklemek okuma/arama amaçlı
+  sayısız zararsız komutu (`find . -name x`) yanlış pozitif engeller; hedefli bir
+  `\bfind\b[^\n]*-delete\b` deseni ayrı bir desen ailesi açar, bu turun kapsamı dışında bırakıldı.
+
+**Ölçülmüş sonuçlar:**
+- `probe-segment.mjs` (CEO'nun bağımsız sondası): **24/24** (önceden 22/24 — yalnızca E1/E2
+  kapandı, A/B/C/D/F blokları etkilenmedi).
+- `probe-json-guard.mjs`: 14/14 (regresyon yok).
+- `probe-m1-m2.mjs`: 9/9 (regresyon yok).
+- Sandbox self-test: **206/206** (194 + 12 yeni: RM-1..7, UNLINK-1..3, GITRM-1..2).
+- Mutasyon kanıtı: `writeVerb`'den yalnızca `rm` çıkarılıp `unlink` bırakıldığında (`\b(del|erase|
+  rm|unlink)\b` → `\b(del|erase|unlink)\b`) **tam olarak 5** test KIRMIZI oldu: RM-1, RM-2, RM-3,
+  RM-4, GITRM-1 (hepsi `rm`'in bizzat gerektiği vakalar). RM-5/6/7 (yanlış pozitif kontrolleri,
+  zaten 0 bekliyorlardı), UNLINK-1/2/3 ve GITRM-2 ETKİLENMEDİ — bu, `rm` eklemesinin tam olarak
+  iddia edilen 5 vakayı koruduğunu ve komşu hiçbir testi yanlışlıkla geçirmediğini kanıtlıyor.
+  Mutasyon sandbox'ta (gerçek `.claude/hooks/` dışında) uygulandı, elle geri alındı (`git
+  checkout` kullanılmadı), geri alınan dosya kaynak-doğrusuyla `diff` ile bit-bit karşılaştırıldı.
+- `gate-check-borc.cjs`: bu turda DEĞİŞMEDİ (`diff` ile doğrulandı, önceki teslimle birebir aynı).
+
 ## 9. Teslim ve dosya sahipliği
 
 - `scratchpad/hook-borclari/gate-check-borc.cjs` → kurulacağı yer: `.claude/hooks/gate-check.cjs`
-  (DEĞİŞTİ: B-2 yorumları + B-3 wording).
+  (bu turda DEĞİŞMEDİ, önceki turdan kalan hâliyle: B-2 yorumları + B-3 wording).
 - `scratchpad/hook-borclari/block-dangerous-borc.cjs` → `.claude/hooks/block-dangerous.cjs`
-  (DEĞİŞTİ: segmentasyon + Y4).
+  (önceki turda segmentasyon + Y4; BU TURDA EK: `writeVerb`'e `rm`/`unlink` eklendi — RM KAPANIŞI,
+  §8-ek).
 - `scratchpad/hook-borclari/selftest-borc.cjs` → `.claude/hooks/_selftest.cjs`
-  (DEĞİŞTİ: 165 → 194 vaka).
-- `docs/approvals/README.md` (bu tur içinde, developer tarafından düzenlendi — `docs/` serbest).
+  (önceki turda 165 → 194 vaka; BU TURDA EK: 194 → 206 vaka, RM-1..7/UNLINK-1..3/GITRM-1..2).
+- `docs/approvals/README.md` (önceki turda developer tarafından düzenlendi — bu turda dokunulmadı).
 - Kurulum sırası serbest (GUARD.ok artık zaman pencereli, tek yazmada tükenmiyor).

@@ -185,15 +185,21 @@ yenilen denylist yaklaşımı **tamamen atılıyor**; yerine bir **beyaz liste (
    aynı token akışına girer.
 2. **Her token, kapalı bir beyaz listeye karşı kontrol edilir** (`isApprovedToken`):
    - `ALLOWED_TOKENS`: mevcut 5 dondurulmuş fixture'ın (+ kasıtlı bozuk/bilinmeyen şema
-     fixture'larının) ÜRETTİĞİ, elle enumere edilmiş ~57 sabit dize (JSON anahtarları, enum
+     fixture'larının) ÜRETTİĞİ, elle enumere edilmiş **63** sabit dize (JSON anahtarları, enum
      değerleri, onaylı Türkçe/İngilizce serbest metin sözcükleri, `workspace`/`ornek-proje` cwd
-     bileşenleri). Script ile (`node tokenize.mjs`) gerçek fixture içeriğinden türetildi —
-     elle tahmin edilmedi.
+     bileşenleri) — Grup 3 borç kapatma turunda (2026-09-11) script ile yeniden sayıldı, önceki
+     "~57" tahmini yanlıştı, gerçek sayı düzeltildi. Script ile (`node tokenize.mjs`) gerçek
+     fixture içeriğinden türetildi — elle tahmin edilmedi.
    - 7 dar YAPISAL desen: sentetik UUID (`00000000-0000-4000-8000-0000000000‹N›`), ISO zaman
      damgası, semver (`x.y.z`), sürücü harfi (`C:`), `:` + kısa sayı/`true`/`false`/`null`,
      `msg_example‹N›`, ve 1-3 haneli çıplak sayı (mevcut fixture'lardaki en yüksek `usage` değeri
-     800 — 3 hane; bu üst sınır kasıtlı: 4+ haneli her sayı — telefon, TC kimlik, kredi kartı
-     grupları, IBAN — otomatik reddedilir).
+     800 — 3 hane; bu üst sınır kasıtlı). **Düzeltme (Grup 3, 2026-09-11):** "4+ haneli her sayı
+     otomatik reddedilir" cümlesi SINIF düzeyinde yanlıştı — bu yalnızca `BARE_NUMBER` deseniyle
+     değerlendirilen, başka HİÇBİR yapısal desene uymayan STANDALONE sayı token'ları için
+     geçerlidir. ISO zaman damgası (15 hane), semver (segment başına 3 haneye kadar, toplamda
+     daha fazla) ve `msg_example` (4 haneye kadar) gibi KENDİ deseni olan token'ların İÇİNDEKİ
+     4+ haneli sayı dizileri bu kurala TABİ DEĞİLDİR — o token bütün olarak kendi deseniyle
+     onaylanır, parçalarına ayrılıp `BARE_NUMBER` ile tekrar değerlendirilmez.
    - **Listede/desende olmayan HER token reddedilir** — sızıntı olup olmadığına bakılmaksızın.
      Yeni bir fixture yeni bir kelime eklerse bu listeye BİLİNÇLİ olarak eklenmesi gerekir (sürtünme
      kasıtlı, mevcut tasarımın devamı).

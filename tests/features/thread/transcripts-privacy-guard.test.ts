@@ -36,13 +36,19 @@ import path from 'node:path'
 
 const FIXTURES_DIR = path.join(__dirname, '..', '..', 'fixtures', 'transcripts')
 
-// Fixture dizinindeki tek git kontrol dosyası — fixture İÇERİĞİ değil, taramadan dosya ADIYLA
-// (uzantıyla değil) hariç tutulur. Tek istisna, gerekçeli: `.gitattributes` içeriği bu dosyanın
-// KENDİSİNİ (bayt-bire-bir koruma niyetini) açıklayan Türkçe düzyazı, sentetik transkript verisi
-// değil — beyaz listeye tabi tutulması yalnızca yorum metnini beyaz listeye eklemeyi gerektirirdi,
-// hiçbir gerçek koruma sağlamaz. `.__qa_..._hidden` gibi başka gizli dosyalar bu istisnaya
-// GİRMEZ (yalnızca tam ad eşleşmesi) — QA'nın N12 sondası hâlâ taranır.
-const NON_FIXTURE_FILENAMES = new Set(['.gitattributes'])
+// Fixture dizinindeki tek git kontrol dosyası — fixture İÇERİĞİ değil, taramadan TAM YOLUYLA
+// hariç tutulur. Tek istisna, gerekçeli: `.gitattributes` içeriği bu dosyanın KENDİSİNİ
+// (bayt-bire-bir koruma niyetini) açıklayan Türkçe düzyazı, sentetik transkript verisi değil —
+// beyaz listeye tabi tutulması yalnızca yorum metnini beyaz listeye eklemeyi gerektirirdi, hiçbir
+// gerçek koruma sağlamaz.
+//
+// Grup 3 borç kapatma (2026-09-11, borç #2) — eski tasarım `entry.name === '.gitattributes'`
+// (yalnızca AD) ile hariç tutuyordu; `walk()` özyinelemeli olduğu için bu, ALT DİZİNDEKİ aynı
+// adlı BAŞKA bir dosyayı da (gerçek kişisel veri taşısa bile) sessizce dışarıda bırakıyordu
+// (ölçüldü: `__probe/.gitattributes` içine gerçek-görünümlü veri yazıldığında hiç taranmadı).
+// İstisna artık TEK, MUTLAK yola bağlı — yalnızca fixture kökündeki dosyanın KENDİSİ muaf,
+// aynı adı taşıyan başka HİÇBİR dosya (hangi derinlikte olursa olsun) bu istisnaya girmez.
+const GIT_ATTRIBUTES_EXEMPT_PATH = path.join(FIXTURES_DIR, '.gitattributes')
 
 // --- Kapalı kelime kümesi: mevcut 5 dondurulmuş fixture'ın (+ kasıtlı bozuk/bilinmeyen şema
 // fixture'ının) GERÇEKTEN ürettiği her token, elle enumere edilmiş (script ile türetilip elle
@@ -140,8 +146,18 @@ const APPROVED_PATTERNS: readonly RegExp[] = [
   BARE_NUMBER,
 ]
 
-/** JSON yapısal karakterleri (`{}[]":,\`, boşluk, `%`, `@`, `/`) her zaman AYIRICI. */
-const TOKEN_RE = /[A-Za-z0-9çÇğĞıİöÖşŞüÜ:._-]+/g
+/**
+ * JSON yapısal karakterleri (`{}[]":,\`, boşluk, `%`, `@`, `/`) her zaman AYIRICI.
+ *
+ * Grup 3 borç kapatma (2026-09-11, borç #1) — eski desen `[A-Za-z0-9çÇğĞıİöÖşŞüÜ:._-]` yalnızca
+ * Latin + Türkçe karakterleri tanıyordu; Kiril/CJK gibi Latin-dışı script'ler hiç token
+ * ÜRETMİYORDU (ölçüldü: gerçek Kiril/CJK kişisel veri fixture'ı sessizce 0 ihlalle geçiyordu).
+ * `\p{L}`/`\p{N}` (Unicode harf/rakam kategorileri, `u` bayrağı) TÜM script'leri kapsar — tasarım
+ * değişmiyor (hâlâ beyaz liste): bu karakterler artık token'a giriyor, `ALLOWED_TOKENS`'ta
+ * olmadıkları için otomatik reddediliyorlar. Emoji (`\p{S}`) bilinçli olarak dışarıda — ayırıcı
+ * olarak kalması mevcut davranışı bozmuyor, brief'in odağı Kiril/CJK.
+ */
+const TOKEN_RE = /[\p{L}\p{N}:._-]+/gu
 
 export function tokenize(rawLine: string): string[] {
   return rawLine.match(TOKEN_RE) ?? []
@@ -159,7 +175,7 @@ function walk(dir: string, out: string[] = []): string[] {
     const full = path.join(dir, entry.name)
     if (entry.isDirectory()) {
       walk(full, out)
-    } else if (entry.isFile() && !NON_FIXTURE_FILENAMES.has(entry.name)) {
+    } else if (entry.isFile() && full !== GIT_ATTRIBUTES_EXEMPT_PATH) {
       out.push(full)
     }
   }
@@ -249,6 +265,17 @@ describe('tests/fixtures/transcripts gizlilik çiti (T1) — beyaz liste tasarı
         'ROT13/boşluksuz şifreleme — REDDEDİLMELİ',
       ],
       ['gercek', false, 'onaysız Türkçe sözcük — REDDEDİLMELİ'],
+      // Grup 3 borç kapatma (2026-09-11, borç #3) — dört desenin (semver, sürücü harfi, msg-id,
+      // iki nokta) YALNIZCA silinmeye karşı çitli olduğu, GEVŞETİLMEYE (sınırın genişletilmesine)
+      // karşı çitsiz olduğu ölçüldü: her biri ayrı ayrı gevşetilince (`{1,3}`→`{1,}` vb.) 55/55
+      // yeşil kalıyordu çünkü hiçbir test sınırın TAM ÜZERİNDEKİ değeri reddediyor muydu diye
+      // bakmıyordu. Aşağıdaki dört satır `BARE_NUMBER`'ın zaten sahip olduğu 4242/12345678901
+      // sınır testleriyle SİMETRİK — bundan sonra biri bu desenlerden birini gevşetirse (silmese
+      // bile) ilgili satır KIRMIZI verir.
+      [':1234', false, 'colon+4 haneli sayı (sınırın TAM üzerinde) — REDDEDİLMELİ'],
+      ['1234.1.1', false, 'semver, ilk bölüm 4 haneli (sınırın TAM üzerinde) — REDDEDİLMELİ'],
+      ['msg_example12345', false, 'mesaj kimliği 5 haneli (sınırın TAM üzerinde) — REDDEDİLMELİ'],
+      ['AB:', false, 'iki harfli sürücü öneki (sınırın TAM üzerinde) — REDDEDİLMELİ'],
       [
         '00000001-0000-4000-8000-000000000001',
         false,
@@ -655,6 +682,63 @@ describe('tests/fixtures/transcripts gizlilik çiti (T1) — beyaz liste tasarı
       } finally {
         removeProbe(probe)
       }
+    })
+  })
+
+  // ------------------------------------------------------------------------------------------
+  // Grup 3 borç kapatma (2026-09-11) — kalıcı regresyon testleri.
+  // `docs/qa/grup3-transkript-thread-contract.md` §2'de KIRMIZI olarak ölçüldü, düzeltmeden
+  // sonra buradaki testler YEŞİLDİR.
+  // ------------------------------------------------------------------------------------------
+  describe('Grup 3 borç kapatma — kalıcı regresyon', () => {
+    it('borç #1 — Kiril metin gerçek kişisel veri taşıyorsa yakalanır (TOKEN_RE Unicode)', () => {
+      const probe = writeProbe(
+        '__g3_1_cyrillic.jsonl',
+        JSON.stringify({
+          type: 'user',
+          message: { content: 'Иванов Иван Иванович домашний адрес Москва' },
+        }) + '\n'
+      )
+      try {
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('borç #1 — CJK metin gerçek kişisel veri taşıyorsa yakalanır (TOKEN_RE Unicode)', () => {
+      const probe = writeProbe(
+        '__g3_1_cjk.jsonl',
+        JSON.stringify({
+          type: 'user',
+          message: { content: '田中太郎の自宅住所は東京都渋谷区' },
+        }) + '\n'
+      )
+      try {
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('borç #2 — alt dizindeki ".gitattributes" adlı dosya İSTİSNA DEĞİL, taranır', () => {
+      const probe = writeProbe(
+        path.join('__g3_2_sub', '.gitattributes'),
+        'gercek kullanici adi soyadi telefon adres bilgisi burada saklaniyor\n'
+      )
+      try {
+        const files = listFixtureFiles()
+        expect(files).toContain(probe)
+        expect(scanFixtureForPrivacyViolations(probe).length).toBeGreaterThan(0)
+      } finally {
+        removeProbe(probe)
+      }
+    })
+
+    it('borç #2 — fixture kökündeki GERÇEK .gitattributes hâlâ istisna (tam yol eşleşmesi)', () => {
+      const files = listFixtureFiles()
+      expect(files).not.toContain(GIT_ATTRIBUTES_EXEMPT_PATH)
+      expect(fs.existsSync(GIT_ATTRIBUTES_EXEMPT_PATH)).toBe(true)
     })
   })
 })

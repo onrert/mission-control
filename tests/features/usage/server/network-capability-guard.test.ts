@@ -297,7 +297,7 @@ function withTempFixture(content: string, run: (file: string) => void): void {
     fs.writeFileSync(file, content)
     run(file)
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true })
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   }
 }
 
@@ -384,7 +384,7 @@ describe('usage/server ağ/süreç yeteneği yapısal çiti (Z2, F-011 QA düzel
       const { violations } = scanModuleGraph([entry])
       expect(violations.length).toBeGreaterThan(0)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -461,7 +461,7 @@ describe('usage/server ağ/süreç yeteneği yapısal çiti (Z2, F-011 QA düzel
       expect(violations.length).toBeGreaterThan(0)
       expect(violations.some((v) => v.includes('node:http'))).toBe(true)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -534,7 +534,7 @@ describe('usage/server ağ/süreç yeteneği yapısal çiti (Z2, F-011 QA düzel
       expect(violations.length).toBeGreaterThan(0)
       expect(violations.some((v) => v.includes('node:http'))).toBe(true)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -551,7 +551,7 @@ describe('usage/server ağ/süreç yeteneği yapısal çiti (Z2, F-011 QA düzel
       expect(violations.length).toBeGreaterThan(0)
       expect(violations.some((v) => v.includes('node:http'))).toBe(true)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -568,7 +568,7 @@ describe('usage/server ağ/süreç yeteneği yapısal çiti (Z2, F-011 QA düzel
       expect(violations.length).toBeGreaterThan(0)
       expect(violations.some((v) => v.includes('node:http'))).toBe(true)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -584,7 +584,7 @@ describe('usage/server ağ/süreç yeteneği yapısal çiti (Z2, F-011 QA düzel
       expect(violations.length).toBeGreaterThan(0)
       expect(violations.some((v) => v.includes('node:http'))).toBe(true)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 

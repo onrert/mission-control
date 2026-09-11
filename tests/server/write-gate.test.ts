@@ -142,13 +142,13 @@ describe('setFeatureStatus — yol beyaz listesi', () => {
       path.join(realRoot, 'docs', 'features', 'F-001.md'),
       '---\nstatus: todo\n---\n'
     )
-    fs.rmSync(root, { recursive: true, force: true })
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     fs.symlinkSync(realRoot, root, 'junction')
     try {
       const result = await setFeatureStatus(root, 'F-001.md', 'qa', 'herhangi')
       expect(result).toMatchObject({ ok: false })
     } finally {
-      fs.rmSync(realRoot, { recursive: true, force: true })
+      fs.rmSync(realRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -163,7 +163,7 @@ describe('setFeatureStatus — yol beyaz listesi', () => {
       const result = await setFeatureStatus(root, 'F-001.md', 'qa', 'herhangi')
       expect(result).toMatchObject({ ok: false })
     } finally {
-      fs.rmSync(trapRoot, { recursive: true, force: true })
+      fs.rmSync(trapRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 

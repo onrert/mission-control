@@ -40,7 +40,7 @@ describe('normalizeEvent', () => {
       expect(result.project_name).toBe(path.basename(fs.realpathSync(realDir)))
       expect(result.flags).not.toContain('missing_fields')
     } finally {
-      fs.rmSync(realDir, { recursive: true, force: true })
+      fs.rmSync(realDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 

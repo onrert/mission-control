@@ -101,7 +101,7 @@ describe.skipIf(!process.env.MC_GATES_LIVE_TESTS)(
           expect(sawToolName).toBe('Write')
           expect(fs.existsSync(path.join(sandboxDir, 'docs', 'probe-result.txt'))).toBe(false)
         } finally {
-          fs.rmSync(sandboxDir, { recursive: true, force: true })
+          fs.rmSync(sandboxDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
         }
       },
       120000

@@ -49,7 +49,7 @@ afterEach(async () => {
   // dataDir'i hemen silmek kuyrukta bekleyen bir `appendFile`'ı ENOENT'e düşürüp gürültülü ama
   // zararsız bir stderr satırı üretir; kısa bir bekleme bunu önler.
   await new Promise((resolve) => setTimeout(resolve, 20))
-  fs.rmSync(dataDir, { recursive: true, force: true })
+  fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
 })
 
 describe('isChatEnabled / resolveChatBudget (saf fonksiyonlar)', () => {

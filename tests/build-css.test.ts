@@ -272,7 +272,12 @@ describe('F-012 QA E2 — yapısal çit: src/features/*/web dizinlerinin TÜMÜ 
       const missing = actualDirs.filter((d) => !sourcedDirs.has(d))
       expect(missing).toEqual([probeName])
     } finally {
-      fs.rmSync(path.join(featuresDir, probeName), { recursive: true, force: true })
+      fs.rmSync(path.join(featuresDir, probeName), {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 50,
+      })
     }
   })
 })

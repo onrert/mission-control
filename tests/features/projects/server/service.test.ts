@@ -63,8 +63,8 @@ describe('createProjectsService — NOT-4: hub.broadcast fırlarsa süreç düş
       expect(service.getActiveWatcherCount()).toBe(1)
     } finally {
       service.stopAll()
-      fs.rmSync(dataDir, { recursive: true, force: true })
-      fs.rmSync(projectDir, { recursive: true, force: true })
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+      fs.rmSync(projectDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -84,8 +84,8 @@ describe('createProjectsService — NOT-4: hub.broadcast fırlarsa süreç düş
       expect(service.getActiveWatcherCount()).toBe(0)
     } finally {
       service.stopAll()
-      fs.rmSync(dataDir, { recursive: true, force: true })
-      fs.rmSync(projectDir, { recursive: true, force: true })
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+      fs.rmSync(projectDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -105,8 +105,8 @@ describe('createProjectsService — NOT-4: hub.broadcast fırlarsa süreç düş
       expect(() => capturedOnChange?.()).not.toThrow()
     } finally {
       service.stopAll()
-      fs.rmSync(dataDir, { recursive: true, force: true })
-      fs.rmSync(projectDir, { recursive: true, force: true })
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+      fs.rmSync(projectDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 })

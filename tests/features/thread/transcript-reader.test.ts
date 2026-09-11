@@ -167,7 +167,7 @@ describe('64 MB üstü dosyalarda yalnızca kuyruk okunur (ADR-007 §9.4)', () =
       expect(result.usage.input_tokens).toBe(5)
       expect(result.file_read_failed).toBe(false)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -188,7 +188,7 @@ describe('64 MB üstü dosyalarda yalnızca kuyruk okunur (ADR-007 §9.4)', () =
       expect(result.file_read_failed).toBe(false)
       expect(result.degraded).toBe(true) // MUTASYON hedefi: `dataLostNoLineBoundary` çıkarılırsa KIRMIZI
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 })
@@ -267,7 +267,7 @@ describe('readTranscript — truncated bayrağı (Z4/Ö3)', () => {
       expect(result.truncated).toBe(true)
       expect(result.degraded).toBe(false) // satır sınırı bulundu — Y8/T5 semantiği değişmedi
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -283,7 +283,7 @@ describe('readTranscript — truncated bayrağı (Z4/Ö3)', () => {
       expect(result.truncated).toBe(true)
       expect(result.degraded).toBe(true)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 })
@@ -315,7 +315,7 @@ describe('findAllowedTranscriptDirectories (T3 — yedek yol, harf duyarsız)', 
       const found = findAllowedTranscriptDirectories(claudeRoot, [allowedPath])
       expect(found).toEqual([path.join(claudeRoot, encodedMixedCase)])
     } finally {
-      fs.rmSync(claudeRoot, { recursive: true, force: true })
+      fs.rmSync(claudeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -344,7 +344,7 @@ describe('findAllowedTranscriptDirectories (T3 — yedek yol, harf duyarsız)', 
       const actual = findAllowedTranscriptDirectories(claudeRoot, [allowedPath])
       expect(actual).toHaveLength(1)
     } finally {
-      fs.rmSync(claudeRoot, { recursive: true, force: true })
+      fs.rmSync(claudeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 })
@@ -379,7 +379,7 @@ describe('resolveAllowedTranscriptPath (T4 — en küçük yetki)', () => {
       const result = resolveAllowedTranscriptPath(claudeRoot, [allowedProjectPath], allowedFile)
       expect(result).toMatchObject({ ok: true })
     } finally {
-      fs.rmSync(claudeRoot, { recursive: true, force: true })
+      fs.rmSync(claudeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -389,7 +389,7 @@ describe('resolveAllowedTranscriptPath (T4 — en küçük yetki)', () => {
       const result = resolveAllowedTranscriptPath(claudeRoot, [allowedProjectPath], foreignFile)
       expect(result).toEqual({ ok: false, reason: 'not-allowed' })
     } finally {
-      fs.rmSync(claudeRoot, { recursive: true, force: true })
+      fs.rmSync(claudeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -402,8 +402,8 @@ describe('resolveAllowedTranscriptPath (T4 — en küçük yetki)', () => {
       const result = resolveAllowedTranscriptPath(claudeRoot, [allowedProjectPath], outsideFile)
       expect(result).toEqual({ ok: false, reason: 'outside-root' })
     } finally {
-      fs.rmSync(claudeRoot, { recursive: true, force: true })
-      fs.rmSync(outside, { recursive: true, force: true })
+      fs.rmSync(claudeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+      fs.rmSync(outside, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -417,7 +417,7 @@ describe('resolveAllowedTranscriptPath (T4 — en küçük yetki)', () => {
       }).not.toThrow()
       expect(result).toEqual({ ok: false, reason: 'not-found' })
     } finally {
-      fs.rmSync(claudeRoot, { recursive: true, force: true })
+      fs.rmSync(claudeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -431,7 +431,7 @@ describe('resolveAllowedTranscriptPath (T4 — en küçük yetki)', () => {
       )
       expect(result).toEqual({ ok: false, reason: 'path-invalid' })
     } finally {
-      fs.rmSync(claudeRoot, { recursive: true, force: true })
+      fs.rmSync(claudeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -467,8 +467,8 @@ describe('resolveAllowedTranscriptPath (T4 — en küçük yetki)', () => {
       const result = resolveAllowedTranscriptPath(claudeRoot, [allowedProjectPath], candidate)
       expect(result).toEqual({ ok: false, reason: 'symlink' })
     } finally {
-      fs.rmSync(claudeRoot, { recursive: true, force: true })
-      fs.rmSync(realOutsideDir, { recursive: true, force: true })
+      fs.rmSync(claudeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+      fs.rmSync(realOutsideDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -492,8 +492,8 @@ describe('resolveAllowedTranscriptPath (T4 — en küçük yetki)', () => {
       )
       expect(result).toEqual({ ok: false, reason: 'symlink' })
     } finally {
-      fs.rmSync(claudeRoot, { recursive: true, force: true })
-      fs.rmSync(realOutsideDir, { recursive: true, force: true })
+      fs.rmSync(claudeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+      fs.rmSync(realOutsideDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -557,8 +557,8 @@ describe('resolveAllowedTranscriptPath (T4 — en küçük yetki)', () => {
       const real = resolveAllowedTranscriptPath(claudeRoot, [allowedProjectPath], candidate)
       expect(real.ok).toBe(false) // GERÇEK fonksiyon güvenli — M6 hedefi testiyle aynı fixture
     } finally {
-      fs.rmSync(claudeRoot, { recursive: true, force: true })
-      fs.rmSync(realOutsideDir, { recursive: true, force: true })
+      fs.rmSync(claudeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+      fs.rmSync(realOutsideDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 })
@@ -575,7 +575,7 @@ describe('readAllowedTranscript (guard + okuyucu tek giriş noktası)', () => {
       const access = readAllowedTranscript(claudeRoot, [allowedProjectPath], file)
       expect(access).toMatchObject({ ok: true, result: { lines_ok: 1, lines_bad: 0 } })
     } finally {
-      fs.rmSync(claudeRoot, { recursive: true, force: true })
+      fs.rmSync(claudeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -590,7 +590,7 @@ describe('readAllowedTranscript (guard + okuyucu tek giriş noktası)', () => {
       const access = readAllowedTranscript(claudeRoot, [allowedProjectPath], foreignFile)
       expect(access).toEqual({ ok: false, reason: 'not-allowed' })
     } finally {
-      fs.rmSync(claudeRoot, { recursive: true, force: true })
+      fs.rmSync(claudeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 })
@@ -649,7 +649,7 @@ describe('resolveAllowedTranscriptPath — davranış çitleri (M10/M11 regresyo
       )
       expect(result).toEqual({ ok: false, reason: 'outside-root' })
     } finally {
-      fs.rmSync(claudeRoot, { recursive: true, force: true })
+      fs.rmSync(claudeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -681,8 +681,8 @@ describe('resolveAllowedTranscriptPath — davranış çitleri (M10/M11 regresyo
       )
       expect(result).toEqual({ ok: false, reason: 'outside-root' })
     } finally {
-      fs.rmSync(junctionRoot, { recursive: true, force: true })
-      fs.rmSync(realRoot, { recursive: true, force: true })
+      fs.rmSync(junctionRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+      fs.rmSync(realRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 })

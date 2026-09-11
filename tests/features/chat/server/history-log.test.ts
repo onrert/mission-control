@@ -19,7 +19,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  fs.rmSync(dataDir, { recursive: true, force: true })
+  fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
 })
 
 function entry(overrides: Partial<ChatLogEntry> & { seq: number }): ChatLogEntry {

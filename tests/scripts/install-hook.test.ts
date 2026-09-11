@@ -68,7 +68,7 @@ describe('install-hook.mjs', () => {
   })
 
   afterEach(() => {
-    fs.rmSync(targetDir, { recursive: true, force: true })
+    fs.rmSync(targetDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   })
 
   it('argüman yoksa hiçbir dosyaya dokunmadan hata verir', () => {

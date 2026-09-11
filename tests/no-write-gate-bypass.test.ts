@@ -254,7 +254,7 @@ describe('no-write-gate-bypass — genel yazma kapısı statik taraması (F-006 
       const content = fs.readFileSync(fixtureFile, 'utf8')
       expect(findCalls(content)).toEqual(["fs.mkdirSync('/tmp/whatever')"])
     } finally {
-      fs.rmSync(fixtureDir, { recursive: true, force: true })
+      fs.rmSync(fixtureDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 

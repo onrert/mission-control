@@ -97,7 +97,7 @@ function snapshotManifest(root: string): ManifestEntry[] {
 afterEach(() => {
   while (projectDirs.length > 0) {
     const dir = projectDirs.pop()!
-    fs.rmSync(dir, { recursive: true, force: true })
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   }
 })
 

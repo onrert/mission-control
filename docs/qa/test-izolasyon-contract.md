@@ -83,8 +83,10 @@ kullanmıyordu (`maxRetries` varsayılanı `0` = retry yok).
 
 `tests/**/*.test.ts` içinde (yani `npm run test`'in kapsadığı, `vitest.config.ts`'in
 `exclude: ['tests/e2e/**']` dışında bıraktığı dosyalar) `fs.rmSync(X, { recursive: true, force:
-true })` deseni **18 dosyada, 55 çağrı noktasında** birebir aynı biçimde geçiyor (grep ile
-numaralandırıldı, hepsi test-temizlik çağrısı — güvenlik/guard testi DEĞİL, elle doğrulandı):
+true })` deseni **19 dosyada, 61 çağrı noktasında** birebir aynı biçimde geçiyor (grep ile
+numaralandırıldı, hepsi test-temizlik çağrısı — güvenlik/guard testi DEĞİL, elle doğrulandı;
+`tests/build-css.test.ts` ilk taramada atlanmıştı, uygulama sırasında `grep -rn "recursive:
+true, force: true })" tests/` ile doğrulanan sıfır-kalıntı kontrolünde yakalanıp eklendi):
 
 `tests/helpers/temp-data-dir.ts` (1) · `tests/no-write-gate-bypass.test.ts` (1) ·
 `tests/scripts/install-hook.test.ts` (1) · `tests/server/write-gate.test.ts` (3) ·
@@ -100,7 +102,8 @@ numaralandırıldı, hepsi test-temizlik çağrısı — güvenlik/guard testi D
 `tests/features/chat/server/session.test.ts` (1) ·
 `tests/features/chat/server/env-barrier.test.ts` (2) ·
 `tests/features/projects/server/service.test.ts` (6) ·
-`tests/features/projects/server/validate-path.test.ts` (1)
+`tests/features/projects/server/validate-path.test.ts` (1) ·
+`tests/build-css.test.ts` (1)
 
 `tests/e2e/**` altındaki 6 dosyadaki aynı desen **kapsam dışı** bırakıldı — bunlar `npm run
 test` (vitest) tarafından değil `npm run e2e` (Playwright, ayrı runner/config) tarafından
@@ -108,12 +111,13 @@ test` (vitest) tarafından değil `npm run e2e` (Playwright, ayrı runner/config
 
 ## 3. Düzeltme mekanizması
 
-18 dosyadaki 55 çağrı noktasının **tümünde** `{ recursive: true, force: true }` →
+19 dosyadaki 61 çağrı noktasının **tümünde** `{ recursive: true, force: true }` →
 `{ recursive: true, force: true, maxRetries: 5, retryDelay: 50 }` (birebir string değişimi,
-her dosyada `replace_all`). Yeni fonksiyon/soyutlama **eklenmiyor** — Node'un zaten var olan,
-belgelenmiş `fs.rmSync` seçenekleri kullanılıyor. En kötü senaryoda dosya başına ek gecikme
-5 × 50ms = 250ms (yalnızca gerçekten ENOTEMPTY/EBUSY/vb. ile karşılaşılırsa; normal koşuda ek
-maliyet sıfır).
+her dosyada `replace_all`; uygulamadan sonra `grep -rn "recursive: true, force: true })"
+tests/ | grep -v tests/e2e/` boş döndü — sıfır kalıntı doğrulandı). Yeni fonksiyon/soyutlama
+**eklenmiyor** — Node'un zaten var olan, belgelenmiş `fs.rmSync` seçenekleri kullanılıyor.
+En kötü senaryoda dosya başına ek gecikme 5 × 50ms = 250ms (yalnızca gerçekten ENOTEMPTY/EBUSY/
+vb. ile karşılaşılırsa; normal koşuda ek maliyet sıfır).
 
 ## 4. Ölçülebilir kabul kriterleri
 

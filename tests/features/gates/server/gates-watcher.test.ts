@@ -42,7 +42,7 @@ afterEach(async () => {
   await sleep(50)
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop()!
-    fs.rmSync(dir, { recursive: true, force: true })
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   }
 })
 

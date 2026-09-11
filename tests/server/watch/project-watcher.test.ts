@@ -43,7 +43,7 @@ afterEach(async () => {
   await sleep(50)
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop()!
-    fs.rmSync(dir, { recursive: true, force: true })
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   }
 })
 
@@ -110,7 +110,7 @@ describe('watchProjectFeatures — gerçek chokidar (sözleşme §2.1)', () => {
     await waitFor(() => count === 1, 5000)
 
     // Dizini sil + yeniden oluştur (git checkout / branch değişimi deseni).
-    fs.rmSync(dir, { recursive: true, force: true })
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     await sleep(200)
     fs.mkdirSync(dir, { recursive: true })
     await sleep(200)
@@ -133,7 +133,7 @@ describe('watchProjectFeatures — gerçek chokidar (sözleşme §2.1)', () => {
     })
     await new Promise<void>((resolve) => watcher.on('ready', () => resolve()))
 
-    fs.rmSync(dir, { recursive: true, force: true })
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     await sleep(300)
 
     let rawEventCount = 0

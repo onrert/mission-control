@@ -248,7 +248,7 @@ describe('PATCH /api/features/:project_id/:file — write_denied (ata dizin syml
     // F-002 projesini bu ikinci (symlink'li) docs/features-2 dizininden DEĞİL, write-gate'in
     // gerçek `docs/features` sabit yol varsayımından test etmek için doğrudan `docs/features`
     // dizinini bir junction ile değiştiriyoruz (write-gate.test.ts ile aynı desen).
-    fs.rmSync(featuresLink, { recursive: true, force: true })
+    fs.rmSync(featuresLink, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     const featuresPath = path.join(projectDir, 'docs', 'features')
     const backup = path.join(projectDir, 'docs', 'features-backup')
     fs.renameSync(featuresPath, backup)
@@ -270,7 +270,7 @@ describe('PATCH /api/features/:project_id/:file — write_denied (ata dizin syml
       expect(body.error.message).toBe('Dosya biçimi tanınamadı. Tekrar deneyin.')
       expect(body.error.message).not.toBe('Dosyaya yazma izni reddedildi.')
     } finally {
-      fs.rmSync(featuresPath, { recursive: true, force: true })
+      fs.rmSync(featuresPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
       fs.renameSync(backup, featuresPath)
     }
   })
@@ -455,7 +455,7 @@ describe('GET /api/features/detail — MUTASYON (a) hedefi: docs/qa symlink ile 
       expect(body.data.contract).toEqual({ exists: false })
     } finally {
       fs.rmSync(qaPath, { force: true })
-      fs.rmSync(outsideDir, { recursive: true, force: true })
+      fs.rmSync(outsideDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 })

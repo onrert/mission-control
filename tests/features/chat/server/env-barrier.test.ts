@@ -71,7 +71,7 @@ describe('env-barrier — hasApiKeyHelperConfigured (N6)', () => {
     try {
       expect(hasApiKeyHelperConfigured(file)).toBe(true)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -83,7 +83,7 @@ describe('env-barrier — hasApiKeyHelperConfigured (N6)', () => {
       expect(hasApiKeyHelperConfigured(file)).toBe(false)
       expect(hasApiKeyHelperConfigured(path.join(dir, 'yok.json'))).toBe(false)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 })

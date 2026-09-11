@@ -19,7 +19,7 @@ describe('isInsideDataRoot', () => {
   })
 
   afterEach(() => {
-    fs.rmSync(root, { recursive: true, force: true })
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   })
 
   it('hedef root altındaki gerçek bir dosyaysa true', () => {
@@ -37,7 +37,7 @@ describe('isInsideDataRoot', () => {
       fs.writeFileSync(file, '{}')
       expect(isInsideDataRoot(root, file)).toBe(false)
     } finally {
-      fs.rmSync(other, { recursive: true, force: true })
+      fs.rmSync(other, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -49,7 +49,7 @@ describe('isInsideDataRoot', () => {
       fs.writeFileSync(victim, '{}')
       expect(isInsideDataRoot(root, victim)).toBe(false)
     } finally {
-      fs.rmSync(sibling, { recursive: true, force: true })
+      fs.rmSync(sibling, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 
@@ -63,7 +63,7 @@ describe('isInsideDataRoot', () => {
       const traversal = path.join(sub, '..', '..', path.basename(outside), 'evil.jsonl')
       expect(isInsideDataRoot(root, traversal)).toBe(false)
     } finally {
-      fs.rmSync(outside, { recursive: true, force: true })
+      fs.rmSync(outside, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   })
 

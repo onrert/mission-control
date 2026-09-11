@@ -11,5 +11,5 @@ export function createTempDataDir(): string {
 }
 
 export function removeTempDataDir(dir: string): void {
-  fs.rmSync(dir, { recursive: true, force: true })
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
 }

@@ -99,21 +99,31 @@ başarısız olmuş olabilirdi.
    gözle görülür hâle gelirse (mevcut sentetik ölçüm dışında ilk gerçek belirti), bu bir sonraki
    feature'da (yazma sıklığı sınırlama + `entries` için ring buffer) ele alınmalı;
    `docs/blockers.md`'ye de bir sonraki feature için açık madde olarak yazıldı.
-5. **Araç/agent durum satırları sayfa yenilemesinde ekrandan kaybolur (F-012 QA tur 3 Ö7,
-   koşullu kabul — `docs/qa/F-012-2026-09-06-tur3.md` §6).** `docs/03-ux.md:327` şunu şart
-   koşuyor: alt agent durum satırı "kalıcı kalır (silinmez) — kullanıcı geçmişe döndüğünde
-   hangi agent'ın ne zaman çalıştığını görebilir." Gerçek davranış bunu karşılamıyor: istemci
-   `kind:'tool'` girdilerini sayfa yenilemesi sonrası **render etmiyor** (yalnızca `kind:'text'`/
-   `'error'` transkriptte geri geliyor). **Kaybolan tam olarak şu:** `✓ Bash tamamlandı (…)` gibi
-   araç/agent özet satırları. **Veri kaybolmuyor** — `history.jsonl`'e `kind:'tool'` olarak
-   yazılıyor ve diskte duruyor, yalnızca istemcinin `history-log.ts`/`useChatSession.ts` yeniden
-   çizim yolu bunları atlıyor. **Bloklayıcı değil** kabul edildi (QA gerekçesi): oturum durumu
-   bozulmuyor, kullanıcı akışında kilitlenme veya sessiz yarı-başarı üretmiyor, yalnızca **geçmiş
-   bir olayın izini** gizliyor (Y1'in aksine karar bekleyen bir durumu gizlemiyor). **Yeniden ele
-   alınma eşiği:** bir sonraki sohbet ekranı feature'ında (ör. Thread/derin detay ekranı, F-010,
-   ya da `history-log.ts`'in `kind:'tool'` girdilerini de fold edip render etmesi) ele alınmalı;
-   o zamana kadar `docs/03-ux.md:327`'nin "kalıcı kalır" ifadesi ile gerçek davranış arasında
-   bilinen bir sapma vardır. Ayrıca `docs/blockers.md`'ye açık madde olarak yazıldı.
+5. **DÜZELTİLDİ (2026-09-11, Ö7 — `docs/qa/o7-agent-satirlari-contract.md`).** Eskiden: araç/agent
+   durum satırları sayfa yenilemesinde ekrandan kayboluyordu (F-012 QA tur 3 Ö7, o zaman
+   "koşullu kabul" — `docs/qa/F-012-2026-09-06-tur3.md` §6) çünkü `session.ts` `kind:'tool'`
+   girdilerini `historyLog`'a metadatasız (`tool_use_id`/`tool_name`/durum/`elapsed_ms` yok)
+   yazıyordu ve `foldByTurn`'ün `${turn_id}::${kind}::${role}` anahtarı aynı turdaki birden
+   fazla araç çağrısını tek kayda eziyordu; istemci de bu `kind`'i geçmişten hiç render
+   etmiyordu (`docs/03-ux.md:327`'nin "kalıcı kalır" şartı karşılanmıyordu). Kullanıcı kararı
+   (2026-09-11): panelin var olma sebebi tam olarak bu görünürlük olduğu için düzeltildi,
+   artık koşullu kabul değil.
+   **Yapılan:** `session.ts` her iki geçişte de (`tool_use`/`tool_result`) tam metadata yazıyor;
+   `foldByTurn`/istemcinin `entryKey`'i `kind==='tool'` iken `tool_use_id`'ye göre anahtarlanıyor
+   (aynı turda birden fazla araç artık ayrı ayrı hayatta kalıyor); istemci `toolRows`'u ayrı bir
+   state olarak DEĞİL, `messages` ile AYNI `entriesMap`'ten türetiyor (canlı SSE ve geçmiş TEK
+   reconciliation yolundan geçiyor); sıralama, kaydın bitiş `ts`'i değil `ts - elapsed_ms` ile
+   geri hesaplanan gerçek başlangıç anına göre yapılıyor (uzun süren bir aracın konumu, bittiği
+   an değil başladığı ana göre transkriptte yerleşiyor).
+   **Doğrulama:** e2e'de kırmızı→yeşil kanıtlandı (beş kaynak dosya `git stash`'lenip yeni iki
+   Ö7 assertion'ının kırmızı verdiği gözlemlendi, sonra geri yüklenip yeşile döndü); üç mutasyon
+   (`tool_use_id` anahtarını kaldırma, `tool_result` yazımını kaldırma, geri hesaplamayı
+   kaldırma) her biri ilgili testi kırmızıya düşürdü, elle geri alındı (`git checkout`
+   KULLANILMADI). Gizlilik sorusu ölçülerek cevaplandı: yerleşik SDK araçlarının input
+   şemalarında yalnızca `Agent`/`Bash`'in kısa (3-5 kelime) bir `description` alanı var, dosya
+   yolu/komut/içerik taşıyan araçların şemasında bu alan YOK — persist edilen tek serbest metin
+   alanı yapısal olarak kısa bir özetle sınırlı, ADR-015'in redaksiyonu bu yola taşınmadı
+   (gerekçe sözleşmede).
 
 ## Sonuçlar (uygulamayı bağlayan kurallar)
 

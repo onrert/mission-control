@@ -157,3 +157,42 @@ kaybolursa panel kendi ana vaadini bozar.
    `tsc`=0, `eslint`=0, `_selftest.cjs` 206/206 (dokunulmadı, yalnızca doğrulama).
 6. `ADR-014` madde 5 güncellenir: karar artık "düzeltildi", eski "koşullu kabul" ifadesi
    kaldırılır, bu sözleşmeye referans verilir.
+
+## Doğrulama (bu tur, ölçülmüş)
+
+- **Tekrar üretme (KIRMIZI önce):** beş kaynak dosya (`session.ts`, `history-log.ts`,
+  `useChatSession.ts`, `ChatScreen.tsx`, `shared/types.ts`) `git stash`'lendi (test dosyaları
+  DEĞİL); `npm run e2e:chat` çalıştırıldı → yeni iki Ö7 assertion'ı (`chat-tool-row` görünürlüğü,
+  `Bash tamamlandı` metni) **KIRMIZI** verdi, diğer 3 test etkilenmedi. `git stash pop` ile geri
+  yüklendi, aynı koşu **5/5 YEŞİL** (iki ayrı koşuda tekrarlandı, kararlı).
+- **Mutasyon (üçü de KIRMIZI verdi, sonra elle geri alındı — `git checkout`/`git restore`
+  KULLANILMADI, her birinden sonra `git diff` boş doğrulandı):**
+  - A: `chatEntryKey`'deki `tool::${tool_use_id}` özel durumu kaldırıldı → 3 test dosyasında
+    (`history-log.test.ts`, `session.test.ts`, `chat-api.test.ts`) toplam 3 test KIRMIZI.
+  - B: `tool_result` dalındaki `historyLog.append` çağrısı kaldırıldı → `session.test.ts` ve
+    `chat-api.test.ts`'te 2 test KIRMIZI.
+  - C: `toToolRow`'un `ts - elapsed_ms` geri hesaplaması kaldırıldı → `ChatScreen.test.tsx`'in
+    sıralama testi KIRMIZI (`expected 28 to be less than 15`).
+- **Birim/entegrasyon:** `npm run test` → 1. koşu `Worker forks emitted error` ile ortamsal
+  çökme verdi (assert **sıfır**, CLAUDE.md'de kayıtlı bilinen kararsızlık) → 2. koşu **1851
+  geçti / 4 atlandı (86 dosya)**, assert kırmızısı yok. `tsc --noEmit`=0, `eslint .`=0.
+- **E2E (izole):** `npm run e2e` **55/55**. `npm run e2e:chat` **5/5**, iki ayrı koşuda tekrar
+  edildi.
+- **Hook self-test:** `node .claude/hooks/_selftest.cjs` **206/206** (dosyalara dokunulmadı,
+  yalnızca doğrulandı).
+- **Süreç temizliği:** `tasklist` içinde `node.exe`/`chrome` yok; 7333/7433/7434/7435'te yalnızca
+  `TIME_WAIT` (kapanmış bağlantı), `LISTENING` yok.
+
+## Kalan riskler
+
+1. **`parent_tool_use_id` persist edilmiyor** (bilinçli, §"Ne yapacağım" madde 1) — bugün hiçbir
+   render yolu okumuyor; ileride araç çağrılarını üst-agent'a göre gruplayan bir görünüm
+   eklenirse bu alan da şemaya eklenmeli.
+2. **Hacim/gruplama kapsam dışı** (§"Ne yapacağım" madde 8, eşikli) — tek turda >50 araç satırı
+   pratikte görülürse ele alınmalı.
+3. **Dangling 'started' araç koruması yeni** (`markDanglingAsInterrupted`, §"Ne yapacağım"
+   madde 4) — yalnızca birim testte (`history-log.test.ts`) doğrulandı, gerçek bir sunucu
+   çökmesi senaryosunda (e2e) canlı ölçülmedi (düşük risk: mekanizma metin girdilerinin zaten
+   kanıtlı emsalinin birebir kopyası).
+4. Ö5/Ö6 (`ADR-014` madde 4, E2E kapsaması ve geçmiş yazma amplifikasyonu) bu turun kapsamı
+   DIŞINDA, değişmedi.

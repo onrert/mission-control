@@ -24,14 +24,25 @@ type Operation = 'featureStatus' | 'approval' | 'denial' | 'archive'
 
 // ADR-005 madde 2, adım 5-6'nın çalışma zamanı karşılığı — her işlem yalnızca kendi POSIX
 // deseniyle eşleşen bir hedefe yazabilir, hedef daha önce "kök içinde" bulunmuş olsa bile.
+// S1 (borç kapatma, `docs/blockers.md` "F-008 kapanışından taşınan iki borç" madde 1): bu üç
+// desen `i` bayrağıyla harfe DUYARSIZ. `resolveInsideRoot` adım 5, hedef zaten kanonik-olmayan
+// harfle mevcutsa (ör. `g2.ok`) `realpathSync.native` ile gerçek disk adını (küçük harfli) döner
+// (adım 4 candidate'i "var" sayar çünkü Windows dosya sistemi harfe duyarsız); `targetPath` o
+// zaman küçük harfli olur. `gate` parametresi buraya ulaşmadan ÖNCE zaten `GATE_PATTERN`/
+// `isValidGateId` ile kanonik BÜYÜK harfle doğrulanmış olduğundan (bkz. `handlers.ts`
+// `isValidGateId(rawDecodedGate)`, aşağıdaki `GATE_PATTERN`) harfe duyarsızlık burada YENİ bir
+// giriş yolu açmıyor — yalnızca "aynı dosyanın disk üzerindeki mevcut adı" ile "istenen kanonik
+// ad" arasındaki OLMASI GEREKEN eşleşmeyi kabul ediyor (gate-id.ts'teki S2 düzeltmesiyle AYNI
+// ilke: küçük/karışık harfli bir onay dosyası normal bir kapı dosyası gibi TANINIR, engellenmez).
 const OPERATION_PATTERNS: Record<Operation, RegExp> = {
   featureStatus: /^docs\/features\/[A-Za-z0-9._-]+\.md$/,
-  approval: /^docs\/approvals\/(G[0-6](-\d{1,3})?|ASSETS)\.ok$/,
-  denial: /^docs\/approvals\/(G[0-6](-\d{1,3})?|ASSETS)\.deny\.md$/,
+  approval: /^docs\/approvals\/(G[0-6](-\d{1,3})?|ASSETS)\.ok$/i,
+  denial: /^docs\/approvals\/(G[0-6](-\d{1,3})?|ASSETS)\.deny\.md$/i,
   // R1 düzeltmesi (sözleşme §3 madde 2/6): gerçek `toISOString().replace(/[:.]/g,'-')`
-  // çıktısının alfabesiyle (T/Z dahil) harf harf eşleşir.
+  // çıktısının alfabesiyle (T/Z dahil) harf harf eşleşir (saat/dakika/vs kısmı harfe duyarsızlıktan
+  // etkilenmez, yalnızca kapı id'si kısmı `i` ile gevşetildi).
   archive:
-    /^docs\/approvals\/archive\/(G[0-6](-\d{1,3})?|ASSETS)-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.deny\.md$/,
+    /^docs\/approvals\/archive\/(G[0-6](-\d{1,3})?|ASSETS)-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.deny\.md$/i,
 }
 
 const FILE_NAME_PATTERN = /^[A-Za-z0-9._-]+\.md$/

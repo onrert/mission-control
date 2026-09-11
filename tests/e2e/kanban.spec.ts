@@ -626,9 +626,20 @@ test.describe('F-013 — feature detay penceresinde gövde/sözleşme/QA raporla
     })
     expect(nestedScrollBoxCount).toBe(0)
 
-    // K6 — kaydırılabilir kap klavye ile odaklanabilir VE gerçekten kaydırılabilir.
+    // K6/N6 (`docs/blockers.md` — Thread ekranındaki X4/D1 emsaliyle AYNI desen) — `.locator(...)
+    // .focus()` Playwright'ın CDP ile odağı ZORLA vermesidir, "klavyeyle odaklanabilir" iddiasını
+    // DOĞRULAMAZ (QA mutasyon M6: `tabIndex={0}` kaldırılsa bile eskiki hâliyle test yeşil
+    // kalıyordu). Gerçek `Tab` tuşuna basıp `document.activeElement`'i ölçmek asıl kanıttır.
     const scrollBox = page.locator('[aria-label="Feature detay içeriği"]')
-    await scrollBox.focus()
+    let reachedScrollBox = false
+    for (let i = 0; i < 10 && !reachedScrollBox; i++) {
+      await page.keyboard.press('Tab')
+      reachedScrollBox = await page.evaluate(
+        () => document.activeElement?.getAttribute('aria-label') === 'Feature detay içeriği'
+      )
+    }
+    expect(reachedScrollBox).toBe(true)
+
     const before = await scrollBox.evaluate((el) => el.scrollTop)
     await page.keyboard.press('PageDown')
     await page.waitForTimeout(100)

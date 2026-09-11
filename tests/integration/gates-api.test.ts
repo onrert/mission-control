@@ -317,6 +317,64 @@ describe('POST /api/gates/:project_id/:gate/approve — mutlu yol (AC2/AC7)', ()
   })
 })
 
+describe('S1 borç kapatma — kanonik olmayan harfli onay dosyası varken yazma kalıcı 500 vermemeli', () => {
+  // `docs/blockers.md` "F-008 kapanışından taşınan iki borç" madde 1: `docs/approvals/g2.ok`
+  // (küçük harf) varken `write-gate.ts`'in `resolveInsideRoot`'u adım 5'te `realpathSync.native`
+  // ile diskteki GERÇEK (küçük harfli) adı döndürüyor, ama `OPERATION_PATTERNS.approval` harfe
+  // duyarlıydı ve `g2.ok` ile eşleşmiyordu → `write_denied` → handler bunu 500 `write_failed`'e
+  // çeviriyordu. Dosya diskte kalıcı olduğu için bu her denemede TEKRARLANIYORDU (kalıcı 500).
+  it('g2.ok küçük harfle mevcutken G2 onayı 200 döner, dosya güncellenir (ilk deneme)', async () => {
+    writeFile(projectDir, 'docs/approvals/g2.ok', 'eski küçük harfli içerik\n')
+
+    const res = await writeRequest(
+      handle.baseUrl,
+      'POST',
+      `/api/gates/${projectId}/G2/approve`,
+      approveBody('G2', 'Mimari', 'fixture', 'kanonik olmayan dosya varken onay')
+    )
+
+    expect(res.status).toBe(200)
+    const body = res.json as { success: boolean; data: { status: string } }
+    expect(body.success).toBe(true)
+    expect(body.data.status).toBe('approved')
+    expect(fs.readFileSync(path.join(projectDir, 'docs/approvals/g2.ok'), 'utf8')).toContain(
+      'kanonik olmayan dosya varken onay'
+    )
+  })
+
+  it('kalıcılık: g2.ok varken İKİNCİ deneme de 200 döner (bir öncekinin şansı değil)', async () => {
+    writeFile(projectDir, 'docs/approvals/g2.ok', 'eski küçük harfli içerik\n')
+
+    const first = await writeRequest(
+      handle.baseUrl,
+      'POST',
+      `/api/gates/${projectId}/G2/approve`,
+      approveBody('G2', 'Mimari', 'fixture', 'birinci deneme')
+    )
+    expect(first.status).toBe(200)
+
+    const second = await writeRequest(
+      handle.baseUrl,
+      'POST',
+      `/api/gates/${projectId}/G2/approve`,
+      approveBody('G2', 'Mimari', 'fixture', 'ikinci deneme')
+    )
+    expect(second.status).toBe(200)
+    expect(fs.readFileSync(path.join(projectDir, 'docs/approvals/g2.ok'), 'utf8')).toContain(
+      'ikinci deneme'
+    )
+  })
+
+  it('GET /api/gates de g2.ok varken G2 durumunu "approved" gösterir (S2 emsaliyle tutarlı)', async () => {
+    writeFile(projectDir, 'docs/approvals/g2.ok', 'içerik\n')
+    const res = await request(handle.baseUrl, 'GET', `/api/gates?project_id=${projectId}`)
+    expect(res.status).toBe(200)
+    const body = res.json as { data: { gates: Array<{ id: string; status: string }> } }
+    const g2 = body.data.gates.find((g) => g.id === 'G2')
+    expect(g2?.status).toBe('approved')
+  })
+})
+
 describe('POST /api/gates/:project_id/:gate/deny — doğrulama + mutlu yol (AC3/AC8)', () => {
   it('reason boş/whitespace → 400 invalid_body, dosya yazılmaz (M5)', async () => {
     const res = await writeRequest(handle.baseUrl, 'POST', `/api/gates/${projectId}/G3/deny`, {

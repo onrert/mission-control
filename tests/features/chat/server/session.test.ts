@@ -208,8 +208,53 @@ describe('createChatSession — mesaj kuyruklama + durum makinesi', () => {
     expect((toolEvents[0]!.data as { status: string }).status).toBe('started')
     expect((toolEvents[1]!.data as { status: string }).status).toBe('finished')
     expect((toolEvents[1]!.data as { elapsed_ms?: number }).elapsed_ms).toBeGreaterThanOrEqual(0)
+    // Ö7 düzeltmesi — `chat_seq` her iki dalda da `historyLog.append`'in GERÇEK `seq`'ini taşır
+    // (`chat_message`/`chat_user_echo`'yla aynı desen).
+    expect(typeof (toolEvents[0]!.data as { chat_seq?: number }).chat_seq).toBe('number')
+    expect((toolEvents[1]!.data as { chat_seq?: number }).chat_seq).toBeGreaterThan(
+      (toolEvents[0]!.data as { chat_seq?: number }).chat_seq!
+    )
+    // Ö7 düzeltmesi — `tool_result` sonrası `getHistoryPage()` tam metadata taşıyan TEK
+    // `kind:'tool'` kaydı döner (started ayrı bir satır olarak HAYATTA KALMAZ, fold ediliyor).
+    const page = session.getHistoryPage()
+    const toolEntries = page.entries.filter((e) => e.kind === 'tool')
+    expect(toolEntries).toHaveLength(1)
+    expect(toolEntries[0]?.tool_use_id).toBe('tu1')
+    expect(toolEntries[0]?.tool_name).toBe('Bash')
+    expect(toolEntries[0]?.tool_status).toBe('finished')
+    expect(toolEntries[0]?.text).toBe('Testi çalıştır')
+    expect(toolEntries[0]?.elapsed_ms).toBeGreaterThanOrEqual(0)
 
     expect(session.getStatus().busy).toBe(false)
+  })
+})
+
+describe('createChatSession — Ö7 (aynı turda birden fazla araç çağrısı, geçmişte İKİSİ DE kalır)', () => {
+  it('iki farklı tool_use_id İKİSİ DE getHistoryPage() sonucunda ayrı kayıt olarak görünür', async () => {
+    const { session, getHandles } = await bootstrapSession()
+    session.sendMessage('iki araç çalıştır')
+    await flush()
+    const handle = getHandles()[0]!
+
+    handle.emit({
+      type: 'assistant',
+      parent_tool_use_id: null,
+      message: {
+        content: [
+          { type: 'tool_use', id: 'tuA', name: 'Read', input: {} },
+          { type: 'tool_use', id: 'tuB', name: 'Bash', input: { description: 'ikinci araç' } },
+        ],
+      },
+    })
+    await flush()
+
+    const page = session.getHistoryPage()
+    const toolEntries = page.entries.filter((e) => e.kind === 'tool')
+    expect(toolEntries).toHaveLength(2)
+    expect(toolEntries.map((e) => e.tool_use_id).sort()).toEqual(['tuA', 'tuB'])
+    const byId = new Map(toolEntries.map((e) => [e.tool_use_id, e]))
+    expect(byId.get('tuA')?.tool_status).toBe('started')
+    expect(byId.get('tuB')?.text).toBe('ikinci araç')
   })
 })
 

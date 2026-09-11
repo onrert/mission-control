@@ -240,6 +240,9 @@ describe("chat API — mutasyon 7 (asenkron handler kendi try/catch'ini taşır)
 })
 
 describe("chat API — mutasyon 12/12b (chat_tool kapalı alan allowlist'i, B7/S2/B4)", () => {
+  // Ö7 düzeltmesi (`docs/qa/o7-agent-satirlari-contract.md`) — `chat_seq` bilinçli olarak
+  // GENİŞLETİLDİ (`chat_message`/`chat_user_echo`'nun zaten taşıdığı alanla aynı desen, sızıntı
+  // DEĞİL): istemcinin geçmiş + canlı SSE'yi AYNI `entriesMap`'te birleştirebilmesi için gerekli.
   const ALLOWED_CHAT_TOOL_KEYS = new Set([
     'tool_use_id',
     'tool_name',
@@ -247,6 +250,7 @@ describe("chat API — mutasyon 12/12b (chat_tool kapalı alan allowlist'i, B7/S
     'status',
     'elapsed_ms',
     'parent_tool_use_id',
+    'chat_seq',
   ])
 
   it('chat_tool (started) yayını yalnızca izin verilen alanları taşır', async () => {
@@ -428,6 +432,103 @@ describe('chat API — AC7 (kalıcı geçmiş)', () => {
       }
       expect(body.data.entries.length).toBeGreaterThan(0)
       expect(body.data.entries.some((e) => e.text === 'merhaba')).toBe(true)
+    } finally {
+      await stopServer(handle)
+    }
+  })
+})
+
+describe('chat API — Ö7 (araç satırları sayfa yenilemesinde kaybolmaz)', () => {
+  it('tool_result sonrası /api/chat/history tam metadata taşıyan bir kind:tool kaydı döner', async () => {
+    const { queryFn, getHandles } = createFakeQueryFactory()
+    const handle = await startServer(dataDir, queryFn)
+    try {
+      const sse = await connectSse(handle.port)
+      await fetch(`${handle.base}/api/chat/message`, {
+        method: 'POST',
+        headers: writeHeaders(),
+        body: JSON.stringify({ text: 'çalıştır' }),
+      })
+      const fake = getHandles()[0]!
+      fake.emit({
+        type: 'assistant',
+        parent_tool_use_id: null,
+        message: {
+          content: [
+            { type: 'tool_use', id: 'tu1', name: 'Bash', input: { description: 'testi çalıştır' } },
+          ],
+        },
+      })
+      await sse.waitForFrame((f) => f.event === 'chat_tool')
+      fake.emit({
+        type: 'user',
+        parent_tool_use_id: null,
+        message: {
+          content: [{ type: 'tool_result', tool_use_id: 'tu1', is_error: false, content: 'ok' }],
+        },
+      })
+      await sse.waitForFrame((f) => {
+        if (f.event !== 'chat_tool') return false
+        return (JSON.parse(f.data) as { status?: string }).status === 'finished'
+      })
+      sse.close()
+
+      const res = await fetch(`${handle.base}/api/chat/history?limit=10`)
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        data: {
+          entries: Array<{
+            kind: string
+            tool_use_id?: string
+            tool_name?: string
+            tool_status?: string
+            elapsed_ms?: number
+            text?: string
+          }>
+        }
+      }
+      const toolEntry = body.data.entries.find((e) => e.kind === 'tool')
+      expect(toolEntry).toBeDefined()
+      expect(toolEntry?.tool_use_id).toBe('tu1')
+      expect(toolEntry?.tool_name).toBe('Bash')
+      expect(toolEntry?.tool_status).toBe('finished')
+      expect(toolEntry?.text).toBe('testi çalıştır')
+      expect(toolEntry?.elapsed_ms).toBeGreaterThanOrEqual(0)
+      // Yalnızca `started` dalı hayatta kalıp `finished`'e YÜKSELTİLMEDİĞİNİ (fold sonrası TEK
+      // kayıt) doğrula — mutasyon B'nin (finished append'i kaldırma) tekrar üretmesi.
+      expect(body.data.entries.filter((e) => e.tool_use_id === 'tu1')).toHaveLength(1)
+    } finally {
+      await stopServer(handle)
+    }
+  })
+
+  it('aynı turda iki farklı araç çağrısı geçmişte İKİSİ DE hayatta kalır (foldByTurn tool_use_id anahtarı)', async () => {
+    const { queryFn, getHandles } = createFakeQueryFactory()
+    const handle = await startServer(dataDir, queryFn)
+    try {
+      await fetch(`${handle.base}/api/chat/message`, {
+        method: 'POST',
+        headers: writeHeaders(),
+        body: JSON.stringify({ text: 'iki araç çalıştır' }),
+      })
+      const fake = getHandles()[0]!
+      fake.emit({
+        type: 'assistant',
+        parent_tool_use_id: null,
+        message: {
+          content: [
+            { type: 'tool_use', id: 'tuA', name: 'Read', input: {} },
+            { type: 'tool_use', id: 'tuB', name: 'Bash', input: { description: 'ikinci' } },
+          ],
+        },
+      })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      const res = await fetch(`${handle.base}/api/chat/history?limit=10`)
+      const body = (await res.json()) as { data: { entries: Array<{ tool_use_id?: string }> } }
+      const toolUseIds = body.data.entries.map((e) => e.tool_use_id).filter(Boolean)
+      expect(toolUseIds).toContain('tuA')
+      expect(toolUseIds).toContain('tuB')
     } finally {
       await stopServer(handle)
     }

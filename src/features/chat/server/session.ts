@@ -216,6 +216,10 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
   const pendingPermissions = new Map<string, PendingPermissionRecord>()
   const toolStartedAt = new Map<string, number>()
   const toolNameByUseId = new Map<string, string>()
+  // Ö7 — `tool_result` anında persist edilen TERMİNAL kayıt tek hayatta kalan kayıt olacağı
+  // (foldByTurn `tool::${tool_use_id}` anahtarı) için description'ı bu haritadan taşımak
+  // ZORUNLU; aksi hâlde reload sonrası tamamlanmış araç satırları açıklamasız görünür.
+  const toolDescriptionByUseId = new Map<string, string | undefined>()
   const accumulatedTextByTurn = new Map<string, string>()
   // I2 (CEO kararı, QA F-014 tur2 N2) — uygulama açılışı tek başına gerçek bir model çağrısı
   // yapmamalı (ADR-011: bu uygulama Windows açılışında HER GÜN otomatik başlıyor). `bootstrap()`
@@ -304,12 +308,16 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
       toolNameByUseId.set(block.id, block.name)
       const description =
         typeof block.input?.description === 'string' ? block.input.description : undefined
+      toolDescriptionByUseId.set(block.id, description)
       const entry = historyLog.append({
         turn_id: currentTurnId ?? 'unknown',
         role: 'assistant',
         kind: 'tool',
         status: 'done',
         text: description,
+        tool_use_id: block.id,
+        tool_name: block.name,
+        tool_status: 'started',
         ts: deps.now().toISOString(),
       })
       deps.hub.broadcast(
@@ -320,6 +328,7 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
           description,
           status: 'started',
           parent_tool_use_id: parentToolUseId,
+          chat_seq: entry.seq,
         },
         entry.seq
       )
@@ -328,13 +337,34 @@ export function createChatSession(deps: ChatSessionDeps): ChatSession {
     if (block.type === 'tool_result' && block.tool_use_id) {
       const startedAt = toolStartedAt.get(block.tool_use_id)
       const elapsed_ms = startedAt !== undefined ? Date.now() - startedAt : undefined
-      deps.hub.broadcast('chat_tool', {
+      const toolName = toolNameByUseId.get(block.tool_use_id) ?? 'unknown'
+      const description = toolDescriptionByUseId.get(block.tool_use_id)
+      const toolStatus: 'finished' | 'error' = block.is_error ? 'error' : 'finished'
+      const entry = historyLog.append({
+        turn_id: currentTurnId ?? 'unknown',
+        role: 'assistant',
+        kind: 'tool',
+        status: 'done',
+        text: description,
         tool_use_id: block.tool_use_id,
-        tool_name: toolNameByUseId.get(block.tool_use_id) ?? 'unknown',
-        status: block.is_error ? 'error' : 'finished',
+        tool_name: toolName,
+        tool_status: toolStatus,
         elapsed_ms,
-        parent_tool_use_id: parentToolUseId,
+        ts: deps.now().toISOString(),
       })
+      deps.hub.broadcast(
+        'chat_tool',
+        {
+          tool_use_id: block.tool_use_id,
+          tool_name: toolName,
+          description,
+          status: toolStatus,
+          elapsed_ms,
+          parent_tool_use_id: parentToolUseId,
+          chat_seq: entry.seq,
+        },
+        entry.seq
+      )
     }
   }
 

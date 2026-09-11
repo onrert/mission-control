@@ -109,6 +109,18 @@ export interface ChatLogEntry {
   text?: string
   status: 'streaming' | 'done' | 'interrupted'
   ts: string
+  /**
+   * Ö7 düzeltmesi (`docs/qa/o7-agent-satirlari-contract.md`) — yalnızca `kind==='tool'` iken
+   * dolu. `tool_use_id`, aynı turdaki birden fazla araç çağrısını `foldByTurn`'de ayırt etmek
+   * (anahtar `tool::${tool_use_id}`, turn_id/role'den BAĞIMSIZ) ve sayfa yenilemesinde
+   * `toolRows`'u yeniden inşa etmek için gerekli. `elapsed_ms`, yalnızca `tool_status`
+   * `'finished'`/`'error'` iken dolar; istemci başlangıç anını bundan geri hesaplar (§ kronoloji
+   * kararı) — ayrı bir `started_ts` alanı YOKTUR (gereksiz, `ts - elapsed_ms` yeterli).
+   */
+  tool_use_id?: string
+  tool_name?: string
+  tool_status?: 'started' | 'finished' | 'error'
+  elapsed_ms?: number
 }
 
 /**

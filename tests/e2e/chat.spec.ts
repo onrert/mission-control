@@ -65,6 +65,75 @@ test('mesaj gönder → akan cevap görünür → izin kartı çıkar → onayla
   await page.getByRole('tab', { name: 'Sohbet' }).click()
   await expect(page.getByText('Klasörü kontrol eder misin?')).toBeVisible()
   await expect(page.getByText('Klasörde iki dosya buldum, hazır.')).toBeVisible()
+
+  // Ö7 (`docs/qa/o7-agent-satirlari-contract.md`) — araç satırı da AYNI reload'da kalıcı
+  // görünmeli, canlı sırada gösterilen BİREBİR aynı biçimle (`ToolStatusRow`).
+  await expect(page.getByTestId('chat-tool-row')).toBeVisible()
+  await expect(page.getByText(/Bash tamamlandı/)).toBeVisible()
+})
+
+/** `CLAUDE.md` dersi — `toBeVisible()` bir kaydırma kabında yalan söyler; dar genişlikte araç
+ *  satırının GERÇEKTEN kırpılmış görünür genişliği (viewport + üst kaydırma kaplarının
+ *  kesişimi) ölçülür (`tests/e2e/usage.spec.ts`'in `clippedVisibleWidth` tekniğinin kopyası). */
+async function clippedVisibleWidth(page: Page, selector: string): Promise<number> {
+  return page.evaluate((sel) => {
+    // `querySelectorAll(...).at(-1)` — bu dosyada TEK sunucu/oturum tüm testler arasında
+    // paylaşıldığı için (`playwright.chat.config.ts`) birden fazla eşleşme olabilir; SON
+    // (bu testin kendi ürettiği) eşleşme ölçülür.
+    const matches = document.querySelectorAll(sel)
+    const el = matches[matches.length - 1] as HTMLElement | undefined
+    if (!el) return 0
+    const rect = el.getBoundingClientRect()
+    let left = rect.left
+    let right = rect.right
+    let node: HTMLElement | null = el.parentElement
+    while (node) {
+      const style = window.getComputedStyle(node)
+      if (['auto', 'scroll', 'hidden'].includes(style.overflowX)) {
+        const containerRect = node.getBoundingClientRect()
+        left = Math.max(left, containerRect.left)
+        right = Math.min(right, containerRect.right)
+      }
+      node = node.parentElement
+    }
+    left = Math.max(left, 0)
+    right = Math.min(right, window.innerWidth)
+    return Math.max(0, right - left)
+  }, selector)
+}
+
+test('Ö7 dar genişlik (320px) — sayfa yenilemesi sonrası araç satırı gerçekten okunabilir (kırpılmış görünür genişlik > 0)', async ({
+  page,
+}) => {
+  // Not: `playwright.chat.config.ts` TÜM `chat.spec.ts` dosyası için TEK bir sunucu/oturum
+  // başlatır (`webServer` dosya başına bir kez) — önceki testlerin araç satırları bu testin
+  // sayfası yenilendiğinde de geçmişte GÖRÜNÜR (Ö7'nin tam da kanıtlamak istediği şey). Bu
+  // yüzden aşağıdaki assertion'lar TEKİL değil `.last()` — bu testin KENDİ ürettiği en son
+  // satırı ölçer, önceki testlerin birikimiyle strict-mode çakışmasına düşmez.
+  await page.setViewportSize({ width: 320, height: 800 })
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Sohbet' }).click()
+  await expect(page.getByTestId('chat-screen')).toBeVisible()
+
+  const composer = page.getByPlaceholder('CEO’ya yaz…')
+  await composer.fill('Klasörü kontrol eder misin?')
+  await page.getByRole('button', { name: 'Gönder' }).click()
+
+  const permissionCard = page.getByRole('group', { name: 'İzin isteği' })
+  await expect(permissionCard).toBeVisible({ timeout: 5000 })
+  await permissionCard.getByRole('button', { name: 'Onayla' }).click()
+  await expect(page.getByText('Klasörde iki dosya buldum, hazır.').last()).toBeVisible({
+    timeout: 5000,
+  })
+
+  await page.reload()
+  await page.getByRole('tab', { name: 'Sohbet' }).click()
+  await expect(page.getByText(/Bash tamamlandı/).last()).toBeVisible()
+  const width = await clippedVisibleWidth(page, '[data-testid="chat-tool-row"]')
+  expect(
+    width,
+    '320px genişlikte araç satırının kırpılmış görünür genişliği 0 OLMAMALI'
+  ).toBeGreaterThan(0)
 })
 
 /** CLAUDE.md dersi — `toBeVisible()` bir kaydırma kabında YALAN SÖYLER; burada DİKEY kaydırma

@@ -3,7 +3,25 @@ import path from 'node:path'
 import type { ChatLogEntry } from '../../../shared/types'
 
 /**
- * Aynı `(turn_id, kind, role)` üçlüsüne sahip birden çok satırı **en yüksek `seq`'li olanla**
+ * `foldByTurn`/istemcinin `entryKey`'i (`useChatSession.ts`) BİREBİR AYNI kuralı uygulamak
+ * zorunda (istemci sunucudan bağımsız olarak aynı katlamayı uygular). Ö7 düzeltmesi
+ * (`docs/qa/o7-agent-satirlari-contract.md`) — `kind==='tool'` iken anahtar `tool_use_id`'ye
+ * göre kurulur (`turn_id`/`role`'den BAĞIMSIZ): `tool_use_id` SDK'nın kendisi tarafından
+ * üretilen global tekil bir kimlik, aynı turda birden fazla araç çağrısını (yaygın durum) ayırt
+ * etmek için `turn_id` yetersiz kalıyordu (hepsi aynı sepete düşüp yalnızca sonuncusu hayatta
+ * kalıyordu). Diğer `kind`'ler için eski davranış DEĞİŞMEDİ.
+ */
+export function chatEntryKey(
+  entry: Pick<ChatLogEntry, 'turn_id' | 'kind' | 'role' | 'tool_use_id'>
+): string {
+  if (entry.kind === 'tool' && entry.tool_use_id !== undefined) {
+    return `tool::${entry.tool_use_id}`
+  }
+  return `${entry.turn_id}::${entry.kind}::${entry.role}`
+}
+
+/**
+ * Aynı mantıksal anahtara (`chatEntryKey`) sahip birden çok satırı **en yüksek `seq`'li olanla**
  * temsil eder (sözleşme §6, Ö3) — istemci asla aynı mantıksal mesajın iki kopyasını görmez.
  *
  * QA F-012 B2 düzeltmesi — anahtar `role` İÇERMELİYDİ: bir turda kullanıcının kendi mesajı
@@ -19,7 +37,7 @@ import type { ChatLogEntry } from '../../../shared/types'
 export function foldByTurn(entries: ChatLogEntry[]): ChatLogEntry[] {
   const map = new Map<string, ChatLogEntry>()
   for (const entry of entries) {
-    map.set(`${entry.turn_id}::${entry.kind}::${entry.role}`, entry)
+    map.set(chatEntryKey(entry), entry)
   }
   return [...map.values()].sort((a, b) => a.seq - b.seq)
 }
@@ -116,6 +134,22 @@ export function createHistoryLog(dataDir: string): HistoryLog {
           kind: entry.kind,
           text: entry.text,
           status: 'interrupted',
+          ts: new Date().toISOString(),
+        })
+      } else if (entry.kind === 'tool' && entry.tool_status === 'started') {
+        // Ö7 — metin girdilerinin dangling korumasının araç kayıtları eşleniği: sunucu bir araç
+        // 'started' durumundayken çökerse (`tool_result` hiç gelmez), reload sonrası satır
+        // sonsuza dek "çalışıyor" görünüp durur. `ToolRow.status` zaten `'error'`yi tanıdığı için
+        // yeni bir durum icat ETMEZ.
+        append({
+          turn_id: entry.turn_id,
+          role: entry.role,
+          kind: 'tool',
+          text: entry.text,
+          status: 'done',
+          tool_use_id: entry.tool_use_id,
+          tool_name: entry.tool_name,
+          tool_status: 'error',
           ts: new Date().toISOString(),
         })
       }

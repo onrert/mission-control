@@ -808,6 +808,7 @@ describe('ChatScreen — alt agent durum satırı (madde 2, S1 sabit şablon)', 
         description: 'F-012 sözleşmesi',
         status: 'started',
         parent_tool_use_id: null,
+        chat_seq: 1,
       })
     })
     expect(screen.getByText(/Agent çalışıyor — F-012 sözleşmesi/)).toBeTruthy()
@@ -819,6 +820,7 @@ describe('ChatScreen — alt agent durum satırı (madde 2, S1 sabit şablon)', 
         status: 'finished',
         elapsed_ms: 134000,
         parent_tool_use_id: null,
+        chat_seq: 2,
       })
     })
     expect(screen.getByText(/Agent tamamlandı \(2 dk 14 sn\) — F-012 sözleşmesi/)).toBeTruthy()
@@ -840,6 +842,7 @@ describe('ChatScreen — S2 çiti: ham araç çıktısı akışa BASILMAZ (docs/
         status: 'finished',
         elapsed_ms: 1000,
         parent_tool_use_id: null,
+        chat_seq: 1,
         // @ts-expect-error — kasıtlı olarak şemanın dışında bir alan
         tool_result: { secret_output: 'CIZLI-VERI-SIZMAMALI' },
       })
@@ -933,5 +936,151 @@ describe('ChatScreen — B1/D7 çiti: onChatSync (EventSource "open" olayı) ge�
         String(input).includes('/api/chat/history') || String(input).includes('/api/chat/status')
     ).length
     expect(countAfter).toBeGreaterThan(countBefore)
+  })
+})
+
+/** Ö7 (`docs/qa/o7-agent-satirlari-contract.md`) — `/api/chat/history`'yi verilen `entries`'i
+ *  döndürecek şekilde stub'lar; GERÇEK mount effect'i (`loadHistory`) tetiklenir, hiçbir
+ *  `handlers.onChatXxx` ELLE çağrılmaz (QA tur3 Y1'in "gerçek yol" dersiyle aynı disiplin). */
+function stubFetchWithHistoryEntries(entries: unknown[]) {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.includes('/api/chat/history')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, data: { entries, has_more: false } }),
+      } as Response
+    }
+    if (url.includes('/api/chat/status')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: {
+            session_active: true,
+            session_id: 's1',
+            busy: false,
+            api_key_barrier_tripped: false,
+            stripped_env_vars: [],
+            chat_enabled: true,
+            api_key_helper_configured: false,
+            max_budget_usd: 20,
+          },
+        }),
+      } as Response
+    }
+    return { ok: true, status: 200, json: async () => ({ success: true, data: {} }) } as Response
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
+describe('ChatScreen — Ö7 (sayfa yenilemesi sonrası araç satırları geçmişten geri gelir)', () => {
+  it('kind:tool geçmiş kaydı, canlı SSE ile AYNI şablonla (ToolStatusRow) render edilir', async () => {
+    stubFetchWithHistoryEntries([
+      {
+        seq: 1,
+        turn_id: 't1',
+        role: 'assistant',
+        kind: 'tool',
+        status: 'done',
+        text: 'F-012 sözleşmesi',
+        tool_use_id: 'tu1',
+        tool_name: 'Agent',
+        tool_status: 'finished',
+        elapsed_ms: 134000,
+        ts: '2026-09-11T00:00:10.000Z',
+      },
+    ])
+    await renderHarness()
+    // Canlı SSE testinin ("S1 sabit şablon") beklediği BİREBİR aynı metin — iki yol, tek biçim.
+    expect(screen.getByText(/Agent tamamlandı \(2 dk 14 sn\) — F-012 sözleşmesi/)).toBeTruthy()
+  })
+
+  it('aynı turda iki farklı tool_use_id geçmişten İKİSİ DE render edilir (fold ezmez)', async () => {
+    stubFetchWithHistoryEntries([
+      {
+        seq: 1,
+        turn_id: 't1',
+        role: 'assistant',
+        kind: 'tool',
+        status: 'done',
+        text: undefined,
+        tool_use_id: 'tuA',
+        tool_name: 'Read',
+        tool_status: 'finished',
+        elapsed_ms: 100,
+        ts: '2026-09-11T00:00:01.000Z',
+      },
+      {
+        seq: 2,
+        turn_id: 't1',
+        role: 'assistant',
+        kind: 'tool',
+        status: 'done',
+        text: 'ikinci araç',
+        tool_use_id: 'tuB',
+        tool_name: 'Bash',
+        tool_status: 'started',
+        ts: '2026-09-11T00:00:02.000Z',
+      },
+    ])
+    await renderHarness()
+    expect(screen.getByText(/Read tamamlandı/)).toBeTruthy()
+    expect(screen.getByText(/Bash çalışıyor — ikinci araç/)).toBeTruthy()
+    expect(screen.getAllByTestId('chat-tool-row')).toHaveLength(2)
+  })
+
+  it('sıralama: geç BİTEN ama erken BAŞLAYAN bir araç, arada kalan bir metin mesajından ÖNCE render edilir', async () => {
+    // Tekrar üretme (kronoloji hatası): araç kaydının HAYATTA KALAN tek satırı `finished`
+    // kaydıdır ve onun `ts`'i BİTİŞ anıdır (00:10:05). Sıralama bu `ts`'i doğrudan kullansaydı
+    // araç satırı 00:05:00'daki mesajdan SONRA görünürdü — oysa araç GERÇEKTE 00:00:05'te
+    // başladı (`ts - elapsed_ms`), yani mesajdan ÖNCE görünmesi gerekir.
+    stubFetchWithHistoryEntries([
+      {
+        seq: 1,
+        turn_id: 't0',
+        role: 'user',
+        kind: 'text',
+        status: 'done',
+        text: 'ilk mesaj',
+        ts: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        seq: 2,
+        turn_id: 't0',
+        role: 'assistant',
+        kind: 'tool',
+        status: 'done',
+        text: 'uzun araç',
+        tool_use_id: 'tuZ',
+        tool_name: 'Bash',
+        tool_status: 'finished',
+        elapsed_ms: 10 * 60 * 1000,
+        ts: '2026-01-01T00:10:05.000Z',
+      },
+      {
+        seq: 3,
+        turn_id: 't1',
+        role: 'assistant',
+        kind: 'text',
+        status: 'done',
+        text: 'ikinci mesaj',
+        ts: '2026-01-01T00:05:00.000Z',
+      },
+    ])
+    await renderHarness()
+    const container = screen.getByTestId('chat-screen')
+    const text = container.textContent ?? ''
+    const idxFirst = text.indexOf('ilk mesaj')
+    const idxTool = text.indexOf('Bash tamamlandı')
+    const idxSecond = text.indexOf('ikinci mesaj')
+    expect(idxFirst).toBeGreaterThanOrEqual(0)
+    expect(idxTool).toBeGreaterThanOrEqual(0)
+    expect(idxSecond).toBeGreaterThanOrEqual(0)
+    expect(idxFirst).toBeLessThan(idxTool)
+    expect(idxTool).toBeLessThan(idxSecond)
   })
 })

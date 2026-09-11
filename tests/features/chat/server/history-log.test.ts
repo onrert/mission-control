@@ -201,3 +201,116 @@ describe('createHistoryLog — markDanglingAsInterrupted (Ö3, init() çağırı
     expect(page.entries[0]?.status).toBe('done')
   })
 })
+
+describe('foldByTurn — Ö7 (kind:tool, tool_use_id anahtarı)', () => {
+  it('aynı turda İKİ FARKLI tool_use_id İKİSİ DE hayatta kalır (turn_id/kind/role tek başına yetersiz)', () => {
+    const entries = [
+      entry({
+        seq: 1,
+        turn_id: 'a',
+        kind: 'tool',
+        tool_use_id: 'tuA',
+        tool_name: 'Read',
+        tool_status: 'started',
+      }),
+      entry({
+        seq: 2,
+        turn_id: 'a',
+        kind: 'tool',
+        tool_use_id: 'tuB',
+        tool_name: 'Bash',
+        tool_status: 'started',
+      }),
+    ]
+    const folded = foldByTurn(entries)
+    expect(folded).toHaveLength(2)
+    expect(folded.map((e) => e.tool_use_id).sort()).toEqual(['tuA', 'tuB'])
+  })
+
+  it('aynı tool_use_id için started -> finished geçişinde yalnızca finished hayatta kalır (tek satır)', () => {
+    const entries = [
+      entry({
+        seq: 1,
+        turn_id: 'a',
+        kind: 'tool',
+        tool_use_id: 'tuA',
+        tool_name: 'Bash',
+        tool_status: 'started',
+        text: 'çalışıyor',
+      }),
+      entry({
+        seq: 2,
+        turn_id: 'a',
+        kind: 'tool',
+        tool_use_id: 'tuA',
+        tool_name: 'Bash',
+        tool_status: 'finished',
+        text: 'çalışıyor',
+        elapsed_ms: 500,
+      }),
+    ]
+    const folded = foldByTurn(entries)
+    expect(folded).toHaveLength(1)
+    expect(folded[0]?.tool_status).toBe('finished')
+    expect(folded[0]?.elapsed_ms).toBe(500)
+  })
+})
+
+describe('createHistoryLog — markDanglingAsInterrupted, Ö7 (kind:tool)', () => {
+  it('restart sırasında hâlâ tool_status:started olan bir araç kaydı error olarak kapatılır (yeni satır, eski silinmez)', async () => {
+    log.append({
+      turn_id: 't1',
+      role: 'assistant',
+      kind: 'tool',
+      status: 'done',
+      text: 'yarım kalan araç',
+      tool_use_id: 'tuX',
+      tool_name: 'Bash',
+      tool_status: 'started',
+      ts: 'x',
+    })
+    await log.flush()
+
+    const restarted = createHistoryLog(dataDir)
+    restarted.init()
+    await restarted.flush()
+
+    const raw = fs.readFileSync(path.join(dataDir, 'chat', 'history.jsonl'), 'utf8')
+    const lines = raw
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as ChatLogEntry)
+    expect(lines).toHaveLength(2)
+    expect(lines[0]?.tool_status).toBe('started')
+    expect(lines[1]?.tool_status).toBe('error')
+    expect(lines[1]?.tool_use_id).toBe('tuX')
+
+    const page = restarted.readPage()
+    expect(page.entries).toHaveLength(1)
+    expect(page.entries[0]?.tool_status).toBe('error')
+  })
+
+  it('tool_status:finished olan bir araç kaydı restart sonrası dokunulmaz kalır', async () => {
+    log.append({
+      turn_id: 't1',
+      role: 'assistant',
+      kind: 'tool',
+      status: 'done',
+      text: 'bitti',
+      tool_use_id: 'tuY',
+      tool_name: 'Bash',
+      tool_status: 'finished',
+      elapsed_ms: 10,
+      ts: 'x',
+    })
+    await log.flush()
+
+    const restarted = createHistoryLog(dataDir)
+    restarted.init()
+    await restarted.flush()
+
+    const page = restarted.readPage()
+    expect(page.entries).toHaveLength(1)
+    expect(page.entries[0]?.tool_status).toBe('finished')
+  })
+})

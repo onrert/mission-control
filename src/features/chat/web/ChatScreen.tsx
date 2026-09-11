@@ -101,7 +101,7 @@ function ToolStatusRow({ row, now }: { row: ToolRow; now: number }) {
       </span>
     )
   return (
-    <div className="flex items-center gap-2 text-xs text-zinc-400">
+    <div data-testid="chat-tool-row" className="flex items-center gap-2 text-xs text-zinc-400">
       {icon}
       <span>{toolStatusText(row, elapsedMs)}</span>
     </div>

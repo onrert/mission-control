@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { writeFetch } from '../../../web/lib/write-fetch'
 import type { ChatLogEntry } from '../../../shared/types'
 
@@ -13,6 +13,12 @@ export interface ChatToolEvent {
   status: 'started' | 'finished' | 'error'
   elapsed_ms?: number
   parent_tool_use_id: string | null
+  /** Ö7 düzeltmesi (`docs/qa/o7-agent-satirlari-contract.md`) — `session.ts`'in
+   *  `historyLog.append()`'in döndürdüğü GERÇEK `seq`'i taşır (`chat_message`/`chat_user_echo`
+   *  ile AYNI desen). İstemcinin canlı olayı `entriesMap`'e (geçmişle AYNI harita) yazabilmesi
+   *  için gerekli — reload sonrası gelen gerçek geçmiş kaydı bu değeri birebir taşır, bu yüzden
+   *  çakışma/duplikasyon olmaz. */
+  chat_seq: number
 }
 
 export interface ChatPermissionRequestEvent {
@@ -141,14 +147,21 @@ const INTERRUPT_URL = '/api/chat/interrupt'
 const PERMISSION_URL = '/api/chat/permission'
 const RESTART_URL = '/api/chat/restart'
 
-function entryKey(entry: Pick<ChatLogEntry, 'turn_id' | 'kind' | 'role'>): string {
+/** `history-log.ts`'in `chatEntryKey`'iyle BİREBİR AYNI kural (istemci sunucudan bağımsız olarak
+ *  aynı katlamayı uygular): `kind==='tool'` iken anahtar `tool_use_id`'ye göre kurulur
+ *  (`turn_id`/`role`'den BAĞIMSIZ, Ö7 düzeltmesi — aynı turdaki birden fazla araç çağrısı artık
+ *  ayrı ayrı hayatta kalır), diğer `kind`'ler için `${turn_id}::${kind}::${role}` DEĞİŞMEDİ. */
+function entryKey(entry: Pick<ChatLogEntry, 'turn_id' | 'kind' | 'role' | 'tool_use_id'>): string {
+  if (entry.kind === 'tool' && entry.tool_use_id !== undefined) {
+    return `tool::${entry.tool_use_id}`
+  }
   return `${entry.turn_id}::${entry.kind}::${entry.role}`
 }
 
-/** `history-log.ts`'in `foldByTurn`'üyle AYNI kural: aynı (turn_id, kind, role) için en yüksek
- *  `seq` kazanır — istemci sunucudan bağımsız olarak aynı katlamayı uygular (SSE ile gelen canlı
- *  güncellemeler de bu haritaya aynı kuralla girer). QA F-012 B2 düzeltmesi: `role` eksikti,
- *  aynı turdaki kullanıcı mesajı ve CEO cevabı aynı anahtara düşüp kullanıcı mesajını eziyordu. */
+/** Aynı mantıksal anahtara (`entryKey`) sahip kayıtlarda en yüksek `seq` kazanır — istemci
+ *  sunucudan bağımsız olarak aynı katlamayı uygular (SSE ile gelen canlı güncellemeler de bu
+ *  haritaya aynı kuralla girer). QA F-012 B2 düzeltmesi: `role` eksikti, aynı turdaki kullanıcı
+ *  mesajı ve CEO cevabı aynı anahtara düşüp kullanıcı mesajını eziyordu. */
 function upsertEntry(
   map: Map<string, ChatLogEntry>,
   entry: ChatLogEntry
@@ -159,6 +172,30 @@ function upsertEntry(
   const next = new Map(map)
   next.set(key, entry)
   return next
+}
+
+/**
+ * Ö7 düzeltmesi — geçmişten yüklenen VE canlı SSE'den gelen `kind:'tool'` girdilerini AYNI
+ * `ToolRow` şekline çeviren TEK fonksiyon (`toolRows`'un tek üretim yolu, aşağıdaki `useMemo`).
+ * `started_at_ms` kaydın kendi `ts`'İNDEN DEĞİL, geri hesaplanır: `foldByTurn`/`upsertEntry`
+ * yalnızca EN SON kaydı (genelde `finished`) hayatta bırakır ve o kaydın `ts`'i BİTİŞ anıdır —
+ * bitiş anını sıralama/süre başlangıcı olarak kullanmak uzun süren bir aracı olduğundan çok daha
+ * GEÇ bir transkript konumuna sıçratırdı (F-010'un kronoloji dersiyle aynı hata sınıfı, bkz.
+ * sözleşme §6). `elapsed_ms` doluysa (`finished`/`error`) gerçek başlangıç = `ts - elapsed_ms`;
+ * yoksa (`started`, henüz bitmemiş) kaydın kendi `ts`'i zaten başlangıç anıdır.
+ */
+function toToolRow(entry: ChatLogEntry): ToolRow {
+  const tsMs = Date.parse(entry.ts) || Date.now()
+  const startedAtMs = entry.elapsed_ms !== undefined ? tsMs - entry.elapsed_ms : tsMs
+  return {
+    tool_use_id: entry.tool_use_id ?? 'unknown',
+    tool_name: entry.tool_name ?? 'unknown',
+    description: entry.text,
+    status: entry.tool_status ?? 'started',
+    elapsed_ms: entry.elapsed_ms,
+    parent_tool_use_id: null,
+    started_at_ms: startedAtMs,
+  }
 }
 
 function sortEntries(map: Map<string, ChatLogEntry>): ChatLogEntry[] {
@@ -253,10 +290,13 @@ export interface UseChatSessionOptions {
 }
 
 export interface UseChatSessionResult {
-  /** Yalnızca `kind: 'text' | 'error'` — `tool`/`permission_request`/`question` geçmiş
-   *  kayıtları `request_id`/`tool_use_id` taşımadığı için (round A `history-log.ts`) burada
-   *  yeniden eyleme dökülemez, bilinen bir sınırlama olarak dışarıda bırakılır (bkz. notlar). */
+  /** Yalnızca `kind: 'text' | 'error'` — `kind:'tool'` kayıtları `toolRows`'a ayrı türetilir
+   *  (Ö7, `docs/qa/o7-agent-satirlari-contract.md`); `permission_request`/`question` geçmiş
+   *  kayıtları hâlâ `request_id` taşımadığı için (round A `history-log.ts`, bu turun kapsamı
+   *  DIŞINDA) burada yeniden eyleme dökülemez, bilinen bir sınırlama olarak dışarıda bırakılır. */
   messages: ChatLogEntry[]
+  /** Ö7 düzeltmesi — `messages` ile AYNI `entriesMap`'ten türetilir (ayrı bir state DEĞİL);
+   *  geçmişten yüklenen VE canlı SSE'den gelen kayıtlar aynı reconciliation'dan geçer. */
   toolRows: ToolRow[]
   pendingPermissions: PendingPermission[]
   resolvedPermissions: ResolvedPermission[]
@@ -291,11 +331,11 @@ export interface UseChatSessionResult {
 
 /**
  * Sohbet ekranının veri katmanı (sözleşme §2.2). Tek `EventSource`'a (K5) bağlanmaz — App.tsx
- * `handlers`'ı tek paylaşılan `useEventStream()` çağrısına geçirir. SSE eksikliği: `chat_tool`/
- * `chat_permission_*`/`chat_status`/`chat_error` yükleri `chat_seq` TAŞIMIYOR (yalnızca
- * `chat_message`/`chat_user_echo` taşıyor, round A kodu bu turda okunarak doğrulandı) — bu
- * yüzden boşluk tespiti (§5 D7) yalnızca bu iki kanal için uygulanır; diğerleri doğrudan
- * uygulanır (ephemeral durum güncellemeleri, sıra kaybı ürün açısından kritik değil).
+ * `handlers`'ı tek paylaşılan `useEventStream()` çağrısına geçirir. SSE eksikliği: `chat_permission_*`/
+ * `chat_status`/`chat_error` yükleri `chat_seq` TAŞIMIYOR — bu yüzden boşluk tespiti (§5 D7)
+ * yalnızca `chat_message`/`chat_user_echo`/`chat_tool` için uygulanır (üçü de `entriesMap`'e
+ * yazılıyor, Ö7 düzeltmesiyle `chat_tool` da bu kümeye katıldı); diğerleri doğrudan uygulanır
+ * (ephemeral durum güncellemeleri, sıra kaybı ürün açısından kritik değil).
  */
 export function useChatSession(options: UseChatSessionOptions = {}): UseChatSessionResult {
   const fetchImpl = options.fetchImpl ?? fetch
@@ -307,7 +347,6 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
   const [oldestLoadedSeq, setOldestLoadedSeq] = useState<number | undefined>(undefined)
   const [status, setStatus] = useState<ChatStatus | null>(null)
   const [lastError, setLastError] = useState<ChatErrorEvent | null>(null)
-  const [toolRows, setToolRows] = useState<ToolRow[]>([])
   const [pendingPermissions, setPendingPermissions] = useState<PendingPermission[]>([])
   const [resolvedPermissions, setResolvedPermissions] = useState<ResolvedPermission[]>([])
   const [warningDismissed, setWarningDismissed] = useState(false)
@@ -464,25 +503,36 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
     )
   }, [])
 
+  // Ö7 düzeltmesi — `toolRows` artık AYRI bir state DEĞİL, `entriesMap`'in kendisi (`messages`
+  // ile AYNI kaynak, aşağıdaki `useMemo`). Canlı SSE olayı, geçmişten yüklenen kayıtla AYNI
+  // `entryKey`/`upsertEntry` mekanizmasından geçerek haritaya yazılır — CLAUDE.md dersi "iki yol
+  // varsa biri sessizce bozulur" burada TEK yol bırakılarak yapısal olarak imkânsız kılınıyor.
+  // `description` payload'da yoksa (server artık HER ZAMAN gönderiyor, ama savunmacı davranış
+  // mevcut testin — "S1 sabit şablon" — zaten varsaydığı gibi korunuyor) haritadaki ÖNCEKİ
+  // kaydın açıklaması taşınır.
   const onChatToolEvent = useCallback((payload: ChatToolEvent) => {
-    setToolRows((prev) => {
-      const idx = prev.findIndex((row) => row.tool_use_id === payload.tool_use_id)
-      const startedAt = idx >= 0 ? prev[idx]!.started_at_ms : Date.now()
-      const nextRow: ToolRow = {
+    setEntriesMap((prev) => {
+      const key = entryKey({
+        turn_id: '',
+        kind: 'tool',
+        role: 'assistant',
+        tool_use_id: payload.tool_use_id,
+      })
+      const existing = prev.get(key)
+      const text = payload.description ?? existing?.text
+      return upsertEntry(prev, {
+        seq: payload.chat_seq,
+        turn_id: existing?.turn_id ?? 'unknown',
+        role: 'assistant',
+        kind: 'tool',
+        text,
+        status: 'done',
+        ts: new Date().toISOString(),
         tool_use_id: payload.tool_use_id,
         tool_name: payload.tool_name,
-        description: payload.description ?? (idx >= 0 ? prev[idx]!.description : undefined),
-        status: payload.status,
+        tool_status: payload.status,
         elapsed_ms: payload.elapsed_ms,
-        parent_tool_use_id: payload.parent_tool_use_id,
-        started_at_ms: startedAt,
-      }
-      if (idx >= 0) {
-        const next = [...prev]
-        next[idx] = nextRow
-        return next
-      }
-      return [...prev, nextRow]
+      })
     })
   }, [])
 
@@ -603,6 +653,16 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
   }, [loadHistory, oldestLoadedSeq])
 
   const messages = sortEntries(entriesMap).filter((e) => e.kind === 'text' || e.kind === 'error')
+  // Ö7 düzeltmesi — `messages`'ın BİREBİR aynı `entriesMap`'inden türetilir (ayrı bir state
+  // DEĞİL); `useMemo` yalnızca gereksiz yeniden hesaplamayı önler, `entriesMap` değişmediği
+  // sürece aynı referansı döndürür.
+  const toolRows = useMemo(
+    () =>
+      sortEntries(entriesMap)
+        .filter((e) => e.kind === 'tool' && e.tool_use_id !== undefined)
+        .map(toToolRow),
+    [entriesMap]
+  )
 
   return {
     messages,

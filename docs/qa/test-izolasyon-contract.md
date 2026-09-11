@@ -147,3 +147,52 @@ B-4'te ayrı, üç turda ölçülmüş ve kök nedeni bulunamamış, "ölçülm�
 kayıtlı. Bu sözleşme yalnızca **assert kırmızısı üreten** ENOTEMPTY sınıfını kapatıyor; CLAUDE.md
 kuralı gereği ("assert kırmızısı = gerçek hata, her zaman bloklayıcı") bu sınıf artık "tekrar
 koş" ile idare edilemez, kalıcı olarak kapatılmalıydı — bu tur bunu yapıyor.
+
+## 6. Ölçülen sonuçlar (uygulama sonrası)
+
+**Düzeltme öncesi taban (40 koşu, ayrı ölçüm):** 10 kırmızı (%25.0) — 9 Sınıf A, 1 ENOTEMPTY
+assert kırmızısı (§2.2'deki run 36/40, canlı yakalandı).
+
+**Düzeltme sonrası (30 ardışık `npm run test` koşusu, iki parti — 15+15):**
+- **Assert kırmızısı: 0/30.** ENOTEMPTY: 0/30.
+- Kırmızı toplam: 7/30 (%23.3) — **hepsi Sınıf A** (`Worker forks emitted error`, farklı
+  dosyalarda: `features-api`, `gates-api`×2, `events-api`, `health`, `chat-api`, `projects-api`
+  arasında dağılmış — B-4'ün "8 farklı dosyaya rastgele dağılmış" bulgusuyla tutarlı).
+- **Kabul kriteri §4.1 (≥10 ardışık koşu, assert kırmızısı sıfır) 30/30 ile fazlasıyla
+  karşılandı.**
+- B-4 taban oranına etki (§4.6): %25.0 → %23.3 — ENOTEMPTY payı kadar düşüş (istatistiksel
+  gürültü payı içinde, n=30-40 için beklenen); Sınıf A oranı **değişmedi** (beklenen — bu
+  sözleşme Sınıf A'ya dokunmuyor).
+
+**Mutasyon kanıtı (elle, `git checkout` KULLANILMADI):**
+- `history-log.test.ts:22`'deki `maxRetries: 5, retryDelay: 50` elle kaldırıldı (`Edit` ile
+  birebir ters işlem), diğer 60 çağrı noktası **dokunulmadan** düzeltilmiş kaldı.
+- Yalnızca bu dosyayı **izole** 30 kez koşturmak (`npx vitest run
+  tests/features/chat/server/history-log.test.ts`) **0/30 ENOTEMPTY** verdi — bu, ırkın tam
+  suitteki **sistem-geneli G/Ç yükü** (87 eşzamanlı süreç) ile korelasyonlu olduğunu, dosyanın
+  kendi başına yeterli olmadığını doğruluyor (izole koşuda hiçbir zaman görünmemesiyle tutarlı,
+  §2.1 madde 1'deki tam süreç izolasyonu bulgusuyla birlikte okunmalı).
+- Mutasyonla tam suit **20 kez** koşturuldu: **0/20 ENOTEMPTY tekrar üretildi** (2 kırmızı çıktı,
+  ikisi de Sınıf A — `gates-api`, `chat-api` — ENOTEMPTY ile ilgisiz). Bu, transient bir yarışın
+  **beklenen** davranışı: düzeltme öncesi taban oranı (1/40 ≈ %2.5) ile 20 koşuda hiç
+  görülmemesi (`(1-0.025)^20 ≈ %60` ihtimalle beklenen) **istatistiksel olarak tutarlı** —
+  yokluğu düzeltmenin etkisiz olduğunu KANITLAMIYOR, yalnızca deterministik tekrar üretim
+  garanti edilemeyen bir sınıf olduğunu doğruluyor. Asıl kanıt §2.2'deki **canlı yakalanan**
+  orijinal olay ve mekanizmanın Node'un resmî belgelenmiş davranışı olması.
+- Mutasyon elle geri alındı, `git diff` **boş** (hiçbir iz kalmadı) — doğrulandı.
+
+**Diğer doğrulamalar:**
+- `_selftest.cjs`: **206/206** (`.claude/` dokunulmadı).
+- `npx tsc --noEmit` = 0, `npx eslint .` = 0.
+- `npm run e2e`: **55/55** (izole).
+- Süreç hijyeni: her ağır komut öncesi/sonrası `tasklist` ile `node.exe` sayısı **0** (yetim
+  süreç yok, tüm turlar boyunca).
+- `git status --short`: temiz (mutasyon geri alındıktan sonra).
+
+## 7. Durum
+
+`status: qa`. Kod ve sözleşme commit'li (`08184a4` sözleşme, `e004b34` düzeltme). GEÇTİ/KALDI
+kararı qa-evaluator'a ait. Kalan risk: ENOTEMPTY'nin transient doğası nedeniyle §6'daki mutasyon
+kanıtı **dolaylı** (istatistiksel tutarlılık) — canlı yakalanan tek örnek ve Node'un resmî
+`maxRetries` belgesi asıl dayanak. Sınıf A (B-4) bu sözleşmenin kapsamı dışında, değişmeden
+devam ediyor.

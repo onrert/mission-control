@@ -1,12 +1,16 @@
 Onay dosyaları: G1.ok, G2.ok, G3.ok, ASSETS.ok, G4-1.ok, G5.ok, G6.ok, DANGER.ok (tek kullanımlık).
 Yalnızca CEO, kullanıcı açıkça onayladıktan sonra yazar. İçerik: tarih + onaylanan özet.
 
-## GUARD.ok — `.claude/hooks/**` ve `.claude/settings.json` için tek kullanımlık, JSON, zaman pencereli onay
+## GUARD.ok — `.claude/hooks/**` ve `.claude/settings.json` için JSON, zaman pencereli onay (TEK KULLANIMLIK DEĞİL)
 
 `.claude/hooks/**` (kendi güvenlik zinciri dahil) ve `.claude/settings.json` G2'nin mimari
 onayı kapsamına GİRMEZ — meşru bakım (hook düzeltmesi, kredi kapısı güncellemesi vb.) G2 onayı
 olmadan da yapılabilir, ama bu dosyalara `docs/` gibi tamamen serbest davranmak da yanlıştır.
-Bu yüzden ayrı, tek kullanımlık bir onay dosyası kullanılır: `docs/approvals/GUARD.ok`.
+Bu yüzden ayrı, AYNI DESENDE (DANGER.ok/PUSH.ok gibi) ama TÜKETİM MODELİ FARKLI bir onay dosyası
+kullanılır: `docs/approvals/GUARD.ok`. **B-3 KAPANIŞI:** GUARD.ok tek kullanımlık DEĞİLDİR —
+zaman penceresi boyunca kapsamdaki her dosyaya istenildiği kadar yazılabilir (aşağıya bkz).
+DANGER.ok/PUSH.ok'un kendisi hâlâ gerçekten tek kullanımlıktır, bu yalnızca GUARD.ok için geçerli
+bir değişikliktir.
 
 **GUARD.ok artık serbest markdown DEĞİL, bir JSON belgesidir** (üç metin-ayrıştırma turunun
 ardından alınan tasarım kararı — bkz. `docs/qa/g5-guard-json-contract.md`). Tam örnek:

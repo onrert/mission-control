@@ -150,22 +150,39 @@ useProjectFeatureList(...)` — `retry` hiç destructure edilmiyor. `grep -rln
 
 ## 4. Ölçülebilir kabul kriterleri
 
-- [ ] Kiril/CJK probe'ları (`__debt1_probe`) fix SONRASI KIRMIZI (ihlal bulunuyor) veriyor, sonra
-      probe silinip commit'e karışmıyor.
-- [ ] `.gitattributes`-adlı alt-dizin probe'u (`__debt2_probe`) fix SONRASI taranıp KIRMIZI veriyor.
-- [ ] 4 yeni sınır-ihlali testi (`:1234`, `1234.1.1`, `msg_example12345`, `AB:`) eklendiğinde
+- [x] Kiril/CJK probe'ları (`__debt1_probe`) fix SONRASI KIRMIZI (ihlal bulunuyor) veriyor, sonra
+      probe silinip commit'e karışmıyor. (Commit `8a1b668` — bkz. mesajdaki mutasyon notu.)
+- [x] `.gitattributes`-adlı alt-dizin probe'u (`__debt2_probe`) fix SONRASI taranıp KIRMIZI veriyor.
+      (Commit `8a1b668`.)
+- [x] 4 yeni sınır-ihlali testi (`:1234`, `1234.1.1`, `msg_example12345`, `AB:`) eklendiğinde
       MEVCUT kodla (fix öncesi hâliyle, yani hiçbir regex değişmeden) zaten YEŞİL geçiyor (çünkü
       desenler doğru dar); bu testler var OLMADAN yapılan gevşetme mutasyonu (§2 madde 3) YEŞİL
-      kalıyordu, VARKEN aynı mutasyon KIRMIZI verecek (mutasyon turunda doğrulanacak).
-- [ ] D8/D9 testleri `thread-detail.test.ts`'e eklendiğinde fix ÖNCESİ KIRMIZI, fix SONRASI YEŞİL.
-- [ ] `useProjectFeatureList.ts`'te `retry` kaldırıldıktan sonra `tsc --noEmit` ve `eslint` sıfır
-      hata; `ThreadScreen.test.tsx` değişmeden yeşil kalıyor (davranış değişmedi, yalnızca ölü
-      alan gitti).
-- [ ] Mutasyon turu: her 5 düzeltme için düzeltmeyi geri saran değişiklik uygulanır, ilgili yeni
-      test(ler) KIRMIZI verir, değişiklik ELLE (git checkout/restore KULLANILMADAN) geri alınır,
-      `git diff` temiz.
-- [ ] `npm run test` tam koşu yeşil (assert kırmızısı sıfır, kaç kez koşulduğu raporda), `npm run
-      e2e` izole yeşil, `tsc`=0, `eslint`=0, `node .claude/hooks/_selftest.cjs` 206/206.
+      kalıyordu, VARKEN aynı mutasyon KIRMIZI verir — dört desenin dördü de `8a1b668`'in mesajında
+      "reproduced and reverted the widening mutation for each" ile doğrulandı.
+- [x] D8/D9 testleri `thread-detail.test.ts`'e eklendiğinde fix ÖNCESİ KIRMIZI, fix SONRASI YEŞİL.
+      Commit `4ffabe4` sonrası ek doğrulama (bu turda): pre-fix `extractHeaderBlock`'a tam geri
+      dönüş → D8 VE D9 ikisi de KIRMIZI (2/20 fail); elle geri alındı (`git diff --stat` temiz,
+      `git checkout` KULLANILMADI); ardından yalnızca D8'in `MAX_HEADER_LINES` sınırını kaldıran
+      TEK NOKTALI mutasyon → yalnızca D8 KIRMIZI, D9 YEŞİL kaldı (1/20 fail) — iki düzeltme
+      birbirinden bağımsız doğrulandı, kaskad değil. Elle geri alındı, `git diff --stat` temiz.
+- [x] `useProjectFeatureList.ts`'te `retry` kaldırıldıktan sonra `tsc --noEmit` ve `eslint` sıfır
+      hata (bu turda tekrar doğrulandı); `grep -rn "useProjectFeatureList\|\.retry\b"
+      src/features/thread` tek üretim tüketicisinin (`ThreadScreen.tsx:42`) `retry`'ı hiç
+      destructure etmediğini, `grep -rln "useProjectFeatureList" tests/` sıfır eşleşme olduğunu
+      (davranışı koruyan ayrı bir test dosyası yok, dolayısıyla kaldırma hiçbir testi kırmadı)
+      doğruladı.
+- [x] Mutasyon turu: 5 düzeltmenin BEŞİ de kanıtlı — madde 1-3 commit `8a1b668` mesajında
+      (gevşetme mutasyonu → kırmızı → elle geri alma), madde 4 bu turda §4 yukarıda (iki ayrı
+      mutasyon: tam geri dönüş + tek nokta), madde 5 kod kaldırma olduğu için mutasyon yerine
+      grep+tsc+eslint ile "hiçbir yerden çağrılmıyor" kanıtı (bkz. §2 madde 5). Hiçbiri
+      `git checkout`/`restore` ile geri alınmadı; her seferinde `git diff --stat` temiz doğrulandı.
+- [x] `npm run test`: 2 kez koşuldu. 1. koşu ortamsal "Worker forks emitted error" (assert kırmızısı
+      SIFIR, 86/87 dosya, 1831/1845 test — dosya/test sayımı silent-skip guard tarafından
+      yakalandı) → CLAUDE.md kuralı gereği tekrar koşuldu → 2. koşu 86 passed/1 skipped (87),
+      1841 passed/4 skipped (1845), sıfır kırmızı. `npm run e2e` izole koşuldu: **55/55 yeşil**
+      (42.6s, tek worker). `npx tsc --noEmit`=0, `npx eslint .`=0,
+      `node .claude/hooks/_selftest.cjs`=**206/206**. Tur sonunda `tasklist | grep node` boş
+      (yetim süreç yok).
 
 ## 5. Kapsam dışı / bilinçli sınır
 

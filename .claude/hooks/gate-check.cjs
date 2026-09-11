@@ -3,9 +3,17 @@
 // dahil) taşır. Bunlar G2'nin "mimari onayı" kapsamına GİRMEZ — meşru bakım (hook `.cjs`'e
 // taşınması, kredi kapısı düzeltmesi gibi) G2 onayı olmadan da olur — ama G2.ok'a hiç bakmadan
 // "docs/" gibi tamamen serbest bırakılmaları da yanlıştı (bkz. docs/qa/G5-guvenlik-denetimi-
-// 2026-09-10.md K1). Bu yüzden ayrı, DANGER.ok/PUSH.ok ile aynı desende, tek kullanımlık bir
-// onay: docs/approvals/GUARD.ok. `.claude/agents/**` ve `.claude/agent-memory/**` güvenlik
-// sınırı değildir, serbest kalır.
+// 2026-09-10.md K1). Bu yüzden ayrı, DANGER.ok/PUSH.ok ile AYNI DESENDE ama TÜKETİM MODELİ
+// FARKLI bir onay: docs/approvals/GUARD.ok. `.claude/agents/**` ve `.claude/agent-memory/**`
+// güvenlik sınırı değildir, serbest kalır.
+//
+// B-3 KAPANIŞI (docs/qa/hook-borclari-contract.md, docs/blockers.md B-3): GUARD.ok ARTIK
+// "tek kullanımlık" DEĞİLDİR — DANGER.ok/PUSH.ok'tan FARKLI olarak zaman pencereli (bkz §2.2
+// yorumu, aşağıda `parseGuardDoc`): pencere boyunca kapsamdaki her dosyaya istenildiği kadar
+// yazılabilir, token bir YAZMADA tükenmez. Bu dosyada "tek kullanımlık" ifadesi yalnızca
+// DANGER.ok/PUSH.ok (block-dangerous.cjs) için doğrudur; GUARD.ok için kullanılırsa yanlış bir
+// zihinsel model üretir (gelecekteki bir değişiklik "zaten tek kullanımlık, tükeniyor" varsayımıyla
+// hatalı bir karar verebilir) — bu yüzden aşağıda GUARD.ok'u anan HİÇBİR yerde bu ifade geçmez.
 //
 // TARİHÇE (Y1 kapsam-sızıntısı ailesi, üç tur boyunca "metnin ŞEKLİ kapsamı belirliyor"
 // kusuruyla üç kez yenildi — sırasıyla: dosyanın tamamındaki backtick'li adlar → "## Kapsam"
@@ -267,6 +275,12 @@ const GUARD_FORMAT_HELP =
 // aksanlı-karakter saldırılarını karakter sınıfı düzeyinde eler.
 function normalizeScopeEntry(item) {
   if (typeof item !== 'string') return null;
+  // B-2 KAPANIŞI (docs/qa/hook-borclari-contract.md, QA P8): bu satır FAZLALIKTIR, borç DEĞİL.
+  // Aşağıdaki `/^\.claude\/hooks\/[\w-]+\.cjs$/i` regex'i ters bölü içeren HİÇBİR dizeyle
+  // (regex sabit `/` bekliyor, `\w` ters bölüyü kapsamıyor) zaten eşleşmez — bu `indexOf('\\')`
+  // kontrolü kaldırılsa bile aynı girdiler regex tarafından reddedilir (QA tur-4 taramasında
+  // tek nokta mutasyonu 0 kırmızı verdi, ama regex'in kendisi bağımsız olarak doğrulandı).
+  // Savunma-derinliği olarak KORUNUYOR (regex gelecekte değişirse ikinci bir engel kalsın diye).
   if (item.indexOf('\\') !== -1) return null; // ters bolu acikca reddedilir (regex zaten reddederdi)
   if (/^\.claude\/hooks\/[\w-]+\.cjs$/i.test(item)) return item.toLowerCase();
   if (/^\.claude\/settings\.json$/i.test(item)) return '.claude/settings.json';
@@ -291,6 +305,12 @@ function parseGuardDoc(guardPath) {
   // dizisi, bu dosya araçlar arasında taşınırken bir kez HAM bir NUL baytına dönüştü ve git
   // dosyayı ikili saymaya başladı — yani bir güvenlik hook'unun diff'i incelenemez hâle geldi.
   // Bu biçim aynı şeyi yapar ama kodda hiçbir kaçış dizisi barındırmaz.
+  // B-2 KAPANIŞI (QA P2): bu kontrol de FAZLALIKTIR, borç DEĞİL. Ham (kaçışsız) bir NUL baytı
+  // içeren bir metin zaten `JSON.parse` tarafından reddedilir (V8: "Unexpected token" ya da
+  // "Bad control character in string literal" — NUL bir JSON dize DEĞERİNİN içinde kaçışsız
+  // bir kontrol karakteridir, RFC 8259 bunu yasaklar). QA tur-4 taramasında bu satır kaldırılınca
+  // 0 kırmızı ölçüldü. Savunma-derinliği olarak KORUNUYOR: hatayı `JSON.parse`'ın jenerik hata
+  // mesajından ÖNCE, daha OKUNABİLİR bir tanı ile yakalar (kullanıcı deneyimi, güvenlik değil).
   if (text.indexOf(String.fromCharCode(0)) !== -1) {
     return { ok: false, error: 'dosya metninde ham NUL bayt var' };
   }
@@ -354,6 +374,19 @@ function parseGuardDoc(guardPath) {
     }
   }
 
+  // B-2 KAPANIŞI (docs/qa/hook-borclari-contract.md, QA P6 — YÜK TAŞIYAN, ÇİTLİ hâle getirildi):
+  // bu kontrol OLMADAN `doc.scope` `undefined` kalabilir (ör. "scope" alanı hiç yoksa — kalan
+  // izin verilen alanlar `created_at`/`reason`/`approved_by`/`valid_minutes` tek başlarına
+  // ALLOWED_ROOT_KEYS'i geçer, P5'e HİÇ TAKILMAZ). Bu durumda aşağıdaki `for (const item of
+  // doc.scope)` `TypeError: doc.scope is not iterable` fırlatır — YAKALANMAZ, süreç Node'un
+  // varsayılanıyla **exit 1** ile çöker. Claude Code YALNIZCA exit 2'yi engelleme sayar (bu
+  // deponun kayıtlı dersi: hook'lar `.js` uzantısı yüzünden iki feature boyunca aynı sınıftan
+  // ölü koşmuştu) — yani bu kontrolün bozulma biçimi fail-closed DEĞİL, **fail-open**'dır. QA
+  // tur-4 taramasında bu satır kaldırılınca ölçülen: "scope" alanı gerçekten hiç olmayan bir
+  // belge (yalnızca izin verilen BAŞKA alanlarla) ENGELLEMİYORDU (exit 1 → sessiz izin). Çit:
+  // _selftest.cjs "(D-NO-SCOPE-FIELD)" — YALNIZCA izin verilen kök alanları kullanan (böylece
+  // P5'e HİÇ TAKILMAYAN), "scope" alanı gerçekten eksik bir belge. Mutasyon kanıtı (bu satırın
+  // kaldırılması) docs/qa/hook-borclari-contract.md'de kayıtlıdır.
   if (!Array.isArray(doc.scope) || doc.scope.length === 0) {
     return { ok: false, error: '"scope" alani yok, dizi degil, ya da bos' };
   }
@@ -366,6 +399,16 @@ function parseGuardDoc(guardPath) {
     scope.add(norm);
   }
 
+  // B-2 KAPANIŞI (QA P9 — KISMEN FAZLALIK): `created_at` bir dize DEĞİLSE (ör. sayı) bu kontrol
+  // olmadan da çoğu durumda `Date.parse(doc.created_at)` (aşağıda) `NaN` üretip P10'a takılır —
+  // ör. `created_at: 20260910` (sayı) → `String(20260910)` → `Date.parse("20260910")` → NaN.
+  // AYIRT EDİCİ dar kenar durum (QA'nın tur-4 notu): `created_at: 2026` (yalnızca 4 haneli bir
+  // SAYI) → `Date.parse("2026")` YIL olarak GEÇERLİ bir tarihe ayrışır (2026-01-01) — bu durumda
+  // P10 YAKALAMAZ. Ama sonuç yine fail-closed KALIR: 2026-01-01, "şimdi"nin (2026 sonrası
+  // herhangi bir ay) ÇOK gerisinde kalacağı için P14 (süre dolmuş kontrolü) devreye girer ve
+  // belge yine reddedilir (yalnızca farklı bir hata koduyla: `expired`, `error` değil). Yani bu
+  // kontrol kaldırılsa bile SIZINTI YOK — düşük risk borç olarak kaydedildi, çit:
+  // _selftest.cjs "(D-CREATED-AT-NUMERIC-YEAR)".
   if (typeof doc.created_at !== 'string') {
     return { ok: false, error: '"created_at" alani yok ya da dize degil' };
   }
@@ -470,10 +513,21 @@ readInput((j) => {
 
   // Harf duyarsız: NTFS büyük/küçük harf duyarsızdır, regex'in duyarlı olması
   // ".CLAUDE/HOOKS/..." gibi bir varyantla kapıyı tamamen atlatıyordu.
+  // B-2 KAPANIŞI (QA P16 — FAZLALIK): `/i` bayrağı burada tek başına yük taşımaz, çünkü `rel`
+  // zaten `resolveCanonicalRel()`'in ürünüdür ve `fs.realpathSync.native` Windows'ta dosya
+  // sisteminin KENDİ kanonik (genelde küçük) harflerine çevirir — yani `rel` bu noktaya
+  // ULAŞMADAN önce zaten normalize olmuştur. Savunma-derinliği olarak KORUNUYOR (realpath
+  // çözümü bir gün değişirse/atlanırsa ikinci bir engel kalsın diye).
   const isGuarded = /^\.claude\/hooks\//i.test(rel) || /^\.claude\/settings\.json$/i.test(rel);
   if (isGuarded) {
+    // B-2 KAPANIŞI (QA P17 — FAZLALIK): bu `exists()` kontrolü kaldırılsa bile aşağıdaki
+    // `parseGuardDoc(GUARD_OK)` kendi `fs.readFileSync` çağrısında dosya yoksa
+    // `{ ok:false, error:'dosya okunamadi: ...' }` döner ve akış `if (!parsed.ok)` dalına düşüp
+    // yine ENGELLER (fail-closed) — yalnızca hata mesajı daha az spesifik olurdu ("dosya
+    // okunamadi: ENOENT" vs "GUARD.ok gerekli"). Savunma-derinliği + daha okunabilir hata mesajı
+    // için KORUNUYOR, güvenlik açığı değildir.
     if (!exists(GUARD_OK)) {
-      block(`Engellendi: "${rel}" kendi güvenlik korumanızı değiştiriyor — docs/approvals/GUARD.ok (tek kullanımlık, JSON, zaman pencereli) gerekli. Kullanıcıya AskUserQuestion ile sor; onaylarsa GUARD.ok yaz ve komutu tekrar dene.\n\n${GUARD_FORMAT_HELP}`);
+      block(`Engellendi: "${rel}" kendi güvenlik korumanızı değiştiriyor — docs/approvals/GUARD.ok (JSON, zaman pencereli — TEK KULLANIMLIK DEĞİL) gerekli. Kullanıcıya AskUserQuestion ile sor; onaylarsa GUARD.ok yaz ve komutu tekrar dene.\n\n${GUARD_FORMAT_HELP}`);
     }
     const parsed = parseGuardDoc(GUARD_OK);
     if (parsed.expired) {

@@ -74,6 +74,7 @@ const RD = 'r' + 'd';
 const RMDIR = 'rm' + 'dir';
 const RI = 'r' + 'i';
 const ML = 'mk' + 'link';
+const UNLINK = 'un' + 'link';
 const FLAG_S = '/' + 's';
 const FLAG_Q = '/' + 'q';
 const FLAG_F = '/' + 'f';
@@ -116,7 +117,11 @@ function writeGuardRaw(content) {
 
 // --- block-dangerous.cjs vakaları -------------------------------------------------------
 // [komut, beklenen çıkış kodu, açıklama, hazırlık?, sonrası kontrol?]
-// DEĞİŞMEDİ: block-dangerous.cjs bu turda hiç dokunulmadı.
+// B-6/Y2/Y4 KAPANIŞI (docs/qa/hook-borclari-contract.md): block-dangerous.cjs bu turda
+// SEGMENTASYON mekanizmasıyla değişti (bkz dosya başı yorumu). Aşağıdaki vakaların BÜYÜK
+// ÇOĞUNLUĞU DEĞİŞMEDİ (segmentasyon, AYNI segment içindeki fiil+hedef kombinasyonlarını asla
+// etkilemez) — yalnızca dosya sonundaki "B-6/Y4 SEGMENTASYON" ve "Y4 HOOKS/SETTINGS" blokları
+// YENİ.
 const dangerCases = [
   [`${G} commit -q -F -`, 0, 'commit -F (mesaj dosyadan) izin verilmeli'],
   [`${G} commit -m mesaj`, 0, 'normal commit'],
@@ -219,6 +224,89 @@ const dangerCases = [
   [`cat docs/approvals/G5.ok 2>/dev/null`, 0, 'yanlis pozitif olmamali: docs/approvals okuma + ILGISIZ stderr yonlendirmesi'],
   [`ls -la docs/approvals/ 2>&1`, 0, 'yanlis pozitif olmamali: ls + 2>&1 (ayni sinif)'],
   [`type docs\\approvals\\GUARD.ok`, 0, 'yanlis pozitif olmamali: Windows type (yonlendirmesiz okuma)'],
+
+  // --- B-6/Y2 SEGMENTASYON: bugün kilitlenen dört gerçek komut sınıfının birebir karşılığı ---
+  // (docs/blockers.md B-6/Y2, docs/qa/hook-borclari-contract.md). Her biri: ÖNCE (mutasyonsuz,
+  // segmentasyon-öncesi blob mantığıyla) YANLIŞ POZİTİF üretirdi (iki bağımsız segmentteki
+  // ilgisiz sinyaller birleşirdi); ARTIK (segmentasyonla) geçer. Her birinin bir İKİZ POZİTİF
+  // KONTROLÜ var: AYNI aile, ama yazma fiili GERÇEKTEN korumalı yola uygulanıyor -> hâlâ engelli.
+
+  // (1) Kopyalama + zincirin sonundaki ilgisiz OKUMA (docs/blockers.md Y2 örnek a).
+  [`cp scratchpad/a.txt scratchpad/b.txt && cat docs/approvals/G5.ok`, 0, '(SEG-1) kopyalama + ilgisiz okuma zinciri -> artik gecer (segmentasyon)'],
+  [`cp scratchpad/a.txt docs/approvals/G5.ok`, 2, '(SEG-1-TWIN) ayni aile, TEK segmentte gercek yazma -> hala engelli'],
+
+  // (2) Salt-okunur sha256sum + zincirdeki ilgisiz yazma (docs/blockers.md B-6 "sonuncusunda
+  // salt-okunur bir listeleme cagrisi").
+  [`sha256sum docs/approvals/G2.ok && mv scratchpad/x.txt scratchpad/y.txt`, 0, '(SEG-2) salt-okunur sha256sum + ilgisiz mv -> artik gecer'],
+  [`sha256sum docs/approvals/G2.ok && mv docs/approvals/G2.ok docs/approvals/G2.ok.bak`, 2, '(SEG-2-TWIN) ayni aile, ikinci segmentte GERCEK approvals yazma -> hala engelli'],
+
+  // (3) Scratchpad'de sed -i + zincirdeki commit, commit mesaji korunan yolu ANIYOR ama
+  // YAZMIYOR (docs/blockers.md Y2 ornek b, "commit mesaji ... fiilin adini icerdigi icin").
+  [`sed -i "s/a/b/" scratchpad/notes.txt && git commit -am "fix: docs/approvals GUARD.ok scope wording"`, 0, '(SEG-3) ilgisiz sed -i + docs/approvals ANAN commit mesaji -> artik gecer'],
+  [`sed -i "s/a/b/" docs/approvals/G2.ok`, 2, '(SEG-3-TWIN) ayni aile, TEK segmentte gercek sed -i yazma -> hala engelli'],
+
+  // (4) Kendini anlatan not (printf, docs/approvals'i YALNIZCA yol olarak anar, fiil kelimesi
+  // TASIMAZ) + zincirdeki ilgisiz cp (docs/blockers.md B-6 "o olayi anlatan duzeltme metninin
+  // kendisi"). NOT: notun kendisi bilerek bir yazma fiili (cp/mv/tee/...) İÇERMEZ — aksi hâlde
+  // fiil+yol AYNI segmentte (printf argümanı) olur ve segmentasyon (doğru şekilde) bunu YİNE
+  // engeller (bu, aşağıdaki RETREAT-HEREDOC vakasının gösterdiği aynı, düzeltilemeyen sınıftır).
+  [`printf "not: bir onceki incelemede docs/approvals referansi vardi\\n" >> scratchpad/notes.txt && cp scratchpad/a.txt scratchpad/b.txt`, 0, '(SEG-4) kendini anlatan not (fiil kelimesi yok) + ilgisiz cp -> artik gecer'],
+  [`printf "x" >> docs/approvals/G2.ok`, 2, '(SEG-4-TWIN) ayni aile, yonlendirme hedefi GERCEKTEN docs/approvals -> hala engelli'],
+
+  // Bonus (ayni kok neden, gitForce icin): `[^\\n]*` zincir sinirini tanimadigi icin
+  // "git log && npm run build --force" gibi bir zincirde ilgisiz bir --force bayragi git'e
+  // ait sanilip yanlislikla engelleniyordu.
+  [`git log --oneline && npm run build --force`, 0, '(SEG-5 bonus) ilgisiz --force bayragi baska segmentte -> artik gecer (gitForce zincir sinirini asmiyor)'],
+  [`git commit --force -m x`, 2, '(SEG-5-TWIN bonus) ayni aile, --force GERCEKTEN git komutuyla AYNI segmentte -> hala engelli'],
+
+  // --- Segmentasyon GERİ ÇEKİLMESİ: tırnak/heredoc/$() içeren komutlar bugünkü (kısıtlayıcı)
+  // blob davranışına düşer — kasıtlı, docs/qa/hook-borclari-contract.md'de kabul edilmiş sınır.
+  [
+    `cat >> scratchpad/notes.txt <<'EOF'\nnot: cp ve docs/approvals ayni satirda\nEOF`, 2,
+    '(RETREAT-HEREDOC) heredoc govdesi mention+fiil tasiyor -> segmentasyona GIRILMEZ, blob gibi engellenir (kabul edilmis asiri engelleme)',
+  ],
+  [
+    `echo $(cat docs/approvals/G2.ok) && cp scratchpad/a.txt scratchpad/b.txt`, 2,
+    '(RETREAT-SUBSHELL) $(...) komut ikamesi -> segmentasyona GIRILMEZ, blob gibi engellenir (kabul edilmis asiri engelleme)',
+  ],
+  [
+    `cp scratchpad/a.txt scratchpad/b.txt && git commit -m "note with && inside and docs/approvals mention"`, 0,
+    '(QUOTE-AWARE) tirnak icindeki sahte "&&" gercek ayirac SAYILMAZ, iki GERCEK segment dogru bulunur -> gecer',
+  ],
+
+  // --- Y4 KAPANIŞI: .claude/hooks/** ve .claude/settings.json artik Katman B'de de korunuyor.
+  // Okuma (cat/ls/git add/git commit/git diff) HICBIR ZAMAN engellenmez; yazma/silme engellenir.
+  [`cp scratchpad/evil.cjs .claude/hooks/gate-check.cjs`, 2, '(Y4-1) kabuktan hook dosyasina cp ile yazma -> engellenir'],
+  [`mv scratchpad/evil.cjs .claude/settings.json`, 2, '(Y4-2) kabuktan settings.json uzerine mv ile yazma -> engellenir'],
+  [`rd /s /q .claude\\hooks`, 2, '(Y4-3) kabuktan hooks dizinini silme (rd /s /q) -> engellenir (danger deseni de ayrica yakalar)'],
+  [`tee .claude/hooks/gate-check.cjs`, 2, '(Y4-4) tee ile hook dosyasina yazma -> engellenir'],
+  [`node -e "require('fs').writeFileSync('.claude/hooks/gate-check.cjs','x')"`, 2, '(Y4-5) node -e ile hook dosyasina yazma -> engellenir'],
+  [`cat .claude/hooks/gate-check.cjs`, 0, '(Y4-READ-1) okuma (cat) engellenmemeli'],
+  [`ls .claude/hooks`, 0, '(Y4-READ-2) okuma (ls) engellenmemeli'],
+  [`git add .claude/hooks/gate-check.cjs`, 0, '(Y4-READ-3) git add engellenmemeli'],
+  [`git commit -m "update hook docs reference"`, 0, '(Y4-READ-4) git commit (hooks disi mesaj) engellenmemeli'],
+  [`git diff .claude/hooks/gate-check.cjs`, 0, '(Y4-READ-5) git diff engellenmemeli'],
+  [
+    `git add .claude/hooks/gate-check.cjs && git commit -F scratchpad/msg.txt`, 0,
+    '(Y4-READ-6) zincirlenmis git add + commit -F, ikisi de okuma/mesaj-dosyasi -> engellenmemeli',
+  ],
+  [`cp scratchpad/a.txt scratchpad/b.txt && cat .claude/hooks/gate-check.cjs`, 0, '(Y4-SEG-1) ilgisiz cp + hook okumasi zinciri -> engellenmemeli (segmentasyon)'],
+
+  // --- RM KAPANIŞI (docs/qa/hook-borclari-contract.md §8-ek, CEO'nun probe-segment.mjs E1/E2
+  // sondasi): bayraksiz `rm`/`unlink` artik del/erase/rd/rmdir/ri ile AYNI muameleyi goruyor —
+  // hem docs/approvals/** hem .claude/hooks/**+.claude/settings.json icin.
+  [`${RM} .claude/hooks/gate-check.cjs`, 2, '(RM-1) bayraksiz rm ile hook dosyasi silme -> engellenir (Y4 ailesi)'],
+  [`${RM} docs/approvals/GUARD.ok`, 2, '(RM-2) bayraksiz rm ile onay dosyasi silme -> engellenir'],
+  [`${RM} .claude/settings.json`, 2, '(RM-3) bayraksiz rm ile settings.json silme -> engellenir'],
+  [`${G} log --oneline && ${RM} docs/approvals/GUARD.ok`, 2, '(RM-4) segment icinde rm ile korumali yol silme -> engellenir (segmentasyon atlatma olmamali)'],
+  [`${RM} build/tmp.txt`, 0, '(RM-5) rm ile korumasiz yol -> yanlis pozitif olmamali'],
+  [`${RM} build/tmp.txt && ls docs/approvals`, 0, '(RM-6) korumasiz rm + ilgisiz okuma zinciri -> gecmeli (segmentasyon, fiil+hedef ayri segmentte)'],
+  [`npm run confirm-something`, 0, '(RM-7) alt dize yanlis pozitifi: "confirm-something" icindeki "rm" kelime siniri gecmiyor -> gecmeli'],
+  [`${UNLINK} .claude/hooks/gate-check.cjs`, 2, '(UNLINK-1) bayraksiz unlink ile hook dosyasi silme -> engellenir'],
+  [`${UNLINK} docs/approvals/GUARD.ok`, 2, '(UNLINK-2) bayraksiz unlink ile onay dosyasi silme -> engellenir'],
+  [`${UNLINK} build/tmp.txt`, 0, '(UNLINK-3) unlink ile korumasiz yol -> yanlis pozitif olmamali'],
+  [`${G} rm docs/approvals/GUARD.ok`, 2, '(GITRM-1) git rm ile onay dosyasi silme -> engellenir (\\brm\\b "git" onekinden bagimsiz eslesir, ek desen gerekmedi)'],
+  [`${G} rm build/tmp.txt`, 0, '(GITRM-2) git rm ile korumasiz yol -> yanlis pozitif olmamali'],
 ];
 
 // --- gate-check.cjs vakaları (K1) --------------------------------------------------------
@@ -389,12 +477,48 @@ writeGuardScope(['selftest-y1c.cjs'], { reason: 'Bu KAPSAM DISI birakildi: .clau
 }
 rm(GUARD_OK); rm(GUARD_STATE);
 
-// (D-NO-SCOPE-FIELD, eski y1-d): "scope" alani hic yoksa fail-closed.
+// (D-NO-SCOPE-FIELD, eski y1-d): "scope" alani hic yoksa fail-closed. NOT: "note" burada
+// ALLOWED_ROOT_KEYS'te OLMAYAN bir alan olduğu için bu vaka aslında P5'e (bilinmeyen kök alan)
+// takılıyor, P6'ya (scope dizi/boş kontrolü) HİÇ ULAŞMIYOR — QA'nın tur-4 taramasının bulduğu
+// tam bu ayrımdı (bkz D-NO-SCOPE-FIELD-REAL aşağıda, P6'nın GERÇEK/tek başına testi). Bu vaka
+// KENDİ BAŞINA hâlâ geçerli bir regresyon testi (P5'in de fail-closed olduğunu doğrular),
+// bilerek KORUNUYOR ama ismi P6 iddiası taşımayacak şekilde netleştirildi.
 writeGuardRaw(JSON.stringify({ note: 'onay metni, scope alani yok', created_at: nowIso() }));
 {
   const code = callGate('.claude/hooks/selftest-y1e.cjs');
   const untouched = fs.existsSync(GUARD_OK);
-  fail += reportScope('(D-NO-SCOPE-FIELD) "scope" alani hic yoksa fail-closed (reddedilir, dosya silinmez)', code === 2 && untouched);
+  fail += reportScope('(D-NO-SCOPE-FIELD) "scope" alani hic yoksa fail-closed (bilinmeyen "note" alani -> P5 devreye girer)', code === 2 && untouched);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (D-NO-SCOPE-FIELD-REAL, B-2 KAPANIŞI, P6'nın GERÇEK/tek başına testi — docs/qa/
+// hook-borclari-contract.md): YALNIZCA izin verilen kök alanlar (created_at, reason) kullanılır,
+// "scope" GERÇEKTEN hiç yok — böylece P5 (bilinmeyen kök alan) hiç devreye girmez ve akış P6'ya
+// (`!Array.isArray(doc.scope) || doc.scope.length === 0`) ulaşır. QA'nın ölçtüğü mutasyon (bu
+// kontrolün kaldırılması): `for (const item of doc.scope)` `doc.scope` `undefined` olduğu için
+// `TypeError: doc.scope is not iterable` fırlatır, YAKALANMAZ, süreç Node varsayılanıyla exit 1
+// verir — Claude Code SADECE exit 2'yi engelleme saydığı için bu FAIL-OPEN'dır (sessiz izin).
+writeGuardRaw(JSON.stringify({ reason: 'onay metni, "scope" alani GERCEKTEN yok (P5 devreye girmez)', created_at: nowIso() }));
+{
+  const code = callGate('.claude/hooks/selftest-p6-real.cjs');
+  const untouched = fs.existsSync(GUARD_OK);
+  fail += reportScope('(D-NO-SCOPE-FIELD-REAL / P6) yalnizca izin verilen alanlar + "scope" GERCEKTEN yok -> fail-closed (exit 2, FAIL-OPEN degil)', code === 2 && untouched);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (D-CREATED-AT-NUMERIC-YEAR, B-2 KAPANIŞI, P9 belgelemesi — kısmen fazlalık): "created_at"
+// SAYI olarak 4 haneli bir yıl (2026) -> P9 (`typeof !== 'string'`) bunu YAKALAR (asıl kontrol).
+// QA'nın notu: bu SPESİFİK sayı ("2026" gibi 4 haneli) P9 kaldırılsa bile SIZINTI ÜRETMEZ, çünkü
+// `Date.parse(2026)` (örtük ToString ile "2026") GEÇERLİ bir tarihe (2026-01-01) ayrışır ve bu
+// tarih "şimdi"nin çok gerisinde kaldığı için P14 (süre dolmuş kontrolü) devreye girip belgeyi
+// yine reddeder — yalnızca "error" yerine "expired" olarak. Bu test P9'un BUGÜN doğru çalıştığını
+// (fail-closed) doğrular; P9 kaldırılırsa AYNI SONUÇ (fail-closed, ama P14 üzerinden) beklenir —
+// bu yüzden P9 "kısmen fazlalık" sayılır (bkz gate-check.cjs P9 yorumu).
+writeGuardRaw(JSON.stringify({ scope: ['.claude/hooks/selftest-p9-numeric.cjs'], created_at: 2026 }));
+{
+  const code = callGate('.claude/hooks/selftest-p9-numeric.cjs');
+  const untouched = fs.existsSync(GUARD_OK);
+  fail += reportScope('(D-CREATED-AT-NUMERIC-YEAR / P9) created_at sayisal 4 haneli yil -> fail-closed (P9 dogrudan yakalar)', code === 2 && untouched);
 }
 rm(GUARD_OK); rm(GUARD_STATE);
 
@@ -849,6 +973,49 @@ rm(GUARD_OK); rm(GUARD_STATE);
   const untouched = fs.existsSync(GUARD_OK);
   fail += reportScope(
     '(D-SCANNER-DEPTH-EXCEEDED) 400 seviye ic ice "reason" (bayt sinirinin COK altinda, ~800B) -> derinlik siniri KENDI BASINA tetiklenir, fail-closed',
+    code === 2 && untouched,
+  );
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (D-SCANNER-DEPTH-OBJECT-*, B-5 KAPANIŞI — docs/blockers.md B-5, docs/qa/hook-borclari-
+// contract.md): yukarıdaki D-SCANNER-DEPTH-* vakalarının HİÇBİRİ `parseObject`'in KENDİ
+// `depth + 1` artışını ölçmüyordu — hepsi DİZİ (`nestedArrayJson`) iç içe geçmesi kullanıyordu.
+// `parseObject`'teki `depth + 1` → `depth` mutasyonu (yalnızca OBJECT dalı, ARRAY dalı
+// DOKUNULMAMIŞ) bu yüzden 165/165 self-test'i YEŞİL bırakıyordu — obje dalının kendi artışı
+// ÇİTSİZDİ (sömürülebilirlik ayrı ölçüldü: bayt sınırı içinde en derin obje 1611 seviye,
+// RangeError eşiği ~5074, pay 3,1x — SIZINTI YOK, ama ölçülmüyordu). Aşağıdaki iki vaka SADECE
+// nesne iç içe geçmesi (`nestedObjectJson`) kullanır; DİZİ hiç kullanılmaz, yani obje dalının
+// KENDİ derinlik artışı tek başına test edilir.
+function nestedObjectJson(depth) {
+  let s = '0';
+  for (let i = 0; i < depth; i++) s = '{"a":' + s + '}';
+  return s;
+}
+
+// (D-SCANNER-DEPTH-OBJECT-OK, negatif kontrol): 50 seviye ic ice OBJE (dizi degil) tarayiciyi
+// hic zorlamiyor, belge normal kabul edilir (asiri engelleme yok).
+writeGuardRaw('{"scope":[".claude/hooks/depth-obj-ok.cjs"],"created_at":"' + nowIso() + '","reason":' + nestedObjectJson(50) + '}');
+{
+  const code = callGate('.claude/hooks/depth-obj-ok.cjs');
+  const remains = fs.existsSync(GUARD_OK);
+  fail += reportScope('(D-SCANNER-DEPTH-OBJECT-OK) 50 seviye ic ice OBJE "reason" -> siniri asilmaz, kabul edilir (asiri engelleme yok)', code === 0 && remains);
+}
+rm(GUARD_OK); rm(GUARD_STATE);
+
+// (D-SCANNER-DEPTH-OBJECT-EXCEEDED, B-5 ZORUNLU KANIT): 400 seviye ic ice OBJE (~800B, bayt
+// sinirinin COK altinda) -> derinlik siniri KENDI BASINA (obje dalinin artisiyla) tetiklenir,
+// fail-closed. `parseObject`'teki `depth + 1` -> `depth` mutasyonuyla bu test TEK BASINA
+// KIRMIZI verir (mutasyon kaniti docs/qa/hook-borclari-contract.md'de kayitlidir) — cunku obje
+// dali artik derinligi hic artirmaz, 400 seviye ic ice obje MAX_SCAN_DEPTH'i (200) hicbir zaman
+// asmaz, tarayici basariyla tamamlar ve belge KABUL EDILIR (code 0, beklenen 2 degil).
+{
+  const raw = '{"scope":[".claude/hooks/depth-obj-exceeded.cjs"],"created_at":"' + nowIso() + '","reason":' + nestedObjectJson(400) + '}';
+  writeGuardRaw(raw);
+  const code = callGate('.claude/hooks/depth-obj-exceeded.cjs');
+  const untouched = fs.existsSync(GUARD_OK);
+  fail += reportScope(
+    '(D-SCANNER-DEPTH-OBJECT-EXCEEDED / B-5) 400 seviye ic ice OBJE (bayt sinirinin COK altinda) -> obje dalinin KENDI derinlik artisi fail-closed tetikler',
     code === 2 && untouched,
   );
 }

@@ -1391,3 +1391,54 @@ yalnızca artakalan.
 geçilirse taban oran (%25) yeniden ölçülmelidir — belki sürüm yükseltmesi kendiliğinden çözer.
 Bu, "çözülene kadar uğraş" değil **"ölçülmüş oranla yaşa"** kararıdır; gerekçe: dört açıklama
 elendi, beşincisi için elde veri yok ve her tur ~15 koşu maliyetinde.
+
+---
+
+## 2026-09-11 — CEO — GRUP 1 KAPANDI: beş hook borcu (B-2, B-3, B-5, B-6/Y2, Y4)
+
+Commit `1fbb1eb`. Sözleşme: `docs/qa/hook-borclari-contract.md` (`status: qa`, karar qa-evaluator'ın).
+Beşi de **diskte doğrulandı** (açık oldukları kanıtlandı, "kayıt yanlış" çıkan madde yok).
+
+**B-6/Y2 — KAPANDI.** Kök neden: komut taraması tüm metni **tek blob** sayıyordu, sınır yalnızca
+fiziksel satır sonuydu; kabuk ayracı sınır değildi. Çözüm: **tırnak-farkında segmentasyon** —
+komut `&&`/`||`/`|`/`;`/satır sonunda bölünür, her segment **aynı kurallarla ayrı** değerlendirilir.
+Güvenlik şartı: ayırıcı güvenle bulunamıyorsa (heredoc, `$(...)`, satır devamı, sonlandırılmamış
+tırnak) segmentasyona **hiç girilmez** — bugünkü kısıtlayıcı blob davranışı. Belirsizlik daima
+daha kısıtlayıcı tarafa çözülür, yani bu değişiklik yalnızca yanlış pozitifi azaltabilir.
+
+**Y4 — KAPANDI.** Katman B artık `docs/approvals/**` yanında `.claude/hooks/**` ve
+`.claude/settings.json`'ı da koruyor (okuma serbest, yazma/silme engelli).
+**Ek olarak kapatılan boşluk:** bayraksız `rm` ve `unlink` silme fiilleri listede **yoktu**
+(Windows karşılıkları `del`/`erase`/`rd`/`rmdir`/`ri` vardı) — tutarsızlık, tasarım sınırı değil.
+Developer bunu "kapsam dışı, önceden var olan boşluk" diye bildirmişti; **CEO'nun bağımsız sondası
+kabul etmedi** ve geri gönderdi. Gerekçe ölçüldü: bu ortamın varsayılan kabuğu POSIX (Git Bash),
+yani `rm` **birincil** silme fiili; ve `gate-check.cjs` silinirse `settings.json` onu çağırmaya
+devam eder, `node` **çıkış kodu 1** verir, Claude Code yalnızca **çıkış kodu 2**'yi engelleme sayar
+→ kapı **sessizce** ölür. Bu, deponun en pahalı hata sınıfı.
+
+**B-2 — KAPANDI.** QA'nın 17 noktalık taramasındaki 6 çitsiz noktadan yük taşıyan **P6**'ya gerçek
+bir çit eklendi. Önemli bulgu: mevcut `D-NO-SCOPE-FIELD` testi yanlış alan kullandığı için **P5'e
+takılıyor, P6'ya hiç ulaşmıyordu** — yani "yanlış şeyi ölçen test" sınıfının bir örneği daha.
+Kalan 5 nokta **fazlalık** olarak doğrulandı ve **neden fazlalık oldukları koda yorum olarak**
+yazıldı (gelecekte biri "çitsiz" diye yeniden açmasın).
+
+**B-5 — KAPANDI.** Derinlik sayacının **obje** dalı çitsizdi (tüm mevcut vakalar dizi kullanıyordu).
+Yalnızca nesne iç içe geçmesi kullanan iki vaka eklendi.
+
+**B-3 — KAPANDI.** "Tek kullanımlık" ifadesi `GUARD.ok` için artık yanlış (tüketim zaman pencereli);
+`gate-check.cjs` ve `docs/approvals/README.md`'de düzeltildi. `DANGER.ok`/`PUSH.ok` **gerçekten**
+tek kullanımlık olduğu için onların ifadelerine dokunulmadı.
+
+**Ölçüm:** self-test **165 → 206**, hepsi yeşil · CEO'nun üç bağımsız sondası: segmentasyon/Y4
+**24/24**, JSON kapısı **14/14**, M1/M2 **9/9** · `tsc`=0, `eslint`=0 · üç dosya da teslimatla
+**birebir**, ham NUL yok · gerçek `docs/approvals/*` dosyaları değişmedi.
+
+**Kurulumdan önce doğrulama bugün ikinci kez işe yaradı** (ilki: JSON'da yinelenen anahtar açığı).
+Bu artık `CLAUDE.md`'de kural.
+
+### Bu turdan doğan yeni, bilinen davranış (borç değil, kabul edilmiş sınır)
+Satır içi betikler (`node -e`, `python -c`) korumalı bir yolu **anıyorsa** — salt okuma olsa bile —
+engellenir. Betiğin gerçekten yazıp yazmadığı metinden güvenilir anlaşılamaz (obfuscation), bu
+yüzden kasıtlı olarak geniş. **Pratik sonuç:** böyle bir teşhis komutu gerekirse betiği bir `.mjs`
+dosyasına yazıp `node dosya.mjs` ile çalıştır — komut satırı taranır, betik içeriği taranmaz.
+Bu kural kurulumdan hemen sonra CEO'nun kendi salt-okunur komutunu engelleyerek doğrulandı.

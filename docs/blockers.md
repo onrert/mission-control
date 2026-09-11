@@ -1556,3 +1556,46 @@ hata" kuralı artık güvenilir.
   — ikisi de sohbet özelliğinde, eşikleri kayıtlı.
 - **F-004** `install-hook` AC5 doğrulaması — kullanıcı etkileşimi gerektiriyor.
 Bunlar **doğrulanmadı**; G6 kararından önce diskte kontrol edilmeli (bu depoda kayıtlar eskiyor).
+
+---
+
+## 2026-09-11 — CEO — KALAN ÜÇ MADDENİN DENETİMİ (salt-okunur, dosya:satır kanıtlı)
+
+G6 öncesi son denetim. Üçü de diskte doğrulandı; kayda güvenilmedi (bu depoda kayıtlar iki kez
+eskimiş çıktı).
+
+**F-004 AC5 — KAPANDI: borç değil, YANLIŞ TEŞHİS.**
+AC5 = *"gerçek bir Claude Code oturumunda `install-hook`'u çalıştır ve bir olayın panelde
+göründüğünü gör."* Bu, tasarımı gereği **elle yapılan bir kullanıcı/CEO adımıdır**, otomatik test
+edilebilir bir şey değil (gerçek bir CLI oturumu gerektirir) — ve sözleşmede zaten öyle öngörülmüş
+(`docs/qa/F-004-contract.md:59-60`, §5 satır 482). AC1-AC4 testleri mevcut ve yeşil
+(`tests/scripts/install-hook.test.ts:87-235`). Blocker kaydındaki "classifier reddi" notu teknik
+bir ortam kısıtıydı, F-004'ün bir kusuru değil. **Madde borç listesinden düşürüldü**; kalan tek şey
+kullanıcının uygun bir zamanda bunu bir kez elle denemesi (bloklayıcı değil).
+
+**Ö6 — AÇIK, eşiğiyle taşınıyor (değişiklik yok).**
+Kanıt: `src/features/chat/server/session.ts:385-394` her `content_block_delta`'da biriken metni
+`historyLog.append()` ile yazıyor; `history-log.ts:88-89` `appendFile` kullanıyor. Ölçülen: 6K
+karakterlik bir cevap → **302 satır / ~956KB** (≈159× amplifikasyon). Disk yazması append olduğu
+için I/O maliyeti düşük, ama **bellekteki `entries` sınırsız birikiyor** ve üst sınır/döngüsel
+tampon yok. **Eşik (ADR-014, değişmedi):** günlük 10MB'ı aşarsa ya da sunucu açılış gecikmesi
+gözle görülür hâle gelirse yeniden ele alınır.
+
+**Ö7 — AÇIK, "bilinçli sınırlama" etiketli ama ürün vaadine dokunuyor.**
+Kanıt: `session.ts:307-314` `kind:'tool'` girdilerini **diske kalıcı yazıyor**;
+`useChatSession.ts:605` istemcide `filter((e) => e.kind === 'text' || e.kind === 'error')` ile
+**eliyor**. Yani **veri var, gösterilmiyor**. Tur içinde canlı SSE ile görünüyor
+(`onChatToolEvent`), ama **sayfa yenilendikten sonra kayboluyor** (~3-5 satır).
+`ADR-014` madde 5'te bilinçli sınırlama olarak kayıtlı.
+
+⚠ **CEO notu:** bu madde teknik olarak küçük ama **panelin var olma sebebine** değiyor —
+kullanıcının F-012'yi istemesinin gerekçesi *"alt agent'lar çalışırken ne yaptıklarını görmek"*ti
+(`docs/00-idea.md` kapsam değişikliği notu). Bu deponun kayıtlı dersi: *"bir feature'ın var olma
+sebebi, en az test edilen şeydir."* Sunucu tarafı zaten doğru çalışıyor; eksik olan tek şey
+istemcinin bu satırları render etmesi. **Eşik güncellendi:** sohbet ekranına dokunan **bir sonraki
+tur** — ya da kullanıcı "yenileyince agent satırları kayboluyor" derse **hemen**.
+
+### G6 öncesi son durum
+Kapatılmayan tek maddeler: **B-4 Sınıf A** (worker çökmesi %23,3, ölçülmüş ve yönetilen risk),
+**Ö6** ve **Ö7** (ikisi de eşikli, bloklayıcı değil). Üçü de bilinçli kararlar; hiçbiri kayıt
+hatası ya da keşfedilmemiş risk değil.

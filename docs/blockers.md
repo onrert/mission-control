@@ -1507,3 +1507,52 @@ alt süreç doğurma), yönetilen risk olarak taşınıyor.
 kırmızısı üretebilen bilinen tek izolasyon sınıfı kapandı. Kural aynen geçerli:
 (1) izole koş, (2) assert kırmızısı **her zaman** bloklayıcı, (3) yayın kanıtı için ardışık iki
 tam yeşil koşu.
+
+---
+
+## 2026-09-11 — CEO — GRUP 3 KAPANDI: F-009 (transkript/gizlilik) + F-010 (thread)
+
+Commit'ler: `ab9379d` (sözleşme), `8a1b668` (F-009), `4ffabe4` (F-010), `e0a4358` (ölçümler).
+Sözleşme: `docs/qa/grup3-transkript-thread-contract.md` (`status: qa`, karar qa-evaluator'ın).
+Beş maddenin hepsi **diskte doğrulandı** ve kapandı.
+
+**F-009 (3 madde) — KAPANDI.** Gizlilik çitinin Latin dışı içeriğe (Kiril/CJK) kör kalması,
+`.gitattributes` muafiyetinin dosya **adına** değil **yola** bağlanması, ve desen genişletmesi.
+
+**F-010 D8/D9 — KAPANDI.** `extractHeaderBlock` artık gerçek YAML frontmatter'ı doğru işliyor (D9)
+ve frontmatter yokken başlık penceresini `MAX_HEADER_LINES = 10` ile sınırlıyor (D8).
+**Kayda değer mutasyon disiplini:** tam geri sarma ikisini de kırmızı yaptı; ardından **yalnızca
+D8'i** hedefleyen tek noktalı bir mutasyon çalıştırıldı → **yalnızca D8 kırmızı, D9 yeşil kaldı**.
+Yani iki düzeltme **birbirinden bağımsız olarak çitli**, kaskadla geçmiyorlar. (Bu, `CLAUDE.md`'de
+kayıtlı "kaskad kırmızı iyi işarettir ama yetmez" dersinin doğru uygulanması.)
+
+**F-010 ölü `retry` API'si — KAPANDI.** `useProjectFeatureList`'ten kaldırıldı; tek tüketicisi
+(`ThreadScreen.tsx:42`) onu hiç destructure etmiyordu, test referansı da yoktu (grep ile doğrulandı).
+
+**Ölçüm:** `npm run test` **1841 geçti / 4 atlandı (86 dosya)** — ilk koşuda bir worker çökmesi
+(assert kırmızısı **sıfır**, ortamsal Sınıf A), tekrar koşuda temiz; CEO'nun bağımsız koşusu da
+temiz. `npm run e2e` **55/55** (izole) · `tsc`=0 · `eslint`=0 · `_selftest` **206/206**.
+
+**Açıkça belgelenen varsayım (borç değil):** `MAX_HEADER_LINES = 10`, gözlemlenen `docs/qa/*.md`
+biçimine dayanıyor (`KARAR`/`ESKALE` her zaman 1-2. satırda). Sözleşme §5'te işaretli: **rapor
+biçimi değişirse yeniden ölçülmeli** — gizli sihirli sayı değil, kayıtlı varsayım.
+
+### Bugünün borç kapatma bilançosu
+| Grup | Kapsam | Madde | Durum |
+|---|---|---|---|
+| 1 | Hook'lar | B-2, B-3, B-5, B-6/Y2, Y4 | ✅ self-test 165 → 206 |
+| 2 | Kapılar ekranı | S1, S2, N6 | ✅ + test izolasyonu (Sınıf B) |
+| 3 | Transkript + thread | F-009 ×3, F-010 ×2 | ✅ |
+
+**Toplam 14 borç kapandı.** Test sayısı 1371 → **1841**. Self-test 165 → **206**.
+Assert kırmızısı üretebilen bilinen tek izolasyon sınıfı kapandı — yani "assert kırmızısı = gerçek
+hata" kuralı artık güvenilir.
+
+### Kalan açık maddeler (G6 öncesi karar bekliyor)
+- **B-4 Sınıf A** (`Worker forks emitted error`, %23,3) — **bilinçli olarak kapatılmıyor**,
+  ölçülmüş ve yönetilen risk. Dört açıklama elendi; kural: assert kırmızısı bloklayıcı, çökme
+  yeniden koşturur, yayın kanıtı için ardışık iki tam yeşil koşu.
+- **Ö6** (sohbet geçmişi yazma amplifikasyonu ~159×), **Ö7** (agent satırları yenilemede kayboluyor)
+  — ikisi de sohbet özelliğinde, eşikleri kayıtlı.
+- **F-004** `install-hook` AC5 doğrulaması — kullanıcı etkileşimi gerektiriyor.
+Bunlar **doğrulanmadı**; G6 kararından önce diskte kontrol edilmeli (bu depoda kayıtlar eskiyor).

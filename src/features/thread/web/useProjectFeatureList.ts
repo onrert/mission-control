@@ -6,7 +6,6 @@ export type ProjectFeatureListState = 'idle' | 'loading' | 'ready' | 'error'
 export interface UseProjectFeatureListResult {
   features: FeatureCard[]
   loadState: ProjectFeatureListState
-  retry: () => void
 }
 
 /**
@@ -47,5 +46,9 @@ export function useProjectFeatureList(
     void load()
   }, [load])
 
-  return { features, loadState, retry: () => void load() }
+  // Grup 3 borç kapatma (2026-09-11, Ö7) — eskiden burada bir `retry: () => void load()` alanı
+  // vardı; tek tüketici `ThreadScreen.tsx` onu hiç destructure etmiyordu ve hiçbir test
+  // çağırmıyordu (grep ile doğrulandı) — ölü kod, kaldırıldı. `load` kendisi hâlâ yukarıdaki
+  // `useEffect` için gerekli, KALIYOR.
+  return { features, loadState }
 }

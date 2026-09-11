@@ -408,6 +408,62 @@ describe('buildThreadDetail — AC4: ESKALE rozeti', () => {
     if (result.status !== 'ok') return
     expect(result.detail.eskale).toBe(false)
   })
+
+  // ------------------------------------------------------------------------------------------
+  // Grup 3 borç kapatma (2026-09-11) — D8/D9, `docs/qa/grup3-transkript-thread-contract.md` §2.
+  // ------------------------------------------------------------------------------------------
+
+  it('D9 — latest.md GERÇEK YAML frontmatter ile başlarsa (ilk satır ---) gerçek ESKALE:true kaçırılmaz', () => {
+    const project = tempDir()
+    const claudeRoot = tempDir()
+    writeFile(project, 'docs/features/F-014.md', '---\nid: F-014\nstatus: todo\n---\ngövde\n')
+    // Eski `extractHeaderBlock`: ilk satır zaten `---` olduğu için `delimiterIndex=0` bulunuyor,
+    // `lines.slice(0,0)` boş dize dönüyor — frontmatter İÇİNDEKİ gerçek ESKALE:true hiç
+    // görülmüyor, rozet HER ZAMAN false kalıyordu.
+    writeFile(
+      project,
+      'docs/qa/latest.md',
+      '---\nfeature: F-014\nESKALE: true\n---\n\n# F-014 QA\nGövde.\n'
+    )
+
+    const result = buildThreadDetail(project, claudeRoot, 'F-014.md', fakeStatsTracker())
+    expect(result.status).toBe('ok')
+    if (result.status !== 'ok') return
+    expect(result.detail.eskale).toBe(true)
+  })
+
+  it('D8 — ilk `---` ÇOK aşağıdaysa (gerçek depoda 0-46 satır arası ölçüldü) başlık bloğu şişip gövdedeki bir alıntıyı sızdırmaz', () => {
+    const project = tempDir()
+    const claudeRoot = tempDir()
+    writeFile(project, 'docs/features/F-015.md', '---\nid: F-015\nstatus: todo\n---\ngövde\n')
+    // Gerçek durum satır 0-1'de ESKALE:false. Satır 25'te (10 satır sınırının ÜZERİNDE) raporun
+    // kendi biçimini gösteren bir alıntı ESKALE:true İÇERİYOR; gerçek `---` ayracı bundan da
+    // SONRA (satır 27) geliyor. Eski kod: header = lines[0..26], alıntıyı YUTAR, rozet YANLIŞ
+    // tetiklenir. Düzeltme: header `MAX_HEADER_LINES` (10) ile SINIRLI, alıntı dışarıda kalır.
+    const filler = Array.from({ length: 20 }, (_, i) => `dolgu satırı ${i}`)
+    const lines = [
+      'KARAR: GEÇTİ',
+      'ESKALE: false',
+      '',
+      '# F-015 QA',
+      '',
+      ...filler, // indeks 5-24
+      'ESKALE: true', // indeks 25 — alıntı, MAX_HEADER_LINES'ın (10) dışında kalmalı
+      '',
+      '---', // indeks 27 — gerçek ayraç
+      'feature: F-015',
+      '---',
+      '',
+      '## Devamı',
+      'Gövde metni.',
+    ]
+    writeFile(project, 'docs/qa/latest.md', lines.join('\n') + '\n')
+
+    const result = buildThreadDetail(project, claudeRoot, 'F-015.md', fakeStatsTracker())
+    expect(result.status).toBe('ok')
+    if (result.status !== 'ok') return
+    expect(result.detail.eskale).toBe(false)
+  })
 })
 
 describe('buildThreadDetail — hata durumları (feature-detail ile aynı sözleşme)', () => {

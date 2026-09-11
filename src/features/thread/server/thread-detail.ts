@@ -39,15 +39,38 @@ function parseVerdict(content: string): 'GEÇTİ' | 'KALDI' | null {
  * QA düzeltme turu 1 (X2/Ö4, BLOKLAYICI-yakın) — `docs/qa/latest.md`'nin GÖVDESİ raporun kendi
  * formatını (`KARAR: …`/`ESKALE: …`) bir kod bloğu içinde ALINTILAYABİLİR (bu depoda gerçekten
  * oldu — QA'nın kendi raporu). Eskiden ESKALE deseni TÜM belgeyi tarıyordu, bu yüzden gövdedeki
- * bir alıntı da rozeti tetikliyordu. Artık yalnızca "başlık bloğu" — ilk frontmatter
- * sınırlayıcısından (`---`) ÖNCEKİ satırlar, sınırlayıcı hiç yoksa ilk 5 satır — taranır; gövde
- * hiçbir zaman bu aramaya dahil olmaz.
+ * bir alıntı da rozeti tetikliyordu. Artık yalnızca "başlık bloğu" taranır; gövde hiçbir zaman bu
+ * aramaya dahil olmaz.
+ *
+ * Grup 3 borç kapatma (2026-09-11, D8/D9) — iki kenar durum ölçülüp düzeltildi:
+ * - **D9**: belge TAM `---` ile başlıyorsa (gerçek YAML frontmatter), eski kod `delimiterIndex=0`
+ *   bulup `lines.slice(0,0)` (BOŞ dize) dönüyordu — frontmatter İÇİNDEKİ gerçek `ESKALE: true`
+ *   hiç görülmüyordu. Artık bu durumda başlık bloğu açılış İLE kapanış `---`'i ARASINDAKİ
+ *   içeriktir.
+ * - **D8**: frontmatter yoksa (bu depodaki TÜM gerçek `docs/qa/*.md` dosyalarının durumu), ilk
+ *   `---`'in konumu 0-46 satır arasında ölçüldü (`docs/qa/F-001.md` satır 46 gibi) — bu kadar
+ *   büyük bir pencere, gövdede raporun kendi biçimini gösteren bir alıntıyı ("eski turda ESKALE:
+ *   true idi" gibi tam satır bir örnek) YUTABİLİYORDU. `KARAR:`/`ESKALE:` bu depodaki TÜM gerçek
+ *   dosyalarda satır 1-2'de (en yüksek gözlenen: `docs/qa/F-001.md` satır 8) — `MAX_HEADER_LINES`
+ *   bu gözlemin kat kat üzerinde bir pay bırakırken, gerçek narrative şişkinliğini (14-46 satır)
+ *   dışarıda tutuyor.
  */
+const MAX_HEADER_LINES = 10
+
 function extractHeaderBlock(content: string): string {
   const lines = content.split('\n')
+
+  if (lines[0]?.trim() === '---') {
+    const closingOffset = lines.slice(1).findIndex((line) => line.trim() === '---')
+    if (closingOffset !== -1) {
+      return lines.slice(1, 1 + Math.min(closingOffset, MAX_HEADER_LINES)).join('\n')
+    }
+    // Kapanış `---` bulunamadı (bozuk frontmatter) — aşağıdaki genel sınırlamaya düş.
+  }
+
   const delimiterIndex = lines.findIndex((line) => line.trim() === '---')
-  const headerLines = delimiterIndex === -1 ? lines.slice(0, 5) : lines.slice(0, delimiterIndex)
-  return headerLines.join('\n')
+  const boundedEnd = delimiterIndex === -1 ? 5 : Math.min(delimiterIndex, MAX_HEADER_LINES)
+  return lines.slice(0, boundedEnd).join('\n')
 }
 
 /**

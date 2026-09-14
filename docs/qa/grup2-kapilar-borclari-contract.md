@@ -1,7 +1,8 @@
 ---
 type: qa-contract
 date: 2026-09-11
-status: qa
+status: done
+karar: GEÇTİ (docs/qa/borc-turlari-kararlari-2026-09-14.md). Bağımsız mutasyonlarla doğrulandı — S2 `.toUpperCase()` kaldırılınca 228/457 kırmızı (aynı mutasyonda eski 7 dosya yeşil kaldı: borcun "çitsiz" iddiası gerçekti), N6 `tabIndex` kaldırılınca tam 1 kırmızı.
 ---
 
 # Sözleşme — Grup 2: kapılar ekranı ve çevresi borç kapatma (S1, S2, N6)

@@ -1,7 +1,8 @@
 ---
 type: qa-contract
 date: 2026-09-11
-status: qa
+status: done
+karar: GEÇTİ — negatif sonuç kabul edildi (docs/qa/borc-turlari-kararlari-2026-09-14.md). Kök neden bulunamadı ama ölçüm titiz bulundu ve "yönetilen risk" kararı savunulabilir sayıldı. QA'nın bağımsız örneklemi: 5 tam koşu → 1 kırmızı (%20), saf Sınıf A, test kapısı doğru şekilde kırmızı verdi. QA G6 kuralını sıkılaştırdı: yayın kanıtı için ardışık **üç** tam yeşil koşu, kırmızıda sayaç sıfırlanır.
 karar: kısmi sonuç — kök neden bulunamadı, denenen hiçbir yapılandırma (maxWorkers 8/1, pool:'threads') kırmızı oranını güvenilir şekilde düşürmedi; `vitest.config.ts` değiştirilmedi (orijinaline geri alındı). `pool:'threads'` ikinci turda ÖLÇÜLDÜ (n=10): kırmızı oranını %25'ten %100'e çıkardı ve Sınıf A çökmesini iki yeni, biri daha az teşhis edilebilir (sessiz süreç ölümü) sorunla değiştirdi — orijinal a priori red gerekçesi (env sızıntısı) ayrıca ölçüldü ve YANLIŞ çıktı (sızma yok), ama bağımsız bir sebeple red hâlâ geçerli. Çit (`scripts/verify-test-run.mjs`) zaten her çökmeyi doğru şekilde kırmızıya çeviriyor — B-4'ün riski "sessiz atlama" değil, "gerçek ama sık tekrarlayan, ürün kodundan bağımsız kırmızı". **Turu 3 (bkz. §6):** alt-süreç-doğurma hipotezi ölçüldü ve Sınıf A/varsayılan yapılandırma için DOĞRULANMADI (8 çöken dosyanın yalnızca 1'i alt süreç başlatıyor, şansla ayırt edilemez); manipülasyon/düzeltme denenmedi, `vitest.config.ts` bu turda hiç dokunulmadı.
 ---
 

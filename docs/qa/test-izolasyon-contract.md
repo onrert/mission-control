@@ -1,6 +1,7 @@
 ---
 feature: test-izolasyon (npm run test — history-log.test.ts assert kırmızısı teşhisi)
-status: qa
+status: done
+karar: GEÇTİ (docs/qa/borc-turlari-kararlari-2026-09-14.md). QA bağımsız doğruladı: retry'sız recursive silme kalmadı (0), 62 çağrı / 19 dosya kapsandı.
 owner: developer
 ---
 

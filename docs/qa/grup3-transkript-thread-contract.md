@@ -1,6 +1,7 @@
 ---
 feature: GRUP3-TRANSKRIPT-THREAD
-status: qa
+status: done
+karar: GEÇTİ, eşikli (docs/qa/borc-turlari-kararlari-2026-09-14.md). D8 tek nokta mutasyonu 1/20, D9 ile yığılmış 2/20 — iki düzeltme bağımsız çitli. Gizlilik çiti 10 vektörden 8 gerçekçi taşıyıcıyı (Kiril, CJK, Arapça, Yunanca, Türkçe, İngilizce, matematiksel kalın, tam genişlik) yakaladı; yalnızca `\p{So}` harf benzerleri sızıyor — ilan edilmiş sınır içinde ama gerekçesi dar, eşikli borç olarak taşınıyor.
 ---
 
 # Grup 3 — F-009 (transkript gizlilik çiti) ve F-010 (thread eskalasyon rozeti + ölü kod) borç kapatma

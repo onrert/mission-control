@@ -1,6 +1,7 @@
 ---
 feature: Ö7 — sayfa yenilendikten sonra araç satırları kaybolmasın
-status: qa
+status: done
+karar: GEÇTİ (docs/qa/borc-turlari-kararlari-2026-09-14.md). QA'nın kendi sondası: canlı ile yenileme sonrası DOM anlık görüntüsü birebir aynı, göreli sıra korunmuş; kırpılmış görünür genişlik 320/375/480px → 296/351/456px. Kronoloji çiti mutasyonla doğrulandı (tam 1 kırmızı).
 owner: developer
 date: 2026-09-11
 ---

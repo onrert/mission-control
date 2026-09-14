@@ -61,3 +61,41 @@ deneyi. İkisi de "sonuç" üretmişti; ikisi de yanlış sonuçtu.
   bloklayıcılığını **güçlendirir**, hafifletmez.
 
 İlgili: [[kod-turu-kontrolleri]], [[duzeltme-turu-kontrolleri]], [[statik-cit-denetimi]].
+
+## Çit "gevşetildiğinde" — diferansiyel mutasyon (2026-09-14, altı borç sözleşmesi turu)
+
+- **Bir çit "yanlış pozitifi azaltmak" için değiştirildiyse, ENGELLEME GÜCÜNÜ ayrıca ölç — ve
+  bunu ESKİ MEKANİZMAYI GERİ GETİREN bir mutasyonla DİFERANSİYEL yap.** Aynı sonda kümesini
+  hem sevk edilen koda hem "eski davranışa zorlanmış" mutanta karşı koştur; fark, turun
+  *gerçekten* ne kaybettiğidir. Somut: kabuk komutu segmentasyonunda
+  `splitCommandSegments → null` mutasyonu blob moduna döndürdü; 12 gerçek saldırı blob'da
+  **12/12 ENGEL**, sevk edilen kodda **0/12**. Bu ayrım olmadan "zaten önceden de açıktı"
+  savunmasını çürütemezsin — nitekim aynı kümedeki 5 vektör GERÇEKTEN önceden de açıktı
+  (çıplak `>` `writeVerb`'de yok) ve onları regresyon saymak raporu yanlış yapardı.
+- **İki sinyali "aynı segmentte" isteyen her çitin doğal saldırısı, fiil ile hedefi AYRI
+  segmentlere koymaktır** — ve bu egzotik değil, en sıradan kabuk deyimidir:
+  `cd <korumalı dizin> && rm <göreli ad>`. Sözleşme "asıl tehdit fiil+hedef aynı segmentte"
+  diyorsa, tam tersini sonda olarak yaz.
+- **Aşırı engelleme sondası: okuma komutunun ARGÜMANI bir fiil kelimesi içerdiğinde ne oluyor?**
+  Çit segmentin tüm metnine bakıyorsa `grep -n "unlink" <korumalı yol>` engellenir. Sözleşme
+  "okuma hiçbir zaman engellenmez çünkü `cat`/`ls` writeVerb listesinde yok" diyorsa bu cümle
+  neredeyse kesin yanlıştır — 10 salt-okunur komutla ölç (grep deseni · awk · dosya adında fiil).
+  Bu turda 5/10 engellendi ve ben bunu **kendi komutumda canlı yaşadım**.
+- **Kanıtı kopyada değil KURULU dosyada bitir.** Sandbox kopyalarının md5'ini kurulu hook'la
+  eşitle (eşleşirse "sevk edilen kodu ölçtüm" diyebilirsin), sonra saldırıyı **izole bir
+  scratchpad dizininde gerçek Bash çağrısıyla** uçtan uca tekrarla (`ORIJINAL` → `SAHTE-ONAY`).
+  "exit 0 döndü" ile "dosya gerçekten değişti" aynı şey değildir.
+- **Kendi sondanın zayıf ölçtüğü yeri raporda söyle ve ikinci bir yolla kapat.** Ö7'de canlı/reload
+  DOM anlık görüntüsünü karşılaştırdım ama seçicim yalnızca araç satırını yakaladı (mesaj
+  balonlarında öznitelik yok) → "göreli konum" iddiası 1 elemanlı listede ölçüldü, yani zayıf.
+  Kronolojiyi ayrıca **mutasyonla** (`ts - elapsed_ms` geri hesabını kaldır → tam 1 kırmızı)
+  doğruladım. Zayıf ölçümü gizleme, ikinci kanıtla tamamla.
+- **Negatif sonuç sözleşmesini "düzeltme çalışmadı" diye değerlendirme.** Ölçütler: koşu sayısı ·
+  sınıflandırma · elenen hipotezler · **kendi hatasını yakalayıp turları GEÇERSİZ ilan etmiş mi**
+  (B-4'te `poolOptions` vitest 5'te yok, `tsc` yakaladı, 3 tur çöpe atıldı) · a priori redleri
+  ölçüme çevirmiş mi · kozmetik bir değişiklik bırakmamış mı (`git diff` boş). Ama **kalan a
+  priori redleri de say**: B-4 `pool:'threads'`'i ölçtü, `isolate: false`'u hâlâ ölçmedi — aynı
+  hatanın kalıntısı, eşikli borç olarak yaz.
+- **"Yeşil suite" iddiasını yayın kapısına bağlarken taban kırmızı oranını KENDİN örnekle.**
+  5 koşu yeter: 4 yeşil / 1 Sınıf A (%20) ölçtüm, sözleşmenin %25'iyle tutarlı. Oranı bilmeden
+  "kaç ardışık yeşil" kuralı yazamazsın (%20-25'te iki ardışık ≈ %4-6 kaçırma, üç ardışık <%1).

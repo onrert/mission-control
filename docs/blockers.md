@@ -1599,3 +1599,60 @@ tur** — ya da kullanıcı "yenileyince agent satırları kayboluyor" derse **h
 Kapatılmayan tek maddeler: **B-4 Sınıf A** (worker çökmesi %23,3, ölçülmüş ve yönetilen risk),
 **Ö6** ve **Ö7** (ikisi de eşikli, bloklayıcı değil). Üçü de bilinçli kararlar; hiçbiri kayıt
 hatası ya da keşfedilmemiş risk değil.
+
+---
+
+## 2026-09-14 — CEO — QA KARAR TURU: 6 sözleşmeden 5'i GEÇTİ, 1'i BLOKLAYICI KALDI
+
+Rapor: `docs/qa/borc-turlari-kararlari-2026-09-14.md`. Commit `11dcdab` (frontmatter'lar + dersler).
+
+| Sözleşme | Karar |
+|---|---|
+| `grup2-kapilar-borclari` | GEÇTİ |
+| `test-izolasyon` | GEÇTİ |
+| `grup3-transkript-thread` | GEÇTİ (eşikli) |
+| `o7-agent-satirlari` | GEÇTİ |
+| `b4-test-kararsizligi` | GEÇTİ (negatif sonuç kabul) |
+| `hook-borclari` | **KALDI — bloklayıcı** |
+
+### BLOKLAYICI: segmentasyon engelleme gücünü AZALTTI (yeni, G6'yı bloklar)
+Sözleşmenin merkezi iddiası (*"segmentasyon yalnızca yanlış pozitifi azaltır, engellemeyi asla
+azaltmaz"*) **diferansiyel ölçümle yanlışlandı**:
+
+| Mod | 12 gerçek saldırı vektörü |
+|---|---|
+| Blob (segmentasyon öncesi) | **12/12 ENGEL** |
+| Sevk edilen | **0/12 ENGEL** |
+
+**Kök neden:** iki-sinyalli kontrol (korumalı yol + yazma fiili) artık her iki sinyali de **aynı
+segmentten** istiyor. Sıradan kabuk deyimleri sinyalleri ayırıyor: `cd docs/approvals && rm G5.ok`,
+`cd .claude/hooks && cp /tmp/evil gate-check.cjs`, `ls docs/approvals && node -e "…"`.
+**Kurulu hook'ta uçtan uca doğrulandı** (izole dizinde): bir onay dosyasının içeriği
+`ORIJINAL` → `SAHTE-ONAY` oldu. Severity yükseltme kuralının her iki şıkkı (kalıcı artefakt +
+`gate-check.cjs` silinirse sessiz kapı ölümü).
+
+**İkinci eksen de başarısız:** *"okuma hiçbir zaman engellenmez"* yanlış — 10 salt-okunur komuttan
+**5'i** engellendi (`grep -n "unlink" …`, `awk '/rm/…'`). Sebep: fiil regex'i **tırnak içindeki
+argümanla** eşleşiyor. Turun birincil amacı yanlış pozitif azaltmaktı; yeni bir sınıf açtı.
+
+**Risk sınıfı (CEO değerlendirmesi):** bu bir **derinlik katmanı** zayıflaması, kartsız bir yol
+değil — her `Bash` hâlâ kullanıcının izin kartına düşüyor (`ADR-016`, tur-4'te canlı doğrulandı).
+Bu yüzden acil geri alma yerine **tek turda doğru düzeltme** tercih edildi; hook'u iki kez sarsmak
+daha riskli. Düzeltme turu açıldı; kabul kriteri **simetrik**: R1-R12 (12 saldırı) **engel** ve
+F1-F10 (10 masum komut) **geçer**, diferansiyel tabloyla.
+
+**Ayrıca kapatılacak:** çıplak `>` yönlendirme boşluğu — QA 5 vektörün **her iki modda da**
+geçtiğini ölçtü (önceden var olan, regresyon değil), aynı turda ele alınıyor.
+
+### G6 kuralı SIKILAŞTI (QA kararı)
+B-4 sözleşmesi kuralın son hâlini QA'ya bırakmıştı. Karar:
+1. `npm run test` **izole** koşulur.
+2. **Assert kırmızısı = gerçek hata, her zaman bloklayıcı.**
+3. Yalnızca `Worker forks emitted error` (assert **sıfır**) yeniden koşmayı gerektirir.
+4. **Yayın kanıtı: ardışık ÜÇ tam yeşil koşu** (ikiden üçe çıkarıldı); **kırmızıda sayaç sıfırlanır**.
+`CLAUDE.md` ve G6 kontrol listesine yazılacak.
+
+### Yeni eşikli borç (QA'dan)
+Gizlilik çitinde `\p{So}` harf benzerleri (daireli/kare karakterler) sızıyor — ilan edilmiş sınır
+içinde ama gerekçesi ("emoji taşıyıcı değil") dar. **Eşik:** gizlilik çitine dokunan bir sonraki
+tur, ya da gerçek bir sızıntı görülürse hemen.

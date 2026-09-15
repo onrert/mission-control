@@ -17,6 +17,12 @@ bare-artifact kapanışı, R1-R12/F1-F10 diferansiyel matrisi). §2.3/§2.4/§2.
 **silinmedi** (tarihî kayıt) ama şimdi YANLIŞLANMIŞ olduğu ölçümle **düzeltme notu** ile
 işaretlendi — güncel doğru davranış için §10'a bakın.
 
+**GÜNCELLEME (bu tur, dar düzeltme).** CEO'nun diferansiyel sondası (`probe-extra.mjs` A5:
+`X=docs/approvals; rm $X/G5.ok`) yukarıdaki segmentasyon düzeltmesinde TEK bir regresyon buldu —
+değişken/göreli-dizin önekli bare hedefler bare-artifact korelasyonundan muaf tutuluyordu. Kapatıldı,
+bkz **§9** (A5 KAPANIŞI) ve **§9-ek** (A1/A10 — kabul edilmiş, önceden var olan sınır, bu turun
+regresyonu DEĞİL). Bu paragraftaki diğer tüm içerik (§1-§8, §8-ek) DEĞİŞMEDİ.
+
 **§0 kısıtı gereği** (`.claude/hooks/**`'a otonom yazma bu ortamda kategorik olarak engellenir,
 dört kez doğrulandı) gerçek hook dosyalarına HİÇ dokunulmadı. Tüm geliştirme ve doğrulama izole
 bir sahte depoda (`scratchpad/verify-json-repo/`, gerçek hook'ların birebir kopyası + izole
@@ -226,14 +232,95 @@ bu değişiklik onu etkilemedi (regresyon testiyle doğrulandı, aşağıya bkz)
   checkout` kullanılmadı), geri alınan dosya kaynak-doğrusuyla `diff` ile bit-bit karşılaştırıldı.
 - `gate-check-borc.cjs`: bu turda DEĞİŞMEDİ (`diff` ile doğrulandı, önceki teslimle birebir aynı).
 
-## 9. Teslim ve dosya sahipliği
+## 9. A5 KAPANIŞI (CEO'nun diferansiyel sondası — segmentasyon regresyonunun son maddesi)
+
+**Bulgu (CEO, probe-extra.mjs A5):** `X=docs/approvals; rm $X/G5.ok` blob taramasında (segmentasyon-
+öncesi, tüm metin tek parça) **ENGELLENİYORDU** ama sevk edilen adayda **GEÇİYORDU** — turun merkezî
+şartını ("aday, blob'un engellediği hiçbir saldırı vektörünü geçirmemeli") ihlal eden tek madde.
+
+**Kök neden:** "BARE-ARTIFACT KORELASYONU" mekanizması bir eşleşmenin hemen ÖNCESİNDEKİ karakter `/`
+ya da `\` ise hedefi "açık yol, belirsiz DEĞİL" sayıp taramadan MUAF tutuyordu (`findBareProtectedArtifacts`,
+`before === '/' ... continue`). `$X/G5.ok` içinde "G5.ok" öncesindeki `/` bir kabuk DEĞİŞKENİNİN
+(`$X`) genişlemesinden geliyordu — görünüşte "açık yol" ama gerçekte hedef hâlâ ÇÖZÜLMEMİŞ (X başka
+bir segmentte, ya da hiç, atanmış olabilir). Aynı belirsizlik göreli-dizin kısayolu (`./G5.ok`) ve
+tırnaklı değişken (`"$DIR"/G5.ok`) için de geçerli.
+
+**Düzeltme (`scratchpad/hook-borclari/block-dangerous-borc.cjs`, `findBareProtectedArtifacts`):**
+`/`/`\` öncesindeki hemen önceki TOKEN bir kabuk değişkeni (`$X`, `${X}`, tırnaklı `"$X"`/`'$X'`) ya da
+göreli-dizin kısayolu (`.`/`..`) İSE, `AMBIGUOUS_PREFIX_RE` bunu yakalar ve önündeki `/` artık "açık
+yol" SAYILMAZ — segment normal bare-artifact akışına (cross-segment mention + write-action şartı
+DEĞİŞMEDİ) girer. Literal bir dizin adı (`/tmp/`, `build/`, `docs/approvals/` bizzat) ÖNCEKİ gibi açık
+yol sayılır ve atlanır.
+
+**Diferansiyel ölçüm (sandbox `scratchpad/verify-json-repo/`, `probe-differential.mjs` +
+`probe-extra.mjs`, aday vs blob-mutant `block-dangerous-blob.cjs`):**
+
+| Sonda kümesi | Blob (segmentasyon-öncesi) | Aday (düzeltme sonrası) | Not |
+|---|---|---|---|
+| R1-R14 (saldırı, `probe-differential.mjs`) | 14/14 ENGEL | 14/14 ENGEL | regresyon yok |
+| F1-F10 (masum, `probe-differential.mjs`) | 10/10 GEÇER | 10/10 GEÇER | regresyon yok |
+| A5 (`X=docs/approvals; rm $X/G5.ok`) | **ENGEL (exit 2)** | **ENGEL (exit 2)** | ✅ düzeltildi (önceden GEÇİYORDU) |
+| A1 (iki adımlı `cd`) | GEÇİYOR (exit 0) | GEÇİYOR (exit 0) | ⚠ kabul edilmiş sınır — HER İKİ modda da açık, bu turun regresyonu DEĞİL (§9-ek) |
+| A10 (`cd .claude && rm settings.json`) | GEÇİYOR (exit 0) | GEÇİYOR (exit 0) | ⚠ kabul edilmiş sınır — HER İKİ modda da açık, bu turun regresyonu DEĞİL (§9-ek) |
+| A2-A4/A6-A9 (diğer saldırı varyantları) | 7/7 ENGEL | 7/7 ENGEL | regresyon yok |
+| B1/B7 (masum, iki-adımlı zincir) | **YANLIŞ POZİTİF (exit 2)** | GEÇER (exit 0) | blob'un ÖNCEDEN VAR OLAN aşırı-engellemesi, segmentasyonun asıl amacı — bu turun kapsamı DIŞINDA, iyileşme |
+| B2/B3/B4/B5/B6/B8 (masum) | 6/6 GEÇER | 6/6 GEÇER | regresyon yok |
+
+Sonuç: **aday, blob'un engellediği HİÇBİR saldırı vektörünü (R/A ailesi) geçirmiyor** — tek regresyon
+(A5) düzeltildi. Aday'ın B1/B7'de blob'dan FARKLI davranması (daha az engelleme) bu turun ölçtüğü
+şart değil — segmentasyonun bizzat var olma sebebi (§2), CEO'nun "blob'un engellediği hiçbir şeyi
+geçirmemeli" iddiası SALDIRI vektörleri için geçerli, blob'un kendi yanlış pozitifleri için tersi
+yönde bir taahhüt YOKTUR.
+
+**Aşırı engelleme kontrolü (B4, `echo not > build/G5.ok.txt`):** hâlâ GEÇER (exit 0) — segmentte
+`docs/approvals`/`.claude/hooks` hiç anılmıyor, `anyMentionsApprovals`/`anyMentionsHooks` false kalıyor,
+düzeltme bu segmentin taranma yoluna hiç girmiyor.
+
+**Yeni test vakaları (`scratchpad/hook-borclari/selftest-borc.cjs`, `dangerCases` sonuna eklendi,
+ölçülen: `dangerCases` 151 → 157, TAM sandbox self-test — `block-dangerous.cjs`+`gate-check.cjs`
+birlikte — bu turda 256/256 GEÇTİ, exit 0):**
+`BARE-A5-1` (birebir A5 regresyonu), `BARE-A5-2` (`./` göreli-dizin varyantı), `BARE-A5-3` (tırnaklı
+`"$DIR"/` varyantı), `BARE-A5-hooks` (A5 ile simetrik, hooks ailesi), `BARE-A5-NEG-1` (değişken-önekli
+hedef ama hiçbir segmentte mention yok → geçer), `BARE-A5-NEG-2` (literal dizin adları, "tmp"/"sub" —
+değişken/nokta DEĞİL → geçer, düzeltmeden etkilenmiyor).
+
+**Mutasyon kanıtı (`scratchpad/mutants/no-a5-fix.cjs` — `AMBIGUOUS_PREFIX_RE` kontrolü
+`if (false && ...)` ile devre dışı bırakılarak eski davranışa dönüldü, elle yazıldı, `git
+checkout`/`restore` KULLANILMADI):** sandbox self-test'te (256 vaka) **tam olarak 4** test KIRMIZI
+oldu — `BARE-A5-1`, `BARE-A5-2`, `BARE-A5-3`, `BARE-A5-hooks` (dördü de yalnızca düzeltmenin
+gerektirdiği pozitif vakalar). `BARE-A5-NEG-1`/`BARE-A5-NEG-2` ve önceki 250 vaka ETKİLENMEDİ — bu,
+düzeltmenin iddia edilen 4 vakayı tam olarak koruduğunu ve komşu hiçbir testi yanlışlıkla
+bozmadığını kanıtlıyor. `probe-extra.mjs` ile çapraz doğrulandı: mutasyonlu hook'ta A5 tekrar
+GEÇİYOR (exit 0), diğer 9 A/B sonucu değişmedi (3 EK SONDA BAŞARISIZ: A1, A5, A10 — A5'in mutasyonla
+birlikte geri döndüğü, A1/A10'un ise HER İKİ hâlde de zaten açık olduğu doğrulandı).
+
+## 9-ek. A1/A10 — kabul edilmiş sınır (iki adımlı `cd`, önceden var olan boşluk)
+
+`cd docs && cd approvals && rm G5.ok` (A1) ve `cd .claude && rm settings.json` (A10) hem BLOB hem
+ADAY modunda GEÇİYOR (exit 0) — bu turun ÖNCESİNDE de böyleydi, segmentasyon ya da A5 düzeltmesi
+bunu DEĞİŞTİRMEDİ. Kök neden ortak: korunan yol TEK bir metinde bir arada bulunmuyor, iki ayrı `cd`
+adımıyla parça parça kuruluyor (M1'in `WD_CHANGE` retreat'i bunu YAKALAR ama retreat sonrası blob
+taraması yine de "approvals"+"rm" ayrı `cd` çağrılarında olduğu için ilişkilendiremiyor — segment
+metninin KENDİSİ hiçbir zaman "docs/approvals" ya da ".claude" TEK PARÇA halinde "rm" ile aynı
+segmentte/blobda değil).
+
+**Eşik (bu sözleşmeye yazılı, kabul edilmiş):** bu aile ÜÇÜNCÜ kez görülürse (bir başka sonda ailesi
+de aynı "çok adımlı `cd`" desenini bulursa) ya da GERÇEK bir sızıntı olayı yaşanırsa yeniden açılır.
+Tam çözüm çalışma dizinini uçtan uca modellemeyi gerektirir (kabuk yorumlayıcısı) — bu depoda
+bilinçli olarak kaçınılan bir oyun (bkz dosya başı SEGMENTASYON yorumu, "tam bir kabuk grameri
+DEĞİLDİR"). Asıl savunma kullanıcının gördüğü izin kartıdır (`canUseTool`, ADR-014/ADR-016) — bu hook
+yalnızca erken/okunaklı bir derinlik katmanıdır, mutlak engel değildir.
+
+## 10. Teslim ve dosya sahipliği
 
 - `scratchpad/hook-borclari/gate-check-borc.cjs` → kurulacağı yer: `.claude/hooks/gate-check.cjs`
   (bu turda DEĞİŞMEDİ, önceki turdan kalan hâliyle: B-2 yorumları + B-3 wording).
 - `scratchpad/hook-borclari/block-dangerous-borc.cjs` → `.claude/hooks/block-dangerous.cjs`
-  (önceki turda segmentasyon + Y4; BU TURDA EK: `writeVerb`'e `rm`/`unlink` eklendi — RM KAPANIŞI,
-  §8-ek).
+  (önceki turda segmentasyon + Y4 + RM KAPANIŞI; BU TURDA EK: A5 KAPANIŞI — `findBareProtectedArtifacts`
+  artık değişken/göreli-dizin önekli hedefleri de bare sayıyor, §9).
 - `scratchpad/hook-borclari/selftest-borc.cjs` → `.claude/hooks/_selftest.cjs`
-  (önceki turda 165 → 194 vaka; BU TURDA EK: 194 → 206 vaka, RM-1..7/UNLINK-1..3/GITRM-1..2).
+  (`dangerCases` — block-dangerous.cjs vakaları — önceki turlarda 165 → 194 → 206 → 151; BU TURDA
+  EK: 151 → 157 vaka, BARE-A5-1/2/3/hooks/NEG-1/NEG-2. TAM sandbox self-test, block-dangerous.cjs +
+  gate-check.cjs birlikte, bu turda ölçüldü: 256/256 GEÇTİ).
 - `docs/approvals/README.md` (önceki turda developer tarafından düzenlendi — bu turda dokunulmadı).
 - Kurulum sırası serbest (GUARD.ok artık zaman pencereli, tek yazmada tükenmiyor).

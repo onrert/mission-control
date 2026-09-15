@@ -53,6 +53,35 @@ function consume(p) {
 // Bu bir kabuk ayrıştırıcısı DEĞİLDİR: pipe/redirect/glob/değişken genişletme SEMANTİĞİNİ anlamaya
 // çalışmaz — yalnızca "şu an tek/çift tırnak içinde miyim" durumunu izleyerek ayıraçları GÜVENLE
 // bulur. Daha karmaşık her şey (aşağıdaki retreat listesi) bilinçli olarak ele alınmaz.
+// M1 KAPANIŞI (docs/qa/hook-borclari-contract.md B1 — 2026-09-14 regresyonu). KÖK SORUN: `cd`
+// (ve eşdeğerleri) ÇALIŞMA DİZİNİNİ DEĞİŞTİRİR; ondan SONRAKİ segmentlerdeki GÖRELİ yollar artık
+// BAŞKA bir dizine bakar. "Her segment kendi başına, komşularından bağımsız değerlendirilir"
+// varsayımı `cd docs/approvals && rm G5.ok` gibi bir zincirde GEÇERSİZDİR: `rm G5.ok` segmenti
+// tek başına "G5.ok" bareli, korunan hiçbir yolu ANMAZ — segment-yerel akıl yürütme bunu güvenli
+// sanar, ama önceki `cd` onu docs/approvals'ın İÇİNE taşımıştır. Segmentasyon bunu 12/12 gerçek
+// saldırıda (R1-R12) kaçırdı (ölçüm: docs/qa/hook-borclari-contract.md §1.2).
+// ÇÖZÜM: çalışma dizinini DEĞİŞTİREN bir komut GÖRÜLDÜĞÜNDE segmentasyona HİÇ GİRİLMEZ — diğer
+// retreat'lerle (heredoc/$()/satır devamı) AYNI mekanizma: `null` dönülür, çağıran komutun
+// TAMAMINI TEK blob olarak tarar (bugünkü, segmentasyon-öncesi kısıtlayıcı davranış). Bu, "hangi
+// dizine geçildi" sorusunu ÇÖZMEYE çalışmaz (tam bir kabuk yorumlayıcısı gerektirir) — yalnızca
+// "bu durumda segment-yerel akıl yürütemem" der ve daha kısıtlayıcı tarafa düşer.
+// BİLEREK EKLENEN aile: `cd`, `pushd`, `popd`, `chdir` (cmd.exe eşdeğeri), `Set-Location`,
+// `Push-Location`, `Pop-Location` (PowerShell TAM adları — kısaltmasız, ayırt edici, yanlış
+// pozitif riski düşük).
+// BİLEREK EKLENMEYEN: PowerShell `sl` (Set-Location'ın ÇOK KISA takma adı). Gerekçe: (1) R1-R12
+// saldırı vektörlerinin HİÇBİRİ `sl` kullanmıyor — eklemek bu turun ölçülen kabul kriterine hiçbir
+// katkı sağlamıyor; (2) iki harfli bir token, `\b` sınırına rağmen masum metinde (değişken adı,
+// kısaltma, dosya adı parçası) beklenenden daha sık rastlanabilir ve blob'a çökmek gereksiz
+// SÜRTÜNME (aşırı engelleme) yaratır; (3) aşağıdaki BARE-ARTIFACT korelasyonu (M1'den BAĞIMSIZ,
+// `cd` İÇERMEYEN R9/R11/R12 ailesini zaten kapatan ikinci bir mekanizma) `sl` kullanan bir
+// saldırıyı da YAKALAR — yani `sl`'i dışlamak bu turun ölçülen R1-R12/F1-F10 matrisinde bir
+// boşluk AÇMIYOR, yalnızca gereksiz aşırı-engellemeyi önlüyor.
+// NOT (stil tutarlılığı): diğer retreat kontrolleri gibi bu da TIRNAK-FARKINDA DEĞİL — "cd" bir
+// tırnaklı metin İÇİNDE geçse bile (ör. `echo "please cd to src"`) retreat tetiklenir. Bu KASITLI:
+// sonucu her zaman AŞIRI ENGELLEMEYE gider (blob taraması), ASLA atlatmaya değil — güvenlik kaybı
+// yok, yalnızca ihtiyaç dışı ekstra tarama.
+const WD_CHANGE = /\b(cd|pushd|popd|chdir|Set-Location|Push-Location|Pop-Location)\b/i;
+
 function splitCommandSegments(cmd) {
   // Retreat 1: heredoc (`<<EOF`, `<<-EOF`, `<<~EOF`, `<<'EOF'`, `<<<` herestring dahil). Heredoc
   // gövdesi birden çok fiziksel satıra yayılır ve içeriği kabuk tarafından hiç yorumlanmaz —
@@ -64,6 +93,8 @@ function splitCommandSegments(cmd) {
   // Retreat 3: fiziksel satır devamı (`\` + satır sonu) — tek mantıksal komut birden çok fiziksel
   // satıra yayılmış, "satır sonu" ayıracının burada ne anlama geldiği belirsiz.
   if (/\\\r?\n/.test(cmd)) return null;
+  // Retreat 4 (M1 KAPANIŞI): çalışma dizinini değiştiren bir komut var — yukarıdaki uzun yorum.
+  if (WD_CHANGE.test(cmd)) return null;
 
   const segments = [];
   let cur = '';
@@ -100,7 +131,7 @@ function splitCommandSegments(cmd) {
     i++;
   }
   segments.push(cur);
-  // Retreat 4: sonlandırılmamış tırnak — dosyanın/komutun nerede bittiği güvenle bilinemez.
+  // Retreat 5: sonlandırılmamış tırnak — dosyanın/komutun nerede bittiği güvenle bilinemez.
   if (inSingle || inDouble) return null;
   const trimmed = segments.map((s) => s.trim()).filter((s) => s.length > 0);
   return trimmed.length ? trimmed : [cmd];
@@ -204,12 +235,129 @@ readInput((j) => {
   const writeVerb = /(\btee\b|\bcp\b|\bcopy\b|\bmv\b|\bmove\b|\bren(?:ame)?\b|\bsed\b[^\n]*-i\b|\bSet-Content\b|\bOut-File\b|\bAdd-Content\b|\bNew-Item\b|\bRemove-Item\b|\b(del|erase|rm|unlink)\b|\brd\b|\brmdir\b|\bri\b)/i;
   const inlineEval = /(\bnode\b[^\n]*(-e\b|--eval\b)|\bnpx\s+tsx\b[^\n]*-e\b|\bpython\b[^\n]*-c\b)/i;
 
+  // M2 KAPANIŞI (docs/qa/hook-borclari-contract.md B2 — 2026-09-14). KÖK SORUN: `writeVerb`/
+  // `inlineEval` bir segmentin METNİNİN HERHANGİ BİR YERİNDE eşleşiyordu — bir OKUMA komutunun
+  // ARGÜMANI (ör. `grep -n "unlink" dosya`, `awk '/rm/{...}'`) bir fiil KELİMESİ taşıdığında
+  // komutun TAMAMI engelleniyordu (5/10 salt-okunur sonda yanlış pozitif aldı, F1.3 ölçümü).
+  // ÇÖZÜM: bir fiil eşleşmesi yalnızca KOMUT KONUMUNDAYSA sayılır — segmentin/metnin BAŞI, ya da
+  // bir ayıraçtan (`&&`, `||`, `;`, `|`, satır sonu) HEMEN SONRASI (aradaki boşluk ve `sudo`/
+  // `env`/`time`/`exec`/`git` gibi ÖNEK KELİMELER atlanarak — `git rm ...` gerçek bir yazma
+  // komutudur, GITRM-1/2 testleri bunu bekliyor). Bu, ayrı bir "okuma fiilleri beyaz listesi"
+  // TUTMAYA GEREK KALMADAN `grep`/`awk`/`sed`(-i'siz)/`cat`/`head`/`tail`/`wc`/`findstr` gibi
+  // salt-okunur komutları YAPISAL OLARAK muaf kılar — kara liste büyütmek bu depoda dört kez
+  // yenilen bir desendir (docs/wiki/pages/desen/cit-tasarimi.md §1), o yüzden bilerek TERCİH
+  // EDİLMEDİ. `inlineEval` de AYNI gerekçeyle konum-sınırlı: bu dosyanın kendisi/`_selftest.cjs`
+  // "node -e" gibi metinler İÇERİR (dokümantasyon/test dizesi olarak) — konum sınırı olmadan bir
+  // `grep -n "node -e" .claude/hooks/_selftest.cjs` gibi salt-okunur bir teşhis komutu da
+  // yanlışlıkla engellenirdi (CLAUDE.md: "kendi teşhis komutların yeni kurduğun kapıya takılacak").
+  // `danger`/`gitForce`/`release`/`pushCmd` BİLEREK DEĞİŞMEDİ — bu turun ölçülen F1-F10
+  // vektörlerinin hiçbiri bu desenlerden kaynaklanmıyordu; konum sınırını oraya da yaymak scope
+  // creep olurdu (brief §2 M2 yalnızca "yazma fiili"ni hedefliyor).
+  const CMD_PREFIX_WORDS = '(?:sudo|env|time|exec|git)';
+  const CMD_POS_RE = new RegExp(`(?:^|&&|\\|\\||[;|\\n])\\s*(?:${CMD_PREFIX_WORDS}\\s+)*$`, 'i');
+  function isCommandPositionMatch(before) {
+    return CMD_POS_RE.test(before);
+  }
+  function hasMatchAtCommandPosition(re, text) {
+    const flags = re.flags.includes('g') ? re.flags : re.flags + 'g';
+    const g = new RegExp(re.source, flags);
+    let m;
+    while ((m = g.exec(text))) {
+      if (isCommandPositionMatch(text.slice(0, m.index))) return true;
+      if (m.index === g.lastIndex) g.lastIndex++;
+    }
+    return false;
+  }
+
+  // BARE-ARTIFACT KORELASYONU (docs/qa/hook-borclari-contract.md B1 — `cd` İÇERMEYEN vektör
+  // ailesi + çıplak yönlendirme boşluğu). M1 yalnızca `cd`-ailesini kapsar; R9 (`ls docs/approvals
+  // && node -e "...writeFileSync('G5.ok',...)"`), R11 (`echo docs/approvals ; rm G5.ok`), R12
+  // (`cat docs/approvals/G5.ok | head -1 ; rm G5.ok`) HİÇ `cd` KULLANMIYOR — yazma hedefi zaten
+  // BARE (yol ayracı yok, ör. `G5.ok`), yani hangi dizine yazdığı segment METNİNDEN BAĞIMSIZ
+  // olarak zaten BELİRSİZ. Aynı belirsizlik çıplak yönlendirmede de var: `cd docs/approvals &&
+  // echo x > G5.ok` M1 ile blob'a düşse bile `writeVerb`'de bir `>` girişi YOK, yalnızca
+  // `approvalsRedirect`/`hooksRedirect` (ki onlar hedefte "docs/approvals" METNİNİ arıyor, bare
+  // `G5.ok`'ta o metin YOK) — bu yüzden ayrı bir sinyal gerekiyor.
+  // MEKANİZMA: bir segment (a) gerçek bir yazma EYLEMİ taşıyorsa (komut-konumunda yazma fiili,
+  // satır-içi betik, YA DA herhangi bir `>`/`>>` yönlendirmesi) VE (b) o segment METNİNDE, hemen
+  // ÖNCESİNDE bir yol ayracı (`/`veya `\`) OLMAYAN — yani BARE — bilinen bir korunan-eser adı
+  // (`*.ok` ya da `gate-check.cjs`/`block-dangerous.cjs`/`_selftest.cjs`/`_common.cjs`/
+  // `settings.json`) geçiyorsa, VE (c) komutun HERHANGİ BİR segmentinde (aynı ya da başka)
+  // ilgili dizin açıkça ANILIYORSA (`docs/approvals` ya da `.claude/hooks`/`settings.json`) —
+  // o zaman bu segment "belirsiz yazma" sayılır ve ilgili aile (approvals/hooks) engellenir.
+  // AYRIM (neden bu, eski B-6 hatasını TEKRARLAMIYOR): eski hata "AYNI SEGMENTTE fiil+hedef" şartı
+  // OLMADAN, herhangi bir mention + herhangi bir yazma fiilini HER YERDE eşleştiriyordu (kara
+  // liste kadar geniş). Bu mekanizma dar: yalnızca hedefin kendisi SÖZDİZİMSEL OLARAK belirsiz
+  // (bare + bilinen bir korunan ad kalıbına uyuyor) OLDUĞUNDA çapraz segment mention'a bakar —
+  // açık bir hedefi olan yazmalar (ör. `cp x /tmp/other/thing.ok`, önünde `/` var) bu YOLDAN HİÇ
+  // GEÇMEZ, yalnızca mevcut (aynı-segment) mekanizmayla değerlendirilir.
+  // KABUL EDİLEN SINIR (dürüstçe, docs/qa/hook-borclari-contract.md'ye yazıldı): bu tarama bir
+  // komutun ARGÜMAN YAPISINI (kaynak mı hedef mi) ayırt ETMEZ — `cp myfile.ok /baska/yer` gibi
+  // meşru bir komut, EĞER komutun başka bir segmentinde tesadüfen "docs/approvals" geçiyorsa
+  // yanlışlıkla engellenebilir. Bu AŞIRI ENGELLEME yönünde bir sınırdır (güvenlik kaybı değil) ve
+  // bu turun ölçülen F1-F10 kümesinde böyle bir vektör YOK.
+  const HOOK_FILENAME_RE = /^(gate-check\.cjs|block-dangerous\.cjs|_selftest\.cjs|_common\.cjs|settings\.json)$/i;
+  const BARE_ARTIFACT_SCAN_RE = /([\w.-]+\.ok|gate-check\.cjs|block-dangerous\.cjs|_selftest\.cjs|_common\.cjs|settings\.json)/gi;
+  // A5 KAPANIŞI (docs/qa/hook-borclari-contract.md — CEO'nun diferansiyel sondası, probe-extra.mjs
+  // A5: `X=docs/approvals; rm $X/G5.ok`). KÖK SORUN: yukarıdaki "önünde `/` varsa açık yol, belirsiz
+  // DEĞİL, atla" kuralı yalnızca hedefin BİR DİZİN ADIYLA açıkça nitelendiğini varsayıyordu — ama bir
+  // kabuk DEĞİŞKENİ (`$X/G5.ok`) ya da göreli-dizin kısayolu (`./G5.ok`) de aynı şekilde `/` ile biter
+  // ve GERÇEKTE hangi dizine baktığı segment METNİNDEN BAĞIMSIZ olarak BELİRSİZDİR (`X` başka bir
+  // segmentte -- ya da hiç -- atanmış olabilir; tam bir kabuk yorumlayıcısı gerektirir). Blob taraması
+  // (segmentasyon-öncesi davranış) bu vektörü YAKALIYORDU (tüm metin tek parça tarandığı için "rm" ve
+  // "docs/approvals" aynı blobdaydı); segmentasyon bunu KAÇIRIYORDU (A5 = REGRESYON, blob ENGELLİYOR,
+  // aday GEÇİRİYORDU) — bu turun merkezi şartını ("aday, blob'un engellediği hiçbir şeyi geçirmemeli")
+  // ihlal ediyordu.
+  // ÇÖZÜM: `/` ya da `\` öncesindeki hemen önceki TOKEN'a bak — eğer bu token bir kabuk DEĞİŞKENİ
+  // (`$X`, `${X}`, tırnaklı `"$X"`/`'$X'`) ya da göreli-dizin kısayolu (`.`/`..`) İSE, önündeki `/`
+  // bir "açık yol" SAYILMAZ (çünkü gerçek hedef hâlâ çözülmemiştir) — bu durumda BARE kabul edilip
+  // normal bare-artifact akışına (cross-segment mention + write-action şartı DEĞİŞMEDİ) girer.
+  // Literal bir dizin adı (`/tmp/`, `build/`, `docs/approvals/` bizzat) ÖNCEKİ gibi açık yol sayılır
+  // ve atlanır — BARE-NEG-1 (`cp /tmp/backup.ok /tmp/restore.ok`) bu yüzden hâlâ GEÇER, çünkü "tmp"
+  // ne bir değişken ne bir nokta-kısayolu.
+  // KABUL EDİLEN SINIR (dürüstçe): bu, "değişken/nokta öneki = belirsiz" diyen dar bir sözdizimsel
+  // kural — `X=/tmp; rm $X/G5.ok` gibi GERÇEKTEN docs/approvals DIŞINA yazan bir değişken de (docs/
+  // approvals başka bir segmentte anıldığı için) yanlışlıkla engellenebilir. Bu AŞIRI ENGELLEME
+  // yönündedir (güvenlik kaybı değil) ve dosya başındaki "bare-artifact" mekanizmasının zaten kabul
+  // ettiği sınırın (argüman-yapısını ayırt etmeme) doğal bir uzantısıdır.
+  const AMBIGUOUS_PREFIX_RE = /(?:^|[\s;&|(])["']?(?:\.{1,2}|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?)["']?[\\/]$/;
+  function findBareProtectedArtifacts(segment) {
+    const found = { ok: false, hook: false };
+    BARE_ARTIFACT_SCAN_RE.lastIndex = 0;
+    let m;
+    while ((m = BARE_ARTIFACT_SCAN_RE.exec(segment))) {
+      const before = m.index > 0 ? segment[m.index - 1] : '';
+      if (before === '/' || before === '\\') {
+        // Görünüşte açık bir yol ("<seyler>/ARTEFAKT") -- ama önek bir DEĞİŞKEN ya da göreli-dizin
+        // kısayoluysa (A5 KAPANIŞI, yukarıdaki yorum) hedef GERÇEKTE belirsizdir, atlanmaz.
+        const prefix = segment.slice(0, m.index);
+        if (!AMBIGUOUS_PREFIX_RE.test(prefix)) continue; // gercekten literal dizin -> acik yol, atla
+      }
+      if (HOOK_FILENAME_RE.test(m[0])) found.hook = true;
+      else found.ok = true; // geriye kalan tek desen ailesi *.ok
+    }
+    return found;
+  }
+  const genericRedirect = /(>>|>(?!=))/;
+  function segmentHasWriteAction(seg) {
+    return (
+      hasMatchAtCommandPosition(writeVerb, seg) ||
+      hasMatchAtCommandPosition(inlineEval, seg) ||
+      genericRedirect.test(seg)
+    );
+  }
+
   let isRelease = false;
   let isPush = false;
   let isDestructive = false;
   let isApprovalsWrite = false;
   let isHooksWrite = false;
   let guardedSegment = null; // teşhis için: hangi segment tetikledi (ilk bulunan)
+
+  // Cross-segment mention taraması (bare-artifact korelasyonu İÇİN — yukarıdaki yorum). Aynı-
+  // segment mekanizması BUNU KULLANMAZ (o kendi approvalsRef.test(seg) çağrısını yapıyor).
+  const anyMentionsApprovals = segments.some((s) => approvalsRef.test(s));
+  const anyMentionsHooks = segments.some((s) => hooksRef.test(s));
 
   // KÖK MEKANİZMA: her segment AYNI kurallarla, TEK BAŞINA değerlendirilir. touchesApprovals/
   // touchesHooks VE writeVerb/inlineEval AYNI segmentten gelmek ZORUNDA — bu, B-6/Y2'nin kökü
@@ -219,7 +367,7 @@ readInput((j) => {
     if (pushCmd.test(seg)) isPush = true;
     if (danger.test(seg) || gitForce.test(seg)) isDestructive = true;
 
-    const hasWrite = writeVerb.test(seg) || inlineEval.test(seg);
+    const hasWrite = hasMatchAtCommandPosition(writeVerb, seg) || hasMatchAtCommandPosition(inlineEval, seg);
     if (approvalsRedirect.test(seg) || (approvalsRef.test(seg) && hasWrite)) {
       isApprovalsWrite = true;
       if (!guardedSegment) guardedSegment = seg;
@@ -227,6 +375,19 @@ readInput((j) => {
     if (hooksRedirect.test(seg) || (hooksRef.test(seg) && hasWrite)) {
       isHooksWrite = true;
       if (!guardedSegment) guardedSegment = seg;
+    }
+
+    // BARE-ARTIFACT KORELASYONU: yalnızca bu segment GERÇEK bir yazma eylemi taşıyorsa taranır.
+    if (segmentHasWriteAction(seg)) {
+      const artifacts = findBareProtectedArtifacts(seg);
+      if (artifacts.ok && anyMentionsApprovals && !isApprovalsWrite) {
+        isApprovalsWrite = true;
+        if (!guardedSegment) guardedSegment = seg;
+      }
+      if (artifacts.hook && anyMentionsHooks && !isHooksWrite) {
+        isHooksWrite = true;
+        if (!guardedSegment) guardedSegment = seg;
+      }
     }
   }
 

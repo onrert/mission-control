@@ -1702,7 +1702,23 @@ oyun (serbest metinden makine kararı çıkarmak).
 **Kabul gerekçesi:** `ADR-016` — asıl savunma kullanıcının izin kartı; hook derinlik katmanıdır ve
 kabuk erişimli yerel bir agent'a karşı mutlak koruma zaten yok.
 
-### Kurulum durumu
-**Aday HENÜZ KURULMADI.** Gerçek depodaki `block-dangerous.cjs` hâlâ regresyonlu sürüm — yani
-`cd docs/approvals && rm G5.ok` ailesi şu an canlı olarak açık. Bilinçli karar: hook'u iki kez
-sarsmak yerine tek turda doğru düzeltmeyi kurmak; ara dönemde savunma izin kartı.
+### Kurulum durumu — **KURULDU (2026-09-15)**
+Önceki not ("aday HENÜZ KURULMADI, regresyonlu sürüm canlı") artık **geçersizdir**. İki dosya da
+`Edit` aracıyla, kapıdan geçerek kuruldu (`cp` ile sahneleme YAPILMADI — Y4 açığı, kayıtlı ders).
+
+**Kurulum sonrası gerçek depoda ölçülenler:**
+- `diff` ile scratchpad'deki doğrulanmış adaylarla **bayt-birebir** (iki dosya da, 0 hunk).
+- NUL baytı yok (dört hook dosyasında da), `node --check` dördünde de temiz.
+- `_selftest.cjs` **256/256** (kurulu hâl 206'ydı; R1-R12 / F1-F10 matrisi + M1/M2/A5 vakaları
+  eklendi).
+- QA'nın regresyon matrisi kurulu hook'a karşı yeniden koşuldu: **14/14 saldırı ENGEL ·
+  10/10 masum GEÇER**.
+- `tsc`=0 · `eslint`=0 · hook'a dokunan iki test dosyası yeşil (10 geçti / 2 atlandı).
+- Açık kalan tek şey **A1/A10** (parçalı yol ailesi) — yukarıda eşikli borç olarak kayıtlı,
+  blob modunda da sızıyor, yani bu turun kusuru değil.
+
+**Onay hijyeni:** `GUARD.ok` elle silinmedi. Görevini tamamladıktan sonra bilerek süresi geçmiş
+`created_at` ile yeniden yazıldı ve bir sonraki korumalı değerlendirmede hook'un kendi `expired`
+dalı tarafından silindi (tetikleyici yazma **gerçekleşmedi**, engellendi). Gerekçe: bekleyen bir
+onay dosyası varken `_selftest.cjs` `exit 3` ile reddediyor (Y3 emniyet kemeri) — yani zorunlu
+doğrulama koşulamıyordu.

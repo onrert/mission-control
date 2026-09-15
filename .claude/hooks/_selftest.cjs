@@ -262,8 +262,12 @@ const dangerCases = [
   // --- Segmentasyon GERİ ÇEKİLMESİ: tırnak/heredoc/$() içeren komutlar bugünkü (kısıtlayıcı)
   // blob davranışına düşer — kasıtlı, docs/qa/hook-borclari-contract.md'de kabul edilmiş sınır.
   [
-    `cat >> scratchpad/notes.txt <<'EOF'\nnot: cp ve docs/approvals ayni satirda\nEOF`, 2,
-    '(RETREAT-HEREDOC) heredoc govdesi mention+fiil tasiyor -> segmentasyona GIRILMEZ, blob gibi engellenir (kabul edilmis asiri engelleme)',
+    `cp scratchpad/a.txt scratchpad/b.txt <<'EOF'\nnot: docs/approvals mention here\nEOF`, 2,
+    '(RETREAT-HEREDOC) heredoc GORULUNCE segmentasyona GIRILMEZ, "cp" gercekten KOMUT KONUMUNDA -> blob gibi engellenir (kabul edilmis asiri engelleme)',
+  ],
+  [
+    `cat >> scratchpad/notes.txt <<'EOF'\nnot: cp ve docs/approvals ayni satirda\nEOF`, 0,
+    '(RETREAT-HEREDOC-M2) heredoc GORULUNCE segmentasyona GIRILMEZ (retreat hala calisiyor) AMA govde icindeki "cp" kelimesi KOMUT KONUMUNDA DEGIL (M2) -> artik gecer (eskiden yanlis pozitif, docs/qa/hook-borclari-contract.md B2)',
   ],
   [
     `echo $(cat docs/approvals/G2.ok) && cp scratchpad/a.txt scratchpad/b.txt`, 2,
@@ -307,6 +311,132 @@ const dangerCases = [
   [`${UNLINK} build/tmp.txt`, 0, '(UNLINK-3) unlink ile korumasiz yol -> yanlis pozitif olmamali'],
   [`${G} rm docs/approvals/GUARD.ok`, 2, '(GITRM-1) git rm ile onay dosyasi silme -> engellenir (\\brm\\b "git" onekinden bagimsiz eslesir, ek desen gerekmedi)'],
   [`${G} rm build/tmp.txt`, 0, '(GITRM-2) git rm ile korumasiz yol -> yanlis pozitif olmamali'],
+
+  // =========================================================================================
+  // M1/M2/BARE-ARTIFACT KAPANIŞI (docs/qa/hook-borclari-contract.md B1/B2 — 2026-09-14 turu).
+  // R1-R12 ve F1-F10, docs/qa/borc-turlari-kararlari-2026-09-14.md §1.2/§1.3'ten BİREBİR alındı
+  // (birebir metin korunmuş; hiçbiri çıkarılmadı). Her R vakası mutasyonla da doğrulandı (aşağıda,
+  // ayrı script'lerde — bkz kontrat §8). Beklenen: R1-R12 -> exit 2 (ENGEL), F1-F10 -> exit 0
+  // (GEÇER).
+  // =========================================================================================
+
+  // --- R1-R12: gerçek saldırı, QA'nın 2026-09-14 regresyon raporundan birebir ---------------
+  [`cd docs/approvals && rm G5.ok`, 2, '(R1) cd docs/approvals && rm G5.ok -> M1 (cd retreat) blob\'a cekiyor, "rm" komut konumunda + mention ayni blobda -> engellenir'],
+  [`cd docs/approvals && cp /tmp/evil G5.ok`, 2, '(R2) cd docs/approvals && cp /tmp/evil G5.ok -> M1'],
+  [`cd docs/approvals && mv /tmp/evil G5.ok`, 2, '(R3) cd docs/approvals && mv /tmp/evil G5.ok -> M1'],
+  [`cd docs/approvals ; echo x | tee G5.ok`, 2, '(R4) cd docs/approvals ; echo x | tee G5.ok -> M1 (cd + ";" ayni blob, "tee" boru sonrasi komut konumunda)'],
+  [`cd docs/approvals && sed -i s/a/b/ G5.ok`, 2, '(R5) cd docs/approvals && sed -i s/a/b/ G5.ok -> M1'],
+  [`cd .claude/hooks && rm gate-check.cjs`, 2, '(R6) cd .claude/hooks && rm gate-check.cjs -> M1, hooks ailesi'],
+  [`cd .claude/hooks && cp /tmp/evil gate-check.cjs`, 2, '(R7) cd .claude/hooks && cp /tmp/evil gate-check.cjs -> M1'],
+  [`cd .claude/hooks && mv /tmp/evil gate-check.cjs`, 2, '(R8) cd .claude/hooks && mv /tmp/evil gate-check.cjs -> M1'],
+  [
+    `ls docs/approvals && node -e "require('fs').writeFileSync('G5.ok','x')"`, 2,
+    '(R9) ls docs/approvals && node -e writeFileSync(\'G5.ok\',...) -> CD YOK, M1 devreye girmez; BARE-ARTIFACT korelasyonu yakalar (inlineEval + bare "G5.ok" + baska segmentte mention)',
+  ],
+  [`cd .claude/hooks && node -e "require('fs').writeFileSync('gate-check.cjs','x')"`, 2, '(R10) cd .claude/hooks && node -e writeFileSync(\'gate-check.cjs\',...) -> M1'],
+  [
+    `echo docs/approvals ; rm G5.ok`, 2,
+    '(R11) echo docs/approvals ; rm G5.ok -> CD YOK, BARE-ARTIFACT korelasyonu yakalar (rm komut konumunda + bare "G5.ok" + onceki segmentte mention)',
+  ],
+  [
+    `cat docs/approvals/G5.ok | head -1 ; rm G5.ok`, 2,
+    '(R12) cat docs/approvals/G5.ok | head -1 ; rm G5.ok -> CD YOK, BARE-ARTIFACT korelasyonu yakalar (ilk segmentte acik mention, ucuncu segmentte bare rm)',
+  ],
+
+  // --- F1-F10: salt-okunur/masum, QA'nın raporundan birebir (F2/F3/F4/F5/F9 birebir metin;
+  // F1/F6/F7/F8/F10 raporda "cat / ls -la / git diff / wc -l / bolunmus dize" olarak ozetlenmis,
+  // asagida somut komutlar olarak yeniden yazildi — ayni kategori, hicbiri cikarilmadi) ----------
+  [`cat docs/approvals/README.md`, 0, '(F1) cat ile docs/approvals altinda okuma -> gecer (mention var, yazma fiili yok)'],
+  [`grep -n "unlink" .claude/hooks/_selftest.cjs`, 0, '(F2) grep -n "unlink" .claude/hooks/_selftest.cjs -> M2 (unlink tirnak icinde ARGUMAN, komut konumunda DEGIL) -> gecer'],
+  [`grep -c "RM-1" .claude/hooks/_selftest.cjs`, 0, '(F3) grep -c "RM-1" .claude/hooks/_selftest.cjs -> M2 ("RM-1" argumaninda \\brm\\b eslesiyor ama komut konumunda degil) -> gecer'],
+  [`grep -n "Remove-Item" .claude/hooks/block-dangerous.cjs`, 0, '(F4) grep -n "Remove-Item" .claude/hooks/block-dangerous.cjs -> M2 -> gecer'],
+  [`grep -rn "rm" docs/approvals/README.md`, 0, '(F5) grep -rn "rm" docs/approvals/README.md -> M2 (hem mention hem "rm" argumanda, ikisi de ayni segmentte ama "rm" komut konumunda degil) -> gecer'],
+  [`ls -la docs/approvals`, 0, '(F6) ls -la docs/approvals -> gecer (yazma fiili yok)'],
+  [`git diff docs/approvals/README.md`, 0, '(F7) git diff docs/approvals/README.md -> gecer (okuma)'],
+  [`wc -l .claude/hooks/_selftest.cjs`, 0, '(F8) wc -l .claude/hooks/_selftest.cjs -> gecer (yazma fiili yok)'],
+  [`awk '/rm/{n++} END{print n}' .claude/hooks/_selftest.cjs`, 0, '(F9) awk \'/rm/{n++} END{print n}\' .claude/hooks/_selftest.cjs -> M2 ("rm" awk programi ICINDE, komut konumunda degil) -> gecer'],
+  [`grep -n "r""m" docs/approvals/README.md`, 0, '(F10) bolunmus dize: "r""m" bitisik "rm" OLUSTURMAZ (tirnaklar arada) -> zaten yanlis pozitif degil, gecer'],
+
+  // --- M1 NEGATIF KONTROLLER: cd + zararsiz okuma -> hala GECER (asiri engelleme YOK) ---------
+  [`cd docs/approvals && ls`, 0, '(M1-NEG-1) cd docs/approvals && ls -> M1 blob\'a ceker ama yazma fiili/yonlendirme yok -> gecer'],
+  [`cd .claude/hooks && cat gate-check.cjs`, 0, '(M1-NEG-2) cd .claude/hooks && cat gate-check.cjs -> M1 blob\'a ceker ama okuma -> gecer'],
+  [`cd scratchpad && echo hello > notes.txt`, 0, '(M1-NEG-3) cd scratchpad && echo hello > notes.txt -> M1 blob\'a ceker, redirect var AMA hedef ("notes.txt") korunan-gorunumlu bir ad DEGIL -> gecer'],
+  [`pushd docs/approvals && ls`, 0, '(M1-NEG-4) pushd de ayni retreat ailesinden -> okuma gecer'],
+  [`Set-Location .claude/hooks; cat gate-check.cjs`, 0, '(M1-NEG-5) Set-Location (PowerShell tam ad) de retreat tetikler -> okuma gecer'],
+
+  // --- M1 POZİTİF (aile üyeleri): her cd-esdegeri gercek bir yazmayla birlikte hala ENGEL ------
+  [`pushd docs/approvals && rm G5.ok`, 2, '(M1-POS-pushd) pushd de M1 ailesinden -> engellenir'],
+  [`popd && cd docs/approvals && rm G5.ok`, 2, '(M1-POS-popd) popd + cd zinciri -> M1 tetiklenir -> engellenir'],
+  [`chdir docs\\approvals && del GUARD.ok`, 2, '(M1-POS-chdir) cmd.exe chdir + bayraksiz del -> M1 tetiklenir -> engellenir'],
+  [`Set-Location docs/approvals; Remove-Item G5.ok`, 2, '(M1-POS-SetLocation) PowerShell Set-Location + Remove-Item -> M1 tetiklenir -> engellenir'],
+  [`Push-Location .claude/hooks; Remove-Item gate-check.cjs`, 2, '(M1-POS-PushLocation) Push-Location + Remove-Item -> M1 tetiklenir -> engellenir'],
+
+  // --- M1'İN EŞSİZ KATKISI (mutasyon kanıtıyla doğrulandı, kontrata yazıldı): R1-R12'nin
+  // TAMAMI aslında BARE-ARTIFACT korelasyonuyla da (M1 OLMADAN) engellenebiliyor, çünkü hepsi
+  // "*.ok"/hook-dosyası kalıbına uyan BARE hedefler kullanıyor. M1'in gerçek değeri, hedefin bu
+  // dar kalıba UYMADIĞI durumlarda ortaya çıkıyor — ör. `docs/approvals` içindeki KEYFİ bir dosya
+  // (README.md gibi, kalıba uymuyor). Ölçüm: M1 kaldırılınca (mutants/no-m1.cjs) bu vaka
+  // exit=0'a (GEÇER) düşüyor; M1 varken exit=2 (ENGEL).
+  [`cd docs/approvals && rm README.md`, 2, '(M1-UNIQUE) cd docs/approvals && rm README.md -> hedef ("README.md") bare-artifact kaliplarina (*.ok/hook adi) UYMUYOR, YALNIZCA M1 (blob retreat) bunu yakalar -> engellenir'],
+
+  // --- M1 BİLEREK DIŞLANAN "sl": retreat TETİKLENMEZ ama BARE-ARTIFACT korelasyonu YİNE de
+  // yakalar (dosya basi yorumundaki gerekce: dislamak bir bosluk ACMIYOR) --------------------
+  [
+    `sl docs/approvals && rm G5.ok`, 2,
+    '(M1-SL-EXCLUDED-BUT-COVERED) "sl" WD_CHANGE listesinde YOK (retreat tetiklenmez, normal segmentasyon calisir) AMA BARE-ARTIFACT korelasyonu (M1\'den bagimsiz ikinci mekanizma) yine de yakalar -> engellenir',
+  ],
+
+  // --- M2 KOMUT KONUMU: onek kelimeleri (sudo/env/git) dogru atlaniyor -------------------------
+  [`sudo rm docs/approvals/GUARD.ok`, 2, '(M2-PREFIX-sudo) sudo rm ... -> "sudo" onek olarak atlanir, "rm" komut konumunda sayilir -> engellenir'],
+  [`env rm docs/approvals/GUARD.ok`, 2, '(M2-PREFIX-env) env rm ... -> ayni mekanizma -> engellenir'],
+  [
+    `foo rm docs/approvals/GUARD.ok`, 0,
+    '(M2-PREFIX-KABUL-EDILEN-SINIR) taninmayan bir onek ("foo") ile sarmalanmis rm -> M2 bunu komut konumunda SAYMAZ (kara liste derinlik katmaninin dogal siniri, dogru pozitif KAYBI degil: docs/approvals/GUARD.ok TAM YOL oldugu icin bare-artifact korelasyonu da devreye girmez) -> gecer (kabul edilmis, kontrata yazilmis sinir)',
+  ],
+
+  // --- ÇIPLAK YÖNLENDİRME BOŞLUĞU KAPANIŞI: `cd <korumali> && echo x > <bare-ad>` -------------
+  [`cd docs/approvals && echo x > G5.ok`, 2, '(BARE-REDIRECT-1) cd docs/approvals && echo x > G5.ok -> M1 blob + bare-artifact korelasyonu (redirect hedefi bare "*.ok") -> engellenir'],
+  [`cd .claude/hooks && echo x > gate-check.cjs`, 2, '(BARE-REDIRECT-2) cd .claude/hooks && echo x > gate-check.cjs -> ayni mekanizma, hooks ailesi -> engellenir'],
+  [`echo docs/approvals ; echo x > G5.ok`, 2, '(BARE-REDIRECT-3) cd YOK, mention + bare redirect ayri segmentlerde -> bare-artifact korelasyonu yine de yakalar -> engellenir'],
+
+  // --- BARE-ARTIFACT NEGATİF KONTROLLER: hedef/kaynak AÇIK bir yol tasiyorsa (bare degil)
+  // korelasyon devreye GİRMEMELİ (asiri engelleme yok) ------------------------------------------
+  [`ls docs/approvals && cp /tmp/backup.ok /tmp/restore.ok`, 0, '(BARE-NEG-1) hem kaynak hem hedef ACIK yol tasiyor (bare degil) -> korelasyon calismaz -> gecer'],
+  [`node -e "require('fs').writeFileSync('random.ok','x')"`, 0, '(BARE-NEG-2) bare ".ok" dosyasi VAR ama HICBIR segmentte docs/approvals/.claude/hooks mention YOK -> korelasyon calismaz -> gecer'],
+  [`ls .claude/hooks && cp /tmp/evil gate-check.cjs`, 2, '(BARE-BONUS-hooks) R9 ile simetrik: hooks ailesi icin de bare-artifact korelasyonu calisir -> engellenir'],
+
+  // =========================================================================================
+  // A5 KAPANIŞI (docs/qa/hook-borclari-contract.md — CEO'nun diferansiyel sondası, probe-extra.mjs
+  // A5). REGRESYON: `X=docs/approvals; rm $X/G5.ok` blob taramasında (segmentasyon-öncesi, tüm metin
+  // tek parça) ENGELLENİYORDU ama segmentasyonlu adayda GEÇİYORDU — çünkü "G5.ok" öncesindeki "/"
+  // (degisken genislemesinden gelen) "acik yol, belirsiz DEGIL" sayılıp bare-artifact taramasından
+  // muaf tutuluyordu. Düzeltme: "/" öncesi TOKEN bir kabuk değişkeni (`$X`, `${X}`, tırnaklı) ya da
+  // göreli-dizin kısayolu (`.`/`..`) ise, önündeki "/" artık açık yol SAYILMAZ (AMBIGUOUS_PREFIX_RE).
+  // =========================================================================================
+  [
+    `X=docs/approvals; rm $X/G5.ok`, 2,
+    '(BARE-A5-1) X=docs/approvals; rm $X/G5.ok -> A5 BIREBIR REGRESYON VAKASI: "$X/" degisken-onekli, acik yol SAYILMAZ, bare-artifact korelasyonu yakalar -> engellenir',
+  ],
+  [
+    `echo docs/approvals ; rm ./G5.ok`, 2,
+    '(BARE-A5-2) echo docs/approvals ; rm ./G5.ok -> "./" goreli-dizin kisayolu da acik yol SAYILMAZ (hangi dizine gorelı oldugu segment metninden bagimsiz belirsiz) -> engellenir',
+  ],
+  [
+    `echo docs/approvals ; rm "$DIR"/G5.ok`, 2,
+    '(BARE-A5-3) echo docs/approvals ; rm "$DIR"/G5.ok -> tirnakli degisken referansi da AYNI sekilde belirsiz -> engellenir',
+  ],
+  [
+    `ls .claude/hooks ; rm $H/gate-check.cjs`, 2,
+    '(BARE-A5-hooks) A5 ile simetrik, hooks ailesi: "$H/gate-check.cjs" degisken-onekli bare hedef -> engellenir',
+  ],
+  [
+    `X=/tmp; rm $X/G5.ok`, 0,
+    '(BARE-A5-NEG-1) X=/tmp; rm $X/G5.ok -> degisken-onekli hedef VAR ama HICBIR segmentte docs/approvals/.claude/hooks mention YOK -> korelasyon calismaz -> gecer (asiri engelleme yok)',
+  ],
+  [
+    `cp /tmp/backup.ok /tmp/sub/restore.ok && ls docs/approvals`, 0,
+    '(BARE-A5-NEG-2) hem kaynak hem hedef LITERAL dizin adi tasiyor ("tmp"/"sub", degisken/nokta DEGIL) -> acik yol olarak kalir, A5 duzeltmesi bunu etkilemez -> gecer',
+  ],
 ];
 
 // --- gate-check.cjs vakaları (K1) --------------------------------------------------------

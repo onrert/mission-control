@@ -555,8 +555,8 @@ const dangerCases = [
 
   // --- NEST masum ikizleri: ayni sozdizimsel aile (alt-kabuk cagirisi), ama fiil OKUMA ya da
   // hedef korunan bir yol degil -> hicbiri approvals/hooks'a yazmaz, hepsi exit 0 beklenir -------
-  [`sh -c 'ls docs/approvals'`, 0, '(NEST-NEG-1) sh -c \'ls docs/approvals\' -> yazma fiili yok, gecer'],
-  [`bash -c "cat docs/approvals/README.md"`, 0, '(NEST-NEG-2) bash -c "cat docs/approvals/README.md" -> yazma fiili yok, gecer'],
+  [`sh -c 'ls docs/approvals'`, 2, '(NEST-NEG-1) v5 DEGISTI (0->2): brief karari #3 (docs/qa/hook-polarite-contract.md) — sh/bash/eval/powershell/cmd bir alt kabuga GERCEKTEN yorumlanacak bir dizeyi tasidigi icin bu dize KOD sayilir, VERI degil; ic ice kabuk ailesi artik FIIL ARANMADAN, yalnizca "korunan yol aniliyor mu" sorusuyla kapatiliyor. Bilincli, istenen asiri engelleme (ADR-016 derinlik katmani).'],
+  [`bash -c "cat docs/approvals/README.md"`, 2, '(NEST-NEG-2) v5 DEGISTI (0->2): NEST-NEG-1 ile AYNI gerekce — "bash -c" GERCEKTEN yorumlanacak bir dizeyi tasir, ic ice fiil OKUMA (cat) olsa bile "bash" hicbir zaman okuyucu sayilmaz -> mention normalizePathText uzerinden yakalanir -> engellenir (ic ice kabuk ailesi FIIL ARANMADAN, yapisal olarak kapatiliyor).'],
   [`sh -c 'rm build/tmp.txt'`, 0, '(NEST-NEG-3) sh -c \'rm build/tmp.txt\' -> "rm" var ama hicbir segmentte approvals/hooks mention yok -> gecer'],
   [`bash -c "npm run build"`, 0, '(NEST-NEG-4) bash -c "npm run build" -> yazma fiili yok, mention yok -> gecer'],
 
@@ -588,8 +588,8 @@ const dangerCases = [
   // --- OKUYUCU BEYAZ LİSTESİ: FAIL-CLOSED kontroller (listede olmayan bas komut -> okuyucu
   // SAYILMAZ, mevcut mekanizmalar degismeden calisir; whitelist SADECE maskeleme EKLER, yeni bir
   // gecis yolu ACMAZ) -----------------------------------------------------------------------
-  [`foo docs/approvals/G5.ok`, 0, '(WL-FAILCLOSED-1) foo docs/approvals/G5.ok -> "foo" bilinmeyen bas komut, herhangi bir writeVerb/inlineEval yok -> zaten hicbir mekanizma tetiklenmez -> gecer (whitelist YOKLUGU bir sey DEGISTIRMEZ, cunku gecerli bir yazma sinyali yok)'],
-  [`mystery .claude/hooks/gate-check.cjs`, 0, '(WL-FAILCLOSED-2) mystery .claude/hooks/gate-check.cjs -> ayni gerekce, yazma sinyali yok -> gecer'],
+  [`foo docs/approvals/G5.ok`, 2, '(WL-FAILCLOSED-1) v5 DEGISTI (0->2, KASITLI): Mekanizma 1 hala hicbir sey tetiklemez (writeVerb/inlineEval eslesmiyor) AMA Mekanizma 2nin polarite-tersine-cevirme mantigi "foo" gibi BILINMEYEN bir bas komutu asla okuyucu SAYMAZ (fail-closed varsayilan) -> ayni segmentte dogrudan mention var -> engellenir. Bu, brief#Kusur-A nin tam istedigi sey: bilinmeyen/opak komutlar artik "zarasiz" degil "supheli" varsayiliyor.'],
+  [`mystery .claude/hooks/gate-check.cjs`, 2, '(WL-FAILCLOSED-2) v5 DEGISTI (0->2), ayni gerekce (WL-FAILCLOSED-1)'],
   [`foo rm docs/approvals/G5.ok`, 2, '(WL-FAILCLOSED-3) foo rm docs/approvals/G5.ok -> "foo" bilinmeyen ONEK/bas komul olsa da "rm" tirnak DISINDA HER ZAMAN sayilir (whitelist\'te olmayan bas komut icin maskeleme YOK) -> engellenir'],
 
   // --- KOŞULLU ÜYELİK: sed (yalnizca -i YOKSA okuyucu) --------------------------------------
@@ -609,7 +609,94 @@ const dangerCases = [
   [`echo docs/approvals/G5.ok | xargs cat`, 0, '(WL-XARGS-READ) echo docs/approvals/G5.ok | xargs cat -> xargsDestructive (cat yazma fiili degil) eslesmez -> checkXargsPipeLeak hic cagrilmaz -> gecer'],
 
   // --- sh/bash/eval/powershell KNOWN_NONREADER: Etki 2 (varsayilan supheli) TETIKLENMEMELI ----
-  [`sh -c 'ls docs/approvals'`, 0, '(WL-SH-KNOWN) sh -c \'ls docs/approvals\' -> "sh" KNOWN_NONREADER_HEADS icinde (opak-bilinmeyen DEGIL) -> Etki 2 tetiklenmez, zaten yazma fiili de yok -> gecer (NEST-NEG-1 ile ayni, REGRESYON YOK)'],
+  [`sh -c 'ls docs/approvals'`, 2, '(WL-SH-KNOWN) v5 DEGISTI (0->2): NEST-NEG-1 ile AYNI vektor, ayni gerekce — "sh" v5de KNOWN_NONREADER_HEADS/Etki-2 kavramindan bagimsiz olarak ASLA okuyucu degildir (isReaderHeadV5), mention normalizePathText uzerinden yakalanir -> engellenir.'],
+
+  // =========================================================================================
+  // TUR 7 — v5 POLARITE TERSINE CEVIRME + YOL NORMALIZASYONU (docs/qa/hook-polarite-contract.md,
+  // docs/qa/hook-borclari-karari-v3-2026-09-15.md ÖNEMLİ-1/ÖNEMLİ-2 kapanışı). Mekanizma 1 (yukarıdaki
+  // her şey) DEĞİŞMEDİ; bu blok yalnızca EK olan Mekanizma 2'yi ölçer. Her P0-P3 vektörünün bir
+  // masum İKİZİ var (aynı araç ailesi, korumasız hedef -> exit 0 kalmalı).
+  // =========================================================================================
+
+  // --- P0: kapinin KENDISINI (gate-check.cjs) hedefleyen, dogrudan olen sizintilar ------------
+  [`echo x >| .claude/hooks/gate-check.cjs`, 2, '(V5-P0-1) clobber yonlendirmesi (>|) -> yeni approvalsRedirectV5/hooksRedirectV5 "|" karakterini de kapsiyor -> engellenir'],
+  [`echo x >| build/tmp.txt`, 0, '(V5-P0-1-TWIN) clobber ama korumasiz hedef -> gecer'],
+  [`openssl rand -out .claude/hooks/gate-check.cjs 10`, 2, '(V5-P0-2) openssl -out -> "openssl" -out VARKEN okuyucu DEGIL (isOpensslReaderV5), ayni segmentte hooksRef -> engellenir'],
+  [`openssl rand -out build/x.bin 10`, 0, '(V5-P0-2-TWIN) openssl -out ama korumasiz hedef -> gecer'],
+  [`openssl dgst -sha256 .claude/hooks/gate-check.cjs`, 0, '(V5-P0-2-READ) openssl "-out" YOK -> okuyucu sayilir (dgst salt-okunur ozet alma) -> gecer (QA X18 masum ikizi)'],
+
+  // --- P1: genel amacli yorumlayicilar (node/python3) — asla okuyucu SAYILMAZ, konum/bayrak
+  // aranmadan mention+non-reader tek basina yeter --------------------------------------------
+  [`node -p "require('fs').writeFileSync('docs/approvals/G5.ok','x')"`, 2, '(V5-P1-1) node -p -> "-e"/"--eval" bayragi ARANMIYOR artik; "node" zaten hicbir zaman okuyucu degil -> ayni segment mention -> engellenir (v4nin inlineEval regexinin -p atlatmasini fiil ARAMADAN kapatir)'],
+  [`node -p "console.log(1)"`, 0, '(V5-P1-1-TWIN) node -p ama approvals/hooks mention yok -> gecer'],
+  [`python3 -c "open('docs/approvals/G5.ok','w').write('x')"`, 2, '(V5-P1-2) python3 -c -> v4nin \\bpython\\b deseni "python3"u kelime siniri yuzunden gormuyordu; v5 fiil ARAMADAN "python3" bas komutu okuyucu degil -> engellenir'],
+  [`python3 -c "print(1)"`, 0, '(V5-P1-2-TWIN) python3 -c ama mention yok -> gecer'],
+  [`node scripts/evil.js docs/approvals/G5.ok`, 2, '(V5-P1-3) cIPLAK node <betik> <hedef> -> "-e" bayragi YOK, v4nin inlineEval\'i bunu hic gormuyordu; v5 "node" hicbir zaman okuyucu olmadigi icin bayraktan BAGIMSIZ engellenir. KABUL EDILEN YENI ASIRI ENGELLEME: betik SADECE okuyor olsa bile (ör. bir rapor scripti) node Turing-complete oldugu icin ayirt edilemez -> docs/qa/hook-polarite-contract.md FP kabulü.'],
+  [`node scripts/report.js build/output.log`, 0, '(V5-P1-3-TWIN) ayni cIPLAK node bicimi ama mention yok -> gecer'],
+
+  // --- P2: iceriği değiştiren/sıfırlayan araçlar (sed --in-place, perl -pi, patch, gzip, sort -o) -
+  [`sed --in-place s/a/b/ docs/approvals/G5.ok`, 2, '(V5-P2-1) sed --in-place -> v4nin SED_INPLACE_RE (\\bsed\\b[^\\n]*-i\\b) "--in-place"i yakalamiyordu (word-boundary); v5nin isSedReaderV5\'i -i VE --in-place ikisini de non-reader sayar -> ayni segment mention -> engellenir'],
+  [`sed --in-place s/a/b/ build/tmp.txt`, 0, '(V5-P2-1-TWIN) sed --in-place ama mention yok -> gecer'],
+  [`sed 's/a/b/' docs/approvals/README.md`, 0, '(V5-P2-1-READ) sed, "-i"/"--in-place" YOK -> okuyucu -> gecer (WL-SED-READ ile ayni, regresyon yok)'],
+  [`perl -pi -e "s/a/b/" docs/approvals/G5.ok`, 2, '(V5-P2-2) perl -pi -e -> "perl" hicbir zaman okuyucu degil -> ayni segment mention -> engellenir'],
+  [`perl -pi -e "s/a/b/" build/tmp.txt`, 0, '(V5-P2-2-TWIN) perl -pi -e ama mention yok -> gecer'],
+  [`patch docs/approvals/G5.ok < scratchpad/p.diff`, 2, '(V5-P2-3) patch -> "patch" hicbir zaman okuyucu degil -> engellenir'],
+  [`patch build/tmp.txt < scratchpad/p.diff`, 0, '(V5-P2-3-TWIN) patch ama mention yok -> gecer'],
+  [`gzip -f docs/approvals/G5.ok`, 2, '(V5-P2-4) gzip -> "gzip" hicbir zaman okuyucu degil (dosyayi yerinde sikistirip degistirir) -> engellenir'],
+  [`gzip -f build/tmp.bin`, 0, '(V5-P2-4-TWIN) gzip ama mention yok -> gecer'],
+  [`sort -o docs/approvals/G5.ok scratchpad/x.txt`, 2, '(V5-P2-5) sort -o -> "-o" VARKEN okuyucu DEGIL (isSortReaderV5) -> engellenir'],
+  [`sort -o build/x.txt scratchpad/y.txt`, 0, '(V5-P2-5-TWIN) sort -o ama mention yok -> gecer'],
+  [`sort docs/approvals/README.md`, 0, '(V5-P2-5-READ) sort, "-o"/"--output" YOK -> okuyucu (yalnizca stdout\'a yazdirir) -> gecer'],
+
+  // --- P4: yol parcalama (tirnak/nokta/cift-egik ile bolunmus literal yol) -------------------
+  [`rm "docs"/approvals/G5.ok`, 2, '(V5-P4-1) tirnakla bolunmus yol -> normalizePathText tirnaklari siler -> "docs/approvals" ortaya cikar, "rm" okuyucu degil -> engellenir'],
+  [`rm "build"/tmp.txt`, 0, '(V5-P4-1-TWIN) ayni bicim ama korumasiz hedef -> gecer'],
+  [`rm docs/./approvals/G5.ok`, 2, '(V5-P4-2) "/./ " ile bolunmus yol -> normalizePathText "/./ "yi kaldirir -> engellenir'],
+  [`rm build/./tmp.txt`, 0, '(V5-P4-2-TWIN) ayni bicim, korumasiz hedef -> gecer'],
+  [`rm docs//approvals/G5.ok`, 2, '(V5-P4-3) cift egik ile bolunmus yol -> normalizePathText "//"yi teke indirir -> engellenir'],
+  [`rm build//tmp.txt`, 0, '(V5-P4-3-TWIN) ayni bicim, korumasiz hedef -> gecer'],
+  [`rm ".claude"/hooks/gate-check.cjs`, 2, '(V5-P4-4) tirnakla bolunmus hooks yolu -> engellenir (P4-1 ile ayni mekanizma, hooks ailesi)'],
+  [`rm ".build"/tmp.txt`, 0, '(V5-P4-4-TWIN) ayni bicim, korumasiz hedef -> gecer'],
+  [
+    `rm docs/approvalsX/G5.ok`, 0,
+    '(V5-P4-SINIR) "docs/approvalsX" -> normalizasyon SONRASI bile approvalsRef "\\bapprovals\\b" kelime sinirina UYMUYOR ("X" bitisik) -> BENZER-AMA-FARKLI bir dizin yanlislikla eslesmemeli -> gecer',
+  ],
+  [
+    `rm docs/x/../approvals/G5.ok`, 2,
+    '(V5-P4-PARENT) ".." bilesenini COZMEYE calismiyoruz (dosya sistemi gerektirir); segment ayrica "docs"/"approvals" kelimelerini tasidigi icin PARENT_TRAVERSAL_RE fail-closed olarak ESLESMIS sayar -> engellenir (kabul edilen fail-closed tasarim, docs/qa/hook-polarite-contract.md)',
+  ],
+  [
+    `rm scratchpad/x/../y/tmp.txt`, 0,
+    '(V5-P4-PARENT-NEG) ".." var AMA segment hicbir yerde "docs"/"approvals"/".claude"/"hooks"/"settings.json" kelimesi tasimiyor -> fail-closed kurali TETIKLENMEZ -> gecer (asiri genis bir ".." yasagi degil, yalnizca zaten supheli segmentleri etkiler)',
+  ],
+
+  // --- xargs hedef-yetenegi genellemesi (v4nin xargsDestructive fiil listesinde OLMAYAN bir
+  // hedef fiil de artik yakalanmali: "cp" xargsDestructive'te VAR aslinda, o yuzden GERCEKTEN
+  // yeni olan vektor "chown"/"truncate" GIBI DEGIL, dogrudan bir ARAC ekleme yerine mekanizmanin
+  // KENDISINI olcuyoruz: xargs hedefi bilinen okuyucu DEGILSE (READER_HEADS_V5'te yoksa) leak
+  // korelasyonu artik calisir; ayrica xargs hedefi okuyucuYSA -- ör. "xargs stat" -- calismamali) --
+  [`echo docs/approvals/G5.ok | xargs stat`, 0, '(V5-XARGS-READ-2) "stat" READER_HEADS_V5 icinde -> xargs okuyucu sayilir -> pipe-leak tetiklenmez -> gecer'],
+  [`echo docs/approvals/G5.ok | xargs sha256sum`, 0, '(V5-XARGS-READ-3) "sha256sum" da okuyucu -> gecer (checksum ailesinin xargs altinda da okuyucu kaldigini dogrular)'],
+
+  // --- git koşullu üyelik genişlemesi (add/commit zaten WL-GIT-ADD-REGRESYON-KONTROLU ile
+  // ölçülüyordu; burada "stash list" ve "stash" (argümansız/diğer) ayrımı ölçülüyor) ------------
+  [`git stash list`, 0, '(V5-GIT-STASH-LIST) "stash list" brief karari #2 geregi okuyucu -> yazma fiili de yok -> gecer (degisiklik yok, zaten yazma sinyali yoktu ama artik GEREKCESI "okuyucu")'],
+  [`git stash`, 0, '(V5-GIT-STASH-BARE) argumansiz "git stash" -> "stash list" DEGIL -> git okuyucu SAYILMAZ AMA tek basina hicbir sey BLOKLAMAZ (mention/bare-artifact yok, non-reader olmak baslibasina yeterli degil) -> gecer'],
+  [
+    `git stash && rm docs/approvals/G5.ok`, 2,
+    '(V5-GIT-STASH-BARE-TWIN) "git stash" (okuyucu DEGIL, "list" degil) + ikinci segmentte gercek rm+mention -> zaten Mekanizma 1 bunu yakalar (ayrimin ONEMSIZ oldugunu, guvenlik acisindan risk olusturmadigini gosterir)',
+  ],
+
+  // --- find koşullu üyelik: -okdir/-execdir/-fls gibi v4'ün findDestructive'inde OLMAYAN bayraklar
+  [`find docs/approvals -name "*.ok" -okdir rm {} \\;`, 2, '(V5-FIND-OKDIR) "-okdir" v4nin findDestructive deseninde YOKTU (yalnizca -delete/-exec); v5nin FIND_DESTRUCTIVE_FLAG_RE\'si -okdir\'i de kapsar -> find okuyucu degil -> ayni segment mention -> engellenir'],
+  [`find build -name "*.tmp" -okdir rm {} \\;`, 0, '(V5-FIND-OKDIR-TWIN) ayni bayrak, korumasiz hedef -> gecer'],
+
+  // --- dosya sonu: v4'ün 11 sızıntısının HEPSİNİN kapandığını gösteren tek bir birleşik zincir
+  // (gerçekçi bir saldırganın art arda deneyebileceği biçimde; hiçbiri geçmemeli) ----------------
+  [
+    `node -p "1" && sed --in-place s/a/b/ docs/approvals/G5.ok`, 2,
+    '(V5-CHAIN-1) ilk segment zararsiz (mention yok), ikinci segment P2-1 ile ayni -> segmentasyon ayri ayri degerlendirir, ikinci segment tek basina yeterli -> engellenir',
+  ],
 ];
 
 // --- gate-check.cjs vakaları (K1) --------------------------------------------------------

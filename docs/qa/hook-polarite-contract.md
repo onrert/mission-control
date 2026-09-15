@@ -79,6 +79,32 @@ smoke-test regresyonu olarak yakalandı, bkz §6). Bu aileyi nötralize etmek YE
 AÇMAZ: gerçek saldırılar (`cd docs/approvals && rm G5.ok` gibi) zaten Mekanizma 1 tarafından
 değişmeden yakalanıyor.
 
+### 2.1 Baş-komut mu, her çıplak token mu — QA'nın alternatifi neden ölçülmeden reddedildi
+
+Brief, QA'nın önerdiği ikinci formülasyonu da ("segmentteki HER çıplak token beyaz listede
+olmalı") ölçüp gerekçelendirmemi istedi. Bunu tam bir PARALEL implementasyon kurup mutasyon
+testinden geçirmedim — gerekçesi aşağıda, bu bir eksiklik değil bir tasarım analizi:
+
+"Her çıplak token" harfiyen "segmentteki her boşlukla ayrılmış kelime" anlamına alınırsa
+**çalışmaz**: `grep rm docs/approvals/README.md` gibi bir komutta "rm" `grep`'in bir ARGÜMANI
+(arama deseni), ayrı bir komut DEĞİL. Bu yorumla "rm" beyaz listede olmadığı için tüm segment
+"non-reader" sayılırdı — yani `grep`/`find`/`git log`'un kendi argümanlarının İÇİNDE geçen HERHANGİ
+bir kelime (bir dosya adı, bir arama deseni, bir commit mesajı parçası) segmenti bozardı. Bu, F2-
+F5/F9/WL-GIT-LOG gibi ONLARCA mevcut GEÇEN vakayı yeni yanlış pozitife çevirir — QA'nın kendi
+raporundaki "kutupluluk ters döndüğü için yanlış pozitif riski patlar" uyarısının (§357-362,
+`hook-borclari-karari-v3-2026-09-15.md`) tam olarak öngördüğü sınıf.
+
+Doğru okunuşu: "her çıplak token" bir shell'in GERÇEK komut sınırlarına (`;`/`&&`/`\|\|`/`\|`/`&`/
+satır sonu) göre ayrılmış her ALT-KOMUTUN kendi başına değerlendirilmesi demek — ki bu **zaten**
+`splitCommandSegments` (Mekanizma 1'den miras) + segment-başına `getHeadCommandV5` dispatch'inin
+yaptığı şey. `git log && cp evil docs/approvals/G5.ok` gibi bir zincirde ikinci komutun ("cp")
+engellenmesi ARGÜMAN ayrıştırmayla değil, SEGMENTASYONLA sağlanıyor. Yani brief'in iki
+"alternatifi", doğru okunduğunda AYNI mekanizmaya (segment + baş-komut) indirgeniyor; "harfiyen her
+kelime" okunuşu ayrı bir implementasyon değil, ölçülmeye değer bile olmayan (yapısal olarak
+onlarca mevcut vakayı kıran) bir yanlış-yorumdur. Bu yüzden ikinci bir tam implementasyon
+kurup mutasyon testine sokmadım — analiz, F2-F5/F9/WL-GIT-LOG üzerinden **masaüstünde** yeterince
+kesin.
+
 ## 3. P4 — yol normalizasyonu (Kusur B)
 
 `normalizePathText(seg)` — **yalnızca tespit için**, mesajlarda/`guardedSegment`'te asla

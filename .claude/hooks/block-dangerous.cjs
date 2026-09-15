@@ -18,9 +18,10 @@
 // bir sha256sum + zincirdeki ilgisiz bir yazma, bir commit + ayrı bir segmentte geçen bir yol/fiil
 // adı gibi kombinasyonlar YANLIŞ POZİTİF üretiyordu.
 //
-// ÇÖZÜM: komut, kabuk ayraçlarında (`&&`, `||`, `;`, `|`, satır sonu) SEGMENTLERE bölünür ve HER
-// SEGMENT aşağıdaki AYNI kurallarla AYRI AYRI değerlendirilir (herhangi bir segment eşleşirse
-// komutun TAMAMI engellenir — bu yalnızca YANLIŞ POZİTİFİ azaltır, hiçbir segmenti muaf tutmaz).
+// ÇÖZÜM: komut, kabuk ayraçlarında (`&&`, `||`, `;`, `|`, satır sonu, tek `&` — bkz M2 KAPANIŞI v4
+// aşağıda) SEGMENTLERE bölünür ve HER SEGMENT aşağıdaki AYNI kurallarla AYRI AYRI değerlendirilir
+// (herhangi bir segment eşleşirse komutun TAMAMI engellenir — bu yalnızca YANLIŞ POZİTİFİ azaltır,
+// hiçbir segmenti muaf tutmaz).
 //
 // GÜVENLİK ŞARTI (asla ihlal edilmez): segmentasyon yalnızca FARKLI segmentlerdeki İKİ AYRI
 // sinyalin (ör. bir segmentteki yazma fiili + BAŞKA bir segmentteki korunan yol adı) birbirini
@@ -49,7 +50,8 @@ function consume(p) {
 // splitCommandSegments(cmd) -> string[] | null
 //   null  : ayrıştırma güvenli değil (heredoc/komut ikamesi/satır devamı/sonlandırılmamış tırnak)
 //           — çağıran bunu [cmd] (tek segment = bugünkü blob davranışı) olarak ele almalı.
-//   string[]: kabuk ayraçlarında (&&, ||, tek |, ;, satır sonu) TIRNAK-FARKINDA bölünmüş parçalar.
+//   string[]: kabuk ayraçlarında (&&, ||, tek |, tek &, ;, satır sonu) TIRNAK-FARKINDA bölünmüş
+//   parçalar.
 // Bu bir kabuk ayrıştırıcısı DEĞİLDİR: pipe/redirect/glob/değişken genişletme SEMANTİĞİNİ anlamaya
 // çalışmaz — yalnızca "şu an tek/çift tırnak içinde miyim" durumunu izleyerek ayıraçları GÜVENLE
 // bulur. Daha karmaşık her şey (aşağıdaki retreat listesi) bilinçli olarak ele alınmaz.
@@ -123,6 +125,16 @@ function splitCommandSegments(cmd) {
     if (c === "'") { inSingle = true; cur += c; i++; continue; }
     if (c === '"') { inDouble = true; cur += c; i++; continue; }
     if (c === '&' && cmd[i + 1] === '&') { segments.push(cur); cur = ''; i += 2; continue; }
+    // M2 KAPANIŞI v4 (tek `&` — bkz aşağıdaki büyük yorum bloğu, "OKUMA-KOMUTU BEYAZ LİSTESİ").
+    // Tek `&` (arka plana alma) da bir ayıraçtır — AMA iki kaçış durumu ayıraç SAYILMAZ:
+    //  (a) `N>&M` (dosya tanıtıcı çoğaltma, ör. `2>&1`) — buradaki `&` bir ayraç değil, YÖNLENDİRME
+    //      SÖZDİZİMİNİN parçasıdır (hemen ÖNCESİNDE `>` var).
+    //  (b) `&>`/`&>>` (bash'in "hem stdout hem stderr" kısayolu) — buradaki `&` da bir ayıraç
+    //      değil, YÖNLENDİRME sözdiziminin parçasıdır (hemen SONRASINDA `>` var).
+    // Bu iki durum dışında tek `&` güvenle bir ayıraç olarak bölünebilir (ölçüldü: mevcut 312
+    // vakalık self-test'te `2>&1` HARİCİNDE hiçbir vaka tek `&` içermiyor — bkz
+    // docs/qa/hook-allowlist-contract.md §"& kararı").
+    if (c === '&' && cmd[i - 1] !== '>' && cmd[i + 1] !== '>') { segments.push(cur); cur = ''; i += 1; continue; }
     if (c === '|' && cmd[i + 1] === '|') { segments.push(cur); cur = ''; i += 2; continue; }
     if (c === '|') { segments.push(cur); cur = ''; i += 1; continue; }
     if (c === ';') { segments.push(cur); cur = ''; i += 1; continue; }
@@ -135,6 +147,159 @@ function splitCommandSegments(cmd) {
   if (inSingle || inDouble) return null;
   const trimmed = segments.map((s) => s.trim()).filter((s) => s.length > 0);
   return trimmed.length ? trimmed : [cmd];
+}
+
+// =============================================================================================
+// M2 KAPANIŞI v4 (docs/qa/hook-allowlist-contract.md — 2026-09-15, iki adımlı kararın 2. adımı).
+// v3 tırnak muafiyetini TAMAMEN KALDIRMIŞTI (fiil her zaman, tırnak içinde de sayılır) — bu N/S/
+// NEST ailelerini kapattı ama F2/F3/F4/F5/F9 + CEO'nun 6. FP vektörünü (`sleep 0 & grep ...`)
+// YENİDEN yanlış pozitif yaptı (bkz yukarıdaki dosya-başı NOT ve _selftest.cjs TUR 6 yorumu).
+//
+// v4 ÇÖZÜMÜ: "tırnak içinde mi?" sorusunun YERİNE "bu segmentin BAŞ KOMUTU bilinen bir OKUYUCU
+// mu?" sorusu geçti. OKUYUCU TANIMI: bir komut, KEYFİ argümanlarla çağrıldığında KEYFİ bir yola
+// YAZAMIYOR/SİLEMİYORSA okuyucudur. Şüphe varsa okuyucu DEĞİLDİR (fail-closed).
+//
+//  Etki 1 (MUAFİYET, daha az engelleme): baş komut OKUYUCU ise, o segmentin YALNIZCA
+//  TIRNAKLANMIŞ argümanlarındaki fiil/satır-içi-betik eşleşmeleri SAYILMAZ (maskQuoted). Tırnak
+//  DIŞINDAKİ eşleşmeler ve YÖNLENDİRME (`>`/`>>`) kontrolleri HİÇBİR ZAMAN muaf değildir — bir
+//  okuyucu bile `> docs/approvals/G5.ok` ile hedefe yazabilir (bkz `echo x > ...` testi, "echo"
+//  OKUYUCU listesinde ama redirect kontrolü ham metinde kalır).
+//
+//  Etki 2 (VARSAYILAN ŞÜPHE, daha çok engelleme): CEO'nun 8 vektörlük "mutlak sızıntı" listesi
+//  (find -delete/-exec, xargs, dd, install, ln, chmod, truncate) `writeVerb` kara listesinde HİÇ
+//  yer almıyordu. Bunları KÖRÜ KÖRÜNE "baş komut beyaz listede değilse VE segment bir yol anıyorsa
+//  engelle" kuralıyla kapatmak ÖLÇÜLDÜ ve REDDEDİLDİ: bu, `find docs/approvals -name "*.ok"`
+//  (salt-okunur, ceo-fresh.mjs U2), `git add`/`git commit` (mevcut Y4-READ-3/4 testleri), `sh -c
+//  'ls docs/approvals'` (NEST-NEG-1) gibi ONLARCA MEVCUT/PROB VAKAYI YENİ YANLIŞ POZİTİFE
+//  çevirirdi (git/sh/bash/eval/powershell "okuyucu" DEĞİL ama zaten BAŞKA mekanizmalarla —
+//  ham/tırnaksız fiil taraması, git alt-komut ailesi — doğru yönetiliyorlar; onları "bilinmeyen"
+//  sayıp salt mention'a göre engellemek gereksiz, ölçülmüş bir regresyon açardı).
+//  Bunun YERİNE Etki 2, `find`/`xargs`'ın DIŞINDAKİ 6 vektör için `writeVerb`'e HEDEFLİ yeni üye
+//  eklenerek (install/ln/chmod/chown/truncate/dd-of=) kapatıldı — bunlar İSTİSNASIZ yazma/mutasyon
+//  fiilleridir (find'ın aksine "salt okunur kullanım" biçimleri yoktur), bu yüzden onları
+//  `writeVerb`'e eklemek "kara listeyi büyütme" riskini taşımaz (mevcut `writeVerb` zaten böyle
+//  fiillerin toplandığı yer). `find` kendi flag'e-bağlı DAR deseniyle (aşağıda `findDestructive`),
+//  `xargs` ise kendi flag koşulsuz-fiil deseniyle (`xargsDestructive`) + PIPE ÖNCESİ segment
+//  mention korelasyonuyla (aşağıda `checkXargsPipeLeak`) ayrı ele alındı — ikisi de "salt okunur
+//  kullanımı YAYGIN olan komutlar" olduğu için blanket İSTİSNAsız engellemeye ALINMADI.
+//  Ölçüm ve gerekçe tam tablo: docs/qa/hook-allowlist-contract.md.
+// =============================================================================================
+
+// OKUYUCU BEYAZ LİSTESİ (Etki 1). Her üye "KEYFİ argümanla KEYFİ yola yazamaz/silemez" testini
+// geçer. Koşullu üyeler (sed/git) ayrı fonksiyonlarla değerlendirilir (aşağıda).
+const READER_HEADS = new Set([
+  'cat', 'head', 'tail', 'less', 'more', 'wc', 'grep', 'egrep', 'fgrep', 'rg', 'findstr',
+  'awk', 'nl', 'od', 'xxd', 'strings', 'stat', 'file', 'cmp', 'diff', 'ls', 'dir', 'tree',
+  'basename', 'dirname', 'realpath', 'readlink', 'echo', 'printf', 'type', 'which', 'where',
+  'get-content', 'select-string', 'get-childitem', 'get-item',
+]);
+// Baş komut çözümlemesinde atlanan öneki kelimeler (M2-PREFIX ailesi, v1'den kalan onek listesi
+// — BURADA farklı bir amaçla kullanılıyor: "gerçek komut ne?" sorusuna cevap için, ayıraç
+// belirlemek için DEĞİL).
+const HEAD_SKIP_PREFIX = new Set(['sudo', 'env', 'time', 'exec', 'command', 'nice', 'nohup', 'builtin']);
+
+// getHeadCommand(seg) -> string ("" ise çözülemedi, OKUYUCU/OPAK sayılmaz -> fail-closed)
+// Bir segmentin GERÇEK baş komutunu bulur: başındaki boşluk/gruplama (`(`,`{`,`!`) karakterlerini,
+// `VAR=deger` atamalarını ve HEAD_SKIP_PREFIX öneklerini atlayarak ilk "gerçek" token'a ulaşır.
+// Bu bir kabuk ayrıştırıcısı DEĞİLDİR — yalnızca token sınırlarını (boşluk) izler; tırnaklı ilk
+// token nadir olduğu için tırnak-farkında DEĞİLDİR (fail-closed: tırnaklı/garip bir baş token
+// büyük ihtimalle beyaz listeye ZATEN uymaz, dolayısıyla OKUYUCU sayılmaz — güvenlik kaybı yok).
+function getHeadCommand(seg) {
+  let s = seg;
+  for (;;) {
+    const trimmed = s.replace(/^\s+/, '');
+    if (trimmed !== s) { s = trimmed; continue; }
+    if (/^[({!]/.test(s)) { s = s.slice(1); continue; }
+    break;
+  }
+  for (;;) {
+    s = s.replace(/^\s+/, '');
+    const m = /^(\S+)/.exec(s);
+    if (!m) return '';
+    const tok = m[1];
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tok)) { s = s.slice(tok.length); continue; }
+    if (HEAD_SKIP_PREFIX.has(tok.toLowerCase())) { s = s.slice(tok.length); continue; }
+    return tok.replace(/^\\/, '').replace(/^["']+|["']+$/g, '');
+  }
+}
+
+// GIT_READ_SUBCOMMANDS — git yalnızca BU alt komutlarla OKUYUCU sayılır (brief kararı). Diğer
+// tüm alt komutlar (add/commit/rm/checkout/reset/push/mv/apply/stash/...) OKUYUCU DEĞİLDİR —
+// ama zaten kendi mekanizmalarıyla (gitForce, writeVerb'in `\brm\b` eşleşmesi, `release`/`pushCmd`)
+// yönetiliyorlar; Etki 2'nin "bilinmeyen baş komut" kovasına düşmezler (bkz KNOWN_NONREADER_HEADS).
+const GIT_READ_SUBCOMMANDS = new Set(['log', 'diff', 'show', 'status', 'blame', 'grep', 'cat-file', 'ls-files', 'rev-parse']);
+function isGitReader(seg) {
+  const m = /\bgit\b\s+(?:--[\w-]+(?:=\S+)?\s+)*([A-Za-z-]+)/i.exec(seg);
+  if (!m) return false;
+  return GIT_READ_SUBCOMMANDS.has(m[1].toLowerCase());
+}
+// sed yalnızca `-i` (yerinde düzenleme) YOKSA OKUYUCU sayılır — `-i` varsa zaten `writeVerb`
+// (`\bsed\b[^\n]*-i\b`) onu yakalar, reader sayılması hiçbir şeyi DEĞİŞTİRMEZ (aşağıdaki
+// maskQuoted yalnızca "sayılmayan" eşleşmeleri etkiler; `-i` varken segment zaten OKUYUCU
+// listesine ALINMAYACAK, bkz isReaderHead).
+const SED_INPLACE_RE = /\bsed\b[^\n]*-i\b/i;
+
+// KNOWN_NONREADER_HEADS — "bilinmeyen baş komut" (Etki 2'nin varsayılan-şüphe eşiği) DEĞİLDİR;
+// bunlar ya kendi ÖZEL desenleriyle (git/gitForce, writeVerb ailesi, inlineEval, release/pushCmd,
+// alt-kabuk çağırıcıları) YÖNETİLİYOR ya da başlı başına zararsız/çok yaygın (npm) ve BAŞKA bir
+// sinyal (release deseni, writeVerb) olmadan salt varlıklarıyla hiçbir şeyi tetiklemiyor. Bu
+// kümedeki bir baş komut Etki 2'yi (varsayılan şüphe) TETİKLEMEZ — yalnızca YUKARIDAKİ mevcut
+// mekanizmalarla değerlendirilir (v3'ten değişmeden). Alt-kabuk ailesi (sh/bash/eval/powershell/
+// cmd) BİLEREK burada: OKUYUCU değiller (Etki 1 muafiyeti yok, tırnak içi fiil hâlâ sayılır — NEST
+// ailesi bu sayede kapalı kalır) AMA Etki 2'nin "bilinmeyen komut" şüphesine de girmiyorlar (aksi
+// halde `sh -c 'ls docs/approvals'` gibi salt-okunur alt-kabuk çağrıları YENİ yanlış pozitif
+// olurdu — ölçüldü, bkz docs/qa/hook-allowlist-contract.md).
+const KNOWN_NONREADER_HEADS = new Set([
+  'git', 'cp', 'copy', 'mv', 'move', 'ren', 'rename', 'sed', 'tee',
+  'set-content', 'out-file', 'add-content', 'new-item', 'remove-item',
+  'del', 'erase', 'rm', 'unlink', 'rd', 'rmdir', 'ri', 'mklink',
+  'node', 'python', 'py', 'ruby', 'perl', 'npx', 'npm',
+  'vercel', 'fly', 'railway', 'gh', 'eas',
+  'sh', 'bash', 'zsh', 'cmd', 'powershell', 'pwsh', 'eval', 'source',
+  // find/xargs KASITLI OLARAK burada DEĞİL — kendi özel dar mekanizmalarına sahipler
+  // (findDestructive/xargsDestructive + checkXargsPipeLeak), ne OKUYUCU ne "zaten yönetiliyor"
+  // kovasına konmadılar; ayrı işlenmeleri bilinçli (yukarıdaki büyük M2 v4 yorumuna bkz).
+]);
+
+function isReaderHead(head, seg) {
+  const h = head.toLowerCase();
+  if (!h) return false;
+  if (h === 'sed') return !SED_INPLACE_RE.test(seg);
+  if (h === 'git') return isGitReader(seg);
+  return READER_HEADS.has(h);
+}
+
+// maskQuoted(seg) -> string: tek/çift TIRNAK İÇİNDEKİ karakterleri boşlukla değiştirir (tırnak
+// karakterlerinin kendisi ve tırnak DIŞINDAKİ her şey OLDUĞU GİBİ kalır). Yalnızca OKUYUCU baş
+// komutlu segmentlerde, YALNIZCA fiil/satır-içi-betik eşleşmesi için kullanılır — YÖNLENDİRME
+// (`>`/`>>`) kontrolleri HER ZAMAN ham (maskesiz) metin üzerinde çalışır (bkz Etki 1 yorumu).
+function maskQuoted(seg) {
+  let out = '';
+  let inSingle = false;
+  let inDouble = false;
+  const n = seg.length;
+  let i = 0;
+  while (i < n) {
+    const c = seg[i];
+    if (inSingle) {
+      out += c === "'" ? (inSingle = false, c) : ' ';
+      i++;
+      continue;
+    }
+    if (inDouble) {
+      if (c === '\\' && i + 1 < n) { out += '  '; i += 2; continue; }
+      if (c === '"') { inDouble = false; out += c; i++; continue; }
+      out += ' ';
+      i++;
+      continue;
+    }
+    if (c === '\\' && i + 1 < n) { out += c + seg[i + 1]; i += 2; continue; }
+    if (c === "'") { inSingle = true; out += c; i++; continue; }
+    if (c === '"') { inDouble = true; out += c; i++; continue; }
+    out += c;
+    i++;
+  }
+  return out;
 }
 
 readInput((j) => {
@@ -209,98 +374,39 @@ readInput((j) => {
   // `danger` deseninde ayrı ve bağımsız olarak yakalanıyor, bu ikisi ONU BOZMAZ, yalnızca
   // bayraksız tekil silmeyi de aynı muameleye sokar). `\brm\b` kelime-sınırlı olduğu için `git rm`
   // de OTOMATİK kapsanır (ekstra desen gerekmedi — `\brm\b` "git" ön ekinden bağımsız eşleşir).
-  // BİLEREK EKLENMEYENLER (aynı boşluk ailesinde bulunup değerlendirildi):
-  //  - `shred`: GNU coreutils'in nadir kullanılan bir aracı; bu depo ADR-009 ile yalnızca Windows
-  //    hedefliyor ve Git for Windows'un minimal coreutils alt kümesinde standart olarak bulunmaz
-  //    (aksine `rm`/`unlink`/`cp`/`mv` gibi temel POSIX araçları). Eklemek tutarlılığı değil
-  //    listeyi büyütür; gerçekçi bir saldırı yüzeyi kapatmaz.
-  //  - `truncate` (dosya sıfırlama, `truncate table` SQL bağlamından AYRI bir fiil): silme değil
-  //    içerik boşaltma — farklı bir tehdit sınıfı (dosya kalır, içeriği gider). Bu turun kapsamı
-  //    brief'te açıkça "bayraksız SİLME" olarak tanımlandı; truncate'i eklemek scope creep olurdu.
-  //    Kayıt: gelecekte bir "içerik bozma" tehdidi ele alınırsa ayrı bir madde olarak açılmalı.
-  //  - `find ... -delete`: bileşik bir deyim, tek kelimelik bir fiil DEĞİL. Bare `find` kelimesini
-  //    writeVerb'e eklemek OKUMA amaçlı (arama/listeleme) sayısız zararsız komutu (`find . -name
-  //    x`, `find docs/approvals -type f`) yanlış pozitif olarak engeller — kabul edilemez oranda
-  //    aşırı engelleme. Hedefli bir `\bfind\b[^\n]*-delete\b` deseni teorik olarak mümkün ama bu
-  //    turun brief'i yalnızca "eksik fiili ekle" diyordu; ayrı bir desen ailesi açmak yerine kayıt
-  //    olarak burada bırakılıyor (kabul edilen, önceden var olan sınırın bir parçası).
+  //
+  // M2 KAPANIŞI v4 EKLERİ (docs/qa/hook-allowlist-contract.md — Etki 2, yukarıdaki büyük yorum):
+  // `install`/`ln`/`chmod`/`chown` İSTİSNASIZ mutasyon fiilleridir (find'ın aksine salt-okunur
+  // kullanım biçimleri yoktur) — doğrudan `writeVerb`'e eklendi. `truncate` (SQL `truncate table`
+  // HARİÇ, o zaten `danger`'da ayrı) dosya sıfırlama — İSTİSNASIZ mutasyon, eklendi. `dd`
+  // yalnızca `of=` (çıktı dosyası) varsa mutasyon sayılır (`of=` yoksa yalnızca okur/kopyalar
+  // stdout'a) — ayrı `ddWrite` deseni.
+  const ddWrite = /\bdd\b[^\n]*\bof=/i;
+  const writeVerb = /(\btee\b|\bcp\b|\bcopy\b|\bmv\b|\bmove\b|\bren(?:ame)?\b|\bsed\b[^\n]*-i\b|\bSet-Content\b|\bOut-File\b|\bAdd-Content\b|\bNew-Item\b|\bRemove-Item\b|\b(del|erase|rm|unlink)\b|\brd\b|\brmdir\b|\bri\b|\binstall\b|\bln\b|\bchmod\b|\bchown\b|\btruncate\b(?!\s+table\b))/i;
+  const inlineEval = /(\bnode\b[^\n]*(-e\b|--eval\b)|\bnpx\s+tsx\b[^\n]*-e\b|\bpython\b[^\n]*-c\b)/i;
+  // find — SALT-OKUNUR kullanım (listeleme/arama) YAYGIN (`find docs/approvals -name "*.ok"`,
+  // ceo-fresh.mjs U2/U3) — bu yüzden `writeVerb`'e KATILMADI (bilerek, bkz kod içi eski not
+  // "BİLEREK EKLENMEYENLER" aşağıda kaldırılmadı, hâlâ geçerli). Yalnızca AÇIKÇA yıkıcı biçimi
+  // (`-delete` ya da `-exec ... <yazma/silme fiili>`) bir sinyal sayılır.
+  const findDestructive = /\bfind\b[^\n]*(-delete\b|-exec\b[^\n]*\b(rm|mv|cp|tee|unlink|del|erase|chmod|dd|truncate|ln)\b)/i;
+  // xargs — stdin'den GELEN veriyi bir komuta ARGÜMAN olarak enjekte eder; `xargs rm` gibi bir
+  // kullanımda hedef genellikle BAŞKA (piped) bir segmentte yazılıdır, bu segmentin kendisinde
+  // DEĞİL. Bu yüzden normal same-segment mention kontrolüne ek olarak checkXargsPipeLeak (aşağıda)
+  // ayrı bir kontrol yapar. `xargsDestructive` burada yalnızca "bu segment TEHLİKELİ bir xargs
+  // kullanımı mı" sorusuna cevap verir (writeVerb'in xargs gövdesinde de eşleştiğini teyit eder).
+  const xargsDestructive = /\bxargs\b[^\n]*\b(rm|mv|cp|tee|unlink|del|erase|chmod|chown|dd|truncate|ln|sed)\b/i;
+
   const approvalsRef = /docs[\\/]approvals\b/i;
   const hooksRef = /\.claude[\\/](hooks\b|settings\.json\b)/i;
   // Yönlendirme (`>`/`>>`) AYRI ve DAR bir desendir — hedefin GERÇEKTEN korunan yola baktığını
   // ister, aksi hâlde `cat docs/approvals/G5.ok 2>/dev/null` gibi tamamen zararsız, hedefi başka
   // yere (stderr'e) yönlendiren okuma komutları yanlış pozitif alırdı (ilk sürümde tam bu oldu,
-  // elle bulundu ve düzeltildi).
+  // elle bulundu ve düzeltildi). BU KONTROLLER HER ZAMAN HAM METİN ÜZERİNDE ÇALIŞIR — OKUYUCU
+  // muafiyeti (Etki 1) bunlara UYGULANMAZ (bkz yukarıdaki M2 v4 yorumu).
   const approvalsRedirect = /(>>|>(?!=))\s*['"]?docs[\\/]approvals\b/i;
   const hooksRedirect = /(>>|>(?!=))\s*['"]?\.claude[\\/](hooks\b|settings\.json\b)/i;
-  const writeVerb = /(\btee\b|\bcp\b|\bcopy\b|\bmv\b|\bmove\b|\bren(?:ame)?\b|\bsed\b[^\n]*-i\b|\bSet-Content\b|\bOut-File\b|\bAdd-Content\b|\bNew-Item\b|\bRemove-Item\b|\b(del|erase|rm|unlink)\b|\brd\b|\brmdir\b|\bri\b)/i;
-  const inlineEval = /(\bnode\b[^\n]*(-e\b|--eval\b)|\bnpx\s+tsx\b[^\n]*-e\b|\bpython\b[^\n]*-c\b)/i;
+  const genericRedirect = /(>>|>(?!=))/;
 
-  // M2 KAPANIŞI v3 (docs/qa/hook-borclari-contract.md §12 — 2026-09-15, iki adımlı düzeltme
-  // kararının 1. adımı). KÖK SORUN (v2, artık KALDIRILDI): v2 "komut konumu" kapalı listesini
-  // "tırnak içinde mi" ikili sorusuyla değiştirdi — yani bir fiil eşleşmesi TIRNAKLANMIŞ bir dize
-  // İÇİNDE geçiyorsa SAYILMAZ sayıldı. Bu, `grep -n "rm" dosya` gibi salt-okunur komutlardaki
-  // yanlış pozitifi (B2, F2-F5/F9) doğru çözdü — AMA tırnaklı bir dizeyi GERÇEKTEN yorumlayan bir
-  // alt kabuğa (`sh -c '...'`, `bash -c "..."`, `eval "..."`, `powershell -Command "..."`)
-  // geçirildiğinde tırnak içi metin kabuk için DEĞİL, KODDUR — "veri" değildir. CEO'nun bağımsız
-  // iç içe-kabuk sondası (12 vektör) bunu ölçtü: `prev` (değişiklikten önceki, 1fbb1eb) hepsini
-  // ENGELLİYORDU, v2 **11/12'sini GEÇİRİYORDU** — `sh -c 'rm docs/approvals/G5.ok'`,
-  // `bash -c "cp /tmp/evil .claude/hooks/gate-check.cjs"`, `eval "rm docs/approvals/G5.ok"`,
-  // `powershell -Command "Remove-Item .claude/hooks/gate-check.cjs"` vb. Bu, "tırnakta mı?"
-  // sorusunun YANLIŞ soru olduğunu kanıtladı: doğru soru "bu komut salt-okunur bir araç mı?"
-  // idi — ki v2 hiç sormuyordu. Kullanıcı kararı (2026-09-15): önce bu regresyonu KAPAT (tırnak
-  // muafiyetini TAMAMEN KALDIR, v0/`prev` davranışına dön — fiil eşleşmesi metnin HER YERİNDE
-  // sayılır), yanlış pozitifleri BİR SONRAKİ turda OKUMA-KOMUTU BEYAZ LİSTESİYLE geri kazan
-  // (segment başındaki komut bilinen salt-okunur bir araçsa o segmentin tırnaklı argümanları
-  // muaf; değilse fiil her yerde sayılır — ADR-013 uyumlu allowlist, kısıtlayıcı varsayılan
-  // sayesinde `sh`/`bash`/`eval` beyaz listede OLMAYACAĞI için iç içe kabuk YAPISAL olarak kapalı
-  // kalır). Bu turun kapsamı SADECE kaldırma; beyaz liste henüz YOK — bkz. BİLİNÇLİ KABUL EDİLEN
-  // GEÇİCİ AŞIRI ENGELLEME notu aşağıda.
-  //
-  // KABUL EDİLEN TAKAS (dürüstçe, aşırı engelleme yönünde — güvenlik kaybı DEĞİL, önceki v0/`prev`
-  // davranışına dönüş): `grep -n "unlink" dosya`, `awk '/rm/{...}' dosya` gibi salt-okunur
-  // komutlar TIRNAKLI argümanlarında fiil kelimesi taşıdığı için yeniden yanlış pozitif alır.
-  // Ölçülen 6 vaka (docs/qa/hook-borclari-contract.md §12'ye kaydedildi) self-test'te expected=2
-  // (ENGEL) ile işaretlendi ve her birinin açıklamasına "bir sonraki turda okuma-komutu beyaz
-  // listesiyle geri kazanılacak" notu düşüldü — bu KABUL EDİLMİŞ, GEÇİCİ bir durumdur, kalıcı
-  // tasarım değil.
-  //
-  // BİLİNEN SINIR (v2'den kalan, hâlâ AÇIK — bir sonraki turun kapsamı): tırnak muafiyeti
-  // kaldırıldığı için N1-N12 artık ENGELLENİYOR (fiil tırnak içinde de sayıldığı için `sh -c
-  // 'rm ...'` içindeki "rm" yakalanır) — ama bu, "alt kabuğu tanıyıp içeriğini yorumlama" değil,
-  // "artık hiçbir tırnak muaf değil" sonucudur. Okuma-komutu beyaz listesi eklendiğinde bu
-  // davranış YENİDEN gözden geçirilmeli (örn. `sh -c '...'`in kendisi salt-okunur bir araç
-  // SAYILMAYACAĞI için N-ailesi o turda da kapalı kalmalı — brief'in "kısıtlayıcı varsayılan"
-  // şartı bunu garanti ediyor, bkz. yukarıdaki not).
-
-  // BARE-ARTIFACT KORELASYONU (docs/qa/hook-borclari-contract.md B1 — `cd` İÇERMEYEN vektör
-  // ailesi + çıplak yönlendirme boşluğu). M1 yalnızca `cd`-ailesini kapsar; R9 (`ls docs/approvals
-  // && node -e "...writeFileSync('G5.ok',...)"`), R11 (`echo docs/approvals ; rm G5.ok`), R12
-  // (`cat docs/approvals/G5.ok | head -1 ; rm G5.ok`) HİÇ `cd` KULLANMIYOR — yazma hedefi zaten
-  // BARE (yol ayracı yok, ör. `G5.ok`), yani hangi dizine yazdığı segment METNİNDEN BAĞIMSIZ
-  // olarak zaten BELİRSİZ. Aynı belirsizlik çıplak yönlendirmede de var: `cd docs/approvals &&
-  // echo x > G5.ok` M1 ile blob'a düşse bile `writeVerb`'de bir `>` girişi YOK, yalnızca
-  // `approvalsRedirect`/`hooksRedirect` (ki onlar hedefte "docs/approvals" METNİNİ arıyor, bare
-  // `G5.ok`'ta o metin YOK) — bu yüzden ayrı bir sinyal gerekiyor.
-  // MEKANİZMA: bir segment (a) gerçek bir yazma EYLEMİ taşıyorsa (tırnak dışında yazma fiili,
-  // satır-içi betik, YA DA herhangi bir `>`/`>>` yönlendirmesi) VE (b) o segment METNİNDE, hemen
-  // ÖNCESİNDE bir yol ayracı (`/`veya `\`) OLMAYAN — yani BARE — bilinen bir korunan-eser adı
-  // (`*.ok` ya da `gate-check.cjs`/`block-dangerous.cjs`/`_selftest.cjs`/`_common.cjs`/
-  // `settings.json`) geçiyorsa, VE (c) komutun HERHANGİ BİR segmentinde (aynı ya da başka)
-  // ilgili dizin açıkça ANILIYORSA (`docs/approvals` ya da `.claude/hooks`/`settings.json`) —
-  // o zaman bu segment "belirsiz yazma" sayılır ve ilgili aile (approvals/hooks) engellenir.
-  // AYRIM (neden bu, eski B-6 hatasını TEKRARLAMIYOR): eski hata "AYNI SEGMENTTE fiil+hedef" şartı
-  // OLMADAN, herhangi bir mention + herhangi bir yazma fiilini HER YERDE eşleştiriyordu (kara
-  // liste kadar geniş). Bu mekanizma dar: yalnızca hedefin kendisi SÖZDİZİMSEL OLARAK belirsiz
-  // (bare + bilinen bir korunan ad kalıbına uyuyor) OLDUĞUNDA çapraz segment mention'a bakar —
-  // açık bir hedefi olan yazmalar (ör. `cp x /tmp/other/thing.ok`, önünde `/` var) bu YOLDAN HİÇ
-  // GEÇMEZ, yalnızca mevcut (aynı-segment) mekanizmayla değerlendirilir.
-  // KABUL EDİLEN SINIR (dürüstçe, docs/qa/hook-borclari-contract.md'ye yazıldı): bu tarama bir
-  // komutun ARGÜMAN YAPISINI (kaynak mı hedef mi) ayırt ETMEZ — `cp myfile.ok /baska/yer` gibi
-  // meşru bir komut, EĞER komutun başka bir segmentinde tesadüfen "docs/approvals" geçiyorsa
-  // yanlışlıkla engellenebilir. Bu AŞIRI ENGELLEME yönünde bir sınırdır (güvenlik kaybı değil) ve
-  // bu turun ölçülen F1-F10 kümesinde böyle bir vektör YOK.
-  const HOOK_FILENAME_RE = /^(gate-check\.cjs|block-dangerous\.cjs|_selftest\.cjs|_common\.cjs|settings\.json)$/i;
-  const BARE_ARTIFACT_SCAN_RE = /([\w.-]+\.ok|gate-check\.cjs|block-dangerous\.cjs|_selftest\.cjs|_common\.cjs|settings\.json)/gi;
   // A5 KAPANIŞI (docs/qa/hook-borclari-contract.md — CEO'nun diferansiyel sondası, probe-extra.mjs
   // A5: `X=docs/approvals; rm $X/G5.ok`). KÖK SORUN: yukarıdaki "önünde `/` varsa açık yol, belirsiz
   // DEĞİL, atla" kuralı yalnızca hedefin BİR DİZİN ADIYLA açıkça nitelendiğini varsayıyordu — ama bir
@@ -323,6 +429,8 @@ readInput((j) => {
   // approvals başka bir segmentte anıldığı için) yanlışlıkla engellenebilir. Bu AŞIRI ENGELLEME
   // yönündedir (güvenlik kaybı değil) ve dosya başındaki "bare-artifact" mekanizmasının zaten kabul
   // ettiği sınırın (argüman-yapısını ayırt etmeme) doğal bir uzantısıdır.
+  const HOOK_FILENAME_RE = /^(gate-check\.cjs|block-dangerous\.cjs|_selftest\.cjs|_common\.cjs|settings\.json)$/i;
+  const BARE_ARTIFACT_SCAN_RE = /([\w.-]+\.ok|gate-check\.cjs|block-dangerous\.cjs|_selftest\.cjs|_common\.cjs|settings\.json)/gi;
   const AMBIGUOUS_PREFIX_RE = /(?:^|[\s;&|(])["']?(?:\.{1,2}|\$\{?[A-Za-z_][A-Za-z0-9_]*\}?)["']?[\\/]$/;
   function findBareProtectedArtifacts(segment) {
     const found = { ok: false, hook: false };
@@ -341,11 +449,33 @@ readInput((j) => {
     }
     return found;
   }
-  const genericRedirect = /(>>|>(?!=))/;
-  // v3: tırnak muafiyeti YOK (yukarıdaki M2 KAPANIŞI v3 yorumu) — fiil/satır-içi-betik eşleşmesi
-  // metnin HER YERİNDE (tırnak içi dahil) sayılır, doğrudan re.test(seg) ile.
-  function segmentHasWriteAction(seg) {
-    return writeVerb.test(seg) || inlineEval.test(seg) || genericRedirect.test(seg);
+
+  // effectiveVerbText(seg, reader) -> writeVerb/inlineEval eşleşmesi için kullanılacak metin.
+  // OKUYUCU segmentlerde tırnaklı argümanlar maskelenir (Etki 1); OKUYUCU DEĞİLSE ham metin
+  // (v3/v0 davranışı — fiil her yerde, tırnak içinde de sayılır).
+  function effectiveVerbText(seg, reader) {
+    return reader ? maskQuoted(seg) : seg;
+  }
+  function segmentHasWriteAction(seg, effText) {
+    return writeVerb.test(effText) || inlineEval.test(effText) || genericRedirect.test(seg) || ddWrite.test(effText) || findDestructive.test(effText) || xargsDestructive.test(effText);
+  }
+
+  // checkXargsPipeLeak(segments, idx) -> 'approvals' | 'hooks' | null
+  // xargs'ın kendi ARGÜMANI olarak KORUNAN bir yol GEÇMEZ (stdin'den gelir) — bu yüzden normal
+  // same-segment mention kontrolü bu vektörü KAÇIRIR (`echo docs/approvals/G5.ok | xargs rm`).
+  // Bu, DAR ve İZOLE bir düzeltmedir: yalnızca baş komutu `xargs` OLAN ve xargsDestructive'e uyan
+  // bir segment için, dizide HEMEN ÖNCESİNDEKİ segmentin (hangi ayraçla ayrıldığından bağımsız —
+  // segments dizisi zaten sırayı korur) approvals/hooks anıp anmadığına bakar. Bu, B-6/Y2'nin
+  // yeniden-açtığı "İKİ AYRI segmentteki sinyalin GENEL OLARAK birleşmesi" hatasını TEKRARLAMAZ:
+  // yalnızca `xargs` baş komutuna (nadir, kendine özgü stdin-argüman-enjeksiyon semantiği olan TEK
+  // bir komut) ve yalnızca dizideki HEMEN ÖNCEKİ komşuya (herhangi bir uzak segmente değil)
+  // bakıyor — bare-artifact korelasyonunun "herhangi bir segment" genişliğinden daha dar.
+  function checkXargsPipeLeak(segs, idx) {
+    if (idx === 0) return null;
+    const prev = segs[idx - 1];
+    if (approvalsRef.test(prev)) return 'approvals';
+    if (hooksRef.test(prev)) return 'hooks';
+    return null;
   }
 
   let isRelease = false;
@@ -363,12 +493,17 @@ readInput((j) => {
   // KÖK MEKANİZMA: her segment AYNI kurallarla, TEK BAŞINA değerlendirilir. touchesApprovals/
   // touchesHooks VE writeVerb/inlineEval AYNI segmentten gelmek ZORUNDA — bu, B-6/Y2'nin kökü
   // olan çapraz-segment birleşmesini yapısal olarak imkânsız kılar (bkz dosya başı yorumu).
-  for (const seg of segments) {
+  for (let idx = 0; idx < segments.length; idx++) {
+    const seg = segments[idx];
+    const head = getHeadCommand(seg);
+    const reader = isReaderHead(head, seg);
+    const effText = effectiveVerbText(seg, reader);
+
     if (release.test(seg)) isRelease = true;
     if (pushCmd.test(seg)) isPush = true;
     if (danger.test(seg) || gitForce.test(seg)) isDestructive = true;
 
-    const hasWrite = writeVerb.test(seg) || inlineEval.test(seg);
+    const hasWrite = writeVerb.test(effText) || inlineEval.test(effText) || ddWrite.test(effText) || findDestructive.test(effText) || xargsDestructive.test(effText);
     if (approvalsRedirect.test(seg) || (approvalsRef.test(seg) && hasWrite)) {
       isApprovalsWrite = true;
       if (!guardedSegment) guardedSegment = seg;
@@ -379,7 +514,7 @@ readInput((j) => {
     }
 
     // BARE-ARTIFACT KORELASYONU: yalnızca bu segment GERÇEK bir yazma eylemi taşıyorsa taranır.
-    if (segmentHasWriteAction(seg)) {
+    if (segmentHasWriteAction(seg, effText)) {
       const artifacts = findBareProtectedArtifacts(seg);
       if (artifacts.ok && anyMentionsApprovals && !isApprovalsWrite) {
         isApprovalsWrite = true;
@@ -389,6 +524,21 @@ readInput((j) => {
         isHooksWrite = true;
         if (!guardedSegment) guardedSegment = seg;
       }
+      // find'ın YIKICI biçimi (findDestructive) bare bir korunan-eser adı taşıyorsa, cross-segment
+      // mention ŞARTI ARANMAZ (bkz M2 v4 yorumu: find'ın kendi flag-şartı zaten yeterince dar bir
+      // sinyal — `find . -name G5.ok -exec rm {} ;` gibi, komutun HİÇBİR YERİNDE "docs/approvals"
+      // dizin adı geçmeyen ama bare "G5.ok" taşıyan vektörleri de kapatır).
+      if (findDestructive.test(effText)) {
+        if (artifacts.ok && !isApprovalsWrite) { isApprovalsWrite = true; if (!guardedSegment) guardedSegment = seg; }
+        if (artifacts.hook && !isHooksWrite) { isHooksWrite = true; if (!guardedSegment) guardedSegment = seg; }
+      }
+    }
+
+    // XARGS PIPE SIZINTISI (yukarıdaki checkXargsPipeLeak yorumu).
+    if (head.toLowerCase() === 'xargs' && xargsDestructive.test(seg)) {
+      const leak = checkXargsPipeLeak(segments, idx);
+      if (leak === 'approvals' && !isApprovalsWrite) { isApprovalsWrite = true; if (!guardedSegment) guardedSegment = seg; }
+      if (leak === 'hooks' && !isHooksWrite) { isHooksWrite = true; if (!guardedSegment) guardedSegment = seg; }
     }
   }
 

@@ -361,14 +361,15 @@ const dangerCases = [
   // F1/F6/F7/F8/F10 raporda "cat / ls -la / git diff / wc -l / bolunmus dize" olarak ozetlenmis,
   // asagida somut komutlar olarak yeniden yazildi — ayni kategori, hicbiri cikarilmadi) ----------
   [`cat docs/approvals/README.md`, 0, '(F1) cat ile docs/approvals altinda okuma -> gecer (mention var, yazma fiili yok)'],
-  [`grep -n "unlink" .claude/hooks/_selftest.cjs`, 2, '(F2) grep -n "unlink" .claude/hooks/_selftest.cjs -> KABUL EDILMIS GECICI ASIRI ENGELLEME: v3de tirnak muafiyeti KALKTI, "unlink" tirnak icinde de sayilir -> engellenir. Bir sonraki turda okuma-komutu beyaz listesiyle geri kazanilacak.'],
-  [`grep -c "RM-1" .claude/hooks/_selftest.cjs`, 2, '(F3) grep -c "RM-1" .claude/hooks/_selftest.cjs -> KABUL EDILMIS GECICI ASIRI ENGELLEME (ayni gerekce, F2) -> engellenir. Bir sonraki turda okuma-komutu beyaz listesiyle geri kazanilacak.'],
-  [`grep -n "Remove-Item" .claude/hooks/block-dangerous.cjs`, 2, '(F4) grep -n "Remove-Item" .claude/hooks/block-dangerous.cjs -> KABUL EDILMIS GECICI ASIRI ENGELLEME (ayni gerekce, F2) -> engellenir. Bir sonraki turda okuma-komutu beyaz listesiyle geri kazanilacak.'],
-  [`grep -rn "rm" docs/approvals/README.md`, 2, '(F5) grep -rn "rm" docs/approvals/README.md -> KABUL EDILMIS GECICI ASIRI ENGELLEME (ayni gerekce, F2; hem mention hem "rm" ayni segmentte) -> engellenir. Bir sonraki turda okuma-komutu beyaz listesiyle geri kazanilacak.'],
+  [`grep -n "unlink" .claude/hooks/_selftest.cjs`, 0, '(F2) grep -n "unlink" .claude/hooks/_selftest.cjs -> v4 GERI KAZANILDI: "grep" OKUYUCU beyaz listede, "unlink" TIRNAK ICINDE oldugu icin maskeleniyor -> hasWrite=false -> gecer.'],
+  [`grep -c "RM-1" .claude/hooks/_selftest.cjs`, 0, '(F3) grep -c "RM-1" .claude/hooks/_selftest.cjs -> v4 GERI KAZANILDI (ayni gerekce, F2) -> gecer.'],
+  [`grep -n "Remove-Item" .claude/hooks/block-dangerous.cjs`, 0, '(F4) grep -n "Remove-Item" .claude/hooks/block-dangerous.cjs -> v4 GERI KAZANILDI (ayni gerekce, F2) -> gecer.'],
+  [`grep -rn "rm" docs/approvals/README.md`, 0, '(F5) grep -rn "rm" docs/approvals/README.md -> v4 GERI KAZANILDI (ayni gerekce, F2; "rm" tirnak icinde maskeleniyor) -> gecer.'],
   [`ls -la docs/approvals`, 0, '(F6) ls -la docs/approvals -> gecer (yazma fiili yok)'],
   [`git diff docs/approvals/README.md`, 0, '(F7) git diff docs/approvals/README.md -> gecer (okuma)'],
   [`wc -l .claude/hooks/_selftest.cjs`, 0, '(F8) wc -l .claude/hooks/_selftest.cjs -> gecer (yazma fiili yok)'],
-  [`awk '/rm/{n++} END{print n}' .claude/hooks/_selftest.cjs`, 2, '(F9) awk \'/rm/{n++} END{print n}\' .claude/hooks/_selftest.cjs -> KABUL EDILMIS GECICI ASIRI ENGELLEME (ayni gerekce, F2; "rm" tek tirnakli awk programinin icinde de sayilir) -> engellenir. Bir sonraki turda okuma-komutu beyaz listesiyle geri kazanilacak.'],
+  [`awk '/rm/{n++} END{print n}' .claude/hooks/_selftest.cjs`, 0, '(F9) awk \'/rm/{n++} END{print n}\' .claude/hooks/_selftest.cjs -> v4 GERI KAZANILDI (ayni gerekce, F2; "rm" tek tirnak icinde maskeleniyor) -> gecer.'],
+  [`grep rm docs/approvals/README.md`, 2, '(F-BOUNDARY) grep rm docs/approvals/README.md -> "rm" TIRNAKSIZ (grep\'in ARGUMANI ama tirnak DISINDA) -> Etki 1 muafiyeti yalnizca TIRNAKLI argumanlari kapsar, bu maskelenmez -> hala engellenir (belgelenmis kabul edilmis asiri engelleme, docs/qa/hook-allowlist-contract.md).'],
   [`grep -n "r""m" docs/approvals/README.md`, 0, '(F10) bolunmus dize: "r""m" bitisik "rm" OLUSTURMAZ (tirnaklar arada) -> zaten yanlis pozitif degil, gecer'],
 
   // --- M1 NEGATIF KONTROLLER: cd + zararsiz okuma -> hala GECER (asiri engelleme YOK) ---------
@@ -511,7 +512,7 @@ const dangerCases = [
 
   // --- N/S masum İKİZLERİ (aynı sözdizimsel aile, ama fiil OKUMA — v2'nin aşırı engelleme
   // YAPMADIĞINI kanıtlar; hiçbiri approvals/hooks'a yazmaz, hepsi exit 0 beklenir) --------------
-  [`sleep 0 & grep -n "rm" docs/approvals/README.md`, 2, '(N1-TWIN) sleep 0 & grep -n "rm" ... -> KABUL EDILMIS GECICI ASIRI ENGELLEME: v3de tirnak muafiyeti KALKTI, "rm" tirnak icinde de sayilir (CEO KARARI 6. FP vektoru) -> engellenir. Bir sonraki turda okuma-komutu beyaz listesiyle geri kazanilacak.'],
+  [`sleep 0 & grep -n "rm" docs/approvals/README.md`, 0, '(N1-TWIN) sleep 0 & grep -n "rm" ... -> v4 GERI KAZANILDI: tek "&" artik SEGMENT AYIRACI, "grep -n ..." kendi segmenti, "grep" OKUYUCU, "rm" tirnak icinde maskeleniyor -> gecer.'],
   [`MC=1 cat docs/approvals/G5.ok`, 0, '(N2-TWIN) MC=1 cat ... -> "cat" yazma fiili degil, gecer'],
   [`if true; then cat docs/approvals/G5.ok; fi`, 0, '(N3-TWIN) if/then/fi + cat -> yazma fiili yok, gecer'],
   [`echo x |& grep tee`, 0, '(N4-TWIN) echo x |& grep tee -> "tee" burada grep\'in ARGUMANI (tirnaksiz ama yazma EYLEMI degil, sadece arama deseni); hicbir approvals/hooks mention yok -> gecer'],
@@ -558,6 +559,57 @@ const dangerCases = [
   [`bash -c "cat docs/approvals/README.md"`, 0, '(NEST-NEG-2) bash -c "cat docs/approvals/README.md" -> yazma fiili yok, gecer'],
   [`sh -c 'rm build/tmp.txt'`, 0, '(NEST-NEG-3) sh -c \'rm build/tmp.txt\' -> "rm" var ama hicbir segmentte approvals/hooks mention yok -> gecer'],
   [`bash -c "npm run build"`, 0, '(NEST-NEG-4) bash -c "npm run build" -> yazma fiili yok, mention yok -> gecer'],
+
+  // =========================================================================================
+  // v4 KAPANIŞI (docs/qa/hook-allowlist-contract.md) — OKUMA-KOMUTU BEYAZ LİSTESİ.
+  // ABS-1..ABS-8: CEO'nun 8 vektörlük "mutlak sızıntı" listesi (find/xargs/dd/install/ln/chmod
+  // ailesi) — v0/v1/v3'ün HİÇBİRİ bunları yakalamıyordu (writeVerb'de bu fiiller yoktu). Her
+  // birinin bir masum İKİZİ var (ABS-*-TWIN, korumasız hedef, exit 0 beklenir).
+  // =========================================================================================
+  [`echo docs/approvals/G5.ok | xargs rm`, 2, '(ABS-1) echo docs/approvals/G5.ok | xargs rm -> xargs kendi segmentinde hedefi TASIMAZ (stdin\'den gelir), checkXargsPipeLeak HEMEN ONCEKI segmentin (pipe ile baglanan) approvals mention\'ini yakalar -> engellenir'],
+  [`echo build/tmp.txt | xargs rm`, 0, '(ABS-1-TWIN) echo build/tmp.txt | xargs rm -> onceki segment protected path ANMIYOR -> checkXargsPipeLeak calismaz -> gecer'],
+  [`find docs/approvals -name "*.ok" -delete`, 2, '(ABS-2) find docs/approvals -name "*.ok" -delete -> findDestructive (-delete) + ayni segmentte approvalsRef -> engellenir'],
+  [`find build -name "*.tmp" -delete`, 0, '(ABS-2-TWIN) find build -name "*.tmp" -delete -> findDestructive eslesir AMA approvals/hooks mention yok -> gecer'],
+  [`find . -name G5.ok -exec rm {} ;`, 2, '(ABS-3) find . -name G5.ok -exec rm {} ; -> findDestructive (-exec ... rm) + BARE "G5.ok" artefakti -> cross-segment mention SARTI ARANMADAN engellenir (find\'in kendi flag-sarti zaten yeterince dar)'],
+  [`find . -name tmp.log -exec rm {} ;`, 0, '(ABS-3-TWIN) find . -name tmp.log -exec rm {} ; -> "tmp.log" bare-artifact kaliplarina (*.ok/hook adi) UYMUYOR -> gecer'],
+  [`truncate -s 0 docs/approvals/G5.ok`, 2, '(ABS-4) truncate -s 0 docs/approvals/G5.ok -> "truncate" writeVerb uyesi (SQL "truncate table" HARIC) + ayni segmentte approvalsRef -> engellenir'],
+  [`truncate -s 0 build/tmp.bin`, 0, '(ABS-4-TWIN) truncate -s 0 build/tmp.bin -> mention yok -> gecer'],
+  [`install /dev/null docs/approvals/G5.ok`, 2, '(ABS-5) install /dev/null docs/approvals/G5.ok -> "install" writeVerb uyesi + ayni segmentte approvalsRef -> engellenir'],
+  [`install /dev/null build/placeholder.bin`, 0, '(ABS-5-TWIN) install /dev/null build/placeholder.bin -> mention yok -> gecer'],
+  [`dd if=/dev/zero of=.claude/hooks/gate-check.cjs`, 2, '(ABS-6) dd if=/dev/zero of=.claude/hooks/gate-check.cjs -> ddWrite ("of=" var) + ayni segmentte hooksRef -> engellenir'],
+  [`dd if=/dev/zero of=build/x.bin`, 0, '(ABS-6-TWIN) dd if=/dev/zero of=build/x.bin -> mention yok -> gecer'],
+  [`dd if=docs/approvals/G5.ok`, 0, '(ABS-6-NEG-OF) dd if=docs/approvals/G5.ok -> "of=" YOK (yalnizca okuma/stdout), ddWrite eslesmez -> gecer'],
+  [`ln -sf /tmp/evil .claude/hooks/gate-check.cjs`, 2, '(ABS-7) ln -sf /tmp/evil .claude/hooks/gate-check.cjs -> "ln" writeVerb uyesi + ayni segmentte hooksRef -> engellenir'],
+  [`ln -sf /tmp/evil build/link.bin`, 0, '(ABS-7-TWIN) ln -sf /tmp/evil build/link.bin -> mention yok -> gecer'],
+  [`chmod 000 .claude/hooks/gate-check.cjs`, 2, '(ABS-8) chmod 000 .claude/hooks/gate-check.cjs -> "chmod" writeVerb uyesi + ayni segmentte hooksRef -> engellenir'],
+  [`chmod 000 build/x.bin`, 0, '(ABS-8-TWIN) chmod 000 build/x.bin -> mention yok -> gecer'],
+  [`chown user:user docs/approvals/G5.ok`, 2, '(ABS-8-CHOWN) chown user:user docs/approvals/G5.ok -> "chown" writeVerb uyesi + ayni segmentte approvalsRef -> engellenir (chmod ile ayni aile)'],
+
+  // --- OKUYUCU BEYAZ LİSTESİ: FAIL-CLOSED kontroller (listede olmayan bas komut -> okuyucu
+  // SAYILMAZ, mevcut mekanizmalar degismeden calisir; whitelist SADECE maskeleme EKLER, yeni bir
+  // gecis yolu ACMAZ) -----------------------------------------------------------------------
+  [`foo docs/approvals/G5.ok`, 0, '(WL-FAILCLOSED-1) foo docs/approvals/G5.ok -> "foo" bilinmeyen bas komut, herhangi bir writeVerb/inlineEval yok -> zaten hicbir mekanizma tetiklenmez -> gecer (whitelist YOKLUGU bir sey DEGISTIRMEZ, cunku gecerli bir yazma sinyali yok)'],
+  [`mystery .claude/hooks/gate-check.cjs`, 0, '(WL-FAILCLOSED-2) mystery .claude/hooks/gate-check.cjs -> ayni gerekce, yazma sinyali yok -> gecer'],
+  [`foo rm docs/approvals/G5.ok`, 2, '(WL-FAILCLOSED-3) foo rm docs/approvals/G5.ok -> "foo" bilinmeyen ONEK/bas komul olsa da "rm" tirnak DISINDA HER ZAMAN sayilir (whitelist\'te olmayan bas komut icin maskeleme YOK) -> engellenir'],
+
+  // --- KOŞULLU ÜYELİK: sed (yalnizca -i YOKSA okuyucu) --------------------------------------
+  [`sed 's/rm/delete/' docs/approvals/README.md`, 0, '(WL-SED-READ) sed \'s/rm/delete/\' docs/approvals/README.md -> "-i" YOK -> sed OKUYUCU sayilir, "rm" tek tirnak icinde maskelenir -> gecer'],
+  [`sed -i "s/rm/delete/" docs/approvals/G2.ok`, 2, '(WL-SED-WRITE) sed -i "s/rm/delete/" docs/approvals/G2.ok -> "-i" VAR -> sed OKUYUCU DEGIL, writeVerb zaten "sed -i" deseniyle eslesir -> engellenir (degisiklik yok, v3 ile ayni)'],
+
+  // --- KOŞULLU ÜYELİK: git (yalnizca log/diff/show/status/blame/grep/cat-file/ls-files/
+  // rev-parse alt komutlarinda okuyucu) -------------------------------------------------------
+  [`git log docs/approvals`, 0, '(WL-GIT-LOG) git log docs/approvals -> "log" okuyucu alt-komut -> git OKUYUCU, ayrica yazma fiili de yok -> gecer (degisiklik yok)'],
+  [`git rm docs/approvals/GUARD.ok`, 2, '(WL-GIT-RM) git rm docs/approvals/GUARD.ok -> "rm" okuyucu alt-komut DEGIL -> git OKUYUCU DEGIL AMA zaten onemli degil: "rm" tirnak DISINDA -> engellenir (GITRM-1 ile ayni, degisiklik yok)'],
+  [`git add docs/approvals/G5.ok`, 0, '(WL-GIT-ADD-REGRESYON-KONTROLU) git add docs/approvals/G5.ok -> "add" okuyucu alt-komut DEGIL (git OKUYUCU sayilmaz) AMA git KNOWN_NONREADER_HEADS icinde (Etki 2 tetiklenmez) VE hicbir writeVerb eslesmesi yok -> gecer (Y4-READ-3 ile AYNI beklenti, REGRESYON YOK)'],
+
+  // --- OPAK BAŞ KOMUTLARIN SALT-OKUNUR KULLANIMI HÂLÂ GEÇER (find/xargs blanket-suspicion
+  // DEGIL, hedefli desen) ----------------------------------------------------------------------
+  [`find docs/approvals -name "*.ok"`, 0, '(WL-FIND-READ) find docs/approvals -name "*.ok" -> findDestructive (-delete/-exec yok) eslesmez -> gecer (ceo-fresh.mjs U2 ile ayni beklenti)'],
+  [`find . -name G5.ok`, 0, '(WL-FIND-READ-2) find . -name G5.ok -> findDestructive eslesmez -> gecer (ceo-fresh.mjs U3 ile ayni beklenti)'],
+  [`echo docs/approvals/G5.ok | xargs cat`, 0, '(WL-XARGS-READ) echo docs/approvals/G5.ok | xargs cat -> xargsDestructive (cat yazma fiili degil) eslesmez -> checkXargsPipeLeak hic cagrilmaz -> gecer'],
+
+  // --- sh/bash/eval/powershell KNOWN_NONREADER: Etki 2 (varsayilan supheli) TETIKLENMEMELI ----
+  [`sh -c 'ls docs/approvals'`, 0, '(WL-SH-KNOWN) sh -c \'ls docs/approvals\' -> "sh" KNOWN_NONREADER_HEADS icinde (opak-bilinmeyen DEGIL) -> Etki 2 tetiklenmez, zaten yazma fiili de yok -> gecer (NEST-NEG-1 ile ayni, REGRESYON YOK)'],
 ];
 
 // --- gate-check.cjs vakaları (K1) --------------------------------------------------------

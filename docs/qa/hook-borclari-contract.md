@@ -23,6 +23,14 @@ değişken/göreli-dizin önekli bare hedefler bare-artifact korelasyonundan mua
 bkz **§9** (A5 KAPANIŞI) ve **§9-ek** (A1/A10 — kabul edilmiş, önceden var olan sınır, bu turun
 regresyonu DEĞİL). Bu paragraftaki diğer tüm içerik (§1-§8, §8-ek) DEĞİŞMEDİ.
 
+**GÜNCELLEME (2026-09-15, ayrı düzeltme turu).** `docs/qa/hook-borclari-karari-2026-09-15.md`
+yukarıdaki §11'in (M2v2) kendisine **KALDI** verdi: CEO'nun bağımsız iç içe-kabuk sondası, §11.7'de
+"kabul edilmiş sınır, henüz canlı ölçülmedi, hipotez" diye kaydedilen `sh -c`/`bash -c`/
+`powershell -Command` ailesinin gerçekte ÖLÇÜLEN bir REGRESYON olduğunu kanıtladı (12/12 vektörün
+11'i `prev`e göre geçiyordu). §11'in metni **silinmedi** (tarihî kayıt) ama §11.3/§11.6/§11.7
+şimdi YANLIŞLANMIŞ olduğu ölçümle işaretlenmelidir — güncel doğru davranış için **§12**'ye bakın
+(tırnak muafiyeti TAMAMEN kaldırıldı, iki adımlı düzeltmenin 1. adımı).
+
 **§0 kısıtı gereği** (`.claude/hooks/**`'a otonom yazma bu ortamda kategorik olarak engellenir,
 dört kez doğrulandı) gerçek hook dosyalarına HİÇ dokunulmadı. Tüm geliştirme ve doğrulama izole
 bir sahte depoda (`scratchpad/verify-json-repo/`, gerçek hook'ların birebir kopyası + izole
@@ -459,3 +467,124 @@ sızıntı olayı."
 - `gate-check.cjs` bu turda DEĞİŞMEDİ (kapsam dışı, brief §"Dokunma").
 - Kurulum: CEO `Write` aracıyla yapacak (`.claude/hooks/**`'a otonom yazma bu ortamda kategorik
   engelli). Kurulumdan ÖNCE aday izole sahte depoda doğrulandı (§11.4-§11.6).
+
+## 12. M2 v3 KAPANIŞI (2026-09-15, iki adımlı düzeltme kararının 1. adımı — QA'nın §11'in KALDI'sı
+sonrası CEO'nun bağımsız iç içe-kabuk sondası)
+
+**Kaynak/sözleşme (kodlamadan önce):** Bu bölüm hem sözleşme hem sonuç kaydı olarak yazıldı —
+`hook-borclari-contract.md` bu feature'ın G5 sürecinde tur-bazlı canlı sözleşme dosyası olarak
+kullanılıyor (§1, §9, §11 aynı deseni izledi). **Ne yapılacak:** M2 v2'nin "tırnak içi = muaf"
+mekanizması TAMAMEN kaldırılacak (v0/`prev` davranışına dönüş — fiil eşleşmesi metnin HER YERİNDE
+sayılır). **Nasıl doğrulanacak:** (a) dört modlu diferansiyel (`prev`/`installed`/`v2`/`safe`, 80
+vektör) — `safe` tüm saldırı vektörlerini engellemeli, `prev` ve `installed`'a karşı 0 regresyon;
+(b) izole sahte depoda canlı kanıt — NEST-1..12 gerçekten çalıştırılıp dosyaların değişmediği
+gösterilecek + pozitif kontrol (hook yokken gerçekten değiştiği); (c) self-test tam yeşil; (d) yön
+ayrımlı mutasyon — her mekanizmanın (tırnak-kaldırma, M1, bare-artifact) kaldırılması self-test'i
+SADECE "engelleme kaybı" yönünde kırmalı, "aşırı engelleme" yönünde sıfır olmamalı.
+
+### 12.1 Regresyon: CEO'nun iç içe-kabuk sondası (`ceo-nested.mjs`, 12 saldırı + 4 masum ikiz)
+
+QA'nın KALDI kararından sonra CEO bağımsız bir sonda çalıştırdı: v2'nin "tırnak içi = muaf"
+kuralı, tırnaklı bir dizeyi GERÇEKTEN yorumlayan bir alt kabuğa (`sh -c '...'`, `bash -c "..."`,
+`eval "..."`, `powershell -Command "..."`) geçirildiğinde YANLIŞ sonuç veriyordu — o dize kabuk
+için VERİ değil KODDUR. Ölçüm: `prev` (1fbb1eb) N1-N12'nin **12/12**'sini ENGELLİYORDU, v2
+**11/12**'sini GEÇİRİYORDU (yalnızca N8, `echo x > ...` yönlendirmesi zaten tırnak-farkında
+olmayan `approvalsRedirect`'ten dolayı tek geçen vakaydı). Bu, "kabul edilmiş sınır" değil
+**REGRESYON**dur — v2 "yalnızca yanlış pozitifi azaltabilir, engellemeyi asla azaltamaz" şartını
+ihlal etti.
+
+**Kullanıcı kararı (tartışma kapalı, iki adım):** Bu turda SADECE tırnak muafiyetini kaldır (v0
+davranışına dön). Okuma-komutu beyaz listesi (segment başındaki komut salt-okunur bir araçsa o
+segmentin tırnaklı argümanları muaf) **SONRAKİ turun kapsamı** — bu turda hiç yazılmadı.
+
+### 12.2 Değişiklik (adıyla): tırnak-muafiyeti mekanizması SİLİNDİ, `.test()` doğrudan çağrılıyor
+
+`scanQuotedRanges` ve `hasMatchOutsideQuotes` fonksiyonları **tamamen kaldırıldı** (ölü kod
+bırakılmadı — CLAUDE.md ilkesi). Dört çağrı noktası (`segmentHasWriteAction` içindeki iki çağrı +
+ana döngüdeki `hasWrite` hesaplaması, iki yer) doğrudan `writeVerb.test(seg)` /
+`inlineEval.test(seg)` ile değiştirildi. `splitCommandSegments`'in kendi tırnak takibi (segment
+SINIRLARINI bulmak için) DEĞİŞMEDİ — o ayrı bir mekanizma, M1/segmentasyon hâlâ sağlam.
+
+### 12.3 Dört modlu diferansiyel (80 vektör: önceki turun 64'ü + CEO'nun 16'sı, `scratchpad/hook-safe/four-mode-diff.mjs`)
+
+| Mod | Tanım |
+|---|---|
+| `prev` | `git show 1fbb1eb:...` — zincirin başlangıcı |
+| `installed` | şu an kurulu, regresyonlu sürüm (`a41ce32`) |
+| `v2` | önceki turun KALDI alan adayı (tırnak-muafiyetli) |
+| `safe` | bu turun adayı (tırnak-muafiyeti kaldırılmış) |
+
+**Saldırı vektörleri (50 toplam: N8+S16+R12+A5+BONUS1 + NEST12):** `safe`'de **50/50 ENGEL**.
+`prev`'e karşı regresyon: **0**. `installed`'a karşı regresyon: **0**. `v2`'ye karşı regresyon
+(bilgi amaçlı, beklenen 0): **0**.
+
+**Masum vektörler (30 toplam: F10+TWIN16+NEST-NEG4):** `safe`'de **30/30 beklenen davranışa
+uygun** — 24'ü GEÇER, 6'sı (F2, F3, F4, F5, F9, N1-TWIN) BİLİNÇLİ KABUL EDİLMİŞ GEÇİCİ aşırı
+engelleme ile ENGEL (bir sonraki turda okuma-komutu beyaz listesiyle geri kazanılacak).
+Beklenmeyen (yeni) yanlış pozitif: **0**.
+
+### 12.4 Canlı kanıt (izole sahte depo, gerçek dosya, `scratchpad/hook-safe/live-proof-safe.mjs`)
+
+Gerçek içerikli `docs/approvals/G5.ok`, `.claude/hooks/gate-check.cjs`, `.claude/settings.json`
+fixture'ları izole geçici depolarda kuruldu. NEST-1..NEST-12 ÖNCE `safe` hook'a soruldu; hook
+`exit 2` verdiğinde komut **hiç çalıştırılmadı** (gerçek Claude Code akışının taklidi — PreToolUse
+hook'u bloklarsa Bash aracı komutu hiç yürütmez):
+
+| Aşama | Sonuç |
+|---|---|
+| A: Korumalı (hook önce soruluyor) | **12/12** — hiçbiri dosya değiştirmedi, `FAIL: 0` |
+| B: Pozitif kontrol (hook YOK, komut GERÇEKTEN çalıştırıldı, ayrı korumasız depo) | **10/10** gerçekten değişti/silindi (2 atlandı: NEST-6 bu ortamda `pwsh` kurulu değil; NEST-11 bu ortamda Git-Bash'in MSYS `/c` bayrağını POSIX-yol sanıp dönüştürmesi nedeniyle `cmd.exe` hiçbir modda (hook olsun olmasın) silme yapmadı — bu hook'un özelliği değil, ortamın `cmd`-çağırma kısıtlaması; hook bloğu METİN eşleşmesiyle çalışıyor ve Aşama A'da NEST-11 için de zaten kanıtlandı) |
+
+### 12.5 Self-test (`scratchpad/hook-safe/selftest-safe.cjs`, taban: 296 vaka + 16 yeni = 312)
+
+- F2/F3/F4/F5/F9 ve N1-TWIN: beklenen **0'dan 2'ye** değişti, açıklamasına "KABUL EDİLMİŞ GEÇİCİ
+  AŞIRI ENGELLEME — bir sonraki turda okuma-komutu beyaz listesiyle geri kazanılacak" notu düşüldü.
+- NEST-1..NEST-12 (12 saldırı, beklenen 2) + NEST-NEG-1..4 (4 masum ikiz, beklenen 0) eklendi.
+- Hiçbir eski vaka çıkarılmadı. İzole sandbox'ta (gerçek `docs/approvals/**`'a dokunulmadan)
+  çalıştırıldı: **312/312 GEÇTİ**, exit 0 (213 block-dangerous.cjs + 99 gate-check.cjs, bu ikincisi
+  değişmedi).
+
+### 12.6 Yön ayrımlı mutasyon (`scratchpad/hook-safe/mutate-and-test.mjs`)
+
+QA'nın tekrarlayan bulgusu ("bir mekanizmanın kaldırılması self-test'i SADECE aşırı-engelleme
+yönünde kırıyorsa, o mekanizmanın engelleme-yönü çitsizdir") burada üç ayrı mutantla ölçüldü:
+
+| Mutant | Ne yapar | Toplam FAIL | ENGELLEME-KAYBI | AŞIRI-ENGELLEME |
+|---|---|---|---|---|
+| MUT-A: tırnak muafiyeti GERİ EKLENDİ (v2 hatası yeniden üretildi, iki çağrı noktası birlikte) | 17 | **17** | **0** |
+| MUT-B: M1 (`WD_CHANGE` retreat) devre dışı | 1 | **1** | **0** |
+| MUT-C: bare-artifact korelasyonu devre dışı | 12 | **12** | **0** |
+
+Üçünde de ikinci sütun (ENGELLEME-KAYBI) **sıfır değil** — yani her mekanizmanın engelleme yönü
+self-test tarafından gerçekten ölçülüyor, F002/F011'de tekrarlayan "7 kırmızının 7'si de
+yanlış-pozitif yönündeydi" hatası burada YOK. Baseline (mutasyonsuz `safe`): 0 FAIL (312/312).
+Mutasyonlar `SAFE_SRC`'nin bellek içi string kopyası üzerinde uygulandı (needle bulunamazsa
+betik fırlatır); gerçek `.claude/hooks/**`'a hiç yazılmadı.
+
+### 12.7 Kalan bilinen sınırlar (dürüstçe)
+
+- **6 bilinçli kabul edilmiş geçici aşırı engelleme** (§12.3): `grep`/`awk` gibi salt-okunur
+  komutların tırnaklı argümanında fiil kelimesi geçerse artık yanlış pozitif alır. Kalıcı tasarım
+  DEĞİL — **bir sonraki turun kapsamı**: okuma-komutu beyaz listesi (segment başındaki komut
+  bilinen salt-okunur bir araçsa o segmentin tırnaklı argümanları muaf).
+- **NEST-11 pozitif kontrolü ölçülemedi** (§12.4) — bu ortamın Git-Bash/MSYS `cmd /c` argüman
+  dönüştürme kısıtlaması nedeniyle; hook bloğu bağımsız olarak Aşama A'da doğrulandı.
+- **NEST-6 pozitif kontrolü ölçülemedi** — bu ortamda `pwsh` kurulu değil; hook bloğu metin
+  eşleşmesiyle çalıştığı için `pwsh`'ın gerçekte kurulu olup olmaması hook'un doğruluğunu
+  etkilemez, yalnızca canlı-kanıt tam demosunu bir vektörde sınırlar.
+- `sh -c`/`bash -c` içindeki tırnaklı dize artık HER ZAMAN taranıyor (tırnak-dışı/-içi ayrımı
+  YOK) — bu "alt kabuğu tanıyıp içeriğini gerçekten yorumlama" DEĞİL, sadece "artık hiçbir tırnak
+  muaf değil" sonucu. Sonraki turda beyaz liste eklenince bu davranış gözden geçirilmeli (`sh -c
+  '...'` kendisi salt-okunur bir araç SAYILMAYACAĞI için N-ailesi o turda da kapalı kalmalı).
+- A1/A10 (parçalı yol ailesi, `cd docs && cd approvals && rm G5.ok`) hâlâ kapsam dışı, önceki
+  turlardan eşikli borç (§9-ek).
+
+### 12.8 Teslim
+
+- `scratchpad/hook-safe/block-dangerous-safe.cjs` → kurulacağı yer: `.claude/hooks/block-dangerous.cjs`.
+- `scratchpad/hook-safe/selftest-safe.cjs` → `.claude/hooks/_selftest.cjs` (`dangerCases` 197 → 213:
+  +12 NEST saldırı vektörü + 4 NEST-NEG masum ikiz; F2/F3/F4/F5/F9/N1-TWIN beklenen değeri 0→2;
+  hiçbir eski vaka çıkarılmadı). Tam self-test: **312/312 GEÇTİ**, exit 0.
+- `gate-check.cjs` bu turda DEĞİŞMEDİ (kapsam dışı).
+- Kurulum: CEO `Write` aracıyla yapacak (`.claude/hooks/**`'a otonom yazma bu ortamda kategorik
+  engelli). Kurulumdan ÖNCE aday izole sahte depoda doğrulandı (§12.3-§12.6).

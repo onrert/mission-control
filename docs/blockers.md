@@ -1723,25 +1723,35 @@ dalı tarafından silindi (tetikleyici yazma **gerçekleşmedi**, engellendi). G
 onay dosyası varken `_selftest.cjs` `exit 3` ile reddediyor (Y3 emniyet kemeri) — yani zorunlu
 doğrulama koşulamıyordu.
 
-## 2026-09-15 — developer (hook-borçları M2v2 düzeltme turu) — yeni kabul edilmiş sınır: `sh -c`/`bash -c`/`powershell -Command`
+## 2026-09-15 — developer (hook-borçları M2v2 düzeltme turu) — DÜZELTME: `sh -c`/`bash -c`/`powershell -Command` bir "kabul edilmiş sınır" DEĞİLDİ, ÖLÇÜLEN bir REGRESYONDU — kapatıldı
 
-**Görev:** QA'nın KALDI kararındaki (`docs/qa/hook-borclari-karari-2026-09-15.md`) 22 vektörlük
-M2 sızıntı ailesi, "komut konumu" (kapalı önek/ayraç listesi) kaldırılıp yerine tırnak-konumu
-muafiyeti (`hasMatchOutsideQuotes`, docs/qa/hook-borclari-contract.md §11) konarak kapatıldı.
+**Önceki madde (bu maddenin eski hâli, artık geçersiz):** Bu madde önceden "tırnaklı bir dize
+`sh -c`/`bash -c`/`powershell -Command`'a geçirildiğinde v2 tarafından muaf sayılır, teorik ihlal,
+henüz canlı ölçülmedi, bir sonraki turun kapsamı" diyordu. **Bu YANLIŞTI.** CEO'nun bağımsız
+sondası (`ceo-nested.mjs`, 12 vektör) bunu ölçtü: `prev` (1fbb1eb, değişiklik ÖNCESİ) bu 12
+vektörün **12/12**'sini ENGELLİYORDU, v2 **11/12**'sini GEÇİRİYORDU. "Kabul edilmiş sınır" değil,
+bu deponun tekrarlayan "düzeltme engelleme gücünü azalttı" hata sınıfının bir örneğiydi —
+sözleşmenin kendi güvenlik şartı ("yalnızca yanlış pozitifi azaltabilir, engellemeyi ASLA
+azaltamaz") ölçülerek ihlal edilmişti. QA bunu KALDI ile kapattı
+(`docs/qa/hook-borclari-karari-2026-09-15.md`).
 
-**Yeni sınır (dürüstçe, bu turun kapsamı dışında, çözülmedi):** tırnaklı bir dize kendisi
-GERÇEKTEN yorumlayan bir alt kabuğa geçiriliyorsa (`sh -c 'rm docs/approvals/G5.ok'`, `bash -c
-"rm ..."`, `powershell -Command "Remove-Item ..."`) fiil tırnak İÇİNDE olduğu için v2 tarafından
-muaf sayılır — ama kabukta GERÇEKTEN çalıştırılır. Teorik ihlal değil, pratik sızıntı riski
-taşıyan bir sınıf (henüz canlı ölçülmedi — bu madde bir HİPOTEZ, kanıtlanmış bir sızıntı değil).
+**Düzeltme (bu turda kapatıldı, `docs/qa/hook-borclari-contract.md` §12):** Tırnak muafiyeti
+mekanizması (`hasMatchOutsideQuotes`/`scanQuotedRanges`) TAMAMEN kaldırıldı — v0/`prev`
+davranışına dönüş (fiil eşleşmesi metnin HER YERİNDE, tırnak içi dahil, sayılır). Ölçüm: dört
+modlu diferansiyel (80 vektör) — `safe`'de saldırı vektörlerinin **50/50**'si ENGEL, `prev`'e ve
+`installed`'a karşı **0 regresyon**. Canlı kanıt: NEST-1..12 izole sahte depoda gerçekten
+çalıştırıldı, korumalı modda **12/12** dosya değişmedi (hook hiç çalıştırmadı), korumasız pozitif
+kontrolde **10/10** (ölçülebilen) gerçekten değişti/silindi.
 
-**Neden bu turda çözülmedi:** tam çözüm bir kabuk yorumlayıcısı gerektirir (bu depoda bilinçli
-kaçınılan bir oyun, dosya başı SEGMENTASYON yorumu "tam bir kabuk grameri DEĞİLDİR"); brief'in 22
-vektörü bu ailede değildi (`sh -c`/`bash -c`/`powershell -Command` hiçbiri N/S listesinde yok).
+**Yeni, dürüstçe kabul edilen GEÇİCİ takas (bu kez gerçekten aşırı-engelleme yönünde, güvenlik
+kaybı DEĞİL):** `grep`/`awk` gibi salt-okunur komutların tırnaklı argümanında fiil kelimesi
+geçerse (6 vaka: F2, F3, F4, F5, F9, N1-TWIN) artık yanlış pozitif alır — bu v0'ın da davranışıydı,
+YENİ bir kayıp değil.
 
-**Kabul gerekçesi:** ADR-016 — asıl savunma kullanıcının izin kartı (`canUseTool`); hook bir
-derinlik katmanıdır, mutlak koruma değildir.
-
-**Eşik:** bir sonraki `.claude/hooks/**` turu (dar kapsamlı, tek mekanizma: `sh -c`/`bash -c`/
-`powershell -Command` argümanının kendisini AYRI bir alt-komut olarak taramak) ya da gerçek bir
-sızıntı olayı yaşanırsa hemen.
+**Eşik (bir sonraki tur, kapsamı NET):** okuma-komutu beyaz listesi — segment başındaki komut
+bilinen salt-okunur bir araçsa (`grep`/`awk`/`cat`/`head`/`tail`/`wc`/`findstr`/`sed` -i'siz...) o
+segmentin TIRNAKLI argümanlarındaki fiiller yok sayılır; değilse fiiller her yerde sayılır.
+ADR-013 uyumlu **allowlist** (kapalı bir bypass listesi büyütmek YASAK — bu depo bu oyunu dört
+kez kaybetti). Kısıtlayıcı varsayılan sayesinde `sh`/`bash`/`eval`/`powershell` beyaz listede
+OLMAYACAĞI için iç içe kabuk ailesi (NEST-1..12) o turda da YAPISAL olarak kapalı kalmalı — beyaz
+liste eklerken bunu bir self-test vakasıyla doğrula, gözden kaçırma.

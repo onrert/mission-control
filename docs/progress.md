@@ -4871,3 +4871,56 @@ selftest-m2.cjs` → `.claude/hooks/_selftest.cjs`; kurulumu CEO `Write` aracıy
 
 **Durum:** `docs/qa/hook-borclari-contract.md` §11 eklendi, `status: qa` (değişmedi). GEÇTİ/KALDI
 kararı qa-evaluator'a ait.
+
+## 2026-09-15 — hook-borçları M2 v3 düzeltme turu (§11'in KALDI'sı sonrası) — tırnak-konumu muafiyeti TAMAMEN kaldırıldı
+
+**Görev:** Yukarıdaki M2v2 turunun §11.7'sinde "kabul edilmiş sınır, henüz canlı ölçülmedi,
+hipotez" diye kaydedilen `sh -c '...'`/`bash -c "..."`/`powershell -Command "..."` ailesi, QA
+turundan sonra CEO'nun bağımsız iç içe-kabuk sondasıyla (`ceo-nested.mjs`, 12 saldırı + 4 masum
+ikiz) **ÖLÇÜLEN bir REGRESYON** olarak ortaya çıktı: `prev` (1fbb1eb, değişiklik öncesi) bu 12
+vektörün 12/12'sini engelliyordu, v2 11/12'sini geçiriyordu. Kullanıcı kararı (iki adım): bu
+turda SADECE tırnak muafiyetini tamamen kaldır (v0/`prev` davranışına dön); okuma-komutu beyaz
+listesi (yanlış pozitifleri geri kazanma) **sonraki turun kapsamı**.
+
+**Yapılan:** `.claude/hooks/block-dangerous.cjs`'te `scanQuotedRanges` ve `hasMatchOutsideQuotes`
+fonksiyonları TAMAMEN kaldırıldı (ölü kod bırakılmadı). Dört çağrı noktası doğrudan
+`writeVerb.test(seg)` / `inlineEval.test(seg)` ile değiştirildi — fiil eşleşmesi artık metnin HER
+YERİNDE (tırnak içi dahil) sayılır. `splitCommandSegments`'in kendi tırnak takibi (segment
+sınırları için) DEĞİŞMEDİ, M1/segmentasyon sağlam kaldı.
+
+**Nasıl doğrulandı:**
+- Dört modlu diferansiyel (`prev`/`installed`/`v2`/`safe`, önceki turun 64 vektörü + CEO'nun
+  16'sı = 80 toplam, `scratchpad/hook-safe/four-mode-diff.mjs`): saldırı vektörleri (50 toplam,
+  NEST-1..12 dahil) **50/50 `safe`'de ENGEL**; `prev`'e ve `installed`'a karşı **0 regresyon**.
+  Masum vektörler (30 toplam) **30/30 beklenen davranışa uygun** — 24 GEÇER, 6 bilinçli kabul
+  edilmiş geçici FP (F2, F3, F4, F5, F9, N1-TWIN) ENGEL, beklenmeyen yeni FP **0**.
+- Canlı kanıt (izole sahte depo, gerçek dosya, `scratchpad/hook-safe/live-proof-safe.mjs`):
+  NEST-1..12 önce `safe` hook'a soruldu, `exit 2` verdiğinde komut hiç çalıştırılmadı — **12/12**
+  dosya değişmedi. Ayrı, korumasız bir depoda pozitif kontrol: **10/10** (ölçülebilen) gerçekten
+  değişti/silindi (NEST-6 bu ortamda `pwsh` kurulu değil, NEST-11 bu ortamda Git-Bash'in MSYS
+  `/c` dönüştürmesi nedeniyle hiçbir modda çalışmadı — ikisi de ortam kısıtı, hook özelliği değil).
+- Self-test (`scratchpad/hook-safe/selftest-safe.cjs`, taban 296 + 16 yeni = 312 vaka): izole
+  sandbox'ta **312/312 GEÇTİ**, exit 0 (213 block-dangerous + 99 gate-check, ikincisi değişmedi).
+- Yön ayrımlı mutasyon (`scratchpad/hook-safe/mutate-and-test.mjs`, üç mekanizma): tırnak
+  muafiyeti geri eklenirse **17** kırmızı (hepsi ENGELLEME KAYBI, 0 aşırı-engelleme); M1 devre
+  dışı bırakılırsa **1** kırmızı (ENGELLEME KAYBI); bare-artifact korelasyonu devre dışı
+  bırakılırsa **12** kırmızı (ENGELLEME KAYBI). Üçünde de ikinci sütun sıfır değil — her
+  mekanizmanın engelleme yönü self-test tarafından gerçekten ölçülüyor.
+- `node --check` temiz, ham NUL bayt yok (`String.fromCharCode(0)` kullanılmadı, gerek yoktu).
+
+**Kalan riskler (dürüstçe, `docs/blockers.md`'ye düzeltildi):** 6 bilinçli kabul edilmiş GEÇİCİ
+aşırı engelleme (F2-F5, F9, N1-TWIN) — bir sonraki turun kapsamı: okuma-komutu beyaz listesi
+(ADR-013 uyumlu allowlist, kapalı bypass listesi büyütme YASAK). `sh -c`/`bash -c` içindeki
+tırnaklı dize artık her zaman taranıyor ama bu "alt kabuğu tanıyıp yorumlama" değil, "hiçbir
+tırnak muaf değil" sonucu — beyaz liste eklenince gözden geçirilmeli. A1/A10 hâlâ kapsam dışı
+(önceki turlardan eşikli borç).
+
+**Kısıt:** `.claude/hooks/**`'a bu turda da otonom yazılamadı — tüm geliştirme/doğrulama
+`scratchpad/hook-safe/` altında izole sahte depolarda yapıldı, gerçek `docs/approvals/*` ve
+`.claude/hooks/*`'a hiç dokunulmadı (`git status --short` tur boyunca bu iki dosya dışında temiz:
+`docs/blockers.md`, `docs/qa/hook-borclari-contract.md`). Teslim: `scratchpad/hook-safe/
+block-dangerous-safe.cjs` → `.claude/hooks/block-dangerous.cjs`, `scratchpad/hook-safe/
+selftest-safe.cjs` → `.claude/hooks/_selftest.cjs`; kurulumu CEO `Write` aracıyla yapacak.
+
+**Durum:** `docs/qa/hook-borclari-contract.md` §12 eklendi, §11.7/blockers.md'deki eski "kabul
+edilmiş sınır" iddiası düzeltildi, `status: qa` (değişmedi). GEÇTİ/KALDI kararı qa-evaluator'a ait.

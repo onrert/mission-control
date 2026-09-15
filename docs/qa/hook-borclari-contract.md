@@ -1,6 +1,17 @@
 ---
-status: qa
+status: done
 ---
+
+<!-- KARAR: GEÇTİ (qa-evaluator, 2026-09-15, v3 / commit 219dc43).
+     Kanıt: docs/qa/hook-borclari-karari-v3-2026-09-15.md — self-test 312/312 · üç modlu
+     diferansiyel 3 143 vektörde v0/v1'e karşı 0 regresyon · v1'in 22 bypass'ı 24/24 engel ·
+     iç içe kabuk 12/12 engel · yön ayrımlı mutasyonda her mekanizmanın engelleme-kaybı sütunu
+     sıfırdan farklı. Bloklayıcı bulgu yok.
+     İKİ ÖNEMLİ BULGU AÇIK BIRAKILDI ve docs/blockers.md'ye TAŞINDI — bu sözleşmenin kapsamı
+     değiller (hiçbiri bu turun regresyonu değil, üçü de v0'da da açıktı):
+       P0-P3  kapalı fiil listesinin sızıntı sınıfı 8 değil 25+ (üçü gate-check.cjs'i canlı yok etti)
+       P4     yol parçalama ailesi (A1/A10) — EŞİK DOLDU, yeniden açıldı -->
+
 
 # hook-borçları-contract.md — B-2, B-3, B-5, B-6, Y4 kapanışı (+ 2026-09-14 B1/B2 regresyon düzeltmesi)
 

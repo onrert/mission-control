@@ -1755,3 +1755,61 @@ ADR-013 uyumlu **allowlist** (kapalı bir bypass listesi büyütmek YASAK — bu
 kez kaybetti). Kısıtlayıcı varsayılan sayesinde `sh`/`bash`/`eval`/`powershell` beyaz listede
 OLMAYACAĞI için iç içe kabuk ailesi (NEST-1..12) o turda da YAPISAL olarak kapalı kalmalı — beyaz
 liste eklerken bunu bir self-test vakasıyla doğrula, gözden kaçırma.
+
+---
+
+## 2026-09-15 — hook-borçları sözleşmesi KAPANDI (GEÇTİ), iki borç DEVRALINDI
+
+`docs/qa/hook-borclari-contract.md` → `status: done`. qa-evaluator kararı **GEÇTİ**, bloklayıcı
+bulgu yok: self-test **312/312** · üç modlu diferansiyel **3 143 vektörde v0/v1'e karşı 0
+regresyon** · v1'in 22 bypass'ı **24/24 engel** · iç içe kabuk **12/12 engel** · yön ayrımlı
+mutasyonda dört mekanizmanın da engelleme-kaybı sütunu sıfırdan farklı (103 · 17 · 1 · 12).
+Kanıt: `docs/qa/hook-borclari-karari-v3-2026-09-15.md`.
+
+Aşağıdaki iki madde **bu sözleşmenin kusuru değil** — üçü de v0'da (değişiklik öncesi sürümde) da
+açıktı, yani hiçbiri regresyon değil. Ama ikisi de **kalıcı artefakta** dokunuyor, o yüzden
+kapatılmadan G6'ya gidilmez (kayıtlı kural: kalıcı artefakta dokunan bulgu, etiketi ne olursa olsun
+bloklayıcıdır).
+
+### P0-P3 — kapalı fiil listesinin sızıntı sınıfı: 8 değil, **25+**
+CEO 8 vektör ölçmüştü; QA aynı sınıfta **17 yeni pratik sızıntı** daha buldu ve canlı doğruladı
+(dosya gerçekten silindi/üzerine yazıldı): `node -p` · `sed --in-place` · `python3 -c` · `>|`
+(clobber) · `patch` · `gzip` · `perl -pi` · `sort -o` · `openssl -out` · `node <betik>.js` ve
+diğerleri. **Üçü `gate-check.cjs`'i canlı olarak yok etti** (`>|`, `openssl -out`, `dd of=`) — bu
+dosya bozulunca `settings.json` onu çağırmaya devam eder, `node` **çıkış kodu 1** verir, Claude Code
+yalnızca **çıkış kodu 2**'yi engelleme sayar → **kapı sessizce ölür.** Deponun en pahalı hata sınıfı.
+**Teşhis:** sorun tek tek fiiller değil, `writeVerb`'ün **kapalı bir liste olması**. Sayı büyüdükçe
+kural doğrulanıyor: liste büyütmek bu oyunun bir sonraki turudur.
+**Çözüm (devam eden beyaz liste turunun kapsamı):** kutupluluğu ters çevir — `writeVerb` kalkar,
+karar `readOnlyTools` beyaz listesinden çıkar. QA'nın dört şartı:
+1. Beyaz listeyi **komut konumuna bağlama** — v1 tam bunu yaptı, 22 vektörle yenildi. Muafiyet
+   **komutun yeteneğinden** türetilmeli; segmentteki her çıplak token beyaz listede olmalı
+   (fail-closed).
+2. `sh`/`bash`/`eval`/`xargs`/`find`/`command`/`env`/`sudo`/`nice`/`time`/`nohup` **asla** beyaz
+   listede olmasın — yoksa v2'nin iç içe-kabuk regresyonu beyaz liste kılığında geri gelir.
+3. Kabul ölçütü iki yönlü ve sayısal: QA raporunun **3 143 saldırı vektörü ENGEL kalmalı** VE
+   26 komutluk salt-okunur korpusta **yanlış pozitif ≤ 6**.
+4. P4 bu mekanizmayla **KAPANMAZ** (aşağı bak).
+
+### P4 — yol parçalama ailesi (eski A1/A10): **EŞİK DOLDU, YENİDEN AÇILDI**
+Eşik şuydu: *"bu aile üçüncü kez görülürse ya da gerçek bir sızıntı yaşanırsa yeniden açılır."*
+İkisi de gerçekleşti. QA iki yeni varyantı **canlı** doğruladı ve ikisi de `cd` **KULLANMIYOR**:
+```
+rm "docs"/approvals/G5.ok
+rm docs/./approvals/G5.ok
+```
+Yani ailenin kabul gerekçesi (*"tam çözüm çalışma dizinini modellemeyi gerektirir"*) bu vektörleri
+**kapsamıyor** — burada sorun fiil ya da çalışma dizini değil, **hedef tanıma**: korunan yolu metin
+olarak karşılaştırıyoruz.
+**Çözüm adıyla:** yolu **çöz**, metni karşılaştırma. Bu desen bu depoda **zaten var** —
+`gate-check.cjs` en yakın var olan atayı bulup `fs.realpathSync.native` ile çözüyor ve kararı
+çözülmüş yol üzerinden veriyor, çözemezse fail-closed. `block-dangerous.cjs` bu deseni hiç almadı.
+(Kayıtlı kural: *"aynı problemi bu depoda başka biri daha önce çözdü mü?"* — evet, çözdü.)
+**Sıra:** beyaz liste turundan SONRA, ayrı tur. Beyaz liste bunu kapatmaz.
+
+### Küçük bulgular
+- "Kabul edilmiş 6 yanlış pozitif" **eksik sayım** — QA en az 9 ölçtü. Sınıf bir sayı değil, bir
+  desen: *tırnaklı argümanında fiil kelimesi taşıyan salt-okunur komut*. Beyaz liste turu bunu
+  sayıyla değil desenle kapatmalı.
+- `1fbb1eb` önceki raporlarda "segmentasyon öncesi blob sürümü" diye anılıyordu; QA ölçtü,
+  `splitCommandSegments` o sürümde **zaten var**. Tarihçe metni yanlış; kararları etkilemiyor.

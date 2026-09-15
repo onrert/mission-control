@@ -272,3 +272,9 @@ bu turda da **385/385 GEÇTİ** (dokunulmadı, yalnızca doğrulama amacıyla te
   yakalanıyor); yalnızca çıplak `sed -i` + eylemsiz önek (`if`/`cd`) kombinasyonu için benzersiz
   olurdu, bu spesifik kombinasyon test edilmedi. Zararsız (fazladan bir OR-kolu) ama dürüstçe
   kayıtlı — bir sonraki turda ya vaka eklenmeli ya da kaldırılmalı.
+- **YENİ (kurulumdan SONRA, kendi doğrulama komutlarımla canlı yakalandı):** B4 muafiyeti `cd`
+  retreat'i içinde AYNI muaf yolun BİRDEN FAZLA anıldığı tek-mega-segment durumunda yalnızca İLK
+  anmayı çıkarıyor — `cd <repo> && node .claude/hooks/_selftest.cjs ... && node .claude/hooks/
+  _selftest.cjs ...` gibi bir zincir yanlışlıkla ENGELLENİYOR (aşırı-engelleme, sızıntı DEĞİL;
+  `cd` OLMADAN aynı zincir doğru geçiyor). Tam tanım + tekrar üretme + düzeltme önerisi
+  `docs/blockers.md`'nin "YENİ, DAR bulgu" girdisinde. Kod değişikliği bu turda YAPILMADI.

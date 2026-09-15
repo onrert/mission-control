@@ -5046,8 +5046,9 @@ segmentte bir YAZMA KONUMUNDA MI?" sorusuna geç.
 **Nasıl doğrulandı (hepsi izole sandbox'larda, gerçek `.claude/hooks/**`/`docs/approvals/*`'a hiç
 yazılmadan, `docs/qa/hook-writepos-contract.md`'de tam detay):**
 - **Altı modlu kombinatoryal diferansiyel** (v0/v1/v3/v4/v5/v6, QA'nın 3640 vektörlük
-  üreticisiyle): **v0/v1/v3/v4/v5'in engellediği HİÇBİR ŞEY v6'da geçmiyor (0 regresyon)**;
-  v6 engelleme oranı v5'in (%50,5) çok üzerinde.
+  üreticisiyle, izole/tek başına koşuldu): v0 %17,1 · v1 %9,7 · v3 %17,1 · v4 %23,6 ·
+  v5 %69,0 (QA'nın kendi ölçümüyle birebir örtüşüyor) · **v6 %100,0 (3640/3640) — 0 regresyon,
+  0 sızıntı.**
 - **QA'nın 32 taze (FRESH) vektörü:** 15 saldırının **15/15'i** v6'da ENGEL (v5'te 15/15
   geçiyordu). İki masum ikiz (v5'ten devralınan, bu turun kapsamı DIŞINDA bir ayrı kök nedenli
   FP) hâlâ engelli — borç olarak kayıtlı.

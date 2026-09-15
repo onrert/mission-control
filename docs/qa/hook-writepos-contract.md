@@ -76,8 +76,8 @@ geri alınmasıdır. Ölçüldü: §4.1.
 1. **Altı modlu diferansiyel** (v0=`1fbb1eb`, v1=`a41ce32`, v3=`219dc43`, v4=`d16ca08`,
    v5=kurulu `250277b`, v6=aday), QA'nın 3640 vektörlük kombinatoryal üreticisiyle: **v6, v0/v1/
    v3/v4/v5'in engellediği HİÇBİR ŞEYİ geçirmemeli** (mutlak regresyon şartı).
-2. **QA'nın 32 taze vektörü (FRESH)** — 15 saldırının TAMAMI v6'da ENGEL, 17 masum ikizden en az
-   30/32 (v5 ile AYNI iki bilinen sınır dışında) geçmeli.
+2. **QA'nın 32 taze vektörü (FRESH)** — 15 saldırının TAMAMI v6'da ENGEL; 17 masum ikizden en az
+   15/17 geçmeli (v5'ten devralınan 2 bilinen sınır dışında, bkz §5).
 3. **Canlı kanıt** — izole sahte depoda gerçek `G5.ok`/`gate-check.cjs`; v5'te gerçekten mutasyona
    uğrayan vektörlerin v6'da hook `exit=2` verdiği için hiç ÇALIŞMADIĞI gösterilecek.
 4. **Aşırı engelleme korpusu** (34 rutin komut) — v5 5/34 (%14,7) veriyordu; hedef ≤2/34 VE
@@ -100,19 +100,24 @@ dosyası — hepsi izole `os.tmpdir()` kopyalarında, `git checkout` KULLANILMAD
 
 | Mod | Kaynak | Engellenen (÷3640) |
 |---|---|---|
-| v0 | `1fbb1eb` | 480 (%13,2) |
-| v1 | `a41ce32` | 285 (%7,8) |
-| v3 | `219dc43` | 480 (%13,2) |
-| v4 | `d16ca08` | 660 (%18,1) |
-| v5 | kurulu `250277b` | 1840 (%50,5) |
-| **v6** | **aday** | **3638 (%99,9)** |
+| v0 | `1fbb1eb` | 624 (%17,1) |
+| v1 | `a41ce32` | 354 (%9,7) |
+| v3 | `219dc43` | 624 (%17,1) |
+| v4 | `d16ca08` | 858 (%23,6) |
+| v5 | kurulu `250277b` | 2511 (%69,0) |
+| **v6** | **aday** | **3640 (%100,0)** |
+
+(v0-v5 sayıları QA'nın `hook-polarite-karari-2026-09-15.md` §1.2'deki tabloyla birebir örtüşüyor
+— bağımsız çapraz doğrulama.)
 
 **REGRESYON (v0/v1/v3/v4/v5'in herhangi birinin engellediği, v6'nın geçirdiği): 0 / 3640.** ✓
-Mutlak güvenlik şartı sağlanıyor — v6 hiçbir eski sürümü zayıflatmıyor.
+**SIZINTI (v6'nın geçirdiği herhangi bir vektör): 0 / 3640.** ✓ Mutlak güvenlik şartı sağlanıyor.
 
-Kalan **2/3640** sızıntı (yeni, önceki hiçbir sürümde de yakalanmıyordu — bkz §4.6'da tam
-tanımlama): `builtin d\ocs/approvals/G5.ok` ve `true ; "docs"/approvals/G5.ok` ailesinden birer
-kombinasyon — `docs/blockers.md`'ye borç olarak yazıldı (§5).
+**Metodolojik not:** bu ölçümün İLK koşumunda (bu turun içinde, ayrı bir betikle EŞZAMANLI olarak
+paylaşılan sahte-depo dizinini silip yeniden kurmak yüzünden) v6 için 3638/3640 ve v0-v5 için
+daha düşük, hatalı sayılar görüldü. İzole, eşzamansız bir TEKRAR koşumda (yukarıdaki tablo)
+v0-v5 sayıları QA'nın bağımsız ölçümüyle birebir örtüştü ve v6 3640/3640 çıktı — ilk koşum
+kirliydi, gerçek sonuç budur (bkz `docs/blockers.md` "Yöntem notu").
 
 ### 4.2 QA'nın 32 taze vektörü (FRESH) — çift yönlü
 
@@ -201,7 +206,16 @@ her iki sürümde de engelliyor).
 
 Betik: `scratchpad/hook-writepos/fp.mjs` (QA'nın `qa7/fp.mjs`'inin birebir korpusu + `v6` modu).
 
-<!-- FP_RESULTS -->
+| Mod | Rutin yanlış pozitif (÷34) |
+|---|---|
+| v4 | 0/34 |
+| v5 | 5/34 (%14,7) — `test -f ...`, üç `node .claude/hooks/_selftest.cjs` varyantı, `node --check` |
+| **v6** | **0/34 (%0,0)** |
+
+Beş belgelenmiş sınır vakasının (`node scripts/report.mjs docs/approvals/G5.ok`, `npm test --
+docs/approvals`, `sh -c "..."`, `bash -c "..."`, `grep rm docs/approvals/README.md`) **5'i de**
+v6'da beklendiği gibi ENGEL (kabul edilen taviz, bulgu değil). Hedef (≤2/34) aşıldı — v5'in
+5 yanlış pozitifinin **tamamı** kapandı, yeni bir yanlış pozitif eklenmedi.
 
 ### 4.6 Yön ayrımlı mutasyon (Mekanizma 3'ün her kuralı + Mekanizma 2'nin iki değişikliği)
 

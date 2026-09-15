@@ -1934,8 +1934,9 @@ değişiklik yapıldı (QA'nın 5 şartının tümü uygulandı: realpath fail-c
 argümanı konumu, yönlendirme etkilenmiyor, kendi pozitif kontrolleri var, `test`/`[` kapandı).
 
 **Ölçüm özeti (tam detay contract'ta):**
-- 6 modlu 3640-vektörlük diferansiyel: v0/v1/v3/v4/v5'e karşı **0 regresyon**; v6 engelleme
-  oranı v5'in (%50,5) çok üzerinde.
+- 6 modlu 3640-vektörlük diferansiyel (izole tek koşum): v0 %17,1/v1 %9,7/v3 %17,1/v4 %23,6/
+  v5 %69,0 (QA'nın kendi ölçümüyle birebir örtüşüyor) → **v6 %100,0 (3640/3640) — 0 regresyon,
+  0 sızıntı**.
 - QA'nın 32 taze vektörü: **15/15 saldırı artık ENGEL** (v5'te 15/15 geçiyordu).
 - Canlı kanıt: v5'te 17/35 vektör dosyaları GERÇEKTEN değiştiriyordu (ikisi `gate-check.cjs`'i
   hedefliyordu); v6'da 0/35 — hiçbiri hook'tan geçemedi.

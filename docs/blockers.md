@@ -1965,3 +1965,32 @@ kurmak, tek bir koşuda 3640 vektörün 2'sinde geçici/sahte bir "sızıntı" g
 tamamen izole, eşzamansız bir yeniden koşumda aynı 2 vektör de ENGEL çıktı (0/3640). Kayıtlı
 "kendi eşzamanlılığın testleri kirletiyor" dersinin bir örneği daha — sonuç raporlanmadan önce
 izole tekrar koşumla doğrulandı.
+
+## 2026-09-15 (devam 2) — developer — YENİ, DAR bulgu: B4 muafiyeti `cd` retreat içinde TEK
+## mesajı çıkarıyor (aşırı-engelleme, güvenlik açığı DEĞİL)
+
+Kurulu v6'yı kendi doğrulama komutlarımla çalıştırırken canlı yakalandı: `cd <repo> &&
+node .claude/hooks/_selftest.cjs 2>&1 | grep -c "^OK" && node .claude/hooks/_selftest.cjs 2>&1
+| grep -c "^FAIL"` **engellendi** (exit 2), oysa aynı komut `cd` öneki OLMADAN **geçiyor**
+(exit 0, doğrulandı: `debug-repeat.mjs`).
+
+**Kök neden:** `cd` varlığı `WD_CHANGE` geri çekilmesini tetikliyor — komutun TAMAMI (her iki
+`node .claude/hooks/_selftest.cjs` çağrısı dahil) TEK bir segment oluyor (`&&`/`|` ayraçları
+UYGULANMIYOR). B4 muafiyeti (`interpreterExecutesOwnHooksScriptOnly` + `removeFirstOccurrenceV6`)
+segmentten yalnızca İLK `.claude/hooks/_selftest.cjs` anmasını çıkarıyor; segment aynı metni
+İKİNCİ kez de içerdiği için (ikinci `node` çağrısı) kalan metin hâlâ `mentionsHooksNormalized`/
+`mentionsHooksV6`'yı tetikliyor.
+
+**Neden bloklayıcı DEĞİL:** yön güvenlik lehine (AŞIRI engelleme, sızıntı DEĞİL) — `cd` olmadan
+(normal segmentasyon) her `node .claude/hooks/_selftest.cjs` çağrısı KENDİ segmentinde ayrı ayrı
+doğru şekilde muaf tutuluyor; yalnızca `cd`'nin ZORLADIĞI tek-mega-segment retreat'i içinde AYNI
+muaf yolun BİRDEN FAZLA anılması durumunda ilk-anma-çıkarma stratejisi yetersiz kalıyor.
+Pratik etkisi düşük (bu deponun iş akışında `cd <repo> && node .claude/hooks/_selftest.cjs`
+gibi komutlar genellikle TEK çağrı içerir) ama gerçek ve tekrarlanabilir.
+
+**Düzeltme önerisi (bir sonraki tur):** `removeFirstOccurrenceV6`'yı `removeAllOccurrencesV6`'ya
+çevir (segmentteki HER `interpreterExecutesOwnHooksScriptOnly` sonucu token'ı, tek geçiş yerine
+TÜM node/python/... çağrılarını tarayıp HER birinin kendi betik argümanını çıkararak) — ya da
+daha basiti, `findInterpreterScriptToken`'ı `exec`'in `lastIndex`'ini ilerleterek segmentteki
+TÜM yorumlayıcı çağrılarını (ilkini değil) döndürecek şekilde genişlet. Kod değişikliği bu turda
+YAPILMADI (`.claude/hooks/**`'a yazma izni yok); yalnızca dürüstçe kaydedildi.

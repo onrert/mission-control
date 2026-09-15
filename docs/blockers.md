@@ -1848,3 +1848,78 @@ korpusu, 385/385 self-test, 7 mutantlı yön-ayrımlı test — hepsi `docs/qa/h
 kendi başına izole bir pozitif kontrolü yok — şu an Mekanizma 2'nin genel mention kuralıyla
 fazlalıklı örtüşüyor (bkz `hook-polarite-contract.md` §7.5 MUT-PIPE-CLOBBER-OFF). Güvenlik kaybı
 değil, ölçüm netliği eksikliği. Bir sonraki `>|`/segmentasyon dokunuşunda izole bir vaka eklensin.
+
+---
+
+## 2026-09-15 — B5: izin listesi hook hattını TAMAMEN atlatıyordu (KAPATILDI) + polarite turu KALDI
+
+### B5 — kök bulgu, qa-evaluator tarafından CANLI doğrulandı
+`.claude/settings.json`'daki `Bash(npm run *)` izni, `package.json`'un korumasız olmasıyla
+birleşince **bütün hook hattını anlamsız kılıyordu**. QA ölçtü: `package.json`'a bir script yazıp
+`npm run evil` çalıştırmak hook'tan **exit 0** aldı; `docs/approvals/G5.ok` **ve**
+`.claude/hooks/gate-check.cjs` silindi, sahte bir `GUARD.ok` yazıldı — **tek bir izin kartı
+çıkmadan**.
+
+Bu, `ADR-016`'nın *"asıl savunma kullanıcının izin kartıdır"* öncülünü çürütüyordu: kart
+çıkmıyordu. Yani beş turdur derinlik katmanı sertleştirilirken ön kapı açıktı.
+
+**Kullanıcı kararı (AskUserQuestion, 2026-09-15): "Önce izin listesini daralt."** Uygulandı:
+- `Bash(npm run *)` **kaldırıldı** → `package.json`'daki **gerçek script adlarından** oluşan bir
+  allowlist kondu (22 giriş). `install-hook` **bilerek DIŞARIDA** — bu depo dışına hook kurabilir.
+- `package.json` ve `.claude/**` **`ask` listesine** alındı — script eklemek artık kart gerektirir.
+  B5'in saldırı yolu tam da buydu; yazma adımında kart çıkıyor.
+- Kullanılmayan geniş izinler kaldırıldı: `uv run *`, `npx create-*`, `npx expo*`,
+  `python -m pytest*`, `claude plugin *`, `claude mcp *`.
+- `npm install*`/`npm ci*` joker karakterden çıkarıldı → tam eşleşme (`npm install evil-pkg` artık
+  kart ister).
+- `deny`'a satır içi yorumlayıcı biçimleri eklendi: `node -e`, `node --eval`, `node -p`,
+  `node --print`, ayrıca `npm exec *`, `npx --yes *`, `npx -y *`, `npm run install-hook*`.
+Ölçüm: JSON geçerli · allow 54 · deny 14 · ask 6 · hook yapılandırması değişmedi (13 olay türü,
+4 `PreToolUse`) · self-test **385/385**.
+
+**KABUL EDİLEN SINIR (açıkça):** `Write(tests/**)` + `Bash(npm run test)` birlikte hâlâ **kartsız
+kod çalıştırmaya** izin verir. Bu bir kod fabrikasının doğasıdır — kapatmak hattı işlevsiz bırakır.
+Aynı şekilde `Bash(node *)` korundu, çünkü arka plandaki alt agent turları sonda/teşhis
+betiklerini bununla koşuyor; kaldırmak turları kilitler. Bunlar bilinçli, ölçülmüş tavizlerdir.
+
+### Polarite turu (v5, commit `250277b`): **KALDI** — üç bloklayıcı açık
+Kapanan taraf doğrulandı: ÖNEMLİ-1'in 11 vektörü **11/11 engel**, CEO'nun 6 yol varyantı **6/6
+engel**, 3 640 vektörde **0 regresyon**, self-test **385/385**. Ama QA 32 taze vektörle 15 sızıntı
+buldu ve **canlı** doğruladı (üçünde `gate-check.cjs` yok edildi):
+- **B1 (kök):** `if`/`while`/`case`/`cd`/`pushd` okuyucu listesinde → Mekanizma 2 komple atlanıyor.
+  Kapatılan 11 sızıntının **hepsi** üç karakterlik bir önekle (`if `, `cd . && `) geri açılıyor.
+  Kök neden: **"eylemsiz" ile "okuyucu" aynı bayrağa kodlanmış.** `cd`'de ayrıca `WD_CHANGE`
+  geri çekilmesi kısıtlamayı *azaltıyor* — dosyanın kendi sözleşmesinin tersi.
+- **B2:** yeni yönlendirme deseni **ham** metinde; normalizasyon yalnızca diğer dalda →
+  `echo pwned > docs/./approvals/G5.ok` canlı geçti. Yol parçalama okuyucu baş komutlar için
+  **kapanmamış**.
+- **B3:** `\` her zaman ayraç sanılıyor; bash'te kaçıştır → `d\ocs/approvals/...` **520/520 kör**.
+- **B4:** `node .claude/hooks/_selftest.cjs` artık engelleniyor **ve** 385 vakalık çitin sürüm
+  kontrollü bir runner'ı yok (`package.json`'da script yok, testlerde referans yok). Yani zorunlu
+  doğrulamanın kendisi çalıştırılamaz hâlde.
+
+**QA'nın yön ayrımlı mutasyon bulgusu:** üç parça (`kontrol-akışı` / `cd` / `HEAD_SKIP_V5`)
+**yalnızca aşırı-engelleme yönünde** çitli — B1'in 375 vektörlük ailesini tam da bunlar üretiyor.
+Bu, "engelleme-kaybı sütunu sıfırsa o mekanizma ölçülmüyor" kuralının üçüncü kanıtı.
+
+**Aşırı engelleme ölçüldü:** 34 komutluk gerçekçi korpusta v4 **0/34** → v5 **5/34 (%14,7)**.
+
+### Bir sonraki turun DOĞRU SORUSU (QA'nın formülasyonu, CEO kabul etti)
+Bu, aynı ailenin beşinci turu. *"Listeye `test` ekle, `if`'i çıkar"* altıncı tur olur.
+Doğru soru **"baş komut ne?"** değil:
+> **"Korunan yol bu segmentte bir YAZMA KONUMUNDA mı?"**
+> (yönlendirme hedefi · bilinen bir yazıcının hedef argümanı · yerinde-düzenleme konusu)
+
+Bu formülasyon B1, B2 ve self-test muafiyetini **aynı anda ve yapısal olarak** çözer: "eylemsiz"
+kabuk sözcükleri (`if`/`cd`) hiçbir zaman bir yazma konumu üretmediği için listede olmalarına
+gerek kalmaz, ve `node <gate-protected>.cjs` bir yazma konumu **değildir** (argüman, hedef değil).
+
+### B4 için QA'nın önerisi (kabul edildi, sonraki turun kapsamı)
+Self-test muafiyeti **(c)** seçeneğiyle çözülecek — ama sözleşmedeki gerekçeyle DEĞİL.
+*"GUARD.ok içeriği koruyor"* öncülü şu an **yanlış** (QA kapı dosyasını canlı yok etti).
+Doğru gerekçe: **çalıştırmak yazmak değildir** — muafiyet bir istisna değil, tespitin
+düzeltilmesidir. Şartlar: (1) `fs.realpathSync.native` ile çöz, çözemezsen fail-closed
+(metinsel `.claude/hooks/../../tmp/evil.cjs` atlatması); (2) yalnızca yorumlayıcı argümanı
+konumu; (3) yönlendirme kontrolleri muafiyetten etkilenmesin; (4) kendi pozitif kontrolü;
+(5) `test`/`[` yanlış pozitifi aynı turda kapansın. Ayrıca **`npm test` zincirinden koşan bir
+vitest runner** şart — 385 vakalık çit sürüm kontrollü olmalı.

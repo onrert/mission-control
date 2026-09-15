@@ -4824,3 +4824,50 @@ altı gerçek kapı dosyasının SHA-256'sı değişmedi.
 
 **Durum:** `g5-guard-json-contract.md` → `status: qa`. GEÇTİ/KALDI kararı qa-evaluator'a ait.
 `CLAUDE.md` 68 → **75 kural**.
+
+## 2026-09-15 — hook-borçları M2v2 düzeltme turu (KALDI sonrası) — "komut konumu" kaldırıldı, tırnak-konumu muafiyeti geldi
+
+**Görev:** `docs/qa/hook-borclari-karari-2026-09-15.md` KALDI kararı — v1'in "komut konumu"
+mekanizması (kapalı önek/ayraç listesi: `sudo|env|time|exec|git` + `&&`/`||`/`;`/`|`/satır sonu)
+22 gerçek saldırı vektörünü (N1-N7, N14, S1-S16) engelleme dışı bırakmıştı, 8'i canlı ölçülmüştü
+(gerçek dosya silindi/üzerine yazıldı, hook `exit 0`). Brief: kapalı listeyi büyütme (bu depoda
+dört kez kaybedilen oyun), yerine **tırnak-konumu** muafiyeti kur.
+
+**Yapılan:** `.claude/hooks/block-dangerous.cjs`'te `hasMatchAtCommandPosition`
+(`CMD_PREFIX_WORDS`/`CMD_POS_RE`) tamamen kaldırıldı; yerine `hasMatchOutsideQuotes` geldi —
+`scanQuotedRanges` (splitCommandSegments'in kullandığı AYNI tek-geçişli tırnak/kaçış durum
+makinesi, ikinci bir ayrıştırıcı yazılmadı) ile bir eşleşmenin tırnak içinde mi dışında mı
+olduğuna bakılır; tırnak dışındaki her eşleşme, önünde ne olduğuna bakılmaksızın sayılır.
+Fail-closed: tırnak durumu çözülemiyorsa (sonlandırılmamış tırnak) hiçbir eşleşme muaf tutulmaz.
+
+**Nasıl doğrulandı:**
+- Üç modlu diferansiyel (`prev`=`git show 1fbb1eb`, `installed`=kurulu `a41ce32`, `cand`=v2),
+  64 vektör: merkezi kriter (saldırı vektörlerinde `prev`/`installed` ENGEL → `cand` GEÇER)
+  **0 ihlal**; N1-N7/N14/S1-S16 (22 vektör) **22/22 ENGEL**; F1-F10 **10/10 GEÇER**; R1-R12+A5
+  **13/13 ENGEL**; 16 masum TWIN **16/16 GEÇER**; `foo rm ...` bonus kapanışı **ENGEL**.
+- Canlı kanıt (izole sahte depo, gerçek dosya, Git Bash ile GERÇEK çalıştırma): `installed`
+  **10/10 pratik sızıntı** (8 silindi, 2 üzerine yazıldı) → `cand` **0/10**; pozitif kontrol
+  (tırnaksız `rm`) her iki modda da ENGEL.
+- Mutasyon (tam 296-vakalık self-test üzerinde, iki yön): tırnak kontrolü kaldırılırsa **6**
+  kırmızı (hepsi yanlış-pozitif yönü: F2-F5, F9, N1-TWIN); tırnak kontrolü TERSİNE çevrilirse
+  (her eşleşme muaf) **86** kırmızı (hepsi ENGELLEME KAYBI yönünde) — "mekanizma gerçek bir
+  yazmayı görünmez yapmasın" pozitif kontrolü artık var (v1'de bu yönde SIFIR çit vardı).
+- `_selftest.cjs`: 157 → **197** `dangerCases` (+22 QA vektörü + 16 masum ikiz), tam self-test
+  (block-dangerous + gate-check) **296/296 GEÇTİ**. `node --check` temiz, ham NUL bayt yok.
+- İki mevcut vaka bilinçli olarak beklenti değiştirdi (kaldırılmadı): `RETREAT-HEREDOC-M2v2`
+  (heredoc gövdesi artık tırnak-dışı sayılıyor, 0→2) ve `M2-PREFIX-BONUS-KAPANIS` (`foo rm ...`,
+  önek kavramı kalmadığı için 0→2, v1'in kabul edilmiş sınırı kapandı).
+
+**Kalan riskler (dürüstçe, `docs/blockers.md`'ye yazıldı):** `sh -c '...'`/`bash -c "..."`/
+`powershell -Command "..."` — tırnaklı bir dize GERÇEKTEN bir alt kabuğa yorumlatılırsa fiil
+tırnak içinde olduğu için muaf sayılır ama kabukta çalıştırılır (henüz canlı ölçülmedi, hipotez).
+A1/A10 (çok adımlı `cd`, önceden kabul edilmiş sınır) ve `sh -c` ailesi dışında bilinen açık yok.
+
+**Kısıt:** `.claude/hooks/**`'a bu turda da otonom yazılamadı (ortam kategorik reddediyor) —
+tüm geliştirme/doğrulama `scratchpad/hook-m2/sbx/` izole sahte deposunda yapıldı, gerçek
+`docs/approvals/*` ve `.claude/hooks/*`'a hiç dokunulmadı. Teslim: `scratchpad/hook-m2/
+block-dangerous-m2.cjs` → `.claude/hooks/block-dangerous.cjs`, `scratchpad/hook-m2/
+selftest-m2.cjs` → `.claude/hooks/_selftest.cjs`; kurulumu CEO `Write` aracıyla yapacak.
+
+**Durum:** `docs/qa/hook-borclari-contract.md` §11 eklendi, `status: qa` (değişmedi). GEÇTİ/KALDI
+kararı qa-evaluator'a ait.

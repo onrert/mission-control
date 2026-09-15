@@ -1722,3 +1722,26 @@ kabuk erişimli yerel bir agent'a karşı mutlak koruma zaten yok.
 dalı tarafından silindi (tetikleyici yazma **gerçekleşmedi**, engellendi). Gerekçe: bekleyen bir
 onay dosyası varken `_selftest.cjs` `exit 3` ile reddediyor (Y3 emniyet kemeri) — yani zorunlu
 doğrulama koşulamıyordu.
+
+## 2026-09-15 — developer (hook-borçları M2v2 düzeltme turu) — yeni kabul edilmiş sınır: `sh -c`/`bash -c`/`powershell -Command`
+
+**Görev:** QA'nın KALDI kararındaki (`docs/qa/hook-borclari-karari-2026-09-15.md`) 22 vektörlük
+M2 sızıntı ailesi, "komut konumu" (kapalı önek/ayraç listesi) kaldırılıp yerine tırnak-konumu
+muafiyeti (`hasMatchOutsideQuotes`, docs/qa/hook-borclari-contract.md §11) konarak kapatıldı.
+
+**Yeni sınır (dürüstçe, bu turun kapsamı dışında, çözülmedi):** tırnaklı bir dize kendisi
+GERÇEKTEN yorumlayan bir alt kabuğa geçiriliyorsa (`sh -c 'rm docs/approvals/G5.ok'`, `bash -c
+"rm ..."`, `powershell -Command "Remove-Item ..."`) fiil tırnak İÇİNDE olduğu için v2 tarafından
+muaf sayılır — ama kabukta GERÇEKTEN çalıştırılır. Teorik ihlal değil, pratik sızıntı riski
+taşıyan bir sınıf (henüz canlı ölçülmedi — bu madde bir HİPOTEZ, kanıtlanmış bir sızıntı değil).
+
+**Neden bu turda çözülmedi:** tam çözüm bir kabuk yorumlayıcısı gerektirir (bu depoda bilinçli
+kaçınılan bir oyun, dosya başı SEGMENTASYON yorumu "tam bir kabuk grameri DEĞİLDİR"); brief'in 22
+vektörü bu ailede değildi (`sh -c`/`bash -c`/`powershell -Command` hiçbiri N/S listesinde yok).
+
+**Kabul gerekçesi:** ADR-016 — asıl savunma kullanıcının izin kartı (`canUseTool`); hook bir
+derinlik katmanıdır, mutlak koruma değildir.
+
+**Eşik:** bir sonraki `.claude/hooks/**` turu (dar kapsamlı, tek mekanizma: `sh -c`/`bash -c`/
+`powershell -Command` argümanının kendisini AYRI bir alt-komut olarak taramak) ya da gerçek bir
+sızıntı olayı yaşanırsa hemen.

@@ -324,3 +324,138 @@ yalnızca erken/okunaklı bir derinlik katmanıdır, mutlak engel değildir.
   gate-check.cjs birlikte, bu turda ölçüldü: 256/256 GEÇTİ).
 - `docs/approvals/README.md` (önceki turda developer tarafından düzenlendi — bu turda dokunulmadı).
 - Kurulum sırası serbest (GUARD.ok artık zaman pencereli, tek yazmada tükenmiyor).
+
+## 11. M2v2 KAPANIŞI (2026-09-15 düzeltme turu — QA KALDI: docs/qa/hook-borclari-karari-2026-09-15.md)
+
+**Kaynak:** QA'nın karar turu 22 gerçek saldırı vektörü buldu (`N1-N7`, `N14`, `S1-S16`), 8'i
+canlı olarak ölçüldü (izole sahte depoda gerçek dosya silindi/üzerine yazıldı, hook `exit 0`
+verdi). Kök neden: v1'in "komut konumu" mekanizması (`CMD_PREFIX_WORDS` = beş önek kelimesi +
+`CMD_POS_RE` = dört ayraç) **kapalı bir liste**ydi; kabuk grameri bundan çok daha geniş (`&`,
+`|&`, `VAR=x`, `(`/`{`/`!`/`\`, `then`/`do`, `command`/`nice`/`nohup`). Bu depo kapalı listeleri
+**dört kez** kaybetti (`docs/wiki/pages/desen/cit-tasarimi.md` §1); bir önek/ayraç daha eklemek
+beşinci kaybı garantilerdi — o yüzden brief bilerek "kapalı listeyi büyütme" yolunu **yasakladı**.
+
+### 11.1 Mekanizma (adıyla): tırnak-konumu muafiyeti, komut-konumu DEĞİL
+
+`hasMatchAtCommandPosition` (v1) **tamamen kaldırıldı**, yerine `hasMatchOutsideQuotes` (v2)
+geldi. Kural artık ikili ve kapalı bir sayım değil: **bir fiil eşleşmesi yalnızca tırnaklanmış bir
+dize İÇİNDE (tek ya da çift) geçiyorsa SAYILMAZ; tırnak DIŞINDAKİ her eşleşme, önünde ne olduğuna
+BAKILMAKSIZIN SAYILIR.** Tırnak durumu `scanQuotedRanges(text)` ile hesaplanır — bu,
+`splitCommandSegments`'in kullandığı AYNI tek-geçişli tırnak/kaçış durum makinesidir (ikinci bir
+tırnak ayrıştırıcısı YAZILMADI, tek kaynak ilkesi). Fail-closed: bir metnin tırnak durumu güvenle
+çözülemiyorsa (sonlandırılmamış tırnak) hiçbir eşleşme muaf tutulmaz — retreat felsefesiyle aynı,
+belirsizlik daima daha kısıtlayıcı tarafa çözülür.
+
+**Neden bu, B2'yi de hâlâ çözüyor:** QA'nın ölçtüğü 5 yanlış-pozitif vakasının (F2-F5, F9)
+HEPSİNDE fiil kelimesi (`unlink`/`RM-1`/`Remove-Item`/`rm`) bir OKUMA komutunun (`grep`/`awk`)
+TIRNAKLI ARGÜMANI içinde geçiyordu — yani B2'yi çözmek için "komut konumunu" tanımaya hiç gerek
+yoktu, gereken tek şey "bu eşleşme bir dize sabitinin içinde mi" sorusuydu. Aynı zamanda N/S
+ailesinin **tamamı** (22 vektör) hiçbir önek/ayraç listesi büyütülmeden kendiliğinden kapanıyor:
+`MC=1 rm ...`, `sleep 0 & rm ...`, `(rm ...)`, `\rm ...`, `command rm ...` vb. hepsinde "rm"
+TIRNAK DIŞINDA geçiyor, dolayısıyla önünde "sudo" mu "MC=1" mi "(" mi olduğu artık önemsiz.
+
+### 11.2 Kapalı-liste yaklaşımının reddedilme gerekçesi
+
+QA'nın kendi önerisi (§7 madde 4) "okuma araçlarının kapalı bir listesini... segmentin ilk
+kelimesinden tanımak" idi — bu da REDDEDİLDİ, çünkü bu da bir kapalı liste (`grep`/`awk`/`sed`/
+`cat`/`head`/`tail`/`wc`/`findstr`/...) ve "ilk kelime" varsayımı `if true; then grep ...; fi`
+gibi durumlarda kırılır (ilk kelime "then" olur, "grep" değil). Tırnak durumu bunun aksine
+**yapısal bir özellik** — kaç farklı okuma aracı/önek/ayraç kelimesi olduğundan bağımsız, "şu an
+bir dize sabitinin içinde miyim" ikili sorusu. ADR-013'ün "allowlist zorunlu, denylist değil"
+kararıyla aynı derste: burada "allowlist" kavramı bile gerekmiyor, çünkü ayırt edici özellik bir
+liste değil bir sözdizim durumu.
+
+### 11.3 Kabul edilen takas (dürüstçe, aşırı engelleme yönünde — güvenlik kaybı DEĞİL)
+
+`grep -n unlink dosya` (TIRNAKSIZ, argüman çıplak) artık yanlış pozitif alır — fiil tırnak
+dışında olduğu için koşulsuz sayılır. Bu YENİ bir kayıp DEĞİL: segmentasyon-öncesi (M2-öncesi)
+orijinal davranış da böyleydi. Pratikte `grep`in arama deseni normalde tırnaklanır (F2-F5/F9'un
+hepsi tırnaklı), gerçek sürtünme düşük öngörülüyor.
+
+**Davranış değişikliği (bilinçli, `_selftest.cjs`'te işaretli):**
+- `RETREAT-HEREDOC-M2` → adı `RETREAT-HEREDOC-M2v2` oldu, beklenen değer **0'dan 2'ye** değişti.
+  Heredoc gövdesi gerçek bir tırnak çifti DEĞİL (yalnızca `<<'EOF'` sınırlayıcısının kendi tek
+  tırnak çifti var, gövde metninin dışında) — bu yüzden gövde içindeki "cp" kelimesi v2'nin
+  tırnak taramasında "tırnak dışı" sayılır ve artık engellenir. Bu, retreat/blob modunun kendi
+  "kasıtlı aşırı engelleme" felsefesiyle (dosya başı SEGMENTASYON yorumu) TUTARLI — heredoc/`$()`
+  retreat'i zaten "kabul edilmiş sınır: aşırı engelleyebilir" diyordu, M2v2 bu sınırı sadece
+  tutarlı hale getiriyor.
+- `M2-PREFIX-KABUL-EDILEN-SINIR` → adı `M2-PREFIX-BONUS-KAPANIS` oldu, beklenen değer **0'dan
+  2'ye** değişti (BONUS KAPANIŞ). `foo rm docs/approvals/GUARD.ok` v1'de "tanınmayan önek"
+  sınırıydı (kapalı liste `foo`'yu bilmiyordu); v2'de önek/ayraç kavramı kalmadığı için bu sınıf
+  artık yok — "rm" tırnak dışında olduğu için önündeki kelime ne olursa olsun sayılır.
+
+### 11.4 Üç modlu diferansiyel ölçüm (64 vektör × 3 mod, `scratchpad/hook-m2/probe-diff.mjs`)
+
+| Mod | Tanım |
+|---|---|
+| `prev` | `git show 1fbb1eb:.claude/hooks/block-dangerous.cjs` — bu turun ZİNCİRİNİN başlangıcı (M1/M2/bare-artifact YOK) |
+| `installed` | şu an kurulu, regresyonlu sürüm (`a41ce32`) |
+| `cand` | bu turun adayı (v2, tırnak-konumu muafiyeti) |
+
+| Küme | N (vektör) | cand sonucu | Not |
+|---|---|---|---|
+| N1-N7,N14 (yeni sızıntı) | 8 | 8/8 ENGEL | QA'nın §1.3 ailesi |
+| S1-S16 (aile büyüklüğü) | 16 | 16/16 ENGEL | QA'nın §1.4 ailesi (S12/S13 zaten v1'de de engelliydi, regresyon değildi) |
+| F1-F10 (masum) | 10 | 10/10 GEÇER | B2 kapalı kalıyor |
+| R1-R12+A5 (önceki tur regresyonu) | 13 | 13/13 ENGEL | M1/bare-artifact/A5 hâlâ sağlam |
+| TWIN (N/S'nin masum ikizleri, okuma) | 16 | 16/16 GEÇER | aşırı engelleme YOK |
+| BONUS (`foo rm ...`) | 1 | ENGEL | v1'in kabul edilmiş sınırı kapandı |
+
+**Merkezi kriter (SALDIRI vektörleri, N/S/R/A5/BONUS — F/TWIN hariç, gerekçe: F/TWIN'de
+`prev`in kendi orijinal B2 hatası zaten yanlış pozitifti, "blob'un kendi yanlış pozitifi" için
+ters yönlü bir taahhüt yok, bkz §9): `prev` ENGEL → `cand` GEÇER: **0 vektör**. `installed` ENGEL
+→ `cand` GEÇER: **0 vektör**.** F/TWIN kümesinde `prev`in kendi yanlış pozitifi düzelen 6 vektör
+(F2-F5, F9, N1-TWIN) — bu bir regresyon değil, B2'nin iyileşme yönü.
+
+### 11.5 Canlı kanıt (izole sahte depo, gerçek dosya, `scratchpad/hook-m2/live-proof.mjs`)
+
+Gerçek `docs/approvals/G5.ok` (`ORIJINAL-ONAY-ICERIGI`) ve `.claude/hooks/gate-check.cjs`
+(`ORIJINAL-GATE-CHECK-ICERIGI`) içerikli izole geçici depolarda 10 N/S vektörü (N1-N7,N14,S3,S16)
+`installed` ve `cand` ile ayrı ayrı çalıştırıldı; hook `exit 0` verdiğinde komut GERÇEKTEN Git
+Bash ile çalıştırıldı:
+
+| Mod | Pratik sızıntı |
+|---|---|
+| `installed` (kurulu, regresyonlu) | **10/10** (8'i SİLİNDİ, 2'si ÜZERİNE YAZILDI) |
+| `cand` (v2) | **0/10** |
+| Pozitif kontrol (`rm docs/approvals/G5.ok`, tırnaksız doğrudan) | her iki modda da ENGEL, dosya DEĞİŞMEDİ |
+
+### 11.6 Mutasyon testi — YÖN AYRIMIYLA (`scratchpad/hook-m2/mutation-full-selftest.mjs`, tam 296-vaka self-test üzerinde)
+
+QA'nın ÖNEMLİ-2 bulgusu ("M2'nin hiçbir çiti engelleme yönünü ölçmüyor") burada iki mutantla
+kapatıldı — biri mekanizmayı kaldırıyor (aşırı-engelleme yönü), diğeri TERSİNE çeviriyor
+(engelleme-kaybı yönü, yani "mekanizma gerçek bir yazmayı görünmez yapıyor mu"):
+
+| Mutant | Ne yapar | Kırmızı (296 vaka üzerinde) | Yön |
+|---|---|---|---|
+| `mutant-always-count` | tırnak kontrolü KALDIRILIR (her eşleşme sayılır, `.test()` eşdeğeri) | **6** (F2-F5, F9, N1-TWIN) | yanlış-pozitif (aşırı engelleme) |
+| `mutant-always-exempt` | tırnak kontrolü TERSİNE ÇEVRİLİR (hiçbir eşleşme sayılmaz) | **86** (b1/b2/N/S/R/A5/BARE-* ailelerinin tamamı) | **ENGELLEME KAYBI** — mekanizma gerçek yazmaları görünmez yapıyor, self-test bunu YAKALIYOR |
+
+`mutant-always-exempt`'in 86 kırmızısı, brief'in istediği "mekanizma gerçek bir yazmayı görünmez
+yapmasın" pozitif kontrolünü (≥5 vaka şartını 17× aşarak) doğrular — v1'in en büyük açığı tam
+olarak buydu (7 kırmızının 7'si de yanlış-pozitif yönündeydi, engelleme yönünde SIFIR çit vardı).
+Mutasyonlar sandbox'taki candidate dosyasında elle uygulanıp (`git checkout`/`restore`
+KULLANILMADI) her ölçümden sonra orijinal içerikle **bit-bit** karşılaştırılarak geri yazıldı.
+
+### 11.7 Yeni, dürüstçe kabul edilen sınır: `sh -c '...'` / `bash -c "..."` / `powershell -Command "..."`
+
+Tırnaklı bir dize kendisi GERÇEKTEN yorumlayan bir alt kabuğa geçiriliyorsa (`sh -c 'rm
+docs/approvals/G5.ok'`) fiil tırnak İÇİNDE olduğu için v2 tarafından muaf sayılır — ama kabukta
+GERÇEKTEN çalıştırılır (teorik değil, pratik sızıntı riski taşır). Bu, tam bir kabuk
+yorumlayıcısı yazmadan (bilinçli kaçınılan oyun) çözülemez — ADR-016'nın zaten kabul ettiği
+sınırla aynı sınıf (asıl savunma kullanıcının izin kartıdır). Bu turun brief'i bu vektör ailesini
+kapsamına almadı (22 vektörün hiçbiri bu değil); ayrı bir tur olarak bırakılıyor, `docs/blockers.md`'ye
+eşik olarak kaydedilecek: "bir sonraki `.claude/hooks/**` turu ya da gerçek bir `sh -c`/`bash -c`
+sızıntı olayı."
+
+### 11.8 Teslim
+
+- `scratchpad/hook-m2/block-dangerous-m2.cjs` → kurulacağı yer: `.claude/hooks/block-dangerous.cjs`.
+- `scratchpad/hook-m2/selftest-m2.cjs` → `.claude/hooks/_selftest.cjs` (`dangerCases` 157 → 197:
+  +22 QA vektörü (N1-N7,N14,S1-S16) + 16 TWIN masum negatif kontrol + 2 vaka adı/beklenti
+  güncellemesi RETREAT-HEREDOC-M2v2/M2-PREFIX-BONUS-KAPANIS, §11.3; hiçbir eski vaka çıkarılmadı).
+  Tam self-test (block-dangerous.cjs + gate-check.cjs): **296/296 GEÇTİ**, exit 0.
+- `gate-check.cjs` bu turda DEĞİŞMEDİ (kapsam dışı, brief §"Dokunma").
+- Kurulum: CEO `Write` aracıyla yapacak (`.claude/hooks/**`'a otonom yazma bu ortamda kategorik
+  engelli). Kurulumdan ÖNCE aday izole sahte depoda doğrulandı (§11.4-§11.6).

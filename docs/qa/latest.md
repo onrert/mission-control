@@ -3,6 +3,18 @@
 KARAR: KALDI
 ESKALE: false
 
+> **CEO KARARI (2026-09-15) — bu KALDI düzeltme turuna GİTMEDİ, açık borç olarak KAPATILDI.**
+> Kullanıcı kararı (AskUserQuestion: *"Dur, dürüstçe yaz, G6'ya geç"*). Gerekçe: yedi turluk
+> sertleştirmenin ardından QA, hattın **atlanabilir** olduğunu canlı ölçtü — `Write(src/**)` +
+> `Bash(node *)` birlikte sıfır izin kartıyla onay dosyasını sildi, kapı hook'unu etkisizleştirdi
+> ve sahte bir `GUARD.ok` yazdı. Bu koşulda metin tarayıcısını bir tur daha sertleştirmenin
+> marjinal değeri sıfıra yakındır.
+> Aşağıdaki 24 vektör ve izin açığı `docs/blockers.md`'ye **açık borç** olarak işlendi; `ADR-016`
+> güncellendi (hook hattı = kaza önleyici, saldırı önleyici değil) ve yeniden açma ölçütü yazıldı.
+> Sözleşme `docs/qa/hook-writepos-contract.md` → `done`.
+> **`stop-check` bu satırı okuyup uyarı üretmeye devam edecek — bilinen gürültü, kapı bilerek
+> şartlı hâle getirilmedi (kayıtlı kural).**
+
 Tarih: 2026-09-15 · Sözleşme: `docs/qa/hook-writepos-contract.md` · Değerlendirilen sürüm: kurulu `c85bc67` (v6, çalışma ağacı temiz, `git diff HEAD -- .claude/` boş)
 Önceki raporlar: `docs/qa/hook-polarite-karari-2026-09-15.md` (v5 KALDI), `docs/qa/hook-borclari-karari-v3-2026-09-15.md`
 Kanıt betikleri: `C:\Users\pc\AppData\Local\Temp\claude\C--dev-apps-mission-control\b13e8d3f-6bd6-42d4-bf89-f239841462ba\scratchpad\qa8\{lib,vectors,probe,live,combo,fp,mutate,unmeasured,q1trigger,b5,b5b,realrepo,selftest}.mjs`

@@ -89,3 +89,48 @@
   DARALTMIYOR/GENİŞLETMİYOR, yalnızca G5 tur-3'ün KRİTİK bulgusunu (kullanıcının zaten
   "Üç katmanı da yap" diyerek onayladığı `GUARD.ok`, bkz. `docs/approvals/GUARD.ok` geçmişi)
   nasıl kapattığını belgeliyor.
+
+---
+
+## Güncelleme — 2026-09-15: ölçülmüş sınır, yedi turun sonucu
+
+Bu ADR *"asıl savunma kullanıcının izin kartıdır; hook bir derinlik katmanıdır"* diyordu. Yedi
+turluk sertleştirmenin ardından bu öncülün **ölçülmüş** hâli aşağıdadır. Kullanıcı kararı
+(2026-09-15): **hat burada durur, sınır dürüstçe yazılır, G6'ya geçilir.**
+
+### 1. Öncül kısmen yanlıştı: kart her zaman çıkmıyor
+qa-evaluator canlı gösterdi (`docs/qa/hook-writepos-karari-2026-09-15.md`):
+`.claude/settings.json`'daki `Write(src/**)` + `Bash(node *)` izinleri birlikte **sıfır izin
+kartıyla** tam yetki veriyor. Tek bir `node src/tools/fmt.mjs` çağrısı:
+- `docs/approvals/G5.ok`'u sildi,
+- `.claude/hooks/gate-check.cjs`'i `process.exit(0);` yaptı (kapı sessizce ölür),
+- **sahte bir `docs/approvals/GUARD.ok` yazdı.**
+
+Yani hook hattı, kabuk erişimi olan bir agent'a karşı **atlanabilir**. Bu, bu ADR'nin dayandığı
+"kart çıkar, kullanıcı görür" öncülünün karşılanmadığı bir yol olduğunu gösterir.
+
+### 2. Kısmen kapatıldı (commit `810ed06`)
+`Bash(npm run *)` joker izni kaldırılıp `package.json`'daki gerçek script adlarından bir allowlist
+kondu; `package.json` ve `.claude/**` `ask` listesine alındı; `node -e`/`-p`/`--eval`/`--print`
+deny'a eklendi. Bu, QA'nın gösterdiği `npm run evil` yolunu kapattı.
+
+**Kapatılmayan:** `Bash(node *)` ve `Write(src|tests/**)`. Gerekçe ölçülmüş bir takastır — arka
+planda koşan alt agent turları sonda/teşhis betiklerini `node <betik>.mjs` ile çalıştırıyor ve
+izin kartı **veremiyorlar**; bu izni kaldırmak üretim hattını kilitler. Ayrıca `node --eval=<kod>`
+biçimi mevcut deny desenlerini atlıyor (desenler yalnızca boşluklu biçimi kapsıyor).
+
+### 3. Bu ADR'nin güncellenmiş konumu
+- **Hook hattı bir KAZA ÖNLEYİCİDİR, bir SALDIRI ÖNLEYİCİ DEĞİLDİR.** Yanlışlıkla yazılmış bir
+  komutu, bir alt agent'ın dikkatsizliğini, kopyala-yapıştır bir zinciri yakalar. Kasıtlı ve
+  bilgili bir aktöre karşı — ki yerel, kabuk erişimli bir agent tanımı gereği öyledir — **mutlak
+  koruma yoktur ve olamaz.**
+- Ölçülen koruma değeri yine de gerçektir: v6, v0'dan bu yana 16 + 11 + 8 + 6 vektörlük sızıntı
+  ailesini kapattı, 420 vakalık sürüm kontrollü bir çite sahip ve gerçekçi iş akışı korpusunda
+  **%0 aşırı engelleme** üretiyor.
+- **Açık kalan borç** (`docs/blockers.md`'de kayıtlı): QA'nın 24 canlı vektörü (Q1 blob-ilk-token
+  körlüğü · Q2 `awk`/`sed` yazma biçimleri · Q3 `>&dosya` ve satır-devamı yönlendirmesi ·
+  Q4 `git --output=`), artı yukarıdaki izin açığı ve `--eval=` deny boşluğu.
+- **Yeniden açma ölçütü:** (a) bu depoda gerçek bir sızıntı yaşanırsa, (b) hat çok kullanıcılı ya
+  da uzak bir ortama taşınırsa (o zaman öncül tamamen değişir), ya da (c) onay artefaktları
+  agent'ın yazabildiği alandan çıkarılırsa — bu sonuncusu, yedi turun çözemediği şeyi tek turda
+  çözen yapısal seçenektir ve değerlendirildi, ertelendi.

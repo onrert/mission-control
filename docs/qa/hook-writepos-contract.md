@@ -1,6 +1,6 @@
 # Sözleşme — Hook Yazma-Konumu Analizi (v6)
 
-Tarih: 2026-09-15 · Durum: qa · Girdi: `docs/qa/hook-polarite-karari-2026-09-15.md` (v5 KALDI kararı, B1/B2/B3/B4 + Ö3) ·
+Tarih: 2026-09-15 · Durum: done (KALDI, kullanici karariyla acik borc olarak kapatildi) · Girdi: `docs/qa/hook-polarite-karari-2026-09-15.md` (v5 KALDI kararı, B1/B2/B3/B4 + Ö3) ·
 Kurulu taban: `250277b` (v5, dokunulmadı) · Aday: `scratchpad/hook-writepos/block-dangerous-v6.cjs`
 (bu turda `.claude/hooks/**` altına yazma izni yok; kurulum CEO tarafından yapılacak).
 

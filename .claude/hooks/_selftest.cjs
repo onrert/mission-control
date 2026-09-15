@@ -1,5 +1,12 @@
 // Regresyon testi — block-dangerous.cjs VE gate-check.cjs için.
-// Çalıştır: node .claude/hooks/_selftest.cjs
+// V6 (docs/qa/hook-writepos-contract.md): B1/B2/B3/B4/Ö3 kapanışını doğrulayan vakalar eklendi;
+// hiçbir mevcut vaka ÇIKARILMADI. Beklentisi DEĞİŞEN vakalar kendi açıklamalarında V6 etiketiyle
+// gerekçelendirilmiştir.
+// NOT (kurulum farkı): adayın scratchpad sürümü sandbox'a ADAY block-dangerous.cjs'i kopyalıyordu;
+// kurulu sürümde böyle bir şey YOK — sandbox GERÇEK, kurulu hook'ları kopyalar (aksi hâlde
+// scratchpad silinince self-test exit 4 verir ve zorunlu doğrulama sessizce ölür).
+// Çalıştır: npx vitest run tests/hooks-selftest.test.ts   (doğrudan `node .claude/hooks/...`
+// çağrısı da çalışır — B4 muafiyeti bunu açıkça serbest bırakır.)
 // Test dizeleri parça parça kurulur ki bu dosyanın kendisi hook'a takılmasın.
 //
 // TUR 4 (docs/qa/g5-guard-json-contract.md): GUARD.ok markdown'dan JSON'a taşındı. Bu dosyadaki
@@ -65,6 +72,12 @@ try {
     if (!name.endsWith('.cjs') || name === '_selftest.cjs') continue;
     fs.copyFileSync(path.join(REAL_HOOKS_DIR, name), path.join(SANDBOX_ROOT, '.claude', 'hooks', name));
   }
+  // V6 B4: yorumlayıcı-betik-argümanı muafiyeti `fs.realpathSync.native` ile GERÇEK bir dosyanın
+  // varlığını ister. Yukarıdaki kopyalama döngüsü `_selftest.cjs`'i (bu dosyayı) BİLEREK dışlıyor,
+  // bu yüzden sandbox'ta o yolda bir dosya olmaz ve B4 vakaları fail-closed davranırdı. Buraya
+  // yalnızca REALPATH HEDEFİ olarak var olması için bir decoy yazılır — ASLA çalıştırılmaz
+  // (kayıtlı "kendi dosyanı dışla / fork bomb" dersiyle çelişmez).
+  fs.writeFileSync(path.join(SANDBOX_ROOT, '.claude', 'hooks', '_selftest.cjs'), '// v6 selftest decoy (yalnizca realpath hedefi)\nprocess.exit(0);\n');
   fs.mkdirSync(path.join(SANDBOX_ROOT, 'docs', 'approvals'), { recursive: true });
   fs.mkdirSync(path.join(SANDBOX_ROOT, 'assets'), { recursive: true });
   fs.writeFileSync(path.join(SANDBOX_ROOT, 'docs', 'approvals', 'G2.ok'), 'selftest sandbox fixture\n');
@@ -697,6 +710,58 @@ const dangerCases = [
     `node -p "1" && sed --in-place s/a/b/ docs/approvals/G5.ok`, 2,
     '(V5-CHAIN-1) ilk segment zararsiz (mention yok), ikinci segment P2-1 ile ayni -> segmentasyon ayri ayri degerlendirir, ikinci segment tek basina yeterli -> engellenir',
   ],
+
+  // =========================================================================================
+  // V6 EKLEMELERİ (docs/qa/hook-writepos-contract.md, hiçbir mevcut vaka ÇIKARILMADI).
+  // B1: kontrol-akışı/cd öneki ailesi (Mekanizma 3, head/reader kavramı olmadan kapanıyor).
+  // =========================================================================================
+  [`if node -p "require('fs').writeFileSync('docs/approvals/G5.ok','x')"; then :; fi`, 2, '(V6-B1-N1) if + node -p -> Mekanizma 3 opak-yorumlayici kurali (muafiyet basarisiz: -p bayragi) tum segmenti hedef sayar'],
+  [`if test -f docs/approvals/G5.ok; then echo yes; fi`, 0, '(V6-B1-N1-TWIN) if + test -f -> masum, hicbir mekanizma flagler'],
+  [`while node -p "require('fs').writeFileSync('docs/approvals/G5.ok','x')"; do break; done`, 2, '(V6-B1-N2) while + node -p -> M3 opak-yorumlayici'],
+  [`if gzip -f docs/approvals/G5.ok; then :; fi`, 2, '(V6-B1-N3) if + gzip -> M3 yazici-kuyruk kurali (onek konumu ONEMSIZ)'],
+  [`if grep -q ok docs/approvals/G5.ok; then echo hit; fi`, 0, '(V6-B1-N3-TWIN) if + grep -q -> masum, grep yazici degil'],
+  [`if perl -pi -e 's/a/b/' .claude/hooks/gate-check.cjs; then :; fi`, 2, '(V6-B1-N4) if + perl -pi -> M3 yerinde-duzenleme kurali'],
+  [`case x in x) sort -o docs/approvals/G5.ok /tmp/x ;; esac`, 2, '(V6-B1-N5) case + sort -o -> M3 bayrak-degerli hedef kurali'],
+  [`case x in x) cat docs/approvals/G5.ok ;; esac`, 0, '(V6-B1-N5-TWIN) case + cat -> masum'],
+  [`cd . && node -p "require('fs').writeFileSync('docs/approvals/G5.ok','x')"`, 2, '(V6-B1-N6) WD_CHANGE retreat tek segment + node -p -> M3 opak-yorumlayici (onceki "cd" prefiksi ONEMSIZ)'],
+  [`cd . && cat docs/approvals/G5.ok`, 0, '(V6-B1-N6-TWIN) cd + cat -> masum'],
+  [`cd . && openssl rand -out .claude/hooks/gate-check.cjs 16`, 2, '(V6-B1-N7) cd + openssl -out -> M3 bayrak-degerli hedef'],
+  [`cd . && ls .claude/hooks`, 0, '(V6-B1-N7-TWIN) cd + ls -> masum'],
+  [`pushd . && gzip -f docs/approvals/G5.ok`, 2, '(V6-B1-N8) pushd + gzip -> M3 yazici-kuyruk'],
+  [`pushd . && wc -l docs/approvals/G5.ok`, 0, '(V6-B1-N8-TWIN) pushd + wc -> masum'],
+
+  // B2: yönlendirme hedefi, okuyucu-olsun-olmasın HER ZAMAN normalize edilmiş şekilde kontrol
+  // edilir (Mekanizma 3 Konum-1, RAW segment üzerinde çalışır).
+  [`echo pwned > docs/./approvals/G5.ok`, 2, '(V6-B2-N9) echo (okuyucu) + noktali-yol yonlendirme hedefi -> M3 Konum-1 normalize eder'],
+  [`echo pwned > /tmp/scratch.txt`, 0, '(V6-B2-N9-TWIN) korumasiz hedef -> masum'],
+  [`echo pwned > "docs"/approvals/G5.ok`, 2, '(V6-B2-N10) tirnakli dizin parcasi + yonlendirme -> M3 normalize eder'],
+  [`printf pwned >> docs//approvals/G5.ok`, 2, '(V6-B2-N11) cift-eğik + append yonlendirme -> M3 normalize eder'],
+  [`cat /tmp/evil > .claude/./hooks/gate-check.cjs`, 2, '(V6-B2-N12) cat (okuyucu) + hooks yonlendirme hedefi -> M3 Konum-1'],
+  [`echo x >| docs/./approvals/G5.ok`, 2, '(V6-B2-N13) clobber (>|) + noktali yol -> M3 Konum-1'],
+
+  // B3: bash ters-bölü kaçışı — iki yorum da (ayraç VE kaçış) denenir, biri eşleşirse blok.
+  [`rm d\\ocs/approvals/G5.ok`, 2, '(V6-B3-N14) rm + bash kacis (d\\ocs -> docs) -> M3 cift-varyant normalizasyonu yakalar'],
+  [`cat d\\ocs/approvals/G5.ok`, 0, '(V6-B3-N14-TWIN) cat (okuma) + ayni kacis -> masum'],
+  [`rm docs/appro\\vals/G5.ok`, 2, '(V6-B3-N15) rm + orta-kelime kacis -> M3 yakalar'],
+  [`rm .clau\\de/hooks/gate-check.cjs`, 2, '(V6-B3-X-hooks-escape) rm + hooks kacisi -> M3 yakalar'],
+
+  // Ö3: test/[ artık okuyucu (Mekanizma 2 V6 DEĞİŞİKLİK 1) — kabuk yerleşiği, kendi başına
+  // hiçbir yola yazamaz, if/cd'nin aksine kendi argümanları içinde başka komut ÇALIŞTIRMAZ.
+  [`test -f docs/approvals/G5.ok`, 0, '(V6-O3-test) test -f -> okuyucu, hicbir mekanizma flagler'],
+  [`test -f docs/approvals/G5.ok && echo yes`, 0, '(V6-O3-test-chain) test -f && echo -> ayni gerekce'],
+  [`[ -f docs/approvals/G5.ok ]`, 0, '(V6-O3-bracket) [ -f ... ] -> okuyucu'],
+
+  // B4: yorumlayıcı betik argümanı muafiyeti (Mekanizma 2 V6 DEĞİŞİKLİK 2 + Mekanizma 3
+  // opak-yorumlayıcı istisnası). Yalnızca İLK konumsal argüman (betiğin kendisi) muaf; -e/-p/-c
+  // gibi satır içi kod bayrakları VARSA muafiyet YOK; yönlendirme kontrolleri ETKİLENMEZ.
+  [`node .claude/hooks/_selftest.cjs`, 0, '(V6-B4-plain) bare self-test cagrisi -> betik argumani .claude/hooks altina cozuluyor -> muaf'],
+  [`node .claude/hooks/_selftest.cjs 2>&1 | tail -4`, 0, '(V6-B4-pipe-tail) self-test + boru -> ayni muafiyet, ikinci segment (tail) zararsiz'],
+  [`node .claude/hooks/_selftest.cjs 2>&1 | grep -c "^OK"`, 0, '(V6-B4-pipe-grep) self-test + grep -c -> ayni muafiyet'],
+  [`node --check .claude/hooks/block-dangerous.cjs`, 0, '(V6-B4-check) node --check -> --check bayragi eval-bayragi DEGIL, betik argumani hala .claude/hooks altina cozuluyor -> muaf'],
+  [`node .claude/hooks/../../tmp/evil.cjs`, 2, '(V6-B4-realpath-escape) realpath COZULUNCE hooks disina cikiyor -> muafiyet FAIL-CLOSED, ayrica PARENT_TRAVERSAL_RE zaten yakalar'],
+  [`node -e "console.log(1)" .claude/hooks/x.cjs`, 2, '(V6-B4-eval-flag) -e satir ici kod bayragi VAR -> muafiyet YOK (brief madde 2), segment hooks aniyor -> engellenir'],
+  [`node .claude/hooks/_selftest.cjs > docs/approvals/G5.ok`, 2, '(V6-B4-redirect) betik argumani muaf OLSA BILE yonlendirme hedefi (docs/approvals) AYRI kural, etkilenmez -> engellenir'],
+  [`node evil.js docs/approvals/G5.ok`, 2, '(V6-B4-databare) betik ("evil.js") hooks altina COZULMUYOR -> muafiyet basarisiz -> DATA argumani (docs/approvals) segment mention olarak flaglenir'],
 ];
 
 // --- gate-check.cjs vakaları (K1) --------------------------------------------------------

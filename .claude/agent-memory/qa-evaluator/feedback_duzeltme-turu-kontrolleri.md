@@ -379,3 +379,22 @@ mutasyonu en az iki ortam hâlinde koştur ve tabloyu ikili yaz. Ayrıca "zararl
 mi?" diye sor: zararlı hâlde kırmızı çıkıyorsa borç bloklayıcı değildir — ama o kırmızının
 TASARLANMIŞ bir assert'ten mi yoksa ilgisiz bir vakanın bozulmasından mı (kazara) geldiğini
 ayır; kazara sinyal bir sonraki refaktörde kaybolur. Bkz. [[statik-cit-denetimi]] madde 9.
+
+## 12. Diferansiyel tabanı KOMŞU MUTANT değil, DEĞİŞİKLİK ÖNCESİ KOD olmalı
+
+Bir düzeltme turunda "aday, X'in engellediği hiçbir şeyi geçirmemeli" ölçümü yapılırken X'in
+seçimi sonucu belirler. hook-borclari turunda taban "segmentasyon kapalı" mutantıydı; ama o
+mutant, turun İKİNCİ düzeltmesini (komut-konumu kısıtı) hâlâ içeriyordu — dolayısıyla o
+düzeltmenin açtığı 22 vektörlük sızıntı ailesi her iki sütunda da GEÇER görünüp "regresyon yok"
+diye okundu. `git show <önceki-commit>:<dosya>` ile gerçek "öncesi"ni kurup aynı sondaları
+koşturunca 8 vektör anında düştü (canlı olarak: onay dosyası silindi, hook exit 0).
+
+**Why:** Çok mekanizmalı bir düzeltmede tek bir mekanizmayı kapatan mutant, diğerlerinin
+regresyonuna KÖRDÜR. Taban "değişiklikten önce sevk edilen kod" olmadıkça diferansiyel iddiası
+yalnızca seçilen mutantın ekseni için geçerlidir.
+
+**How to apply:** Her düzeltme turunda taban modlarını ÜÇ tut: (1) `prev` = değişiklik öncesi
+commit'ten çekilmiş kurulu dosya, (2) her mekanizma için ayrı "kapalı" mutant, (3) aday. Harness'in
+kendi pozitif kontrolü: `prev` modu ÖNCEKİ QA raporunun sayılarını birebir yeniden üretmeli —
+üretmiyorsa düzeneği ölçüyorsun, kodu değil. Ayrıca mutasyon kırmızılarının YÖNÜNÜ say: hepsi
+"yanlış pozitif azaldı" yönündeyse o mekanizmanın engelleme yönünde hiç çiti yok demektir.

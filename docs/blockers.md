@@ -1656,3 +1656,53 @@ B-4 sözleşmesi kuralın son hâlini QA'ya bırakmıştı. Karar:
 Gizlilik çitinde `\p{So}` harf benzerleri (daireli/kare karakterler) sızıyor — ilan edilmiş sınır
 içinde ama gerekçesi ("emoji taşıyıcı değil") dar. **Eşik:** gizlilik çitine dokunan bir sonraki
 tur, ya da gerçek bir sızıntı görülürse hemen.
+
+---
+
+## 2026-09-15 — CEO — Segmentasyon düzeltmesinin bağımsız doğrulaması (diferansiyel ölçüm)
+
+Düzeltme turu kullanım limitiyle **raporlayamadan** kesildi, ama teslimatı diskte bıraktı
+(`scratchpad/hook-borclari/`, iki dosya da büyümüş; son cümlesi hijyen kontrolüydü). Sıfırdan
+başlatmak yerine CEO teslimatı **kendi ölçtü**. Sözleşme `d9fe5ea` ile commit'lendi.
+
+**Üç mekanizma eklenmiş:** M1 çalışma dizinini değiştiren komutlarda (`cd`/`pushd`/`Set-Location`…)
+blob'a geri çekilme · M2 yazma fiilinin **komut konumunda** aranması (tırnak içindeki argümanda
+değil) · M3 çıplak artefakt korelasyonu (gerçek yazma eylemi + çıplak artefakt adı + komutun
+herhangi bir yerinde korunan dizin anması).
+
+### Ölçüm 1 — QA'nın matrisi: TAM GEÇTİ
+`probe-differential.mjs` (CEO yazdı, vektörler QA raporundan birebir alındı):
+**14/14 saldırı ENGEL · 10/10 masum komut GEÇER.** QA'nın "her iki modda da sızıyor" dediği
+çıplak yönlendirme boşluğu (R13/R14) da kapanmış.
+
+### Ölçüm 2 — CEO'nun ek varyantları: üç yeni sızıntı
+`probe-extra.mjs` (QA'nın listesinde olmayan 10 saldırı + 8 masum varyant): masum yönde **8/8
+doğru**, saldırı yönünde **7/10**. Üç sızıntı çıktı ve **diferansiyel ölçüm bunları ayırdı**:
+
+| Vektör | Blob (segmentasyon öncesi) | Aday | Karar |
+|---|---|---|---|
+| `cd docs && cd approvals && rm G5.ok` | sızıyor | sızıyor | **önceden var** |
+| `cd .claude && rm settings.json` | sızıyor | sızıyor | **önceden var** |
+| `X=docs/approvals; rm $X/G5.ok` | **ENGEL** | **sızıyor** | ⚠ **REGRESYON** |
+
+**Bu ayrım olmasaydı** ya üç kusuru da bu tura yükleyip gereksiz iş çıkaracaktık, ya da üçünü
+birden "önceden vardı" deyip gerçek regresyonu kaçıracaktık. Diferansiyel yöntemin değeri tam
+burada; `CLAUDE.md`'ye kural olarak işlendi.
+
+**A5'in teşhisi:** M3 artefakt adını **çıplak token** olarak arıyor; `$X/G5.ok` önek taşıdığı için
+çıplak sayılmıyor. Önerilen düzeltme: eşleşmeyi token'ın **taban adı** üzerinden yap. Geri
+gönderildi (dar tur).
+
+### Yeni eşikli borç — "parçalı yol" ailesi
+`cd docs && cd approvals && …` ve `cd .claude && rm settings.json`: **korumalı yol tek bir
+metinde bir arada bulunmuyor**, parça parça kuruluyor. Her iki sürümde de sızıyor, yani bu turun
+kusuru değil. Tam çözüm çalışma dizinini modellemeyi gerektirir — bu deponun üç kez kaybettiği
+oyun (serbest metinden makine kararı çıkarmak).
+**Eşik:** bu aile üçüncü kez görülürse ya da gerçek bir sızıntı yaşanırsa yeniden açılır.
+**Kabul gerekçesi:** `ADR-016` — asıl savunma kullanıcının izin kartı; hook derinlik katmanıdır ve
+kabuk erişimli yerel bir agent'a karşı mutlak koruma zaten yok.
+
+### Kurulum durumu
+**Aday HENÜZ KURULMADI.** Gerçek depodaki `block-dangerous.cjs` hâlâ regresyonlu sürüm — yani
+`cd docs/approvals && rm G5.ok` ailesi şu an canlı olarak açık. Bilinçli karar: hook'u iki kez
+sarsmak yerine tek turda doğru düzeltmeyi kurmak; ara dönemde savunma izin kartı.

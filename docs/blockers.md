@@ -2048,3 +2048,46 @@ Engellenen tek şey `cd`'nin betik yolunun göreli olduğu dizini değiştirdiğ
 yönünde bir ayrıştırma oyunu olurdu. İş akışı maliyeti sıfır.
 **Kabul edildi. Kod değişmeyecek; CLAUDE.md'deki zorunlu komut
 `npx vitest run tests/hooks-selftest.test.ts` olarak güncellenecek.**
+
+## 2026-09-16 — developer — B-4 üçüncü tur: `test.projects` havuz bölme denemesi ÖLÇÜLDÜ ve
+## REDDEDİLDİ, `vitest.config.ts` DEĞİŞMEDİ (sözleşme: `docs/qa/b4-havuz-contract.md`)
+
+**Görev:** CEO'nun verdiği iki YENİ sinyal üzerine (çökme yalnızca `tests/integration`'da 3
+dosyada/`forks` altında + `threads` altında tam suite'te 0 çökme ama 5 dosyada sistematik assert
+kırmızısı, iki küme KESİŞMİYOR) B-4'ü yapısal olarak kapatmaya çalışan üçüncü tur.
+
+**Denenen:** vitest 5'in `test.projects` özelliğiyle havuzu dosyaya göre ikiye bölmek — alt süreç
+başlatan/paylaşılan-kaynak dosyaları (`install-hook`, `send-event-hook`, `check-ports`,
+`build-css`, `usage-aggregator`, `verify-test-run`, `chat-hooks-live`,
+`gates-write-permission-live`, `hooks-selftest`) kendi `forks` projesinde, geri kalan ~79 dosya
+`threads` projesinde. İki varyant ölçüldü: projeler paralel (vitest varsayılanı) ve
+`sequence.groupOrder` ile sıralı.
+
+**Sonuç: İKİSİ DE REDDEDİLDİ, DAHA KÖTÜLEŞTİRDİ.** Kontrollü karşılaştırma (aynı oturum, aynı
+makine, hemen ardından, değiştirilmemiş config ile): taban kırmızı oranı ~%25 (8 koşu, 2 kırmızı,
+en uzun yeşil zincir 3/8 — QA'nın "ardışık üç tam yeşil" şartını zaten karşılıyor). `test.projects`
+paralel varyantı: 16 koşuda kırmızı %50 (4 assert-kırmızısı + 4 çıplak süreç çökmesi, yeni ve daha
+ağır bir arıza biçimi — dıştaki `npm run test` süreci vitest'in kendi "Unhandled Error" yakalama
+mekanizması hiç devreye girmeden sıfır çıktıyla çöküyor). Sıralı varyant: 10 koşuda kırmızı %60,
+daha da kötü. Detay, tam sayılar, kurulum sırasında kendi kendine yakalanan bir yapılandırma hatası
+(`test.projects` bildirilince üst düzey `include`/`exclude`'un her projeyle BİRLEŞİP her dosyayı
+iki kez çalıştırması) ve `scripts/verify-test-run.mjs`'in disk-sayım çitiyle uyumluluk notu:
+`docs/qa/b4-havuz-contract.md`.
+
+**Karar:** `vitest.config.ts` orijinal haline döndürüldü (`git diff` boş). Kök neden hâlâ
+bulunamadı (üçüncü turdur) — Windows/Node/vitest fork etkileşiminde kalıyor, bu depronun
+yapılandırma değişikliğiyle düzeltilemedi. G6 için mevcut QA kuralı (ardışık üç tam yeşil koşu,
+kırmızıda sayaç sıfırlanır — `docs/qa/b4-test-kararsizligi-contract.md`) DEĞİŞMEDİ ve bu turda
+yeniden, bağımsız olarak doğrulandı (kontrollü 8 koşuda karşılandı).
+
+**Yeni borç (kayda değer):** `tests/verify-test-run.test.ts`'in B1 kalıcı regresyon testi kendi
+içinde gerçek bir `npm run test` alt süreci spawn ediyor; bu nested koşu B-4'ün AYNI ~%20-25 çökme
+riskini KENDİ BAŞINA taşıyor ve bazen assert-kırmızısı olarak görünüyor (`AssertionError: expected
+... to contain 'does not match the'`, gerçek mesaj "could not find a Test Files summary line").
+Bu config'ten bağımsız, önceden de var olan bir risk olmalı ama bu turda ilk kez canlı gözlemlendi.
+**Eşik:** bu test dosyasına dokunan bir sonraki tur, ya da G6 sırasında bu spesifik hata tekrar
+görülürse — "yeni regresyon" DEĞİL, B-4'ün bilinen instabilitesinin bir katman aşağıda görünmesi
+olarak yorumlanmalı (bir kez daha koştur, karar verme).
+
+**Durum:** `docs/qa/b4-havuz-contract.md` yazıldı (`status: qa`), qa-evaluator değerlendirmesi
+bekliyor. Kod/config değişikliği YOK, yalnızca ölçüm ve dokümantasyon.

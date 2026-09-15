@@ -5094,3 +5094,51 @@ Kurulumu CEO `Write` aracıyla yapacak.
 
 **Durum:** `docs/qa/hook-writepos-contract.md` yazıldı, `docs/blockers.md`'ye kapanış notu
 eklendi, `status: qa`. GEÇTİ/KALDI kararı qa-evaluator'a ait.
+
+## 2026-09-16 — developer (B-4 üçüncü tur) — `npm run test` havuz bölme denemesi ölçüldü ve
+## reddedildi; `vitest.config.ts` değişmedi
+
+**Görev:** G6'nın tek açık bloklayıcısı olan B-4 (`npm run test` üç ardışık tam yeşil koşu
+üretemiyor) için, CEO'nun verdiği iki YENİ sinyale dayanarak (çökme yalnızca `tests/
+integration`'da 3 dosyada/`forks` altında; `threads` altında tam suite'te 0 çökme ama 5 dosyada
+sistematik assert kırmızısı; iki küme kesişmiyor) yapısal bir çözüm aranması.
+
+**Ne yapıldı:** vitest 5'in `test.projects` özelliğiyle havuzu dosyaya göre ikiye bölmek denendi —
+alt süreç başlatan/paylaşılan-kaynak dosyaları (9 dosya) `forks` projesinde, geri kalan ~79 dosya
+`threads` projesinde. İki varyant ölçüldü (paralel projeler; `sequence.groupOrder` ile sıralı
+projeler). Kurulum sırasında kendi kendine yakalanan bir yapılandırma hatası da düzeltildi
+(`test.projects` bildirilince üst düzey `include`/`exclude`'un her alt projeyle birleşip her
+dosyayı iki kez çalıştırması — `npx vitest list` ile canlı doğrulandı, üst düzey alanlar tamamen
+kaldırılarak çözüldü) ve `scripts/verify-test-run.mjs`'in disk-sayım çitiyle (dosyanın METNİNDEN
+regex'le `include`/`exclude` okuyor) uyumluluk `vitest.config.ts`'e yorum satırı olarak
+korunarak sağlandı (dosyanın kendisinde ayrıntılı açıklama var).
+
+**Nasıl doğrulandı (ölçüm, `docs/qa/b4-havuz-contract.md`'de tam detay):**
+- Paralel varyant: 16 koşu (10+6) → kırmızı **%50** (4 assert-kırmızısı, hepsi
+  `verify-test-run.test.ts`'in B1 testinden/nested-koşu çökmesinden; 4 çıplak süreç çökmesi —
+  `exitCode 3221226505`, sıfır çıktı, tarihsel Sınıf A/D'den daha ağır bir arıza biçimi).
+- Sıralı varyant (`groupOrder`): 10 koşu → kırmızı **%60**, daha kötü.
+- **Kontrollü karşılaştırma** (aynı oturum, aynı makine, hemen ardından, `vitest.config.ts`
+  orijinaline döndürülüp): 8 koşu → kırmızı **%25** (taban oranla birebir tutarlı), **en uzun
+  ardışık tam yeşil zincir 3/8** — QA'nın mevcut G6 şartını (ardışık üç tam yeşil) zaten
+  karşılıyor.
+
+**Sonuç: yapısal fix BAŞARISIZ, taban orandan daha kötü çıktı — `vitest.config.ts` orijinal
+haline döndürüldü (`git diff vitest.config.ts` boş).** Kök neden hâlâ bulunamadı (üçüncü turdur).
+G6 için mevcut QA kuralı (`docs/qa/b4-test-kararsizligi-contract.md`: ardışık üç tam yeşil koşu,
+kırmızıda sayaç sıfırlanır) DEĞİŞMEDİ, bu turda bağımsız olarak yeniden doğrulandı.
+
+**Kalan riskler:**
+- Kök neden hâlâ açık (Windows/Node/vitest fork etkileşimi, üçüncü ölçüm turu da düzeltemedi).
+- **Yeni borç:** `tests/verify-test-run.test.ts`'in B1 testi kendi içinde gerçek bir `npm run
+  test` alt süreci spawn ediyor ve bu nested koşu B-4'ün aynı çökme riskini kendi başına taşıyor
+  — bazen assert-kırmızısı olarak görünebilir, bu YENİ bir regresyon değil (`docs/blockers.md`
+  2026-09-16 girdisi).
+- `test.projects`'in kendisinin (herhangi bir nedenle) tepe süreç/kaynak baskısını artırdığı
+  hipotezi ölçülmedi, kaydedildi — gelecekte başka bir amaçla tekrar düşünülürse önce küçük bir
+  pilotla yeniden test edilmeli.
+- Kod/config değişikliği yok; `npm run e2e` bu turda ayrıca koşulmadı (bitti tanımı bunu yalnızca
+  kalıcı bir değişiklik varsa istiyor).
+
+**Durum:** `docs/qa/b4-havuz-contract.md` yazıldı, `docs/blockers.md`'ye kapanış notu eklendi,
+`status: qa`. GEÇTİ/KALDI kararı qa-evaluator'a ait.

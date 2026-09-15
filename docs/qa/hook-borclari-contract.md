@@ -2,12 +2,20 @@
 status: qa
 ---
 
-# hook-borçları-contract.md — B-2, B-3, B-5, B-6, Y4 kapanışı
+# hook-borçları-contract.md — B-2, B-3, B-5, B-6, Y4 kapanışı (+ 2026-09-14 B1/B2 regresyon düzeltmesi)
 
 Kaynak brief: CEO turu 2026-09-11 (G6 öncesi borç kapatma). Kapsam: `.claude/hooks/gate-check.cjs`,
 `.claude/hooks/block-dangerous.cjs`, `.claude/hooks/_selftest.cjs`. B-4 (test kararsızlığı) bu
 turun KAPSAMI DIŞINDA — ayrı, zaten "ölçülmüş ve yönetilen risk" olarak kapanmış (docs/blockers.md
 2026-09-11 B-4 KAPANIŞ girdisi).
+
+**GÜNCELLEME (2026-09-14, ayrı tur).** `docs/qa/borc-turlari-kararlari-2026-09-14.md` bu
+sözleşmeye **KALDI** verdi: 2026-09-11 turunun segmentasyon düzeltmesi (§2 aşağıda) B1 (12/12
+gerçek saldırı vektörü kaçırıldı) ve B2 (5/10 salt-okunur komut yanlış pozitif aldı) olarak
+BLOKLAYICI bulundu. Bu güncelleme o iki bulguyu kapatır — bkz **§10** (yeni bölüm, M1/M2/
+bare-artifact kapanışı, R1-R12/F1-F10 diferansiyel matrisi). §2.3/§2.4/§2.5'teki ORİJİNAL metin
+**silinmedi** (tarihî kayıt) ama şimdi YANLIŞLANMIŞ olduğu ölçümle **düzeltme notu** ile
+işaretlendi — güncel doğru davranış için §10'a bakın.
 
 **§0 kısıtı gereği** (`.claude/hooks/**`'a otonom yazma bu ortamda kategorik olarak engellenir,
 dört kez doğrulandı) gerçek hook dosyalarına HİÇ dokunulmadı. Tüm geliştirme ve doğrulama izole
@@ -56,6 +64,15 @@ hiçbir zaman daha az kısıtlayıcıya değil. Kabul edilmiş sonuç: heredoc g
 içinde geçen bir "docs/approvals" mention + fiil kelimesi hâlâ (kasıtlı olarak) engellenebilir —
 bu AŞIRI ENGELLEME'dir, ATLATMA değildir, ve mevcut (segmentasyon-öncesi) davranışın AYNISIDIR.
 
+**DÜZELTME (2026-09-14, §10'a bakın).** Yukarıdaki "Belirsizlik daima bu kısıtlayıcı davranışa
+çözülür, hiçbir zaman daha az kısıtlayıcıya değil" cümlesi 2026-09-14 diferansiyel ölçümüyle
+(docs/qa/borc-turlari-kararlari-2026-09-14.md §1.2) **YANLIŞLANDI**: `cd docs/approvals && rm
+G5.ok` gibi çalışma-dizini-değiştiren zincirlerde retreat mekanizması hiç TETİKLENMİYORDU (bu
+liste yalnızca heredoc/`$(...)`/satır devamı/sonlandırılmamış tırnağı sayıyordu, `cd` yoktu) —
+segment-yerel akıl yürütme geçersiz bir varsayım altında (görece yol hedefinin `cd` sonrası
+NEREYE gittiğini bilmeden) çalışmaya devam etti ve 12/12 gerçek saldırıyı kaçırdı. §10'daki M1
+bu listeye BEŞİNCİ bir retreat koşulu (çalışma dizini değiştiren komutlar) ekleyerek düzeltir.
+
 ### 2.4 Güvenlik şartı (nasıl korunuyor)
 - Her segment AYNI kural kümesiyle taranır — hiçbir segment muaf değildir.
 - İki-sinyalli kontroller (`isApprovalsWrite`, `isHooksWrite`) sinyallerin İKİSİNİ DE AYNI
@@ -75,6 +92,13 @@ ayrı çalışır: `docs/approvals/**` (DEĞİŞMEDİ) ve `.claude/hooks/**` + `
 (YENİ). Her iki ailede de aynı mekanizma: `(hedefe DOĞRUDAN yönlendirme) OR (mention AYNI
 segmentte + yazma fiili/satır-içi betik)`. Okuma (`cat`/`ls`/`git add`/`git commit`/`git diff`)
 hiçbir zaman engellenmez çünkü bu komutlar `writeVerb`/`inlineEval` listesinde yoktur.
+
+**DÜZELTME (2026-09-14, §10'a bakın).** "Okuma hiçbir zaman engellenmez" cümlesi EKSİKTİ:
+engelleme komutun fiiline değil, segmentin TÜM METNİNE bakıyordu — bir okuma komutunun ARGÜMANI
+(ör. `grep -n "unlink" dosya`) bir fiil KELİMESİ taşıdığında komut yanlışlıkla engelleniyordu
+(ölçüm: 10 salt-okunur sondadan 5'i yanlış pozitif aldı, docs/qa/borc-turlari-kararlari-2026-09-14.md
+§1.3). Doğru cümle: "okuma, fiil kelimesi KOMUT KONUMUNDA (segment/metin başı ya da bir ayıraçtan
+hemen sonra) geçmediği sürece hiçbir zaman engellenmez" — §10'daki M2 bunu düzeltir.
 
 **Kabul edilen, PAYLAŞILAN sınır (Y4 için yeni değil):** `rm dosya` (bayraksız, `-rf` olmadan)
 ne `danger` ne `writeVerb` listesinde var — bu ÖNCEDEN docs/approvals için de böyleydi (kara

@@ -1994,3 +1994,57 @@ TÜM node/python/... çağrılarını tarayıp HER birinin kendi betik argüman�
 daha basiti, `findInterpreterScriptToken`'ı `exec`'in `lastIndex`'ini ilerleterek segmentteki
 TÜM yorumlayıcı çağrılarını (ilkini değil) döndürecek şekilde genişlet. Kod değişikliği bu turda
 YAPILMADI (`.claude/hooks/**`'a yazma izni yok); yalnızca dürüstçe kaydedildi.
+
+---
+
+## 2026-09-15 — v6 (yazma konumu) KALDI · ve hattın zemini hakkında ölçülmüş bir gerçek
+
+### Kapanan taraf (QA doğruladı)
+- Önceki turun **16 sızıntısının 16'sı** kapalı; 32 eski vektörde **0 regresyon**.
+- Self-test **420/420**; `npx vitest run tests/hooks-selftest.test.ts` geçiyor ve **`npm test`
+  zincirinde** — 420 vakalık çit ilk kez **sürüm kontrollü**.
+- **Aşırı engelleme 5/34 (%14,7) → 0/34 (%0,0)** — sözleşmenin ≤2/34 hedefi aşıldı. Bu turun
+  gerçek kazancı: v5'in getirdiği iş akışı maliyeti tamamen geri alındı.
+- B4 muafiyeti **atlatılamadı**: 8 kötüye kullanım sondası 8/8 engel, realpath çiti mutasyonla
+  ölçüldü.
+
+### KALDI gerekçesi — 24 canlı sızıntı, 8'i kapı dosyasını yok ediyor
+- **Q1 — blob'un ilk token'ı bir OKUYUCU ise Mekanizma 3 tüm komut için körleşiyor.**
+  `echo hi && cd . && rm "docs"/approvals/G5.ok` → exit 0, dosya **silindi**. 6 blob tetikleyicisi
+  × 5 okuyucu = 13 kombinasyonun **11'i** sızdırıyor. **Bu, v5'e KALDI verdiren B1'in BİREBİR
+  AYNI YAPISI, bir tur sonra** — sadece "okuyucu" bayrağı baş komuttan blob'un ilk token'ına
+  taşınmış.
+- **Q2 — `awk`/`sed` okuyucu listesinde ama YAZAN yorumlayıcılar.** `sed -n 'w <onay>' README.md`
+  ve `awk -v f=<kapı> 'BEGIN{print "process.exit(0);" > f}'` kapı dosyasını gerçekten değiştirdi.
+  `awk 'BEGIN{system("rm …")}'` **v0/v3 tarafından ENGELLENİYORDU** → turun "mutlak güvenlik
+  şartı" (eskinin engellediğini geçirme) **ihlal edilmiş**. Genişletilmiş uzayda 69 vektör.
+- **Q3 — yönlendirme deseni iki biçimi hiç görmüyor:** `>&<dosya>` (yakalama sınıfı `&`'yi
+  dışladığı için desen hiç eşleşmiyor) ve `>` + ters bölü + satır sonu.
+- **Q4 — `git diff/log/show --output=<dosya>`:** karar alt komut ADINDAN veriliyor, YETENEĞİNDEN
+  değil. **217/217 vektörde kör.**
+
+**Mutasyon bulgusu:** Konum 3 (yerinde düzenleme) **hem çitsiz hem yük taşıyor** — sözleşme §5
+tersini iddia ediyordu, ölçüm çürüttü. Konum 4'ün kabuk yarısı, `\`=ayraç yorumu ve eval-bayrağı
+kontrolü **0 mutasyon + 0 yük** = ölü kod.
+
+### ⚠ Asıl bulgu — B5 YARI kapandı, kalan yarısı hattın tamamını anlamsız kılıyor
+`npm run` yolu kapandı. Ama **`Write(src/**)` + `Bash(node *)` birlikte SIFIR izin kartıyla tam
+yetki veriyor.** QA canlı gösterdi: tek bir `node src/tools/fmt.mjs` çağrısı `G5.ok`'u sildi,
+`gate-check.cjs`'i `process.exit(0);` yaptı **ve sahte bir `GUARD.ok` yazdı**. Ayrıca yeni deny
+desenleri yalnızca boşluklu biçimi kapsıyor — **`node --eval=<kod>` bu oturumda kartsız çalıştı.**
+
+Yani: `block-dangerous.cjs` ne kadar iyi olursa olsun, `node <betik>` yolu açıkken **bir metin
+tarayıcısını sertleştirmenin marjinal değeri sıfıra yakın.** Yedi turdur derinlik katmanı
+sertleştirildi; ön kapının ikinci kanadı hâlâ açık.
+
+Bu, kayıtlı iki kuralın kesişimi: *"bir kapı, kendi anahtarını üretebilene karşı kapı değildir"*
+(sahte `GUARD.ok` yazılabiliyor) ve *"aynı hata sınıfı üçüncü kez yenildiyse yamayı değil KAYNAĞI
+kaldır"*.
+
+### `cd` + self-test aşırı engellemesi — QA'nın görüşü: kabul edilebilir
+CEO'nun öncülü kısmen yanlıştı; QA ölçtü: `cd <depo kökü> && node <selftest>` **geçiyor**.
+Engellenen tek şey `cd`'nin betik yolunun göreli olduğu dizini değiştirdiği biçimler
+(`cd .claude/hooks && node _selftest.cjs`). Muafiyeti "cwd takibi" ile genişletmek **fail-open**
+yönünde bir ayrıştırma oyunu olurdu. İş akışı maliyeti sıfır.
+**Kabul edildi. Kod değişmeyecek; CLAUDE.md'deki zorunlu komut
+`npx vitest run tests/hooks-selftest.test.ts` olarak güncellenecek.**

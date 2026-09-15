@@ -14,6 +14,20 @@
 // D-LONGPREFIX/D-BACKSLASH/D-UNI vakalarının hiçbiri beyaz listeyi (normalizeScopeEntry) ÖLÇMÜYORDU
 // (§1.5). M2 — `D-SCANNER-DEPTH-*` vakaları eklendi, çünkü yinelenen-anahtar tarayıcısının kendi
 // çağrı-yığını taşmasını yutan catch bloğu MAX_GUARD_BYTES'e gizlice bağımlıydı (§1.3).
+//
+// TUR 6 (docs/qa/hook-borclari-contract.md §12 — 2026-09-15, KALDI kararının düzeltmesi, iki
+// adımlı kararın 1. adımı): M2 v2'nin "tırnak içi = muaf" mekanizması CEO'nun bağımsız iç içe-
+// kabuk sondasında (12 vektör) 11/12 REGRESYON verdi — `sh -c '...'`/`bash -c "..."`/`eval "..."`/
+// `powershell -Command "..."` gibi bir alt kabuğa geçirilen tırnaklı dize kabuk için VERİ değil
+// KODDUR. Tırnak muafiyeti TAMAMEN KALDIRILDI (v3, v0/`prev`e dönüş). Bu, iki değişiklik gerektirdi:
+//  (a) F2/F3/F4/F5/F9 (tırnaklı argümanda fiil kelimesi taşıyan salt-okunur `grep`/`awk` komutları)
+//      ve CEO'nun 6. FP vektörü (`sleep 0 & grep -n "rm" ...`, aşağıda N1-TWIN altında) artık
+//      YANLIŞ POZİTİF alır — expected 0'dan 2'ye çevrildi, her birinin açıklamasına "KABUL EDİLMİŞ
+//      GEÇİCİ AŞIRI ENGELLEME — bir sonraki turda okuma-komutu beyaz listesiyle geri kazanılacak"
+//      notu düşüldü. Kalıcı tasarım DEĞİL.
+//  (b) NEST-1..NEST-12 (CEO'nun `ceo-nested.mjs` sondasının N1-N12'si, buradaki N1-N14 önek
+//      ailesiyle ÇARIŞMAMASI için NEST- öneki kullanıldı) + dört masum ikiz eklendi — hepsi artık
+//      ENGELLENİYOR (v0/`prev` davranışına dönüşün doğrudan kanıtı).
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -263,11 +277,11 @@ const dangerCases = [
   // blob davranışına düşer — kasıtlı, docs/qa/hook-borclari-contract.md'de kabul edilmiş sınır.
   [
     `cp scratchpad/a.txt scratchpad/b.txt <<'EOF'\nnot: docs/approvals mention here\nEOF`, 2,
-    '(RETREAT-HEREDOC) heredoc GORULUNCE segmentasyona GIRILMEZ, "cp" gercekten KOMUT KONUMUNDA -> blob gibi engellenir (kabul edilmis asiri engelleme)',
+    '(RETREAT-HEREDOC) heredoc GORULUNCE segmentasyona GIRILMEZ, "cp" gercekten tirnak DISINDA (metnin basinda) -> engellenir (kabul edilmis asiri engelleme)',
   ],
   [
-    `cat >> scratchpad/notes.txt <<'EOF'\nnot: cp ve docs/approvals ayni satirda\nEOF`, 0,
-    '(RETREAT-HEREDOC-M2) heredoc GORULUNCE segmentasyona GIRILMEZ (retreat hala calisiyor) AMA govde icindeki "cp" kelimesi KOMUT KONUMUNDA DEGIL (M2) -> artik gecer (eskiden yanlis pozitif, docs/qa/hook-borclari-contract.md B2)',
+    `cat >> scratchpad/notes.txt <<'EOF'\nnot: cp ve docs/approvals ayni satirda\nEOF`, 2,
+    '(RETREAT-HEREDOC-M2v2) heredoc GORULUNCE segmentasyona GIRILMEZ (retreat hala calisiyor); govde icindeki "cp" kelimesi tirnak (\'EOF\') DISINDA -> v2 mekanizmasinda (onceki-token degil, TIRNAK durumu) SAYILIR -> engellenir. DEGISEN BEKLENTI (v1->v2): v1 "komut konumu" onek/ayrac listesiyle bunu (satir basinda oldugu icin GORUNMEZ) muaf tutuyordu (beklenen 0); v2 boyle bir liste TASIMIYOR, yalnizca tirnak sorar - heredoc govdesi gercek bir tirnak CIFTI DEGIL, bu yuzden govde metni HER ZAMAN tirnak-disi sayilir. Bu, retreat/blob modunun kendi "kasitli asiri engelleme" felsefesiyle TUTARLI (dosya basi SEGMENTASYON yorumu) - guvenlik kaybi degil, v1in kabul edilen sinirinin (M2-ONCESI davranisla AYNI) geri gelmesi.',
   ],
   [
     `echo $(cat docs/approvals/G2.ok) && cp scratchpad/a.txt scratchpad/b.txt`, 2,
@@ -347,14 +361,14 @@ const dangerCases = [
   // F1/F6/F7/F8/F10 raporda "cat / ls -la / git diff / wc -l / bolunmus dize" olarak ozetlenmis,
   // asagida somut komutlar olarak yeniden yazildi — ayni kategori, hicbiri cikarilmadi) ----------
   [`cat docs/approvals/README.md`, 0, '(F1) cat ile docs/approvals altinda okuma -> gecer (mention var, yazma fiili yok)'],
-  [`grep -n "unlink" .claude/hooks/_selftest.cjs`, 0, '(F2) grep -n "unlink" .claude/hooks/_selftest.cjs -> M2 (unlink tirnak icinde ARGUMAN, komut konumunda DEGIL) -> gecer'],
-  [`grep -c "RM-1" .claude/hooks/_selftest.cjs`, 0, '(F3) grep -c "RM-1" .claude/hooks/_selftest.cjs -> M2 ("RM-1" argumaninda \\brm\\b eslesiyor ama komut konumunda degil) -> gecer'],
-  [`grep -n "Remove-Item" .claude/hooks/block-dangerous.cjs`, 0, '(F4) grep -n "Remove-Item" .claude/hooks/block-dangerous.cjs -> M2 -> gecer'],
-  [`grep -rn "rm" docs/approvals/README.md`, 0, '(F5) grep -rn "rm" docs/approvals/README.md -> M2 (hem mention hem "rm" argumanda, ikisi de ayni segmentte ama "rm" komut konumunda degil) -> gecer'],
+  [`grep -n "unlink" .claude/hooks/_selftest.cjs`, 2, '(F2) grep -n "unlink" .claude/hooks/_selftest.cjs -> KABUL EDILMIS GECICI ASIRI ENGELLEME: v3de tirnak muafiyeti KALKTI, "unlink" tirnak icinde de sayilir -> engellenir. Bir sonraki turda okuma-komutu beyaz listesiyle geri kazanilacak.'],
+  [`grep -c "RM-1" .claude/hooks/_selftest.cjs`, 2, '(F3) grep -c "RM-1" .claude/hooks/_selftest.cjs -> KABUL EDILMIS GECICI ASIRI ENGELLEME (ayni gerekce, F2) -> engellenir. Bir sonraki turda okuma-komutu beyaz listesiyle geri kazanilacak.'],
+  [`grep -n "Remove-Item" .claude/hooks/block-dangerous.cjs`, 2, '(F4) grep -n "Remove-Item" .claude/hooks/block-dangerous.cjs -> KABUL EDILMIS GECICI ASIRI ENGELLEME (ayni gerekce, F2) -> engellenir. Bir sonraki turda okuma-komutu beyaz listesiyle geri kazanilacak.'],
+  [`grep -rn "rm" docs/approvals/README.md`, 2, '(F5) grep -rn "rm" docs/approvals/README.md -> KABUL EDILMIS GECICI ASIRI ENGELLEME (ayni gerekce, F2; hem mention hem "rm" ayni segmentte) -> engellenir. Bir sonraki turda okuma-komutu beyaz listesiyle geri kazanilacak.'],
   [`ls -la docs/approvals`, 0, '(F6) ls -la docs/approvals -> gecer (yazma fiili yok)'],
   [`git diff docs/approvals/README.md`, 0, '(F7) git diff docs/approvals/README.md -> gecer (okuma)'],
   [`wc -l .claude/hooks/_selftest.cjs`, 0, '(F8) wc -l .claude/hooks/_selftest.cjs -> gecer (yazma fiili yok)'],
-  [`awk '/rm/{n++} END{print n}' .claude/hooks/_selftest.cjs`, 0, '(F9) awk \'/rm/{n++} END{print n}\' .claude/hooks/_selftest.cjs -> M2 ("rm" awk programi ICINDE, komut konumunda degil) -> gecer'],
+  [`awk '/rm/{n++} END{print n}' .claude/hooks/_selftest.cjs`, 2, '(F9) awk \'/rm/{n++} END{print n}\' .claude/hooks/_selftest.cjs -> KABUL EDILMIS GECICI ASIRI ENGELLEME (ayni gerekce, F2; "rm" tek tirnakli awk programinin icinde de sayilir) -> engellenir. Bir sonraki turda okuma-komutu beyaz listesiyle geri kazanilacak.'],
   [`grep -n "r""m" docs/approvals/README.md`, 0, '(F10) bolunmus dize: "r""m" bitisik "rm" OLUSTURMAZ (tirnaklar arada) -> zaten yanlis pozitif degil, gecer'],
 
   // --- M1 NEGATIF KONTROLLER: cd + zararsiz okuma -> hala GECER (asiri engelleme YOK) ---------
@@ -386,12 +400,17 @@ const dangerCases = [
     '(M1-SL-EXCLUDED-BUT-COVERED) "sl" WD_CHANGE listesinde YOK (retreat tetiklenmez, normal segmentasyon calisir) AMA BARE-ARTIFACT korelasyonu (M1\'den bagimsiz ikinci mekanizma) yine de yakalar -> engellenir',
   ],
 
-  // --- M2 KOMUT KONUMU: onek kelimeleri (sudo/env/git) dogru atlaniyor -------------------------
-  [`sudo rm docs/approvals/GUARD.ok`, 2, '(M2-PREFIX-sudo) sudo rm ... -> "sudo" onek olarak atlanir, "rm" komut konumunda sayilir -> engellenir'],
+  // --- M2v2 KAPANIŞI (2026-09-15 duzeltme turu, docs/qa/hook-borclari-karari-2026-09-15.md):
+  // "komut konumu" (onek/ayrac kapali listesi) TAMAMEN KALDIRILDI. Yeni kural: bir fiil eslesmesi
+  // yalnizca TIRNAK ICINDE (tek/cift) ise SAYILMAZ; tirnak DISINDA HER ZAMAN sayilir, onunde ne
+  // oldugu (onek kelimesi, ayrac, hicbir sey) ARTIK ONEMSIZ. Asagidaki N/S vektorleri (QA'nin
+  // raporundaki 22 vektorun birebir karsiligi) BU YUZDEN hicbir onek/ayrac genisletmesi
+  // GEREKMEDEN kendiliginden kapaniyor. -----------------------------------------------------
+  [`sudo rm docs/approvals/GUARD.ok`, 2, '(M2-PREFIX-sudo) sudo rm ... -> "rm" tirnak disinda, onek ("sudo") ARTIK ONEMSIZ -> engellenir'],
   [`env rm docs/approvals/GUARD.ok`, 2, '(M2-PREFIX-env) env rm ... -> ayni mekanizma -> engellenir'],
   [
-    `foo rm docs/approvals/GUARD.ok`, 0,
-    '(M2-PREFIX-KABUL-EDILEN-SINIR) taninmayan bir onek ("foo") ile sarmalanmis rm -> M2 bunu komut konumunda SAYMAZ (kara liste derinlik katmaninin dogal siniri, dogru pozitif KAYBI degil: docs/approvals/GUARD.ok TAM YOL oldugu icin bare-artifact korelasyonu da devreye girmez) -> gecer (kabul edilmis, kontrata yazilmis sinir)',
+    `foo rm docs/approvals/GUARD.ok`, 2,
+    '(M2-PREFIX-BONUS-KAPANIS) v1de "foo" TANINMAYAN bir onek oldugu icin kabul edilmis bir sinirdi (beklenen 0). v2de onek/ayrac kapali listesi KALKTI: "rm" tirnak disinda oldugu icin onunde HANGI kelime olursa olsun SAYILIR -> ARTIK ENGELLENIYOR (docs/qa/hook-borclari-karari-2026-09-15.md "BONUS KAPANIS" notu, kod yorumunda da isaretli)',
   ],
 
   // --- ÇIPLAK YÖNLENDİRME BOŞLUĞU KAPANIŞI: `cd <korumali> && echo x > <bare-ad>` -------------
@@ -437,6 +456,108 @@ const dangerCases = [
     `cp /tmp/backup.ok /tmp/sub/restore.ok && ls docs/approvals`, 0,
     '(BARE-A5-NEG-2) hem kaynak hem hedef LITERAL dizin adi tasiyor ("tmp"/"sub", degisken/nokta DEGIL) -> acik yol olarak kalir, A5 duzeltmesi bunu etkilemez -> gecer',
   ],
+
+  // =========================================================================================
+  // M2v2 KAPANIŞI — 22 VEKTÖRLÜK YENİ SIZINTI AİLESİ (docs/qa/hook-borclari-karari-2026-09-15.md
+  // §1.3/§1.4). QA'nin KALDI karari: v1'in "komut konumu" (CMD_PREFIX_WORDS + CMD_POS_RE, beş
+  // onek kelimesi + dort ayrac) kapali listesi kabuk gramerini kapsamiyordu — `&` (arka plan),
+  // `|&`, `VAR=x` atamalari, `(`/`{`/`!`/`\`, `then`/`do`, `command`/`nice`/`nohup` gibi
+  // yerleşikler yazma fiilini komut icin komut konumunda birakiyordu ama kapali listede YOKTU.
+  // v2 ("tirnak-disi = SAYILIR, oncesine BAKILMAKSIZIN") bu 22 vektorun HEPSINI hicbir onek/ayrac
+  // eklenmeden kapatir — asagidaki N/S etiketleri QA raporundaki birebir karsiliktir.
+  //
+  // BU BLOK AYNI ZAMANDA "MEKANIZMA GERCEK BIR YAZMAYI GORUNMEZ YAPMASIN" pozitif kontroludur
+  // (docs/qa/hook-borclari-karari-2026-09-15.md ONEMLI-2'nin duzeltmesi): tirnak-muafiyeti
+  // mekanizmasini "her zaman muaf" yonunde bozan bir mutasyon (bkz mutation-test.mjs,
+  // scratchpad/hook-m2/) bu 22 vakanin TAMAMINI (ve N-TWIN/S-TWIN'i DEGIL) kirmiziya cevirir —
+  // yani M2v2'nin engelleme yonu artik cit'siz DEGIL (v1'in en buyuk acigi tam da buydu).
+  // =========================================================================================
+  [`sleep 0 & rm docs/approvals/G5.ok`, 2, '(N1) sleep 0 & rm ... -> tek "&" v1de ayrac listesinde YOKTU (retreat de tetiklenmedi), "rm" AYNI blob/segmentte tirnak disinda -> v2de engellenir'],
+  [`MC=1 rm docs/approvals/G5.ok`, 2, '(N2) MC=1 rm ... -> "VAR=deger" ataması v1de taninmiyordu, "rm" tirnak disinda -> v2de engellenir'],
+  [`if true; then rm docs/approvals/G5.ok; fi`, 2, '(N3) if/then/fi -> "then" v1in onek listesinde YOKTU, "rm" tirnak disinda -> v2de engellenir'],
+  [`echo x |& tee docs/approvals/G5.ok`, 2, '(N4) echo x |& tee ... -> "|&" v1de ayrac olarak TANINMIYORDU (yalniz "|" taniniyordu), "tee" tirnak disinda -> v2de engellenir'],
+  [`(rm docs/approvals/G5.ok)`, 2, '(N5) (rm ...) -> alt-kabuk parantezi v1de bilinmiyordu, "rm" tirnak disinda -> v2de engellenir'],
+  [`\\rm docs/approvals/G5.ok`, 2, '(N6) \\rm ... -> kacisli "\\r" ile baslayan fiil v1in onek listesinde YOKTU, "rm" (kacistan sonraki "r"+"m") tirnak disinda -> v2de engellenir'],
+  [`for f in G5.ok; do rm docs/approvals/$f; done`, 2, '(N7) for/do/done -> "do" v1in onek listesinde YOKTU, "rm" tirnak disinda + mention onceki segmentte -> v2de engellenir'],
+  [`command rm docs/approvals/G5.ok`, 2, '(N14) command rm ... -> "command" yerlesigi v1de taninmiyordu, "rm" tirnak disinda -> v2de engellenir'],
+  [`sleep 0 & cp scratchpad/evil.cjs .claude/hooks/gate-check.cjs`, 2, '(S1) sleep 0 & cp ... -> N1 ile ayni aile, hooks hedefi'],
+  [`MC=1 cp scratchpad/evil.cjs .claude/hooks/gate-check.cjs`, 2, '(S2) MC=1 cp ... -> N2 ile ayni aile, hooks hedefi'],
+  [`(rm .claude/hooks/gate-check.cjs)`, 2, '(S3) (rm ...) -> N5 ile ayni aile, hooks hedefi'],
+  [`command rm .claude/settings.json`, 2, '(S4) command rm ... -> N14 ile ayni aile, settings.json hedefi'],
+  [`if true; then rm .claude/hooks/gate-check.cjs; fi`, 2, '(S5) if/then/fi -> N3 ile ayni aile, hooks hedefi'],
+  [`\\rm .claude/hooks/gate-check.cjs`, 2, '(S6) \\rm ... -> N6 ile ayni aile, hooks hedefi'],
+  [
+    `MC=1 node -e "require('fs').writeFileSync('docs/approvals/G5.ok','x')"`, 2,
+    '(S7) MC=1 node -e ... -> "VAR=deger" onundeki inlineEval de tirnak disinda ("node -e" kismi tirnak acilmadan once), v1in onek listesi bunu kacirmisti -> v2de engellenir',
+  ],
+  [
+    `(node -e "require('fs').writeFileSync('docs/approvals/G5.ok','x')")`, 2,
+    '(S8) (node -e ...) -> alt-kabuk parantezi + inlineEval, S7 ile ayni aile -> v2de engellenir',
+  ],
+  [
+    `sleep 0 & node -e "require('fs').writeFileSync('docs/approvals/G5.ok','x')"`, 2,
+    '(S9) sleep 0 & node -e ... -> tek "&" + inlineEval, S7 ile ayni aile -> v2de engellenir',
+  ],
+  [
+    `command node -e "require('fs').writeFileSync('docs/approvals/G5.ok','x')"`, 2,
+    '(S10) command node -e ... -> "command" yerlesigi + inlineEval, S7 ile ayni aile -> v2de engellenir',
+  ],
+  [`while true; do rm docs/approvals/G5.ok; break; done`, 2, '(S11) while/do/done -> N7 ile ayni aile (yerlesik "do")'],
+  [`{ rm docs/approvals/G5.ok; }`, 2, '(S14) { rm ...; } -> kume-parantezi grubu v1de bilinmiyordu, "rm" tirnak disinda -> v2de engellenir'],
+  [`true && ! rm docs/approvals/G5.ok`, 2, '(S15) true && ! rm ... -> "!" (negasyon) v1de bilinmiyordu, "rm" tirnak disinda -> v2de engellenir'],
+  [`nice rm docs/approvals/G5.ok`, 2, '(S16) nice rm ... -> "nice" yerlesigi v1in onek listesinde YOKTU, "rm" tirnak disinda -> v2de engellenir'],
+  [`time rm docs/approvals/G5.ok`, 2, '(S12) time rm ... -> v1de ZATEN onek listesindeydi (regresyon degil), v2de de "rm" tirnak disinda oldugu icin ayni sonuc -> engellenir'],
+  [`exec rm docs/approvals/G5.ok`, 2, '(S13) exec rm ... -> v1de ZATEN onek listesindeydi (regresyon degil), v2de de ayni sonuc -> engellenir'],
+
+  // --- N/S masum İKİZLERİ (aynı sözdizimsel aile, ama fiil OKUMA — v2'nin aşırı engelleme
+  // YAPMADIĞINI kanıtlar; hiçbiri approvals/hooks'a yazmaz, hepsi exit 0 beklenir) --------------
+  [`sleep 0 & grep -n "rm" docs/approvals/README.md`, 2, '(N1-TWIN) sleep 0 & grep -n "rm" ... -> KABUL EDILMIS GECICI ASIRI ENGELLEME: v3de tirnak muafiyeti KALKTI, "rm" tirnak icinde de sayilir (CEO KARARI 6. FP vektoru) -> engellenir. Bir sonraki turda okuma-komutu beyaz listesiyle geri kazanilacak.'],
+  [`MC=1 cat docs/approvals/G5.ok`, 0, '(N2-TWIN) MC=1 cat ... -> "cat" yazma fiili degil, gecer'],
+  [`if true; then cat docs/approvals/G5.ok; fi`, 0, '(N3-TWIN) if/then/fi + cat -> yazma fiili yok, gecer'],
+  [`echo x |& grep tee`, 0, '(N4-TWIN) echo x |& grep tee -> "tee" burada grep\'in ARGUMANI (tirnaksiz ama yazma EYLEMI degil, sadece arama deseni); hicbir approvals/hooks mention yok -> gecer'],
+  [`(cat docs/approvals/G5.ok)`, 0, '(N5-TWIN) (cat ...) -> yazma fiili yok, gecer'],
+  [`\\cat docs/approvals/G5.ok`, 0, '(N6-TWIN) \\cat ... -> yazma fiili yok, gecer'],
+  [`for f in G5.ok; do cat docs/approvals/$f; done`, 0, '(N7-TWIN) for/do/done + cat -> yazma fiili yok, gecer'],
+  [`command cat docs/approvals/G5.ok`, 0, '(N14-TWIN) command cat ... -> yazma fiili yok, gecer'],
+  [`sleep 0 & cat .claude/hooks/gate-check.cjs`, 0, '(S1-TWIN) sleep 0 & cat ... -> yazma fiili yok, gecer'],
+  [`(cat .claude/hooks/gate-check.cjs)`, 0, '(S3-TWIN) (cat ...) -> yazma fiili yok, gecer'],
+  [`command cat .claude/settings.json`, 0, '(S4-TWIN) command cat ... -> yazma fiili yok, gecer'],
+  [`MC=1 node -e "console.log('hello')"`, 0, '(S7-TWIN) MC=1 node -e "console.log(...)" -> inlineEval eslesir AMA hicbir segmentte approvals/hooks mention yok -> gecer'],
+  [`while true; do cat docs/approvals/G5.ok; break; done`, 0, '(S11-TWIN) while/do/done + cat -> yazma fiili yok, gecer'],
+  [`{ cat docs/approvals/G5.ok; }`, 0, '(S14-TWIN) { cat ...; } -> yazma fiili yok, gecer'],
+  [`true && ! cat docs/approvals/G5.ok`, 0, '(S15-TWIN) true && ! cat ... -> yazma fiili yok, gecer'],
+  [`nice cat docs/approvals/G5.ok`, 0, '(S16-TWIN) nice cat ... -> yazma fiili yok, gecer'],
+
+  // =========================================================================================
+  // NEST-1..NEST-12 (docs/qa/hook-borclari-contract.md §12 — CEO'nun bagimsiz ic ice-kabuk
+  // sondasi, scratchpad/ceo-nested.mjs N1-N12'nin BIREBIR karsiligi; burada "NEST-" onekiyle
+  // yazildi ki yukaridaki onek-ailesi N1-N14 ile ISIM CARPISMASI olmasin). KOK SORUN (v2, artik
+  // KALDIRILDI): tirnaklanmis bir dize `sh -c`/`bash -c`/`eval`/`powershell -Command` gibi bir alt
+  // kabuga GERCEKTEN yorumlanmak uzere geciriliyorsa, o dize kabuk icin VERI degil KODDUR — "tirnak
+  // icinde = muaf" sorusu bu durumda YANLIS soruydu. v3 (tirnak muafiyeti TAMAMEN KALDIRILDI) bu
+  // 12 vektorun TAMAMINI, hicbir alt-kabuk-adi listesi EKLEMEDEN kapatir (cunku fiil artik HER
+  // ZAMAN, tirnak icinde de, sayilir) -- bu, "prev" (1fbb1eb, degisiklik-oncesi) davranisina
+  // DONUSTUR, YENI bir mekanizma degil.
+  // =========================================================================================
+  [`sh -c 'rm docs/approvals/G5.ok'`, 2, '(NEST-1) sh -c \'rm docs/approvals/G5.ok\' -> "rm" tirnak icinde ama v3de tirnak-disi/ici ayrimi YOK, her zaman sayilir; approvalsRef ayni segmentte -> engellenir'],
+  [`bash -c "rm docs/approvals/G5.ok"`, 2, '(NEST-2) bash -c "rm docs/approvals/G5.ok" -> NEST-1 ile ayni aile, cift tirnak -> engellenir'],
+  [`sh -c 'rm .claude/hooks/gate-check.cjs'`, 2, '(NEST-3) sh -c \'rm .claude/hooks/gate-check.cjs\' -> hooksRef ayni segmentte -> engellenir'],
+  [`bash -c "cp /tmp/evil .claude/hooks/gate-check.cjs"`, 2, '(NEST-4) bash -c "cp /tmp/evil .claude/hooks/gate-check.cjs" -> "cp" + hooksRef ayni segmentte -> engellenir'],
+  [`powershell -Command "Remove-Item docs/approvals/G5.ok"`, 2, '(NEST-5) powershell -Command "Remove-Item docs/approvals/G5.ok" -> "Remove-Item" + approvalsRef ayni segmentte -> engellenir'],
+  [`pwsh -c "Remove-Item .claude/hooks/gate-check.cjs"`, 2, '(NEST-6) pwsh -c "Remove-Item .claude/hooks/gate-check.cjs" -> ayni aile, hooks hedefi -> engellenir'],
+  [`eval "rm docs/approvals/G5.ok"`, 2, '(NEST-7) eval "rm docs/approvals/G5.ok" -> "rm" + approvalsRef ayni segmentte -> engellenir'],
+  [`sh -c 'echo x > docs/approvals/G5.ok'`, 2, '(NEST-8) sh -c \'echo x > docs/approvals/G5.ok\' -> approvalsRedirect zaten tirnak-farkinda DEGILDI (v2de de tek gecen vaka) -> engellenir, degisiklik yok'],
+  [`bash -c "rm .claude/settings.json"`, 2, '(NEST-9) bash -c "rm .claude/settings.json" -> "rm" + hooksRef (settings.json) ayni segmentte -> engellenir'],
+  [`sh -c 'cd docs/approvals && rm G5.ok'`, 2, '(NEST-10) sh -c \'cd docs/approvals && rm G5.ok\' -> ic ice "&&" tirnak icinde oldugu icin ayrac SAYILMAZ (segment boyle de bolunmez); ayrica WD_CHANGE tirnak-farkinda olmadan tum metinde "cd" kelimesini gorup retreat tetikler -> her durumda TEK segment, "rm"+approvalsRef ayni segmentte -> engellenir'],
+  [`cmd /c "del docs\\approvals\\G5.ok"`, 2, '(NEST-11) cmd /c "del docs\\approvals\\G5.ok" -> "del" + approvalsRef (ters bolu ayraciyla) ayni segmentte -> engellenir'],
+  [`sh -c 'cat /tmp/x | tee .claude/hooks/gate-check.cjs'`, 2, '(NEST-12) sh -c \'cat /tmp/x | tee .claude/hooks/gate-check.cjs\' -> ic ice "|" tirnak icinde oldugu icin ayrac SAYILMAZ, TEK segment; "tee" + hooksRef ayni segmentte -> engellenir'],
+
+  // --- NEST masum ikizleri: ayni sozdizimsel aile (alt-kabuk cagirisi), ama fiil OKUMA ya da
+  // hedef korunan bir yol degil -> hicbiri approvals/hooks'a yazmaz, hepsi exit 0 beklenir -------
+  [`sh -c 'ls docs/approvals'`, 0, '(NEST-NEG-1) sh -c \'ls docs/approvals\' -> yazma fiili yok, gecer'],
+  [`bash -c "cat docs/approvals/README.md"`, 0, '(NEST-NEG-2) bash -c "cat docs/approvals/README.md" -> yazma fiili yok, gecer'],
+  [`sh -c 'rm build/tmp.txt'`, 0, '(NEST-NEG-3) sh -c \'rm build/tmp.txt\' -> "rm" var ama hicbir segmentte approvals/hooks mention yok -> gecer'],
+  [`bash -c "npm run build"`, 0, '(NEST-NEG-4) bash -c "npm run build" -> yazma fiili yok, mention yok -> gecer'],
 ];
 
 // --- gate-check.cjs vakaları (K1) --------------------------------------------------------
@@ -627,7 +748,7 @@ rm(GUARD_OK); rm(GUARD_STATE);
 // (`!Array.isArray(doc.scope) || doc.scope.length === 0`) ulaşır. QA'nın ölçtüğü mutasyon (bu
 // kontrolün kaldırılması): `for (const item of doc.scope)` `doc.scope` `undefined` olduğu için
 // `TypeError: doc.scope is not iterable` fırlatır, YAKALANMAZ, süreç Node varsayılanıyla exit 1
-// verir — Claude Code SADECE exit 2'yi engelleme saydığı için bu FAIL-OPEN'dır (sessiz izin).
+// verir — Claude Code SADECE exit 2'yi engelleme saydığı için bu FAIL-OPEN'DIR (sessiz izin).
 writeGuardRaw(JSON.stringify({ reason: 'onay metni, "scope" alani GERCEKTEN yok (P5 devreye girmez)', created_at: nowIso() }));
 {
   const code = callGate('.claude/hooks/selftest-p6-real.cjs');

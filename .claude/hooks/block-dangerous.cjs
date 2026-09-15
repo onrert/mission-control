@@ -235,39 +235,42 @@ readInput((j) => {
   const writeVerb = /(\btee\b|\bcp\b|\bcopy\b|\bmv\b|\bmove\b|\bren(?:ame)?\b|\bsed\b[^\n]*-i\b|\bSet-Content\b|\bOut-File\b|\bAdd-Content\b|\bNew-Item\b|\bRemove-Item\b|\b(del|erase|rm|unlink)\b|\brd\b|\brmdir\b|\bri\b)/i;
   const inlineEval = /(\bnode\b[^\n]*(-e\b|--eval\b)|\bnpx\s+tsx\b[^\n]*-e\b|\bpython\b[^\n]*-c\b)/i;
 
-  // M2 KAPANIŞI (docs/qa/hook-borclari-contract.md B2 — 2026-09-14). KÖK SORUN: `writeVerb`/
-  // `inlineEval` bir segmentin METNİNİN HERHANGİ BİR YERİNDE eşleşiyordu — bir OKUMA komutunun
-  // ARGÜMANI (ör. `grep -n "unlink" dosya`, `awk '/rm/{...}'`) bir fiil KELİMESİ taşıdığında
-  // komutun TAMAMI engelleniyordu (5/10 salt-okunur sonda yanlış pozitif aldı, F1.3 ölçümü).
-  // ÇÖZÜM: bir fiil eşleşmesi yalnızca KOMUT KONUMUNDAYSA sayılır — segmentin/metnin BAŞI, ya da
-  // bir ayıraçtan (`&&`, `||`, `;`, `|`, satır sonu) HEMEN SONRASI (aradaki boşluk ve `sudo`/
-  // `env`/`time`/`exec`/`git` gibi ÖNEK KELİMELER atlanarak — `git rm ...` gerçek bir yazma
-  // komutudur, GITRM-1/2 testleri bunu bekliyor). Bu, ayrı bir "okuma fiilleri beyaz listesi"
-  // TUTMAYA GEREK KALMADAN `grep`/`awk`/`sed`(-i'siz)/`cat`/`head`/`tail`/`wc`/`findstr` gibi
-  // salt-okunur komutları YAPISAL OLARAK muaf kılar — kara liste büyütmek bu depoda dört kez
-  // yenilen bir desendir (docs/wiki/pages/desen/cit-tasarimi.md §1), o yüzden bilerek TERCİH
-  // EDİLMEDİ. `inlineEval` de AYNI gerekçeyle konum-sınırlı: bu dosyanın kendisi/`_selftest.cjs`
-  // "node -e" gibi metinler İÇERİR (dokümantasyon/test dizesi olarak) — konum sınırı olmadan bir
-  // `grep -n "node -e" .claude/hooks/_selftest.cjs` gibi salt-okunur bir teşhis komutu da
-  // yanlışlıkla engellenirdi (CLAUDE.md: "kendi teşhis komutların yeni kurduğun kapıya takılacak").
-  // `danger`/`gitForce`/`release`/`pushCmd` BİLEREK DEĞİŞMEDİ — bu turun ölçülen F1-F10
-  // vektörlerinin hiçbiri bu desenlerden kaynaklanmıyordu; konum sınırını oraya da yaymak scope
-  // creep olurdu (brief §2 M2 yalnızca "yazma fiili"ni hedefliyor).
-  const CMD_PREFIX_WORDS = '(?:sudo|env|time|exec|git)';
-  const CMD_POS_RE = new RegExp(`(?:^|&&|\\|\\||[;|\\n])\\s*(?:${CMD_PREFIX_WORDS}\\s+)*$`, 'i');
-  function isCommandPositionMatch(before) {
-    return CMD_POS_RE.test(before);
-  }
-  function hasMatchAtCommandPosition(re, text) {
-    const flags = re.flags.includes('g') ? re.flags : re.flags + 'g';
-    const g = new RegExp(re.source, flags);
-    let m;
-    while ((m = g.exec(text))) {
-      if (isCommandPositionMatch(text.slice(0, m.index))) return true;
-      if (m.index === g.lastIndex) g.lastIndex++;
-    }
-    return false;
-  }
+  // M2 KAPANIŞI v3 (docs/qa/hook-borclari-contract.md §12 — 2026-09-15, iki adımlı düzeltme
+  // kararının 1. adımı). KÖK SORUN (v2, artık KALDIRILDI): v2 "komut konumu" kapalı listesini
+  // "tırnak içinde mi" ikili sorusuyla değiştirdi — yani bir fiil eşleşmesi TIRNAKLANMIŞ bir dize
+  // İÇİNDE geçiyorsa SAYILMAZ sayıldı. Bu, `grep -n "rm" dosya` gibi salt-okunur komutlardaki
+  // yanlış pozitifi (B2, F2-F5/F9) doğru çözdü — AMA tırnaklı bir dizeyi GERÇEKTEN yorumlayan bir
+  // alt kabuğa (`sh -c '...'`, `bash -c "..."`, `eval "..."`, `powershell -Command "..."`)
+  // geçirildiğinde tırnak içi metin kabuk için DEĞİL, KODDUR — "veri" değildir. CEO'nun bağımsız
+  // iç içe-kabuk sondası (12 vektör) bunu ölçtü: `prev` (değişiklikten önceki, 1fbb1eb) hepsini
+  // ENGELLİYORDU, v2 **11/12'sini GEÇİRİYORDU** — `sh -c 'rm docs/approvals/G5.ok'`,
+  // `bash -c "cp /tmp/evil .claude/hooks/gate-check.cjs"`, `eval "rm docs/approvals/G5.ok"`,
+  // `powershell -Command "Remove-Item .claude/hooks/gate-check.cjs"` vb. Bu, "tırnakta mı?"
+  // sorusunun YANLIŞ soru olduğunu kanıtladı: doğru soru "bu komut salt-okunur bir araç mı?"
+  // idi — ki v2 hiç sormuyordu. Kullanıcı kararı (2026-09-15): önce bu regresyonu KAPAT (tırnak
+  // muafiyetini TAMAMEN KALDIR, v0/`prev` davranışına dön — fiil eşleşmesi metnin HER YERİNDE
+  // sayılır), yanlış pozitifleri BİR SONRAKİ turda OKUMA-KOMUTU BEYAZ LİSTESİYLE geri kazan
+  // (segment başındaki komut bilinen salt-okunur bir araçsa o segmentin tırnaklı argümanları
+  // muaf; değilse fiil her yerde sayılır — ADR-013 uyumlu allowlist, kısıtlayıcı varsayılan
+  // sayesinde `sh`/`bash`/`eval` beyaz listede OLMAYACAĞI için iç içe kabuk YAPISAL olarak kapalı
+  // kalır). Bu turun kapsamı SADECE kaldırma; beyaz liste henüz YOK — bkz. BİLİNÇLİ KABUL EDİLEN
+  // GEÇİCİ AŞIRI ENGELLEME notu aşağıda.
+  //
+  // KABUL EDİLEN TAKAS (dürüstçe, aşırı engelleme yönünde — güvenlik kaybı DEĞİL, önceki v0/`prev`
+  // davranışına dönüş): `grep -n "unlink" dosya`, `awk '/rm/{...}' dosya` gibi salt-okunur
+  // komutlar TIRNAKLI argümanlarında fiil kelimesi taşıdığı için yeniden yanlış pozitif alır.
+  // Ölçülen 6 vaka (docs/qa/hook-borclari-contract.md §12'ye kaydedildi) self-test'te expected=2
+  // (ENGEL) ile işaretlendi ve her birinin açıklamasına "bir sonraki turda okuma-komutu beyaz
+  // listesiyle geri kazanılacak" notu düşüldü — bu KABUL EDİLMİŞ, GEÇİCİ bir durumdur, kalıcı
+  // tasarım değil.
+  //
+  // BİLİNEN SINIR (v2'den kalan, hâlâ AÇIK — bir sonraki turun kapsamı): tırnak muafiyeti
+  // kaldırıldığı için N1-N12 artık ENGELLENİYOR (fiil tırnak içinde de sayıldığı için `sh -c
+  // 'rm ...'` içindeki "rm" yakalanır) — ama bu, "alt kabuğu tanıyıp içeriğini yorumlama" değil,
+  // "artık hiçbir tırnak muaf değil" sonucudur. Okuma-komutu beyaz listesi eklendiğinde bu
+  // davranış YENİDEN gözden geçirilmeli (örn. `sh -c '...'`in kendisi salt-okunur bir araç
+  // SAYILMAYACAĞI için N-ailesi o turda da kapalı kalmalı — brief'in "kısıtlayıcı varsayılan"
+  // şartı bunu garanti ediyor, bkz. yukarıdaki not).
 
   // BARE-ARTIFACT KORELASYONU (docs/qa/hook-borclari-contract.md B1 — `cd` İÇERMEYEN vektör
   // ailesi + çıplak yönlendirme boşluğu). M1 yalnızca `cd`-ailesini kapsar; R9 (`ls docs/approvals
@@ -278,7 +281,7 @@ readInput((j) => {
   // echo x > G5.ok` M1 ile blob'a düşse bile `writeVerb`'de bir `>` girişi YOK, yalnızca
   // `approvalsRedirect`/`hooksRedirect` (ki onlar hedefte "docs/approvals" METNİNİ arıyor, bare
   // `G5.ok`'ta o metin YOK) — bu yüzden ayrı bir sinyal gerekiyor.
-  // MEKANİZMA: bir segment (a) gerçek bir yazma EYLEMİ taşıyorsa (komut-konumunda yazma fiili,
+  // MEKANİZMA: bir segment (a) gerçek bir yazma EYLEMİ taşıyorsa (tırnak dışında yazma fiili,
   // satır-içi betik, YA DA herhangi bir `>`/`>>` yönlendirmesi) VE (b) o segment METNİNDE, hemen
   // ÖNCESİNDE bir yol ayracı (`/`veya `\`) OLMAYAN — yani BARE — bilinen bir korunan-eser adı
   // (`*.ok` ya da `gate-check.cjs`/`block-dangerous.cjs`/`_selftest.cjs`/`_common.cjs`/
@@ -339,12 +342,10 @@ readInput((j) => {
     return found;
   }
   const genericRedirect = /(>>|>(?!=))/;
+  // v3: tırnak muafiyeti YOK (yukarıdaki M2 KAPANIŞI v3 yorumu) — fiil/satır-içi-betik eşleşmesi
+  // metnin HER YERİNDE (tırnak içi dahil) sayılır, doğrudan re.test(seg) ile.
   function segmentHasWriteAction(seg) {
-    return (
-      hasMatchAtCommandPosition(writeVerb, seg) ||
-      hasMatchAtCommandPosition(inlineEval, seg) ||
-      genericRedirect.test(seg)
-    );
+    return writeVerb.test(seg) || inlineEval.test(seg) || genericRedirect.test(seg);
   }
 
   let isRelease = false;
@@ -367,7 +368,7 @@ readInput((j) => {
     if (pushCmd.test(seg)) isPush = true;
     if (danger.test(seg) || gitForce.test(seg)) isDestructive = true;
 
-    const hasWrite = hasMatchAtCommandPosition(writeVerb, seg) || hasMatchAtCommandPosition(inlineEval, seg);
+    const hasWrite = writeVerb.test(seg) || inlineEval.test(seg);
     if (approvalsRedirect.test(seg) || (approvalsRef.test(seg) && hasWrite)) {
       isApprovalsWrite = true;
       if (!guardedSegment) guardedSegment = seg;

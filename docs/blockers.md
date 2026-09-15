@@ -1813,3 +1813,38 @@ olarak karşılaştırıyoruz.
   sayıyla değil desenle kapatmalı.
 - `1fbb1eb` önceki raporlarda "segmentasyon öncesi blob sürümü" diye anılıyordu; QA ölçtü,
   `splitCommandSegments` o sürümde **zaten var**. Tarihçe metni yanlış; kararları etkilemiyor.
+
+---
+
+## 2026-09-15 — P0-P3 (25+ sızıntı) ve P4 (yol parçalama) — developer turu tamamlandı, qa'ya gönderildi
+
+Yukarıdaki iki madde için geliştirme turu bitti: `docs/qa/hook-polarite-contract.md` (v5 adayı,
+`scratchpad/hook-polarity/`). Kapanış mekanizması QA'nın kendi görüşüyle (§7 yukarıda) birebir
+aynı: kutupluluk ters çevrildi (`writeVerb` kara listesine yeni fiil EKLENMEDİ), P4 yol
+normalizasyonuyla kapatıldı (metni çöz, karşılaştırma — `gate-check.cjs`'in kendi deseninin
+komut-metni karşılığı). QA'nın dört şartının hepsi uygulandı ve ölçüldü:
+1. Beyaz liste konuma değil yeteneğe bağlandı (koşullu okuyucular: sed/find/dd/sort/openssl/git/
+   xargs, her biri dar ve gerekçeli).
+2. `sh`/`bash`/`eval`/`xargs`/`find`/`command`/`env`/`sudo`/`nice`/`time`/`nohup` beyaz listede
+   DEĞİL (find/xargs koşullu, geri kalanı asla okuyucu değil).
+3. Kabul ölçütü ölçüldü: 3073 saldırı vektörünün **3073/3073'ü ENGEL** (v0/v1/v3/v4'e karşı 0
+   regresyon), 26 komutluk salt-okunur korpusta **2/26 yanlış pozitif** (≤6 eşiği sağlandı).
+4. P4 ayrı bir mekanizmayla (`normalizePathText` + `..` fail-closed kuralı) kapatıldı, beyaz
+   listeyle KARIŞTIRILMADI.
+
+Kanıt: 5 modlu diferansiyel, canlı kanıt (14/14 vektör gerçek dosya mutasyonu/silme kanıtlı), FP
+korpusu, 385/385 self-test, 7 mutantlı yön-ayrımlı test — hepsi `docs/qa/hook-polarite-contract.md`
+§7'de. **GEÇTİ/KALDI kararı qa-evaluator'a ait**, bu madde qa-evaluator onayına kadar açık kalır.
+
+**Yeni, dürüstçe kabul edilen tavizler (borç değil, bilinçli tasarım kararı):**
+- `node`/`python`/`npm` gibi Turing-complete araçlar hiçbir zaman okuyucu sayılmıyor — gerçekten
+  salt-okunur kullanımları (`node scripts/report.mjs docs/approvals/G5.ok`) da artık engelleniyor.
+  Ölçülü (2/26), P1 sızıntısının (`node scripts/evil.js docs/approvals/G5.ok`) kapatılması için
+  GEREKLİ.
+- `sh -c 'ls docs/approvals'` gibi salt-okunur alt-kabuk çağrıları da artık engelleniyor
+  (kullanıcının 3. bedel kararı) — iç içe kabuk ailesi FİİL ARANMADAN yapısal olarak kapandı.
+
+**Yeni, küçük borç:** `>|` segmentasyon düzeltmesinin (splitCommandSegments'e eklenen tek satır)
+kendi başına izole bir pozitif kontrolü yok — şu an Mekanizma 2'nin genel mention kuralıyla
+fazlalıklı örtüşüyor (bkz `hook-polarite-contract.md` §7.5 MUT-PIPE-CLOBBER-OFF). Güvenlik kaybı
+değil, ölçüm netliği eksikliği. Bir sonraki `>|`/segmentasyon dokunuşunda izole bir vaka eklensin.

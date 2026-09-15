@@ -4924,3 +4924,83 @@ selftest-safe.cjs` → `.claude/hooks/_selftest.cjs`; kurulumu CEO `Write` arac�
 
 **Durum:** `docs/qa/hook-borclari-contract.md` §12 eklendi, §11.7/blockers.md'deki eski "kabul
 edilmiş sınır" iddiası düzeltildi, `status: qa` (değişmedi). GEÇTİ/KALDI kararı qa-evaluator'a ait.
+
+## 2026-09-15 — hook polarite tersine çevirme + yol normalizasyonu (v5) — qa'ya gönderildi
+
+**Görev:** `docs/qa/hook-borclari-karari-v3-2026-09-15.md`'nin ÖNEMLİ-1 (11 canlı sızıntı, ikisi
+`.claude/hooks/gate-check.cjs`'i canlı olarak yok ediyor) ve ÖNEMLİ-2 (P4 yol-parçalama ailesi,
+eşik dolmuş) bulgularını kapatmak. Kullanıcı kararı: `writeVerb` kara listesine yeni fiil eklemek
+YASAK; kapanış "okuyucu değilse şüpheli" polarite tersine çevirmesiyle + yol normalizasyonuyla
+yapılacak.
+
+**Yapılan (taban: kurulu v4, commit `d16ca08`, `.claude/hooks/block-dangerous.cjs`):**
+- **Mekanizma 1 (v4'ün tüm mevcut mantığı) HİÇ DEĞİŞTİRİLMEDİ** — regresyon riskini yapısal olarak
+  sıfıra indirmek için. Gerekçe: ilk tasarım Mekanizma 1'i tamamen değiştirmeyi öneriyordu ama bu,
+  hâlâ engellenmesi gereken iki mevcut vakayla (F-BOUNDARY, RETREAT-HEREDOC-M2v2 — ikisinde de baş
+  komut okuyucu ama metnin geri kalanı fiil+yol taşıyor) doğrudan çelişiyordu.
+- **Mekanizma 2 (YENİ, EK, OR-koşulu):** her segment için baş komut çözülüp "bu komut keyfi
+  argümanla keyfi yola yazabilir mi?" (`isReaderHeadV5`) sorusuna cevap veriliyor; okuyucu
+  değilse ve korunan yolu (normalize edilmiş metinde) anıyorsa/çıplak eser taşıyorsa → yazma
+  girişimi. Koşullu üyeler (brief şartı #1, konuma değil yeteneğe bağlı): `sed` (-i/--in-place
+  yoksa okuyucu), `find` (yıkıcı bayrak yoksa okuyucu), `dd` (of= yoksa), `sort` (-o yoksa),
+  `openssl` (-out yoksa), `git` (log/diff/show/status/blame/grep/cat-file/ls-files/rev-parse/
+  add/commit/"stash list" okuyucu), `xargs` (boru hedefi kendisi okuyucuysa). `sh`/`bash`/`zsh`/
+  `cmd`/`powershell`/`pwsh`/`eval`/`source` VE `node`/`python`/`python3`/`perl`/`npm`/`npx` ASLA
+  okuyucu değil (brief şartı #2 + kabul edilen ek taviz).
+- **P4 yol normalizasyonu** (`normalizePathText`, yalnızca tespit için): tırnak karakterlerini
+  siler, ters bölüyü ileri bölüye çevirir, çift eğikleri teke indirir, `/./ ` bileşenlerini
+  kaldırır — tek yönlü (yalnızca yeni eşleşme açar). `..` bileşenleri ÇÖZÜLMEYE çalışılmaz;
+  segment `..` VE korunan dizinin kendi kelimelerinden birini taşıyorsa fail-closed eşleşmiş
+  sayılır.
+- **Üç bedel kararı** kullanıcı tarafından verildi, uygulandı: (i) find koşullu okuyucu, (ii) git
+  add/commit/stash-list okuyucu, (iii) `sh -c 'ls docs/approvals'` gibi salt-okunur alt-kabuk
+  çağrıları bile artık BİLİNÇLİ olarak engelleniyor (NEST-NEG-1/WL-SH-KNOWN/NEST-NEG-2 beklentisi
+  0'dan 2'ye çevrildi).
+- **Doğrulama sırasında bulunup düzeltilen 2 gerçek tasarım hatası (kuruluma gitmeden ÖNCE):**
+  (1) kabuk yerleşikleri (`then`/`do`) `;` segmentasyonunda baş komut sanılıp zararsız `if/for/
+  while ... cat` zincirlerini yanlışlıkla engelliyordu → `getHeadCommandV5`'e özel skip-prefix
+  eklendi; (2) paylaşılan `splitCommandSegments`, `>|` (clobber) operatöründeki `|`yi koşulsuz
+  boru ayracı sayıyordu — mutasyon testi (`MUT-REDIRECT-V5-OFF`) bunu ifşa etti: ilan edilen
+  `>|` düzeltmesi (hooksRedirectV5) aslında hiç çalışmıyordu, test yalnızca ŞANSLA yeşildi
+  (segmentasyon hatası kazara farklı bir yoldan aynı sonucu veriyordu). `&`'in `&>` için zaten
+  yaptığı istisnanın `|` karşılığı eklendi (`>` hemen öncesindeyse `|` ayraç sayılmaz) — bu,
+  paylaşılan segmentasyona yapılan TEK v5 dokunuşu, regresyon riski sıfır (mevcut 343 vakanın
+  hiçbiri `>|` içermiyordu).
+
+**Nasıl doğrulandı (hepsi izole sandbox'larda, gerçek `.claude/hooks/**`/`docs/approvals/*`'a hiç
+yazılmadan, `docs/qa/hook-polarite-contract.md`'de tam detay):**
+- **Beş modlu diferansiyel** (v0=`1fbb1eb`, v1=`a41ce32`, v3=`219dc43`, v4=`d16ca08`, v5=aday;
+  QA'nın 23×19×7=3059 kombinatoryal vektörü + 14 hedefli vektör = 3073 toplam): v5 **3073/3073
+  (%100) engel**, v0/v1/v3/v4'e karşı **0 regresyon**. 14 hedefli vektörün 14'ü de dört eski
+  modda GEÇER (leak doğrulandı), v5'te ENGEL.
+- **Canlı kanıt** (gerçek fixture içerikli sahte depo, komut hook `exit 0` derse GERÇEKTEN Git
+  Bash ile çalıştırılıp SHA-256 önce/sonra karşılaştırıldı): 14/14 vektör v4'te dosyayı GERÇEKTEN
+  değiştirdi/sildi (ikisi `gate-check.cjs`'i doğrudan hedefliyordu), v5'te hiçbiri hiç ÇALIŞMADI.
+- **Yanlış pozitif korpusu** (26 gerçekçi salt-okunur komut, bu oturumun ve önceki QA turlarının
+  gerçek kullanım kalıpları): v4 0/26, **v5 2/26** (`node <script> <path>`, `npm test -- <path>`
+  — kabul edilen, belgelenmiş taviz sınıfı) — eşik (≤6) sağlandı.
+- **Self-test** (`selftest-v5.cjs`, taban 343 vakanın TAMAMI korunuyor + 3 kasıtlı değişen
+  beklenti (NEST-NEG-1/2, WL-SH-KNOWN) + 2 kasıtlı değişen (WL-FAILCLOSED-1/2) + 42 yeni vaka =
+  385 toplam): izole sandbox'ta **385/385 GEÇTİ**, exit 0.
+- **Yön ayrımlı mutasyon** (7 mutant, tam 385-vakalık suite üzerinde): Mekanizma 2 kapatılınca
+  **20 engelleme-kaybı / 0 aşırı-engelleme**; her baş komut okuyucu sayılmayınca **0 / 60**; P4
+  normalizasyonu/tırnak-silme kapatılınca **4+2 engelleme-kaybı / 0**; yeni `>|` deseni/`..`
+  fail-closed kapatılınca **1+1 engelleme-kaybı / 0**. Dürüst bulgu: `>|` segmentasyon
+  düzeltmesinin KENDİ BAŞINA izole bir pozitif kontrolü yok (0/0) — Mekanizma 2'nin genel mention
+  kuralıyla fazlalıklı örtüşüyor (güvenlik kaybı değil, ölçüm netliği borcu, kayıtlı).
+- `node --check` temiz her iki dosyada da.
+
+**Kalan riskler (dürüstçe, `docs/qa/hook-polarite-contract.md` §9'a yazıldı):** değişken/glob
+dolaylılığı (`for f in docs/approvals/*.ok; do rm $f; done`) hâlâ kapsam dışı — YENİ bir regresyon
+değil, v0/v1/v3/v4'ün hiçbiri de yakalamıyordu. `node`/`npm` ailesi genel FP kaynağı (ölçülü,
+2/26). `>|` segmentasyon düzeltmesinin izole testi borç. M1-UNIQUE'in tek-vakalı çiti (önceki
+turdan devralındı, bu tur büyütmedi/küçültmedi).
+
+**Kısıt:** `.claude/hooks/**`'a bu turda da otonom yazılamadı (harness kategorik reddediyor,
+her deneme bir GUARD.ok onayı yakar) — tüm geliştirme/doğrulama scratchpad'de izole sahte
+depolarda yapıldı. Teslim: `scratchpad/hook-polarity/block-dangerous-v5.cjs` →
+`.claude/hooks/block-dangerous.cjs`, `scratchpad/hook-polarity/selftest-v5.cjs` →
+`.claude/hooks/_selftest.cjs`; kurulumu CEO `Write` aracıyla yapacak.
+
+**Durum:** `docs/qa/hook-polarite-contract.md` yazıldı, `docs/blockers.md`'ye kapanış notu
+eklendi, `status: qa`. GEÇTİ/KALDI kararı qa-evaluator'a ait.

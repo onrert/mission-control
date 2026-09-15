@@ -613,3 +613,42 @@ CALISMA ZAMANI casusu yakaliyor (iki katman), `require` ailesinde **sifir** katm
    sonda ayraçla yazma, `'C:/...'` duz egik cizgiyle kullan. Bash heredoc'u da `\\n`'i
    `\n`'e dusurur; mutasyon betiklerini heredoc yerine `Write` ile yaz (kayitli ders,
    bu turda tekrarladi ve bir betigi bozdu).
+71. **Bir "sizinti yok" iddiasini KOMBINATORYAL taramayla olc, sonda listesiyle degil.**
+   Hook-borclari v3 turunda 84 hedefli sonda 0 regresyon verdi; ikna edici degildi.
+   23 kabuk oneki x 19 yazma fiili x 7 hedef bicimi = **3059 vektor** uretip uc modda
+   (v0/v1/v3) kosturdum; 3 modun da 3059/3059 engelledigi olculunce iddia kanitlandi.
+   Uretim maliyeti dusuk (bir ic ice dongu), kanit degeri sonda listesinden cok yuksek.
+   **Kural:** "regresyon yok" demeden once carpim uzayini uret; el yazmasi 20 sonda,
+   20 sondanin oldugu yeri olcer, boslugu degil.
+72. **Diferansiyel tabanin GERCEKTEN ne icerdigini kaynak taramasiyla dogrula, adina
+   guvenme.** Uc tur boyunca `1fbb1eb` raporlarda "prev = segmentasyon oncesi blob" diye
+   anildi; olctum, `splitCommandSegments` **zaten iciindeydi**. Taban yanlis etiketlenirse
+   "blob'un engelledigi hicbir seyi gecirmiyor" cumlesi bambaska bir sey olcer.
+   **Kural:** her mod icin mekanizma envanteri bas (`src.includes('X')` listesi) ve rapora yaz.
+73. **Kapali bir FIIL listesini yenmenin en verimli yolu, savunmanin KENDI gerekcesini
+   hedeflemek.** Kodda "node -e kasitli olarak genis tutuldu, cunku betigin yazip
+   yazmadigi metinden anlasilmaz" yaziyordu; `node -e` → **`node -p`** (tek karakter) o
+   gerekceyi curuttu. Ayni ailede: `\bpython\b` **`python3`**'u kelime siniri yuzunden hic
+   gormuyor, `\bsed\b.*-i\b` **`--in-place`**'i gormuyor. **Kural:** yorumda "kasitli olarak
+   genis/kapsamli" yazan her deseni, o iddiayi tek karakterle yanlislayan varyantla sonala.
+74. **Yonlendirme desenlerinde `>` ile `>|` ayrimini sona.** `(>>|>(?!=))\s*hedef` deseni
+   bash'in clobber-override operatoru **`>|`**'e kor: `|` segment ayraci sayilip hedef
+   AYRI segmente dusuyor, iki-sinyalli kontrol kirilyor. Canli kanitlandi (kapi dosyasinin
+   uzerine yazildi). Ayni aile: `>&`, `&>`, `1>`, `2>&1`.
+75. **Korunan yolu TEK PARCA LITERAL metin arayan her regex, yolu bolen sozdizimiyle
+   yenilir.** `docs[\/]approvals` deseni su uc varyantin hicbirini gormuyor:
+   `"docs"/approvals/...` (tirnakla bolme), `docs/./approvals/...` (nokta ile bolme),
+   `docs//approvals/...` (cift egik). Ucu de canli sildi. `cd`-parcalama (A1/A10) ile ayni
+   kok neden — ama `cd` GEREKTIRMIYORLAR, yani "calisma dizinini modellemek gerekir"
+   gerekcesi onlari kapsamaz. **Kural:** bir yol citini kabul etmeden once en az bu uc
+   bolme varyantini kos; "kabul edilmis cd sinirı" etiketi bunlari ortmez.
+76. **Yon ayrimli mutasyon tablosuna "duzeltmeyi birebir geri saran" mutanti HER ZAMAN
+   koy ve kirmizilarinin YONUNU say.** v3 turunda `MUT-QUOTE-BACK` (tirnak muafiyetini
+   geri ekle) 17 kirmizi verdi ve **17'sinin 17'si engelleme-kaybi yonundeydi** — cit,
+   komsu bir yolu degil tam olarak bu turun duzeltmesini koruyor demektir. Ayrica her
+   mekanizma icin TERS mutanti da kos (`writeVerb` her zaman true → 44 asiri-engelleme
+   kirmizisi): iki sutunun ikisi de doluysa mekanizma iki yonde de citli.
+77. **Canli kanit tablosuna "gecti ama dosya degismedi" ucuncu sutununu koy.** 22 canli
+   vektorden 3'u hook'tan GECTI ama arac ortamda yoktu/basarisiz oldu (tar exit 2,
+   curl exit 37, ln exit 1). Bunlari "engellendi" saymak hook'a hak etmedigi kredi verir;
+   "pratik sizinti" saymak da yanlis. Ucuncu kategori: **teorik ihlal, ortam engelledi.**

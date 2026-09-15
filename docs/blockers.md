@@ -1923,3 +1923,44 @@ düzeltilmesidir. Şartlar: (1) `fs.realpathSync.native` ile çöz, çözemezsen
 konumu; (3) yönlendirme kontrolleri muafiyetten etkilenmesin; (4) kendi pozitif kontrolü;
 (5) `test`/`[` yanlış pozitifi aynı turda kapansın. Ayrıca **`npm test` zincirinden koşan bir
 vitest runner** şart — 385 vakalık çit sürüm kontrollü olmalı.
+
+## 2026-09-15 (devam) — developer — B1/B2/B3/B4/Ö3 KAPANDI (v6, yazma-konumu analizi), qa'ya gönderildi
+
+Yukarıdaki "bir sonraki tur için tek cümlelik yön" ve "B4 için QA'nın önerisi" bölümlerindeki
+formülasyon birebir uygulandı: `docs/qa/hook-writepos-contract.md`. Mekanizma 1 (v4) ve
+Mekanizma 2 (v5) dokunulmadan bırakıldı (B1/B2/B3, head/reader kavramı kullanmayan additive bir
+Mekanizma 3 ile kapatıldı — yapısal olarak regresyona kapalı); B4+Ö3 için Mekanizma 2'de İKİ dar
+değişiklik yapıldı (QA'nın 5 şartının tümü uygulandı: realpath fail-closed, yalnızca yorumlayıcı
+argümanı konumu, yönlendirme etkilenmiyor, kendi pozitif kontrolleri var, `test`/`[` kapandı).
+
+**Ölçüm özeti (tam detay contract'ta):**
+- 6 modlu 3640-vektörlük diferansiyel: v0/v1/v3/v4/v5'e karşı **0 regresyon**; v6 engelleme
+  oranı v5'in (%50,5) çok üzerinde.
+- QA'nın 32 taze vektörü: **15/15 saldırı artık ENGEL** (v5'te 15/15 geçiyordu).
+- Canlı kanıt: v5'te 17/35 vektör dosyaları GERÇEKTEN değiştiriyordu (ikisi `gate-check.cjs`'i
+  hedefliyordu); v6'da 0/35 — hiçbiri hook'tan geçemedi.
+- B4+Ö3: 11/11 doğrudan vaka OK (self-test bare/boru, `--check`, realpath-kaçış fail-closed,
+  eval-bayraklı red, yönlendirme muaf DEĞİL, veri-argümanı muaf DEĞİL, `test -f`/`[` geçer).
+- Aşırı engelleme: v5 5/34 (%14,7) → **v6 0/34 (%0)**.
+- Self-test: 385 taban + 35 yeni = **420/420**.
+- Yön ayrımlı mutasyon (13 mutant): her yeni kural için engelleme-kaybı ölçüldü (aşağıdaki iki
+  istisna hariç); Mekanizma 2'nin iki değişikliği kapatılınca YALNIZCA aşırı-engelleme yönünde
+  kırmızı (doğru polarite).
+- `tests/hooks-selftest.test.ts` eklendi — `_selftest.cjs`'i `npm test` zincirinden çağıran
+  sürüm kontrollü runner (B4'ün kalıcı kapanışı).
+
+**Yeni, dürüstçe kaydedilen borçlar (bloklayıcı değil):**
+- Mekanizma 3'ün in-place-edit kuralı (Konum 3) bu korpusta 0/0 ölçülüyor (perl/ruby zaten
+  Konum 4 — opak yorumlayıcı — ile yakalanıyor); yalnızca çıplak `sed -i` + eylemsiz önek
+  kombinasyonu için benzersiz olurdu, test edilmedi.
+- İki masum ikiz (`while read l...done < G5.ok`, `/bin/cat ...`) v5'ten devralındı, bu turun
+  B1/B2/B3/B4/Ö3 kapsamı DIŞINDA ayrı bir kök nedenli FP — kapatılmadı.
+- B5 (izin listesi `npm run <script>`/`node <betik>` dolaylılığı, sıfır kart bypass) v5'ten
+  BAĞIMSIZ, hâlâ AÇIK — ayrı bir turda ele alınmalı.
+
+**Yöntem notu (kayıt için):** ölçüm sırasında paylaşılan bir scratchpad dizinini (kombinatoryal
+diferansiyel betiğinin kullandığı sahte-depo kökü) başka bir betikle EŞZAMANLI silip yeniden
+kurmak, tek bir koşuda 3640 vektörün 2'sinde geçici/sahte bir "sızıntı" görünümüne yol açtı;
+tamamen izole, eşzamansız bir yeniden koşumda aynı 2 vektör de ENGEL çıktı (0/3640). Kayıtlı
+"kendi eşzamanlılığın testleri kirletiyor" dersinin bir örneği daha — sonuç raporlanmadan önce
+izole tekrar koşumla doğrulandı.

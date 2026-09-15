@@ -5004,3 +5004,92 @@ depolarda yapıldı. Teslim: `scratchpad/hook-polarity/block-dangerous-v5.cjs` �
 
 **Durum:** `docs/qa/hook-polarite-contract.md` yazıldı, `docs/blockers.md`'ye kapanış notu
 eklendi, `status: qa`. GEÇTİ/KALDI kararı qa-evaluator'a ait.
+
+## 2026-09-15 — hook yazma-konumu analizi (v6) — B1/B2/B3/B4/Ö3 kapanışı, qa'ya gönderildi
+
+**Görev:** `docs/qa/hook-polarite-karari-2026-09-15.md`'nin v5'i KALDI verdiği üç yapısal kör
+noktayı (B1: kontrol-akışı/`cd` kelimeleri "okuyucu" sayıldığı için Mekanizma 2 tüm segmentte
+atlanıyor; B2: yönlendirme normalizasyonu yalnızca "okuyucu değil" dalında; B3: `\`
+normalizasyonu bash kaçışına kör) ve iki dar aşırı-engellemeyi (B4: `node .claude/hooks/
+_selftest.cjs` artık engelleniyor + sürüm kontrollü runner yok; Ö3: `test -f`/`[` yanlış
+pozitif) kapatmak. QA'nın formülasyonu: "baş komut ne?" sorusunu bırak, "korunan yol bu
+segmentte bir YAZMA KONUMUNDA MI?" sorusuna geç.
+
+**Yapılan (taban: kurulu v5, commit `250277b`, `.claude/hooks/block-dangerous.cjs`):**
+- **Mekanizma 1 (v4) ve Mekanizma 2 (v5) HİÇ DEĞİŞTİRİLMEDİ**, iki dar istisna hariç (aşağıda).
+- **Mekanizma 3 (YENİ, additive, head/reader kavramı KULLANMAZ):** her segmenti dört yazma-konumu
+  kuralıyla tarar — (1) yönlendirme hedefi (RAW metin, okuyucu/okuyucu-olmama fark etmeksizin,
+  B2 kapanışı), (2) bilinen bir yazıcının (`cp/mv/rm/tee/gzip/...`) komut adından segment sonuna
+  kadar olan kuyruğu (önek ÖNEMSİZ, B1 kapanışı), (2b) bayrak-değerli hedefler (`dd of=`, `sort
+  -o`, `openssl -out`, `patch`), (3) yerinde-düzenleme bayrağı (`sed -i`, `perl -pi`, `ruby -i`),
+  (4) opak çalıştırıcı (`sh/bash/.../node/python/...`, fail-closed — bkz muafiyet aşağıda).
+  Tırnak-içi savunma (F2-F5/F9 ailesi) Mekanizma 1'in ORİJİNAL (V5'in DEĞİL) head/reader
+  sınıflandırmasıyla korundu — bu turda CANLI bir regresyon olarak bulundu (self-test 7 FAIL) ve
+  düzeltildi (bkz kalan riskler yerine aşağıdaki "doğrulama sırasında bulunan" notu).
+- **Mekanizma 2'de İKİ dar değişiklik:** (1) `READER_HEADS_V5`'e `test`/`[` eklendi (Ö3 — kabuk
+  yerleşiği, kendi argümanları içinde başka komut ÇALIŞTIRMAZ, B1 tarzı kör nokta AÇMAZ); (2)
+  "yorumlayıcı betik argümanı muafiyeti" (B4) — `node/python/python3/py/perl/ruby` satır içi kod
+  bayrağı (`-e/-p/-c/--eval`) OLMADAN çalıştırılıyorsa VE ilk konumsal argüman
+  `fs.realpathSync.native` ile ÇÖZÜLDÜĞÜNDE gerçekten `.claude/hooks/` altına denk geliyorsa
+  (çözülemezse fail-closed) o TEK argüman muaf; yönlendirme kontrolleri etkilenmez. Bu iki
+  değişiklik regresyon SAYILMAZ çünkü v0/v1/v3/v4'ün HİÇBİRİ bu senaryoları zaten engellemiyordu
+  (v5'in kendi getirdiği aşırı-engellemenin geri alınması).
+- **Doğrulama sırasında bulunup düzeltilen 1 gerçek tasarım hatası (kuruluma gitmeden ÖNCE):**
+  Mekanizma 3'ün ilk taslağı tırnak-içi metni HİÇ maskelemiyordu — self-test'te 7 vaka (F2-F5/F9/
+  N1-TWIN/WL-SED-READ, "grep/awk/sed'in tırnaklı ARGÜMANINDA geçen 'rm'/'unlink' kelimesi") YANLIŞ
+  POZİTİF verdi (`grep -n "unlink" .claude/hooks/_selftest.cjs` gibi salt-okunur komutlar
+  engellendi). Düzeltme: Mekanizma 1'in ORİJİNAL head/reader'ıyla (V5'in DEĞİL — o "if"/"cd"'yi
+  okuyucu sayıp B1'i açardı) segment okuyucuysa tırnak-içi metin maskelenir; bu YALNIZCA Kural
+  2/2b/3/4'ü etkiler, Kural 1 (yönlendirme) RAW metinde kalır (quoted redirect hedefleri hâlâ
+  yakalanır).
+
+**Nasıl doğrulandı (hepsi izole sandbox'larda, gerçek `.claude/hooks/**`/`docs/approvals/*`'a hiç
+yazılmadan, `docs/qa/hook-writepos-contract.md`'de tam detay):**
+- **Altı modlu kombinatoryal diferansiyel** (v0/v1/v3/v4/v5/v6, QA'nın 3640 vektörlük
+  üreticisiyle): **v0/v1/v3/v4/v5'in engellediği HİÇBİR ŞEY v6'da geçmiyor (0 regresyon)**;
+  v6 engelleme oranı v5'in (%50,5) çok üzerinde.
+- **QA'nın 32 taze (FRESH) vektörü:** 15 saldırının **15/15'i** v6'da ENGEL (v5'te 15/15
+  geçiyordu). İki masum ikiz (v5'ten devralınan, bu turun kapsamı DIŞINDA bir ayrı kök nedenli
+  FP) hâlâ engelli — borç olarak kayıtlı.
+- **Canlı kanıt** (izole sahte depo, gerçek `G5.ok`/`gate-check.cjs`, Git Bash ile GERÇEKTEN
+  çalıştırma): v5'te **17/35** vektör dosyaları GERÇEKTEN değiştiriyordu (ikisi `gate-check.cjs`'i
+  hedefliyordu); v6'da **0/35** — hiçbiri hook'tan geçemediği için hiçbiri hiç ÇALIŞMADI.
+- **B4+Ö3 doğrudan doğrulama** (11 vaka, `run-b4.mjs`): **11/11 OK** — self-test bare çağrısı,
+  boru zincirleri, `--check`, realpath-kaçış (fail-closed), eval-bayraklı (`-e`) durum, yönlendirme
+  (muaf DEĞİL), veri-argümanı (muaf DEĞİL), `test -f`/`[` hepsi beklenen sonucu verdi.
+- **Aşırı engelleme korpusu** (34 rutin komut): v5 **5/34 (%14,7)** → **v6 0/34 (%0)** — hedef
+  (≤2/34) aşıldı. 5 belgelenmiş sınır vakasının 5'i de beklendiği gibi engellendi.
+- **Self-test:** kurulu 385 vakanın TAMAMI + 35 yeni V6 vakası = **420/420 GEÇTİ**, exit 0.
+- **Yön ayrımlı mutasyon** (13 mutant, tam 420 vakalık suite üzerinde, `git checkout`
+  KULLANILMADI): Mekanizma 3'ün redirect/writer-tail/flag-value/opaque/backslash-dual
+  kurallarının HER BİRİ kapatılınca YALNIZCA engelleme-kaybı yönünde kırmızı (0 aşırı-engelleme);
+  Mekanizma 2'nin iki V6 değişikliği kapatılınca YALNIZCA aşırı-engelleme yönünde kırmızı (B4/Ö3
+  vakaları yeniden bloklanıyor). Dürüst bulgu: in-place-edit kuralı (Konum 3) ve eval-bayrağı
+  kontrolü bu korpusta 0/0 veriyor — ikisi de perl/ruby için Konum 4 (opak yorumlayıcı) ile
+  fazlalıklı örtüşüyor (güvenlik kaybı değil, ölçüm netliği borcu, kayıtlı).
+- **`tests/hooks-selftest.test.ts`** eklendi (B4 madde 5 — sürüm kontrollü runner): `_selftest.cjs`'i
+  alt süreç olarak çağırıp çıkış kodunu assert eder, kendi suite'ini ÇAĞIRMAZ (fork-bomb riski
+  yok); `npx vitest run tests/hooks-selftest.test.ts` ile bağımsız doğrulandı (1/1 geçti, mevcut
+  kurulu v5'e karşı).
+- `node --check` temiz, ham NUL bayt yok.
+
+**Kalan riskler (dürüstçe, `docs/qa/hook-writepos-contract.md` §5'e yazıldı):**
+- İki masum ikiz (`while read l; do echo $l; done < G5.ok`, `/bin/cat ...`) v5'ten devralınan,
+  bu turun B1/B2/B3/B4/Ö3 kapsamı DIŞINDA ayrı kök nedenli FP'ler — kapatılmadı, borç.
+- Mekanizma 3'ün in-place-edit kuralı (Konum 3) bu korpusta ölçülebilir benzersiz katkı
+  GÖSTERMEDİ (sed -i + eylemsiz önek kombinasyonu test edilmedi) — zararsız ama dürüstçe kayıtlı.
+- B5 (izin listesi `npm run <script>`/`node <betik>` dolaylılığı) v5'ten BAĞIMSIZ, ayrı bir turda.
+- Değişken/glob dolaylılığı (`rm $f`) önceden kabul edilmiş sınır, değişmedi.
+
+**Kısıt:** `.claude/hooks/**`'a bu turda da otonom yazılamadı — tüm geliştirme/doğrulama
+scratchpad'de izole sahte depolarda yapıldı. Teslim: `scratchpad/hook-writepos/
+block-dangerous-v6.cjs` → `.claude/hooks/block-dangerous.cjs`, `scratchpad/hook-writepos/
+selftest-v6.cjs`'in TÜRETİLDİĞİ mantık (sandbox'ın candidate'ı kopyalama biçimi) →
+`.claude/hooks/_selftest.cjs`'e KENDİ candidate yolu OLMADAN uygulanmalı (kurulu ortamda
+`_selftest.cjs` zaten kendi cwd'sindeki `block-dangerous.cjs`'i kopyalıyor — bu yüzden kurulu
+`_selftest.cjs`'e yalnızca YENİ test vakaları eklenmeli, sandbox-kurulum mantığı DEĞİŞMEMELİ);
+`tests/hooks-selftest.test.ts` (yeni dosya, doğrudan bu commit'e dahil, `.claude/hooks/**` DEĞİL).
+Kurulumu CEO `Write` aracıyla yapacak.
+
+**Durum:** `docs/qa/hook-writepos-contract.md` yazıldı, `docs/blockers.md`'ye kapanış notu
+eklendi, `status: qa`. GEÇTİ/KALDI kararı qa-evaluator'a ait.

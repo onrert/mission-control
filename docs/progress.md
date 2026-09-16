@@ -5142,3 +5142,51 @@ kırmızıda sayaç sıfırlanır) DEĞİŞMEDİ, bu turda bağımsız olarak ye
 
 **Durum:** `docs/qa/b4-havuz-contract.md` yazıldı, `docs/blockers.md`'ye kapanış notu eklendi,
 `status: qa`. GEÇTİ/KALDI kararı qa-evaluator'a ait.
+
+---
+
+## 2026-09-16 — G6 ONAYLANDI · Faz 2 kapandı · masaüstü paketi üretildi ve duman testinden geçti
+
+Kullanıcı kararı (AskUserQuestion): **"Onaylıyorum — paketle de."**
+Onay dosyası: `docs/approvals/G6.ok` (karar cümlesi + kanıt tablosu + kabul edilen borçlar).
+
+### Yayın kanıtı (2026-09-16, temiz makine, her ölçüm TEK BAŞINA koşuldu)
+| Kanıt | Sonuç |
+|---|---|
+| `npm run verify` üç ardışık TAM YEŞİL | **3/3**, ilk denemede |
+| Birim + entegrasyon | **87 dosya / 1852 test** (4 atlandı), sessizce eksik dosya YOK |
+| `npm run e2e` | **55/55** |
+| Hook self-test (`tests/hooks-selftest.test.ts`) | **420/420**, `npm test` zincirinde |
+| `tsc` · `eslint` | 0 · 0 |
+| Feature'lar | **14/14 `status: done`** |
+
+### Paketleme (ADR-011: Electron)
+`npm run electron:package` → `release/Mission Control-win32-x64`, **631,3 MB**, electron v44.2.0.
+Yapısal kontrol: `tsx` ve `src/server` paket içinde (uygulama `src/server/index.ts`'i
+`tsx/cjs/api` ile çalıştırıyor, `dist/server` gerekmiyor), `project-dir.generated.cjs` doğru
+depoyu gösteriyor.
+**Duman testi (`scratchpad/smoke-package.mjs`, gerçek `.exe` başlatıldı):** HTTP **200**, uygulama
+HTML'i servis edildi (kök div + başlık var), `/api/events` **200**. Kapatma sonrası
+`mission-control.exe` sayısı **0** — yetim süreç yok (kayıtlı ders gereği ölçüldü).
+Duman testi `MC_PORT=7444` ile koşuldu; varsayılan 7333 ile bilerek çakıştırılmadı (sabit port
+çakışması bu depoda kayıtlı bir hata sınıfı).
+
+### B-4 hakkında bu turun kesinleştirdiği iki şey
+1. Yapısal düzeltme denemeleri (havuz bölme, sıralı koşum) taban orandan **daha kötü** çıktı
+   (%50 ve %60 vs %25) — `vitest.config.ts`'e dokunulmadı, `git diff` boş.
+2. **Çökmelerin büyük kısmı kendi eşzamanlılığımızdandı.** CEO'nun kirli ortamda yaptığı ölçüm
+   %50 çökme / en fazla 2 ardışık yeşil verdi; aynı config, aynı makine, hiçbir şey koşmazken
+   **3/3 tam yeşil**. Kayıtlı kural bir kez daha doğrulandı: *ölçümün kendisi kirliyse teşhis de
+   kirlidir.* Kök neden hâlâ açık (üçüncü tur), yönetilen risk olarak devam ediyor.
+
+### Push kapısı — bilinçli bir kaybın kaydı
+`G6.ok` VARSA `block-dangerous.cjs` push için `PUSH.ok` ARAMAZ; yani bu onayla birlikte push
+kapısı **kalıcı olarak açıldı**. Kullanıcıya açıkça soruldu, kararı: **"Yine de her push öncesi
+sor."** Disiplin artık hook'ta değil, CEO'da; `CLAUDE.md`'ye kalıcı madde olarak yazıldı.
+Bu, bu depoda **bir kapının kaybolup yerini insan disiplinine bıraktığı tek yer** — unutulursa
+geri alınamaz bir işlem sessizce olur.
+
+### G6 ile birlikte kabul edilen açık borçlar
+Hepsi `docs/blockers.md`'de yeniden açma ölçütleriyle kayıtlı: (1) hook hattının 24 canlı vektörü
++ izin açığı (`ADR-016` güncellendi: kaza önleyici, saldırı önleyici değil) · (2) B-4 kök nedeni ·
+(3) Ö6 yazma amplifikasyonu · (4) A1/A10 parçalı yol ailesi.

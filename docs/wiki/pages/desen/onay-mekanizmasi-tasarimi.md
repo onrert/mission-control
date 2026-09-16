@@ -1,7 +1,7 @@
 ---
 type: desen
-updated: 2026-09-11
-sources: [docs/qa/G5-guvenlik-denetimi-2026-09-10.md, docs/qa/G5-guvenlik-denetimi-2026-09-10-tur2.md, docs/qa/G5-guvenlik-denetimi-2026-09-10-tur3.md, docs/qa/G5-guvenlik-denetimi-2026-09-10-tur4.md, docs/qa/G5-guvenlik-denetimi-2026-09-10-tur5.md, docs/qa/G5-sozlesme-kararlari-2026-09-10.md, docs/qa/G5-sozlesme-kararlari-2026-09-10-tur2.md, docs/qa/G5-sozlesme-kararlari-2026-09-10-tur3.md, docs/qa/G5-sozlesme-kararlari-2026-09-10-tur4.md, docs/qa/G5-sozlesme-kararlari-2026-09-10-tur5.md, docs/qa/g5-guard-json-contract.md, docs/qa/g5-tur5-kapsam-ve-selftest-contract.md, docs/decisions/ADR-016-onay-dosyalarinin-korunmasi.md, docs/approvals/G5.ok, docs/blockers.md]
+updated: 2026-09-16
+sources: [docs/qa/G5-guvenlik-denetimi-2026-09-10.md, docs/qa/G5-guvenlik-denetimi-2026-09-10-tur2.md, docs/qa/G5-guvenlik-denetimi-2026-09-10-tur3.md, docs/qa/G5-guvenlik-denetimi-2026-09-10-tur4.md, docs/qa/G5-guvenlik-denetimi-2026-09-10-tur5.md, docs/qa/G5-sozlesme-kararlari-2026-09-10.md, docs/qa/G5-sozlesme-kararlari-2026-09-10-tur2.md, docs/qa/G5-sozlesme-kararlari-2026-09-10-tur3.md, docs/qa/G5-sozlesme-kararlari-2026-09-10-tur4.md, docs/qa/G5-sozlesme-kararlari-2026-09-10-tur5.md, docs/qa/g5-guard-json-contract.md, docs/qa/g5-tur5-kapsam-ve-selftest-contract.md, docs/decisions/ADR-016-onay-dosyalarinin-korunmasi.md, docs/approvals/G5.ok, docs/approvals/G6.ok, docs/blockers.md, docs/progress.md]
 ---
 
 # Onay mekanizması tasarımı — kullanıcı onayına dayanan güvenlik kapıları
@@ -209,4 +209,56 @@ yedi kez), "güvenli taraf" savunması yeterli değildir — kapı, kendi maliye
 tehlikeye atıyor demektir; mesaj/kapsam iyileştirmesiyle (ör. hangi biçimin kabul edildiğini
 açıkça söylemek) bu maliyet düşürülmeli.
 
-İlgili: [[desen/cit-tasarimi]] [[hata/claude-code-arac-tuzaklari]] [[desen/app-factory-hatti]]
+## 9. Derinlik katmanını sertleştirmeden önce ön kapının kapalı olduğunu ölç — bu ders YEDİ tura mal oldu
+
+`block-dangerous.cjs` (metin tarayıcısı, bkz. [[desen/cit-tasarimi]] §9) yedi turda v0'dan v6'ya
+sertleştirildi; her tur gerçek bir sızıntı ailesini kapattı. Sekizinci tura girmeden önce
+qa-evaluator geri çekilip **ön kapıyı** ölçtü: `.claude/settings.json`'daki `Bash(npm run *)` izni,
+`package.json`'un korumasız olmasıyla birleşince **bütün hook hattını anlamsız kılıyordu** —
+`package.json`'a bir script yazıp `npm run evil` çalıştırmak hook'tan **exit 0** aldı,
+`docs/approvals/G5.ok` **ve** `.claude/hooks/gate-check.cjs` silindi, sahte bir `GUARD.ok` yazıldı,
+**tek bir izin kartı çıkmadan** (B5). `npm run` yolu kapatıldıktan sonra (allowlist:
+`package.json`'daki gerçek 22 script adı, `install-hook` bilerek dışarıda; `package.json` ve
+`.claude/**` `ask` listesine alındı) **ikinci, daha derin** bir aynı-sınıf açık ölçüldü:
+`Write(src/**)` + `Bash(node *)` birlikte yine **sıfır izin kartıyla** tam yetki veriyordu — tek bir
+`node src/tools/fmt.mjs` çağrısı `G5.ok`'u sildi, `gate-check.cjs`'i `process.exit(0);` yaptı **ve
+sahte bir `GUARD.ok` yazdı**.
+
+**Sonuç — `ADR-016`'nın 2026-09-15 güncellemesi:** *"asıl savunma kullanıcının izin kartıdır"*
+öncülü **kısmen yanlıştı**; kart her zaman çıkmıyordu. Hook hattının konumu yeniden yazıldı:
+**hook hattı bir KAZA ÖNLEYİCİDİR, bir SALDIRI ÖNLEYİCİ DEĞİLDİR.** Yanlışlıkla yazılmış bir komutu,
+bir alt agent'ın dikkatsizliğini, kopyala-yapıştır bir zinciri yakalar; kasıtlı ve bilgili bir
+aktöre karşı (yerel, kabuk erişimli bir agent tanımı gereği öyledir) **mutlak koruma yoktur ve
+olamaz.** `Bash(node *)` **bilerek kapatılmadı** — arka planda koşan alt agent turları sonda/teşhis
+betiklerini bu izinle çalıştırıyor, kaldırmak üretim hattını kilitler; `Write(tests/**)` +
+`Bash(npm run test)` de aynı gerekçeyle (bir kod fabrikasının doğası) açık bırakıldı. Bunlar
+**bilinçli, ölçülmüş tavizler** olarak `ADR-016`'ya yazıldı, gizlenmedi. G6 onayı bu açık kalan 24
+canlı vektörü + izin açığını bilerek kabul edip yayına geçti (`docs/approvals/G6.ok`).
+
+**Genel kural:** yedi turluk bir metin-tarayıcı sertleştirme kampanyasına girmeden önce (ya da
+içindeyken, her turda) *"bu derinlik katmanı atlanabiliyor mu ve atlamanın maliyeti nedir?"* diye
+sor ve **ölç** — izin sistemi/harness seviyesindeki bir açık varsa, kod-seviyesi tarayıcının
+marjinal değeri sıfıra yakındır. Kayıtlı "bir kapı, kendi anahtarını üretebilene karşı kapı
+değildir" kuralının izin-listesi hâli.
+
+## 10. Güvenlik turlarının gizli maliyeti aşırı engellemedir — her turda ölç
+
+Bir güvenlik hattını sertleştirirken kazanılan her "sızıntı kapandı" zaferinin görünmeyen bir
+maliyeti vardır: gerçek iş akışını ne kadar kilitlediği. Bu ölçülmezse "daha güvenli" diye giderek
+kullanılamaz bir hat kurulur.
+
+**Ölçülmüş vaka:** v5 (beyaz liste, kutupluluk çevrildi) 34 komutluk gerçekçi bir iş-akışı
+korpusunda **5/34 (%14,7)** yanlış pozitif üretti — `if`/`cd` gibi "eylemsiz" kabuk sözcüklerini
+okuyucu listesine almanın bedeliydi. v6 (yazma-konumu analizi) **aynı korpusta 0/34 (%0,0)** ölçtü;
+v5'in getirdiği iş akışı maliyeti tamamen geri alındı, güvenlik kazanımı (3640/3640, 0 regresyon)
+korunarak (bkz. [[desen/cit-tasarimi]] §9). Aynı gün Katman B'nin komut taraması **yedi kez** masum
+bir işi kilitledi (üçü CEO'da, dördü QA'da) — biri salt-okunur bir listeleme çağrısı, sonuncusu
+**tam olarak bu olayı anlatan düzeltme metninin kendisiydi** (bkz.
+[[hata/claude-code-arac-tuzaklari]] "korunan komut adını anan her metin").
+
+**Genel kural:** her sertleştirme turunun kabul kriterine, gerçekten kullanılan komutlardan oluşan
+bir **yanlış pozitif korpusu** ve sayısal bir üst sınır koy; korpus hayali olmasın, o oturumda
+fiilen çalıştırılan komutlardan derlensin. Bir mekanizmanın "kaç saldırıyı yakaladığı" kadar "kaç
+meşru işi kilitlediği" de sözleşmenin kabul kanıtı olmalı.
+
+İlgili: [[desen/cit-tasarimi]] [[hata/claude-code-arac-tuzaklari]] [[desen/app-factory-hatti]] [[hata/olcum-kirliligi]]

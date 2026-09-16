@@ -1,7 +1,7 @@
 ---
 type: desen
-updated: 2026-09-11
-sources: [docs/qa/F-009-2026-09-09.md, docs/qa/F-009-2026-09-09-tur2.md, docs/qa/F-009-2026-09-09-tur3.md, docs/qa/F-011-2026-09-10.md, docs/qa/F-011-2026-09-10-tur2.md, docs/qa/F-011-2026-09-10-tur3.md, docs/qa/F-011-2026-09-10-tur4.md, docs/qa/F-011-2026-09-10-tur5.md, docs/qa/F-011-2026-09-10-tur6.md, docs/qa/F-011-2026-09-10-tur7.md, docs/qa/test-skip-gate-2026-09-10.md, docs/qa/test-skip-gate-contract.md, docs/decisions/ADR-013-yazma-uclarinda-ozel-baslik-zorunlulugu.md, docs/qa/G5-sozlesme-kararlari-2026-09-10-tur4.md, docs/qa/G5-sozlesme-kararlari-2026-09-10-tur5.md, docs/qa/g5-guard-json-contract.md, CLAUDE.md]
+updated: 2026-09-16
+sources: [docs/qa/F-009-2026-09-09.md, docs/qa/F-009-2026-09-09-tur2.md, docs/qa/F-009-2026-09-09-tur3.md, docs/qa/F-011-2026-09-10.md, docs/qa/F-011-2026-09-10-tur2.md, docs/qa/F-011-2026-09-10-tur3.md, docs/qa/F-011-2026-09-10-tur4.md, docs/qa/F-011-2026-09-10-tur5.md, docs/qa/F-011-2026-09-10-tur6.md, docs/qa/F-011-2026-09-10-tur7.md, docs/qa/test-skip-gate-2026-09-10.md, docs/qa/test-skip-gate-contract.md, docs/decisions/ADR-013-yazma-uclarinda-ozel-baslik-zorunlulugu.md, docs/qa/G5-sozlesme-kararlari-2026-09-10-tur4.md, docs/qa/G5-sozlesme-kararlari-2026-09-10-tur5.md, docs/qa/g5-guard-json-contract.md, docs/qa/hook-borclari-contract.md, docs/qa/hook-allowlist-contract.md, docs/qa/hook-polarite-contract.md, docs/qa/hook-writepos-contract.md, docs/qa/hook-borclari-karari-2026-09-15.md, docs/qa/hook-borclari-karari-v3-2026-09-15.md, docs/qa/hook-polarite-karari-2026-09-15.md, docs/qa/hook-writepos-karari-2026-09-15.md, docs/decisions/ADR-016-onay-dosyalarinin-korunmasi.md, docs/blockers.md, CLAUDE.md]
 ---
 
 # Çit tasarımı — güvenlik/bütünlük testlerini (mutasyon testiyle) kırılmaz yapma
@@ -243,4 +243,63 @@ miydi?" diye sor. Ayırt edici vaka, **diğer tüm kontrolleri geçen ama yalnı
 takılan** girdidir; böyle bir vaka yoksa kontrol muhtemelen çitsizdir, kaskad testi kaç tane
 başka test kırdığından bağımsız olarak.
 
-İlgili: [[hata/claude-code-arac-tuzaklari]] [[desen/app-factory-hatti]] [[desen/onay-mekanizmasi-tasarimi]]
+## 9. Bir muafiyet bayrağı, uygulandığı BÖLGENİN tamamını körleştirir — token'a bağla, bölgeye değil
+
+Mission Control'ün `block-dangerous.cjs` güvenlik hook'unda "bir yazma girişimini nasıl tanırız?"
+sorusu **yedi turda altı kez** yanlış cevaplandı; her cevap bir öncekinin taşınmış hâliydi — aynı
+kör noktayı farklı bir yüzeye kaydırıyordu:
+
+1. **Fiil her yerde** (v0/`prev`) — güvenli ama gürültülü, tırnaklı argümanında fiil geçen
+   salt-okunur komutlarda yanlış pozitif.
+2. **Komut konumunda** (v1) — muafiyeti sabit bir önek listesine (`sudo|env|time|exec|git` + dört
+   ayraç) bağladı; QA **22 bypass** buldu (`MC=1 rm …`, `sleep 0 & rm …`, `(rm …)`, `\rm …`,
+   `if true; then rm …; fi`, `command rm …`), sekizi kapının kendi dosyalarını hedefliyordu.
+3. **Tırnak içinde mi** (v2) — iç içe kabukta (`sh -c 'rm …'`, `bash -c "…"`, `eval "…"`) tırnaklı
+   metin **veri değil KODDUR**; CEO'nun bağımsız sondası (12 vektör) `prev`'in **12/12**'sini
+   engellediğini, v2'nin **11/12**'sini geçirdiğini ölçtü — sözleşmenin kendi güvenlik şartı
+   ("yalnızca yanlış pozitifi azaltabilir, engellemeyi ASLA azaltamaz") ihlal edilmişti.
+4. **Tırnak muafiyeti tamamen kaldırıldı** (v3) — v0 davranışına dönüş; dört modlu 80 vektörlük
+   diferansiyelde `prev`/`installed`'a karşı 0 regresyon.
+5. **Baş komut okuyucu mu** (v4→v5, kutupluluk kara listeden beyaz listeye çevrildi: 3073/3073
+   saldırı engel, 26 komutluk korpusta 2/26 yanlış pozitif) — muafiyet yine **konuma** bağlandı:
+   `if`/`while`/`case`/`cd`/`pushd` "eylemsiz" sayılıp okuyucu listesine alınınca **B1**,
+   Mekanizma 2'yi komple atlattı — kapatılan **11 sızıntının hepsi** üç karakterlik bir önekle
+   (`if `, `cd . && `) geri açıldı; v5'in aşırı-engelleme kazanımı (34 komutluk korpusta v4 0/34 →
+   v5 5/34 = %14,7) bu güvenlik kaybının yanında anlamsız kaldı.
+6. **Yazma KONUMU analizi** (v6, doğru soru: *"korunan yol bu segmentte bir YAZMA KONUMUNDA mı —
+   yönlendirme hedefi, bilinen bir yazıcının hedef argümanı, yerinde-düzenleme konusu?"*) — B1/B2/B3'ü
+   **aynı anda ve yapısal olarak** kapattı: "eylemsiz" kabuk sözcüklerinin listede olmasına gerek
+   kalmadı (hiçbir zaman bir yazma konumu üretmiyorlar). 6 modlu **3640** vektörlük diferansiyelde
+   **v6 %100,0 (3640/3640), 0 regresyon**; aşırı engelleme **%14,7 → %0,0**.
+
+**Bir tur sonra AYNI hata farklı bir taşıyıcıyla geri geldi:** v6'nın Mekanizma 3'ü "blob'un ilk
+token'ı okuyucu mu" diye bakıyordu — yine **bölgenin tamamını** (tüm komut) tek bayrakla muaf
+tutan aynı tasarım, yalnızca bayrak "baş komut"tan "blob'un ilk token'ı"na taşınmıştı.
+`echo hi && cd . && rm "docs"/approvals/G5.ok` **exit 0** verdi, dosya gerçekten silindi; 6 blob
+tetikleyicisi × 5 okuyucu = 13 kombinasyonun **11'i** sızdırdı (Q1 — v5'e KALDI verdiren B1'in
+birebir aynı yapısı, bir tur sonra).
+
+**İki genellenebilir kural:**
+- **(a) Bir muafiyet bayrağı uygulandığı bölgenin tamamını körleştirir.** Muafiyeti bir **token'a**
+  (tek bir argüman) bağla, bir **bölgeye** (segment, blob, komutun tamamı) değil. v6'nın B4
+  muafiyeti (yalnızca yorumlayıcının betik argümanı konumu) bunu doğru yaptı ve 8 kötüye kullanım
+  sondasının 8'ini de tuttu.
+- **(b) Bir aracı "okuyucu" saymadan önce yazma yeteneğini ARA.** `awk`/`sed` okuyucu listesindeydi
+  ama `sed -n 'w <dosya>'`, `awk 'BEGIN{print x > f}'`, `awk 'BEGIN{system("rm …")}'` hepsi
+  yazabiliyor — sonuncusu **v0/v3'ün zaten engellediği** bir vektördü ve v5'te geçti (Q2, "eskinin
+  engellediğini geçirme" ihlali, genişletilmiş uzayda 69 vektör). `git diff/log/show --output=<dosya>`
+  aynı sınıf: karar alt komutun **adından** veriliyordu, **yeteneğinden** değil — 217/217 vektörde
+  kör (Q4).
+
+**Additive mekanizma disiplini:** v5 ve v6 önceki mekanizmalara (Mekanizma 1, Mekanizma 2) hiç
+dokunmadan yalnızca yeni bir OR-koşulu (Mekanizma 3) **ekledi**. Bu, regresyonu **test edilerek**
+değil **yapısal olarak** imkânsız kıldı — 3640 ve 3073 vektörlük diferansiyellerin ikisinde de
+önceki sürümlere karşı **0 regresyon** ölçüldü. Bir mekanizmayı **değiştirmek** yerine **eklemek**,
+"bu değişiklik eskiyi de kırdı mı?" sorusunu diferansiyel ölçüme muhtaç bırakmadan baştan önlüyor.
+
+Ölçümün kendisinin kirlenip yanlış sonuç verdiği bir yan-vaka (paylaşılan bir scratchpad dizininin
+eşzamanlı silinip yeniden kurulması, tek koşuda 2 sahte "sızıntı" görünümü üretti, izole tekrar
+koşumda 0/3640) için bkz. [[hata/olcum-kirliligi]]. Aynı hook hattının derinlik-katmanı/ön-kapı
+ayrımı için bkz. [[desen/onay-mekanizmasi-tasarimi]] §9-10.
+
+İlgili: [[hata/claude-code-arac-tuzaklari]] [[desen/app-factory-hatti]] [[desen/onay-mekanizmasi-tasarimi]] [[hata/olcum-kirliligi]]

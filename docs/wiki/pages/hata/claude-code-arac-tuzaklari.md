@@ -1,7 +1,7 @@
 ---
 type: hata
-updated: 2026-09-11
-sources: [CLAUDE.md, docs/progress.md, docs/qa/test-skip-gate-contract.md]
+updated: 2026-09-16
+sources: [CLAUDE.md, docs/progress.md, docs/qa/test-skip-gate-contract.md, docs/blockers.md, docs/qa/hook-writepos-contract.md, docs/qa/hook-borclari-contract.md]
 ---
 # Claude Code araç tuzakları (App Factory kurulumu)
 
@@ -43,6 +43,14 @@ edilmemiş dosyaların listesi, (3) "önce commit at" talimatı **turun ilk madd
 kalan iş. Kesilen agent'ın kendi son cümlesini brief'e koymak nerede kalındığını en iyi anlatır.
 Madde 4 silinmedi; bu blok onu geçersiz kılıyor, orijinal ortamda (ToolSearch kapalıyken) hâlâ
 doğru olabilir.
+
+**Güncelleme (2026-09-15/16):** Yukarıdaki düzeltmenin kendisi de mutlak değildi.
+Hook-borçları/polarite/writepos turlarında `SendMessage` **tekrar kapalıydı** ve kesilen bir
+alt agent'ı devam ettirme denemesi hata verdi; yeni agent açılıp brief eksiksiz yeniden yazıldı.
+**Sonuç: `SendMessage`'ın varlığı OTURUMA BAĞLI, kalıcı bir ortam özelliği değil.** Bir alt agent'ı
+devam ettirmeyi planlarken önce aracın **bu oturumda** var olduğunu doğrula; yoksa yeni agent aç ve
+brief'i eksiksiz yaz (dosya yolları, önceki turların teslimatı, hangi dosyanın kullanılmayacağı ve
+neden, ölçülmüş sayılar) — bu maliyeti baştan kabul et, yarım brief ikinci bir tur demektir.
 
 ## 6. Tek kullanımlık onay dosyası, komut hiç çalışmasa bile tüketiliyor
 **Belirti:** Onay gerektiren bir komut zincirinin (`onay-dosyası-ekle && komut`) ilk parçası
@@ -87,4 +95,32 @@ normalizasyonun etkisiz kaldığını **üç noktada** ölç: diskte, `git show`
 ve temiz bir `git clone`'da (`docs/qa/F-009-2026-09-09.md`, "bom-crlf fixture'ı gerçekten CRLF
 mi" ölçümü).
 
-İlgili: [[desen/app-factory-hatti]] [[proje/gorev-listesi-denemesi]] [[desen/cit-tasarimi]] [[desen/onay-mekanizmasi-tasarimi]]
+## 10. Kendi teşhis komutun, yeni kurduğun kapıya (ikinci kez, farklı biçimde) takılabilir
+**Belirti:** `.claude/hooks/**` korumasını kurduktan sonra, kendi doğrulama komutu (`cd <repo> &&
+node .claude/hooks/_selftest.cjs 2>&1 | grep -c "^OK" && node .claude/hooks/_selftest.cjs 2>&1 |
+grep -c "^FAIL"`) **engellendi** (exit 2); aynı komut `cd` öneki OLMADAN **geçiyordu**.
+**Kök neden:** `cd` varlığı çalışma-dizini-değiştirme geri çekilmesini tetikliyor, komutun TAMAMI
+(iki `node` çağrısı dahil) TEK bir segment sayılıyor; B4 muafiyeti segmentten yalnızca **ilk**
+korunan-yol anmasını çıkarıyor — segment aynı metni **ikinci kez** de içerdiğinden kalan metin
+hâlâ tetikleniyor.
+**Neden bloklayıcı sayılmadı:** yön güvenlik lehine (aşırı engelleme, sızıntı değil); `cd` olmadan
+(normal segmentasyon) her çağrı kendi segmentinde doğru muaf tutuluyor, iş akışı maliyeti sıfır.
+Kabul edildi, kod değişmedi; `CLAUDE.md`'deki zorunlu doğrulama komutu bunun yerine
+`npx vitest run tests/hooks-selftest.test.ts` olarak sabitlendi. İlgili:
+[[desen/cit-tasarimi]] §9, [[desen/onay-mekanizmasi-tasarimi]] §9.
+
+## 11. Büyük bir hook adayını kurarken hunk-hunk düzenleme değil, tam içerik + bayt-eşitliği doğrulaması gerekir
+**Pratik:** Yedi turda büyümüş iki hook dosyasını (`block-dangerous.cjs`, `_selftest.cjs`) gerçek
+depoya kurarken `cp` ile sahneleme YAPILMADI (bu, Katman B'nin göremediği bir yoldan yazma olurdu —
+"Y4" olarak ayrı kayıtlı bir açık sınıfı); dosyalar `Edit` aracıyla, kapının kendisinden geçirilerek
+kuruldu.
+**Doğrulama:** kurulum sonrası `diff` ile scratchpad'deki doğrulanmış adaylarla **bayt-birebir**
+(0 hunk) karşılaştırıldı; dört hook dosyasında da NUL baytı olmadığı ve `node --check`'in temiz
+olduğu ayrıca kontrol edildi; `_selftest.cjs` kurulu hâlde **256/256** verdi.
+**Neden önemli:** kaçış dizilerinin (`\0` gibi) araçlar arasında taşınırken bozulabildiği bu depoda
+ayrıca kayıtlı (CLAUDE.md: "Kaçış dizileri araçlar arasında taşınırken hayatta kalmıyor" — bir
+güvenlik hook'u dosyası bu yüzden ikili sayılıp diff'i incelenemez hâle gelmişti). Bir güvenlik
+hook'unun kurulu hâlinin, onaylanan adayla **birebir** aynı olduğunu doğrulamadan "kuruldu" deme.
+İlgili: [[desen/cit-tasarimi]] §9.
+
+İlgili: [[desen/app-factory-hatti]] [[proje/gorev-listesi-denemesi]] [[desen/cit-tasarimi]] [[desen/onay-mekanizmasi-tasarimi]] [[hata/olcum-kirliligi]] [[proje/mission-control]]

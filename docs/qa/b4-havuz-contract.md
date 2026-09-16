@@ -1,8 +1,8 @@
 ---
 type: qa-contract
 date: 2026-09-16
-status: qa
-karar: (qa-evaluator'ın kararı bekleniyor)
+status: done
+karar: "NEGATİF SONUÇ KABUL EDİLDİ (CEO, 2026-09-16). Yapısal düzeltme denemeleri (havuz bölme %50, sıralı koşum %60) taban orandan (%25) DAHA KÖTÜ çıktı; vitest.config.ts değiştirilmedi (git diff boş). B-4 kök nedeni AÇIK BORÇ olarak kaldı ve G6 onayı bunu yönetilen risk olarak açıkça kabul etti. qa-evaluator GEÇTİ/KALDI kararı GEREKMEDİ: bu tur kod/config değişikliği üretmedi, yalnızca ölçüm ve dokümantasyon."
 ---
 
 # Sözleşme — B-4 devam turu: vitest havuz bölme denemesi (yapısal fix aranıyor, altyapı turu)

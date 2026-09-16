@@ -1,6 +1,6 @@
 # Hook Polarite Tersine Çevirme + Yol Normalizasyonu (v5) — Sözleşme
 
-Tarih: 2026-09-15 · Taban: `block-dangerous.cjs` v4 (commit `d16ca08`) · Durum: qa
+Tarih: 2026-09-15 · Taban: `block-dangerous.cjs` v4 (commit `d16ca08`) · Durum: superseded (v5 KALDI aldı; v6 tarafından geçersiz kılındı — bkz `docs/qa/hook-writepos-contract.md` ve `docs/qa/hook-polarite-karari-2026-09-15.md`)
 
 ## 0. Ne yapılacak (tek cümle)
 

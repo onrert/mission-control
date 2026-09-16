@@ -8,6 +8,7 @@ Bu klasör agent tabanlı bir uygulama üretim hattıdır. Ana oturum `ceo` agen
 - Tek seferde tek feature. Feature bitti = testler yeşil + commit + `docs/progress.md` güncel + feature notunda `status: done`.
 - GEÇTİ/KALDI kararını yalnızca `qa-evaluator` verir; developer kendi işini "geçti" ilan edemez.
 - Geri alınamaz işlem (main'e push, deploy, veri silme, ücret/kredi, harici API anahtarı) her zaman kullanıcı onayı ister.
+- **⚠ BU DİSİPLİN İLK SINAVINDA, YAZILDIKTAN BİR SAAT SONRA KAYBEDİLDİ.** Kullanıcı 38 commit için onay verdi; CEO ardından `G6.ok`'u commit edip **sormadan ikinci bir push** yaptı. Commit küçüktü ve onaylanan işle ilgiliydi — erozyon tam olarak böyle başlar. **Kural netleştirildi: onay BİR PUSH İÇİNDİR, bir oturum ya da bir konu için değil.** Onaydan sonra yeni bir commit oluşursa, o commit'i göndermek YENİ bir onay ister; "zaten onaylanmıştı" geçerli bir gerekçe değildir. Hook engellemediği için bunu yakalayacak tek mekanizma bu satırdır.
 - **PUSH DİSİPLİNİ ARTIK HOOK'TA DEĞİL, CEO'DA (kullanıcı kararı, 2026-09-16).** `G6.ok` yazıldığı an `block-dangerous.cjs` push için ayrıca `PUSH.ok` aramayı bırakır — yani kapı kalıcı açıktır. Kullanıcının kuralı değişmedi: **her `git push` öncesinde CEO kullanıcıya SORAR**, hook engellemese bile. Bu, bir kapının kaybolduğu ve yerini disiplinin aldığı tek yerdir; unutulursa geri alınamaz bir işlem sessizce olur.
 - Kullanıcıyla Türkçe konuş; kod, commit mesajı ve teknik doküman İngilizce.
 

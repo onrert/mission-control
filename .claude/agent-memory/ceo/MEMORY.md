@@ -5,6 +5,7 @@
 - [Panel = CEO sohbet arayüzü vizyonu](project_panel-ceo-sohbet-vizyonu.md) — Veron'un asıl beklentisi; salt-izleyici panel ona yetmiyor
 - [Kanal gecikme ölçümü](project_spike-001-kanal-gecikme-olcumu.md) — CEO %87.5 boşta; arka plan agent düzeni "agent çalışırken konuşma"yı zaten çözüyor
 - [Kısa ve sade cevap](feedback_kisa-sade-cevap.md) — önce "olabiliyor mu", sonra detay; seçenek açıklamaları mini-rapor olmasın
-- [Kapı durumu](project_faz2-durum.md) — 14 feature done, G0–G5 onaylı, sırada yalnızca G6; önce B-4 kapanmalı
+- [Kapı durumu](project_faz2-durum.md) — Faz 2 KAPANDI: G0–G6 onaylı, paket + masaüstü kısayolu hazır, dört borç bilerek açık
+- [Push onayı her seferinde](feedback_push-onayi-her-seferinde.md) — hook artık engellemiyor; onay bir push içindir, oturum için değil
 - [Önce plan, sonra uygula](feedback_once-plan-sonra-uygula.md) — bağımlılık sıralı tablo iste, ama onay bekleme; hemen başla
 - [Tur bölme ve commit](feedback_tur-bolme-ve-commit.md) — turlar sürekli sınıra takılıyor; devam brief'inin ilk maddesi commit olsun

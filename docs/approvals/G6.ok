@@ -1,0 +1,47 @@
+# G6 — Yayın kapısı ONAYLANDI
+
+Tarih: 2026-09-16
+Onaylayan: Kullanıcı (Veron), AskUserQuestion: **"Onaylıyorum — paketle de"**
+
+## Kullanıcının kararı (tek cümle)
+Yayın kapısı açılsın, Electron masaüstü paketi üretilsin ve çalıştığı doğrulansın; taşınan dört
+borç defterde açık kalsın.
+
+## Onaylanan özet — ölçülmüş kanıt (2026-09-16, temiz makine, tek başına koşuldu)
+| Kanıt | Sonuç |
+|---|---|
+| `npm run verify` üç ardışık TAM YEŞİL | **3/3** (ilk denemede) |
+| Birim + entegrasyon | **87 dosya / 1852 test**, 4 atlandı, sessizce eksik dosya YOK |
+| `npm run e2e` | **55/55** |
+| Hook self-test (`tests/hooks-selftest.test.ts`) | **420/420**, `npm test` zincirinde |
+| `tsc` · `eslint` | 0 · 0 |
+| Feature'lar | **14/14 `status: done`** |
+| Önceki kapılar | G0, G1, G2, G3, G4-1, G4-2, G5 |
+
+Yayın hedefi `ADR-011` ile Electron masaüstü uygulaması.
+
+## Bu onayla BİRLİKTE kabul edilen açık borçlar
+Hiçbiri gizlenmedi; hepsi `docs/blockers.md`'de yeniden açma ölçütleriyle kayıtlı.
+
+1. **Hook hattı (`block-dangerous.cjs` v6):** qa-evaluator'ın 24 canlı vektörü açık (Q1 blob ilk
+   token körlüğü · Q2 `awk`/`sed` yazma biçimleri · Q3 `>&dosya` ve satır-devamı yönlendirmesi ·
+   Q4 `git --output=`). Ayrıca `Write(src/**)` + `Bash(node *)` izinleri birlikte **sıfır izin
+   kartıyla** tam yetki veriyor. `ADR-016` bu turda güncellendi: **hook hattı bir KAZA
+   ÖNLEYİCİDİR, SALDIRI ÖNLEYİCİ DEĞİLDİR**; kabuk erişimli yerel bir agent'a karşı mutlak koruma
+   yoktur ve olamaz.
+2. **B-4 test kararsızlığı:** kök neden ÜÇ ölçüm turunda bulunamadı. Yapısal düzeltme denemeleri
+   (havuz bölme, sıralı koşum) taban orandan **daha kötü** çıktı, bu yüzden `vitest.config.ts`'e
+   dokunulmadı. Bu turda ayrıca ölçüldü: çökmelerin büyük kısmı **kendi eşzamanlılığımızdan**
+   kaynaklanıyordu (kirli ortamda %50, temiz ortamda 0/3). Bağlayıcı kural değişmedi: assert
+   kırmızısı = gerçek hata; worker çökmesi (assert sıfırken) = yeniden koş; yayın kanıtı = üç
+   ardışık tam yeşil.
+3. **Ö6:** yazma amplifikasyonu (~159×, 10MB eşiği).
+4. **A1/A10:** parçalı yol ailesi (`cd docs && cd approvals && …`).
+
+## ⚠ Push kapısı hakkında — bilinçli not
+`block-dangerous.cjs` mantığı gereği `G6.ok` VARSA `git push` için ayrıca `PUSH.ok` ARAMAZ; yani
+bu dosya push kapısını **kalıcı olarak** açar. Kullanıcının duran kuralı ("her push öncesi sor,
+kapı kalıcı açılmasın") bununla çelişiyordu ve kullanıcıya açıkça soruldu.
+**Kullanıcı kararı: "Yine de her push öncesi sor."** Yani disiplin artık hook'ta değil, CEO'da:
+hook engellemese bile CEO her `git push` öncesinde kullanıcıya soracak. Kural `CLAUDE.md`'ye
+kalıcı olarak yazıldı.
